@@ -1,0 +1,48 @@
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Pixelify+Sans:wght@500;700&display=swap');
+
+@import "tailwindcss";
+
+/* Fondo Grafito Industrial con Patrón de Puntos Muted (Gris Oscuro) */
+body {
+  background-color: #0f1015;
+  background-image: radial-gradient(#1e212b 1.5px, transparent 1.5px);
+  background-size: 16px 16px;
+  color: #e2e8f0;
+  font-family: 'JetBrains Mono', monospace;
+  overflow-x: hidden;
+}
+
+/* Scrollbar Pixel Art Naranja / Gris */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: #14161f;
+}
+::-webkit-scrollbar-thumb {
+  background: #f05a28;
+  border: 1px solid #14161f;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #ff6d3b;
+}
+
+/* Keyframes de Animaciones */
+@keyframes pixel-bounce {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-4px); }
+}
+
+@keyframes scanline {
+  0% { transform: translateY(-100%); }
+  100% { transform: translateY(1000%); }
+}
+
+.animate-pixel-bounce {
+  animation: pixel-bounce 1.6s infinite ease-in-out;
+}
+
+.animate-scanline {
+  animation: scanline 2.5s linear infinite;
+}
