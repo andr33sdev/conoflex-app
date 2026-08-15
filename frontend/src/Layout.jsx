@@ -1,61 +1,94 @@
-import { useState } from 'react';
-import { Package, Layers, ArrowLeftRight, Settings, RotateCw, ArrowUp, Menu, X, Circle } from 'lucide-react';
+import { useState } from "react"
+import {
+  Package,
+  Layers,
+  FlaskConical,
+  ArrowLeftRight,
+  Settings,
+  RotateCw,
+  ArrowUp,
+  Menu,
+  X,
+  Circle,
+} from "lucide-react"
 
-export default function Layout({ children, activeModule, setActiveModule, onOpenUploadModal }) {
-  const [mobileOpen, setMobileOpen] = useState(false);
+export default function Layout({
+  children,
+  activeModule,
+  setActiveModule,
+  onOpenUploadModal,
+  onReloadSheets,
+  isReloading,
+}) {
+  const [mobileOpen, setMobileOpen] = useState(false)
 
   const menuItems = [
-    { id: 'materias-primas', label: 'Materias Primas', icon: Package },
-    { id: 'produccion', label: 'Producción Diaria', icon: Layers },
-    { id: 'movimientos', label: 'Movimientos Stock', icon: ArrowLeftRight },
-    { id: 'configuraciones', label: 'Configuración', icon: Settings },
-  ];
+    { id: "materias-primas", label: "Materias Primas", icon: Package },
+    { id: "semielaborados", label: "Semielaborados", icon: Layers },
+    { id: "ingenieria", label: "Ingeniería", icon: FlaskConical },
+    { id: "movimientos", label: "Movimientos Stock", icon: ArrowLeftRight },
+    { id: "configuraciones", label: "Configuración", icon: Settings },
+  ]
+
+  const showHeaderActions =
+    activeModule === "materias-primas" || activeModule === "semielaborados"
 
   return (
-    <div className="min-h-screen p-2 md:p-6 flex items-center justify-center font-mono">
-      <div className="w-full max-w-7xl bg-conoflex-bg border-2 border-conoflex-border shadow-2xl flex flex-col min-h-[85vh] relative overflow-hidden">
-        
+    <div className="h-[100dvh] p-2 md:p-5 flex items-center justify-center font-mono bg-[#070A12] overflow-hidden select-none">
+      <div className="w-full max-w-7xl h-full bg-[#0E1322] border-2 border-[#1E2842] shadow-2xl flex flex-col relative overflow-hidden">
         {/* ENCABEZADO SUPERIOR */}
-        <header className="bg-conoflex-panel border-b-2 border-conoflex-border p-3 flex items-center justify-between">
+        <header className="bg-[#0B0F19] border-b-2 border-[#1E2842] p-3 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 bg-conoflex-orange border-2 border-white flex items-center justify-center text-black font-pixel font-bold text-xl shadow-pixel-dark animate-pixel-bounce">
+            <div className="w-9 h-9 bg-[#FF5500] border-2 border-white flex items-center justify-center text-black font-pixel font-bold text-xl shadow-[2px_2px_0px_#000] animate-pulse shrink-0">
               ▲
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <span className="font-pixel text-2xl text-conoflex-orange font-bold tracking-wider">CONOFLEX</span>
-                <span className="text-[10px] bg-conoflex-orange/20 text-conoflex-orange border border-conoflex-orange/40 px-1.5 py-0.5 font-pixel">
+                <span className="font-pixel text-2xl text-[#FF5500] font-bold tracking-wider drop-shadow-sm">
+                  CONOFLEX
+                </span>
+                <span className="text-[10px] bg-[#00E5FF]/10 text-[#00E5FF] border border-[#00E5FF]/40 px-1.5 py-0.5 font-pixel hidden sm:inline-block">
                   INDIE v1.0
                 </span>
               </div>
-              <p className="text-xs text-conoflex-muted">
-                Gestión Industrial • <span className="text-white capitalize">{activeModule.replace('-', ' ')}</span>
+              <p className="text-[11px] text-slate-400 truncate">
+                Gestión Industrial •{" "}
+                <span className="text-white capitalize">
+                  {activeModule.replace("-", " ")}
+                </span>
               </p>
             </div>
           </div>
 
-          {/* Botones Header */}
+          {/* BOTONES HEADER */}
           <div className="hidden md:flex items-center gap-3">
-            <button 
-              onClick={() => window.location.reload()} 
-              className="p-2 bg-conoflex-card border border-conoflex-border text-conoflex-muted hover:text-white hover:border-conoflex-orange transition-colors"
-              title="Recargar Módulo"
-            >
-              <RotateCw size={16} />
-            </button>
+            {showHeaderActions && (
+              <>
+                <button
+                  onClick={onReloadSheets}
+                  disabled={isReloading}
+                  className="p-2 bg-[#161C2E] border border-[#1E2842] text-[#00E5FF] hover:text-white hover:border-[#00E5FF] transition-colors disabled:opacity-50 active:translate-y-0.5"
+                  title="Recargar desde Google Sheets"
+                >
+                  <RotateCw
+                    size={16}
+                    className={isReloading ? "animate-spin" : ""}
+                  />
+                </button>
 
-            {/* BOTÓN REQUERIDO: SUBIR PLANILLA CON ÍCONO DE FLECHA HACIA ARRIBA */}
-            <button 
-              onClick={onOpenUploadModal}
-              className="flex items-center gap-2 bg-conoflex-orange text-black font-pixel font-bold px-4 py-1.5 border border-white shadow-pixel-dark hover:bg-conoflex-orange-hover active:translate-y-0.5 transition-all text-sm"
-            >
-              <ArrowUp size={18} strokeWidth={2.5} />
-              <span>SUBIR PLANILLA</span>
-            </button>
+                <button
+                  onClick={onOpenUploadModal}
+                  className="flex items-center gap-2 bg-[#00C853] text-black font-pixel font-bold px-4 py-1.5 border border-white shadow-[2px_2px_0px_#000] hover:bg-[#00E676] active:translate-y-0.5 transition-all text-xs"
+                >
+                  <ArrowUp size={16} strokeWidth={2.5} />
+                  <span>Cargar Excel</span>
+                </button>
+              </>
+            )}
           </div>
 
-          <button 
-            className="md:hidden text-conoflex-orange p-1.5 border border-conoflex-border bg-conoflex-card"
+          <button
+            className="md:hidden text-[#FF5500] p-1.5 border border-[#1E2842] bg-[#161C2E]"
             onClick={() => setMobileOpen(!mobileOpen)}
           >
             {mobileOpen ? <X size={20} /> : <Menu size={20} />}
@@ -63,56 +96,79 @@ export default function Layout({ children, activeModule, setActiveModule, onOpen
         </header>
 
         {/* CUERPO PRINCIPAL */}
-        <div className="flex-1 flex flex-col md:flex-row relative">
-          <aside className={`
-            w-full md:w-64 bg-conoflex-panel border-r-2 border-conoflex-border p-3 flex flex-col justify-between
-            ${mobileOpen ? 'block' : 'hidden md:flex'}
-          `}>
+        <div className="flex-1 flex flex-col md:flex-row min-h-0 relative">
+          <aside
+            className={`
+            w-full md:w-64 bg-[#0B0F19] border-r-2 border-[#1E2842] p-3 flex flex-col justify-between shrink-0
+            ${mobileOpen ? "absolute inset-0 z-50 bg-[#0E1322]" : "hidden md:flex"}
+          `}
+          >
             <div className="space-y-1">
-              <div className="text-[11px] font-pixel text-conoflex-muted tracking-widest px-3 py-2 uppercase border-b border-conoflex-border mb-2">
-                Módulos del Sistema
+              <div className="text-[10px] font-pixel text-[#00E5FF] tracking-widest px-3 py-2 uppercase border-b border-[#1E2842] mb-2 flex items-center justify-between">
+                <span>Módulos del Sistema</span>
+                {mobileOpen && (
+                  <button
+                    onClick={() => setMobileOpen(false)}
+                    className="md:hidden text-white"
+                  >
+                    <X size={16} />
+                  </button>
+                )}
               </div>
 
               {menuItems.map((item) => {
-                const Icon = item.icon;
-                const isSelected = activeModule === item.id;
+                const Icon = item.icon
+                const isSelected = activeModule === item.id
                 return (
                   <button
                     key={item.id}
                     onClick={() => {
-                      setActiveModule(item.id);
-                      setMobileOpen(false);
+                      setActiveModule(item.id)
+                      setMobileOpen(false)
                     }}
                     className={`
                       w-full flex items-center gap-3 px-3 py-2.5 text-xs font-semibold transition-all duration-150 border-l-4 text-left group
-                      ${isSelected 
-                        ? 'bg-conoflex-card border-conoflex-orange text-white shadow-sm' 
-                        : 'border-transparent text-conoflex-muted hover:text-white hover:bg-conoflex-card/50 hover:border-conoflex-border'}
+                      ${
+                        isSelected
+                          ? "bg-[#161C2E] border-[#FF5500] text-white shadow-sm"
+                          : "border-transparent text-slate-400 hover:text-white hover:bg-[#161C2E]/50 hover:border-[#1E2842]"
+                      }
                     `}
                   >
-                    <Icon size={16} className={isSelected ? 'text-conoflex-orange' : 'text-conoflex-muted group-hover:text-white'} />
+                    <Icon
+                      size={16}
+                      className={
+                        isSelected
+                          ? "text-[#FF5500]"
+                          : "text-slate-400 group-hover:text-white"
+                      }
+                    />
                     <span className="flex-1">{item.label}</span>
-                    {isSelected && <Circle size={6} className="fill-conoflex-orange text-conoflex-orange animate-pulse" />}
+                    {isSelected && (
+                      <Circle
+                        size={6}
+                        className="fill-[#00E5FF] text-[#00E5FF] animate-pulse"
+                      />
+                    )}
                   </button>
-                );
+                )
               })}
             </div>
 
-            <div className="pt-3 border-t border-conoflex-border text-[11px] text-conoflex-muted flex items-center justify-between px-2">
+            <div className="pt-3 border-t border-[#1E2842] text-[11px] text-slate-400 flex items-center justify-between px-2 shrink-0">
               <span className="font-pixel">FEROZO DB</span>
-              <span className="text-conoflex-green flex items-center gap-1 font-pixel">
-                <span className="w-2 h-2 rounded-full bg-conoflex-green animate-ping inline-block" />
+              <span className="text-[#00E5FF] flex items-center gap-1 font-pixel">
+                <span className="w-2 h-2 rounded-full bg-[#00E5FF] animate-ping inline-block" />
                 ONLINE
               </span>
             </div>
           </aside>
 
-          <main className="flex-1 p-4 md:p-6 bg-conoflex-bg overflow-y-auto">
+          <main className="flex-1 p-3 md:p-5 bg-[#070A12] overflow-hidden flex flex-col min-h-0">
             {children}
           </main>
         </div>
-
       </div>
     </div>
-  );
+  )
 }
