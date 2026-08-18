@@ -1,6 +1,6 @@
-import { useState, useCallback, useEffect } from "react"
-import { useDropzone } from "react-dropzone"
-import * as XLSX from "xlsx"
+import { useState, useCallback, useEffect, useRef } from "react";
+import { useDropzone } from "react-dropzone";
+import * as XLSX from "xlsx";
 import {
   ArrowUp,
   X,
@@ -13,7 +13,7 @@ import {
   ChevronRight,
   ChevronsLeft,
   ChevronsRight,
-} from "lucide-react"
+} from "lucide-react";
 
 const EXCLUDED_HEADERS = [
   "MATERIA PRIMA DESTACADA",
@@ -25,69 +25,99 @@ const EXCLUDED_HEADERS = [
   "MATERIAL",
   "COD",
   "NOMBRE",
-]
+];
 
-const ITEMS_PER_PAGE = 5
+const ROW_HEIGHT = 44; // Altura fija e inmutable por fila
 
 export default function Inventory({ isUploadModalOpen, onCloseUploadModal }) {
-  const [dbItems, setDbItems] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [searchTerm, setSearchTerm] = useState("")
-  const [currentPage, setCurrentPage] = useState(1)
+  const [dbItems, setDbItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [currentPage, setCurrentPage] = useState(1);
 
-  const [editingItem, setEditingItem] = useState(null)
-  const [newStockValue, setNewStockValue] = useState("")
-  const [deletingItem, setDeletingItem] = useState(null)
+  // REFERENCIAS Y MEDICIÓN DINÁMICA DE PANTALLA
+  const tableContainerRef = useRef(null);
+  const tableHeaderRef = useRef(null);
+  const [itemsPerPage, setItemsPerPage] = useState(5);
 
-  const [excelData, setExcelData] = useState(null)
-  const [diffAdditions, setDiffAdditions] = useState([])
-  const [diffDeletions, setDiffDeletions] = useState([])
-  const [selectedToAdd, setSelectedToAdd] = useState([])
-  const [selectedToRemove, setSelectedToRemove] = useState([])
+  const [editingItem, setEditingItem] = useState(null);
+  const [newStockValue, setNewStockValue] = useState("");
+  const [deletingItem, setDeletingItem] = useState(null);
+
+  const [excelData, setExcelData] = useState(null);
+  const [diffAdditions, setDiffAdditions] = useState([]);
+  const [diffDeletions, setDiffDeletions] = useState([]);
+  const [selectedToAdd, setSelectedToAdd] = useState([]);
+  const [selectedToRemove, setSelectedToRemove] = useState([]);
+
+  // CÁLCULO DINÁMICO EXACTO DE FILAS QUE ENTRAN SEGÚN EL MONITOR
+  useEffect(() => {
+    if (!tableContainerRef.current) return;
+
+    const calculatePageSize = () => {
+      if (!tableContainerRef.current) return;
+
+      const containerHeight = tableContainerRef.current.clientHeight;
+      const headerHeight = tableHeaderRef.current
+        ? tableHeaderRef.current.offsetHeight
+        : 40;
+      const availableHeight = containerHeight - headerHeight;
+
+      // Math.floor garantiza que nunca quede una fila cortada a la mitad
+      const calculatedItems = Math.floor(availableHeight / ROW_HEIGHT);
+      setItemsPerPage(Math.max(1, calculatedItems));
+    };
+
+    const observer = new ResizeObserver(calculatePageSize);
+    observer.observe(tableContainerRef.current);
+    calculatePageSize();
+
+    return () => observer.disconnect();
+  }, [loading]);
 
   const fetchInventory = async () => {
-    setLoading(true)
+    setLoading(true);
     try {
-      const res = await fetch("http://localhost:3001/api/materias-primas")
-      const data = await res.json()
-      setDbItems(data)
+      const res = await fetch("http://localhost:3001/api/materias-primas");
+      const data = await res.json();
+      setDbItems(data);
     } catch (err) {
-      console.error("Error conectando con backend local:", err)
+      console.error("Error conectando con backend local:", err);
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
-  }
+  };
 
   useEffect(() => {
-    fetchInventory()
-  }, [])
+    fetchInventory();
+  }, []);
 
   const handleSearchChange = (e) => {
-    setSearchTerm(e.target.value)
-    setCurrentPage(1)
-  }
+    setSearchTerm(e.target.value);
+    setCurrentPage(1);
+  };
 
   const filteredItems = dbItems.filter((item) => {
-    const term = searchTerm.toLowerCase()
+    const term = searchTerm.toLowerCase();
     return (
       (item.nombre && item.nombre.toLowerCase().includes(term)) ||
       (item.codigo && item.codigo.toLowerCase().includes(term))
-    )
-  })
+    );
+  });
 
-  const totalPages = Math.ceil(filteredItems.length / ITEMS_PER_PAGE) || 1
-  const indexOfLastItem = currentPage * ITEMS_PER_PAGE
-  const indexOfFirstItem = indexOfLastItem - ITEMS_PER_PAGE
+  const totalPages = Math.ceil(filteredItems.length / itemsPerPage) || 1;
+  const indexOfLastItem = currentPage * itemsPerPage;
+  const indexOfFirstItem = indexOfLastItem - itemsPerPage;
   const currentPaginatedItems = filteredItems.slice(
     indexOfFirstItem,
     indexOfLastItem,
-  )
+  );
 
   const handleSaveStock = async () => {
-    if (!editingItem) return
-    const parsedStock = parseFloat(newStockValue)
+    if (!editingItem) return;
+    const parsedStock = parseFloat(newStockValue);
     if (isNaN(parsedStock) || parsedStock < 0)
-      return alert("Cantidad no válida.")
+      return alert("Cantidad no válida.");
 
     try {
       const res = await fetch(
@@ -97,68 +127,68 @@ export default function Inventory({ isUploadModalOpen, onCloseUploadModal }) {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ stock: parsedStock }),
         },
-      )
+      );
 
       if (res.ok) {
         setDbItems(
           dbItems.map((i) =>
             i.id === editingItem.id ? { ...i, stock_actual: parsedStock } : i,
           ),
-        )
-        setEditingItem(null)
+        );
+        setEditingItem(null);
       }
     } catch (err) {
-      console.error("Error guardando stock:", err)
+      console.error("Error guardando stock:", err);
     }
-  }
+  };
 
   const handleDeleteItem = async () => {
-    if (!deletingItem) return
+    if (!deletingItem) return;
 
     try {
       const res = await fetch(
         `http://localhost:3001/api/materias-primas/${deletingItem.id}`,
         { method: "DELETE" },
-      )
+      );
 
       if (res.ok) {
-        setDbItems(dbItems.filter((i) => i.id !== deletingItem.id))
-        setDeletingItem(null)
+        setDbItems(dbItems.filter((i) => i.id !== deletingItem.id));
+        setDeletingItem(null);
         if (currentPaginatedItems.length === 1 && currentPage > 1) {
-          setCurrentPage((prev) => prev - 1)
+          setCurrentPage((prev) => prev - 1);
         }
       }
     } catch (err) {
-      console.error("Error eliminando materia prima:", err)
+      console.error("Error eliminando materia prima:", err);
     }
-  }
+  };
 
   const onDrop = useCallback(
     (acceptedFiles) => {
-      const file = acceptedFiles[0]
-      if (!file) return
+      const file = acceptedFiles[0];
+      if (!file) return;
 
-      const reader = new FileReader()
+      const reader = new FileReader();
       reader.onload = (e) => {
-        const buffer = e.target.result
-        const workbook = XLSX.read(buffer, { type: "binary" })
-        const sheetName = workbook.SheetNames[0]
+        const buffer = e.target.result;
+        const workbook = XLSX.read(buffer, { type: "binary" });
+        const sheetName = workbook.SheetNames[0];
         const rawRows = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], {
           header: 1,
-        })
+        });
 
-        const parsedProducts = []
+        const parsedProducts = [];
 
         rawRows.forEach((row) => {
-          if (!row || row.length < 2) return
-          const col0 = row[0] ? String(row[0]).trim() : ""
-          const col1 = row[1] ? String(row[1]).trim() : ""
-          const col2 = row[2] ? String(row[2]).trim() : ""
+          if (!row || row.length < 2) return;
+          const col0 = row[0] ? String(row[0]).trim() : "";
+          const col1 = row[1] ? String(row[1]).trim() : "";
+          const col2 = row[2] ? String(row[2]).trim() : "";
 
-          if (!col0 || !col1) return
-          if (EXCLUDED_HEADERS.includes(col0.toUpperCase())) return
+          if (!col0 || !col1) return;
+          if (EXCLUDED_HEADERS.includes(col0.toUpperCase())) return;
 
-          const codeUpper = col0.toUpperCase()
+          const codeUpper = col0.toUpperCase();
 
           if (!parsedProducts.some((p) => p.codigo === codeUpper)) {
             parsedProducts.push({
@@ -166,29 +196,29 @@ export default function Inventory({ isUploadModalOpen, onCloseUploadModal }) {
               nombre: col1,
               unidad: col2 || "Unidades",
               orden: parsedProducts.length,
-            })
+            });
           }
-        })
+        });
 
-        const dbCodesUpper = dbItems.map((i) => i.codigo.toUpperCase())
+        const dbCodesUpper = dbItems.map((i) => i.codigo.toUpperCase());
         const toAdd = parsedProducts.filter(
           (p) => !dbCodesUpper.includes(p.codigo),
-        )
-        const excelCodesUpper = parsedProducts.map((p) => p.codigo)
+        );
+        const excelCodesUpper = parsedProducts.map((p) => p.codigo);
         const toRemove = dbItems.filter(
           (i) => !excelCodesUpper.includes(i.codigo.toUpperCase()),
-        )
+        );
 
-        setExcelData(parsedProducts)
-        setDiffAdditions(toAdd)
-        setDiffDeletions(toRemove)
-        setSelectedToAdd(toAdd.map((i) => i.codigo))
-        setSelectedToRemove([])
-      }
-      reader.readAsBinaryString(file)
+        setExcelData(parsedProducts);
+        setDiffAdditions(toAdd);
+        setDiffDeletions(toRemove);
+        setSelectedToAdd(toAdd.map((i) => i.codigo));
+        setSelectedToRemove([]);
+      };
+      reader.readAsBinaryString(file);
     },
     [dbItems],
-  )
+  );
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
@@ -199,12 +229,12 @@ export default function Inventory({ isUploadModalOpen, onCloseUploadModal }) {
       "application/vnd.ms-excel": [".xls"],
     },
     multiple: false,
-  })
+  });
 
   const handleConfirmSync = async () => {
     const paraAgregar = diffAdditions.filter((i) =>
       selectedToAdd.includes(i.codigo),
-    )
+    );
 
     try {
       const res = await fetch(
@@ -217,28 +247,28 @@ export default function Inventory({ isUploadModalOpen, onCloseUploadModal }) {
             paraEliminarIds: selectedToRemove,
           }),
         },
-      )
+      );
 
       if (res.ok) {
-        await fetchInventory()
-        handleCloseUploadModal()
-        setCurrentPage(1)
+        await fetchInventory();
+        handleCloseUploadModal();
+        setCurrentPage(1);
       }
     } catch (err) {
-      console.error("Error sincronizando:", err)
+      console.error("Error sincronizando:", err);
     }
-  }
+  };
 
   const handleCloseUploadModal = () => {
-    setExcelData(null)
-    setDiffAdditions([])
-    setDiffDeletions([])
-    onCloseUploadModal()
-  }
+    setExcelData(null);
+    setDiffAdditions([]);
+    setDiffDeletions([]);
+    onCloseUploadModal();
+  };
 
   return (
     <div className="h-full flex flex-col font-mono text-white min-h-0 select-none">
-      {/* HEADER TIPO LA IMAGEN DE REFERENCIA */}
+      {/* HEADER DE MÓDULO */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b-2 border-[#1E2842] pb-3 shrink-0">
         <div>
           <h2 className="font-pixel text-2xl text-white">
@@ -270,9 +300,9 @@ export default function Inventory({ isUploadModalOpen, onCloseUploadModal }) {
         </div>
       </div>
 
-      {/* TABLA DE MATERIAS PRIMAS */}
+      {/* CONTENEDOR PRINCIPAL RESPONSIVO */}
       <div className="flex-1 overflow-hidden pt-4 min-h-0">
-        <div className="bg-[#0E1322] border-2 border-[#1E2842] shadow-2xl h-full flex flex-col">
+        <div className="bg-[#0E1322] border-2 border-[#1E2842] shadow-2xl h-full flex flex-col justify-between overflow-hidden">
           {loading ? (
             <div className="p-12 text-center text-slate-400 font-pixel">
               Cargando materias primas...
@@ -285,11 +315,18 @@ export default function Inventory({ isUploadModalOpen, onCloseUploadModal }) {
             </div>
           ) : (
             <>
-              <div className="flex-1 overflow-y-auto min-h-0">
-                <table className="w-full text-left text-xs border-collapse">
-                  <thead className="sticky top-0 z-10 bg-[#161C2E] border-b-2 border-[#1E2842] shadow-sm">
+              {/* CONTENEDOR MEDIBLE DE TABLA */}
+              <div
+                className="flex-1 overflow-hidden flex flex-col"
+                ref={tableContainerRef}
+              >
+                <table className="w-full text-left text-xs border-collapse table-fixed">
+                  <thead
+                    className="bg-[#161C2E] border-b-2 border-[#1E2842]"
+                    ref={tableHeaderRef}
+                  >
                     <tr className="text-[#00E5FF] font-pixel text-sm">
-                      <th className="p-3 border-r border-[#1E2842] w-44">
+                      <th className="p-3 border-r border-[#1E2842] w-40">
                         Código
                       </th>
                       <th className="p-3 border-r border-[#1E2842]">
@@ -308,27 +345,30 @@ export default function Inventory({ isUploadModalOpen, onCloseUploadModal }) {
                     {currentPaginatedItems.map((item) => (
                       <tr
                         key={item.id}
-                        className="hover:bg-[#161C2E]/50 text-slate-200 transition-colors"
+                        className="h-[44px] max-h-[44px] hover:bg-[#161C2E]/50 text-slate-200 transition-colors overflow-hidden"
                       >
-                        <td className="p-3 border-r border-[#1E2842]/40 font-pixel text-[#FF5500] font-bold">
+                        <td className="px-3 py-2 border-r border-[#1E2842]/40 font-pixel text-[#FF5500] font-bold whitespace-nowrap truncate">
                           {item.codigo}
                         </td>
-                        <td className="p-3 border-r border-[#1E2842]/40 font-bold text-white">
+                        <td
+                          className="px-3 py-2 border-r border-[#1E2842]/40 font-bold text-white whitespace-nowrap truncate"
+                          title={item.nombre}
+                        >
                           {item.nombre}
                         </td>
-                        <td className="p-3 border-r border-[#1E2842]/40 text-slate-400 uppercase font-pixel text-[11px]">
+                        <td className="px-3 py-2 border-r border-[#1E2842]/40 text-slate-400 uppercase font-pixel text-[11px] whitespace-nowrap truncate">
                           {item.unidad_medida || item.unidad || "Unidades"}
                         </td>
-                        <td className="p-3 border-r border-[#1E2842]/40 text-right font-pixel text-sm text-white font-bold">
+                        <td className="px-3 py-2 border-r border-[#1E2842]/40 text-right font-pixel text-sm text-white font-bold whitespace-nowrap">
                           {item.stock_actual}
                         </td>
 
-                        <td className="p-3 text-center">
+                        <td className="px-3 py-2 text-center whitespace-nowrap">
                           <div className="flex items-center justify-center gap-2">
                             <button
                               onClick={() => {
-                                setEditingItem(item)
-                                setNewStockValue(item.stock_actual)
+                                setEditingItem(item);
+                                setNewStockValue(item.stock_actual);
                               }}
                               className="p-1.5 bg-[#111625] border border-[#1E2842] text-slate-300 hover:text-[#FF5500] hover:border-[#FF5500] transition-colors"
                               title="Editar Stock"
@@ -351,7 +391,7 @@ export default function Inventory({ isUploadModalOpen, onCloseUploadModal }) {
                 </table>
               </div>
 
-              {/* PAGINACIÓN */}
+              {/* PAGINACIÓN ADAPTATIVA */}
               <div className="flex flex-col sm:flex-row items-center justify-between gap-3 p-3 bg-[#111625] border-t-2 border-[#1E2842] font-pixel text-xs shrink-0">
                 <div className="text-slate-400">
                   Mostrando{" "}
@@ -418,7 +458,7 @@ export default function Inventory({ isUploadModalOpen, onCloseUploadModal }) {
         </div>
       </div>
 
-      {/* MODAL EDITAR STOCK */}
+      {/* MODALES */}
       {editingItem && (
         <div className="fixed inset-0 bg-black/85 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-[#0E1322] border-2 border-[#FF5500] w-full max-w-md p-5 shadow-2xl space-y-4 relative font-mono">
@@ -472,7 +512,6 @@ export default function Inventory({ isUploadModalOpen, onCloseUploadModal }) {
         </div>
       )}
 
-      {/* MODAL ADVERTENCIA ELIMINAR */}
       {deletingItem && (
         <div className="fixed inset-0 bg-black/85 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-[#0E1322] border-2 border-red-500 w-full max-w-md p-5 shadow-2xl space-y-4 relative font-mono">
@@ -510,7 +549,6 @@ export default function Inventory({ isUploadModalOpen, onCloseUploadModal }) {
         </div>
       )}
 
-      {/* MODAL SINCRONIZAR EXCEL */}
       {isUploadModalOpen && (
         <div className="fixed inset-0 bg-black/85 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-[#0E1322] border-2 border-[#FF5500] w-full max-w-2xl p-6 shadow-2xl space-y-4 relative font-mono">
@@ -596,5 +634,5 @@ export default function Inventory({ isUploadModalOpen, onCloseUploadModal }) {
         </div>
       )}
     </div>
-  )
+  );
 }

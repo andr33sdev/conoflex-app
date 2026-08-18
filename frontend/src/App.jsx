@@ -1,19 +1,20 @@
-import { useState } from "react"
-import Layout from "./Layout"
-import Inventory from "./Inventory"
-import Semielaborados from "./Semielaborados"
-import Ingenieria from "./Ingenieria"
+import { useState } from "react";
+import Layout from "./Layout";
+import Inventory from "./Inventory";
+import Semielaborados from "./Semielaborados";
+import Reflectivas from "./Reflectivas";
+import Ingenieria from "./Ingenieria";
 
 function App() {
-  const [activeModule, setActiveModule] = useState("materias-primas")
-  const [isUploadModalOpen, setIsUploadModalOpen] = useState(false)
-  const [isReloading, setIsReloading] = useState(false)
-  const [reloadKey, setReloadKey] = useState(0)
+  const [activeModule, setActiveModule] = useState("materias-primas");
+  const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
+  const [isReloading, setIsReloading] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
 
   const handleReloadSheets = async () => {
-    if (activeModule !== "semielaborados") return
+    if (activeModule !== "semielaborados") return;
 
-    setIsReloading(true)
+    setIsReloading(true);
     try {
       const res = await fetch(
         "http://localhost:3001/api/semielaborados/recargar-sheets",
@@ -21,17 +22,17 @@ function App() {
           method: "POST",
           headers: { "Content-Type": "application/json" },
         },
-      )
+      );
 
       if (res.ok) {
-        setReloadKey((prev) => prev + 1)
+        setReloadKey((prev) => prev + 1);
       }
     } catch (err) {
-      console.error("Error al recargar desde Google Sheets:", err)
+      console.error("Error al recargar desde Google Sheets:", err);
     } finally {
-      setIsReloading(false)
+      setIsReloading(false);
     }
-  }
+  };
 
   return (
     <Layout
@@ -59,11 +60,16 @@ function App() {
         />
       )}
 
-      {/* MÓDULO 3: INGENIERÍAS (RECETAS DE CRAFTEO) */}
+      {/* MÓDULO 3: REFLECTIVAS Y PEGADO */}
+      {activeModule === "reflectivas" && <Reflectivas key={reloadKey} />}
+
+      {/* MÓDULO 4: INGENIERÍAS (RECETAS DE CRAFTEO) */}
       {activeModule === "ingenieria" && <Ingenieria />}
 
+      {/* FALLBACK EN DESARROLLO */}
       {activeModule !== "materias-primas" &&
         activeModule !== "semielaborados" &&
+        activeModule !== "reflectivas" &&
         activeModule !== "ingenieria" && (
           <div className="text-center py-20 text-conoflex-muted space-y-3 font-pixel">
             <p className="text-2xl text-white">
@@ -73,7 +79,7 @@ function App() {
           </div>
         )}
     </Layout>
-  )
+  );
 }
 
-export default App
+export default App;

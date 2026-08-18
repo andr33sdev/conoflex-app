@@ -1,7 +1,8 @@
-import { useState } from "react"
+import { useState } from "react";
 import {
   Package,
   Layers,
+  Sparkles,
   FlaskConical,
   ArrowLeftRight,
   Settings,
@@ -10,7 +11,7 @@ import {
   Menu,
   X,
   Circle,
-} from "lucide-react"
+} from "lucide-react";
 
 export default function Layout({
   children,
@@ -20,18 +21,19 @@ export default function Layout({
   onReloadSheets,
   isReloading,
 }) {
-  const [mobileOpen, setMobileOpen] = useState(false)
+  const [mobileOpen, setMobileOpen] = useState(false);
 
   const menuItems = [
     { id: "materias-primas", label: "Materias Primas", icon: Package },
     { id: "semielaborados", label: "Semielaborados", icon: Layers },
+    { id: "reflectivas", label: "Reflectivas", icon: Sparkles },
     { id: "ingenieria", label: "Ingeniería", icon: FlaskConical },
     { id: "movimientos", label: "Movimientos Stock", icon: ArrowLeftRight },
     { id: "configuraciones", label: "Configuración", icon: Settings },
-  ]
+  ];
 
   const showHeaderActions =
-    activeModule === "materias-primas" || activeModule === "semielaborados"
+    activeModule === "materias-primas" || activeModule === "semielaborados";
 
   return (
     <div className="h-[100dvh] p-2 md:p-5 flex items-center justify-center font-mono bg-[#070A12] overflow-hidden select-none">
@@ -46,9 +48,6 @@ export default function Layout({
               <div className="flex items-center gap-2">
                 <span className="font-pixel text-2xl text-[#FF5500] font-bold tracking-wider drop-shadow-sm">
                   CONOFLEX
-                </span>
-                <span className="text-[10px] bg-[#00E5FF]/10 text-[#00E5FF] border border-[#00E5FF]/40 px-1.5 py-0.5 font-pixel hidden sm:inline-block">
-                  INDIE v1.0
                 </span>
               </div>
               <p className="text-[11px] text-slate-400 truncate">
@@ -117,14 +116,14 @@ export default function Layout({
               </div>
 
               {menuItems.map((item) => {
-                const Icon = item.icon
-                const isSelected = activeModule === item.id
+                const Icon = item.icon;
+                const isSelected = activeModule === item.id;
                 return (
                   <button
                     key={item.id}
                     onClick={() => {
-                      setActiveModule(item.id)
-                      setMobileOpen(false)
+                      setActiveModule(item.id);
+                      setMobileOpen(false);
                     }}
                     className={`
                       w-full flex items-center gap-3 px-3 py-2.5 text-xs font-semibold transition-all duration-150 border-l-4 text-left group
@@ -144,23 +143,13 @@ export default function Layout({
                       }
                     />
                     <span className="flex-1">{item.label}</span>
-                    {isSelected && (
-                      <Circle
-                        size={6}
-                        className="fill-[#00E5FF] text-[#00E5FF] animate-pulse"
-                      />
-                    )}
                   </button>
-                )
+                );
               })}
             </div>
 
             <div className="pt-3 border-t border-[#1E2842] text-[11px] text-slate-400 flex items-center justify-between px-2 shrink-0">
-              <span className="font-pixel">FEROZO DB</span>
-              <span className="text-[#00E5FF] flex items-center gap-1 font-pixel">
-                <span className="w-2 h-2 rounded-full bg-[#00E5FF] animate-ping inline-block" />
-                ONLINE
-              </span>
+              <span className="font-pixel">Conoflex Argentina</span>
             </div>
           </aside>
 
@@ -170,5 +159,5 @@ export default function Layout({
         </div>
       </div>
     </div>
-  )
+  );
 }
