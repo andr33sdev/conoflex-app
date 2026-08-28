@@ -24,6 +24,9 @@ const STOCK_URLS = {
   stock_37: "PEGA_AQUI_LA_URL_DE_STOCK_37",
 };
 
+const PRODUCCION_CSV_URL =
+  "https://docs.google.com/spreadsheets/d/e/2PACX-1vTjGR3uoF0y5zooNuJEVUpGCVWyGr0Y6_HIMi-xtQgQOlIIHcru5zG6z_jUfrNU_XAFLD7FfLYu7HyY/pub?gid=0&single=true&output=csv";
+
 const EXCLUDED_CODES = [
   "CODIGO",
   "ARTICULO",
@@ -48,7 +51,7 @@ const EXCLUDED_CODES = [
 const db = new Database("conoflex_local.db");
 
 // ==========================================
-// 1. CREACIÓN DE TABLAS BASE
+// 1. TABLAS BASE
 // ==========================================
 db.exec(`
   CREATE TABLE IF NOT EXISTS materias_primas (
@@ -117,10 +120,24 @@ db.exec(`
     FOREIGN KEY (materia_prima_id) REFERENCES materias_primas (id) ON DELETE CASCADE,
     FOREIGN KEY (semielaborado_id) REFERENCES semielaborados (id) ON DELETE CASCADE
   );
+
+  CREATE TABLE IF NOT EXISTS registro_produccion (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    fecha TEXT,
+    categoria_maq TEXT,
+    codigo TEXT,
+    articulo TEXT,
+    cant_buenos REAL DEFAULT 0,
+    segunda_calidad REAL DEFAULT 0,
+    cant_fallas REAL DEFAULT 0,
+    kg_total REAL DEFAULT 0,
+    kg_fallas REAL DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
 `);
 
 // ==========================================
-// 2. MIGRACIONES DINÁMICAS SEGURAS
+// 2. MIGRACIONES DINÁMICAS
 // ==========================================
 const tblSEInfo = db.prepare("PRAGMA table_info(semielaborados)").all();
 if (!tblSEInfo.some((c) => c.name === "configuracion_pegado_id")) {
@@ -130,15 +147,49 @@ if (!tblSEInfo.some((c) => c.name === "configuracion_pegado_id")) {
 }
 
 // ==========================================
-// 3. FUNCIONES AUXILIARES
+// 3. PARSER CSV COMPLETO (MULTILÍNEA Y COMILLAS)
 // ==========================================
-function getCurrentLocalTime() {
-  return new Date()
-    .toLocaleString("es-AR", {
-      timeZone: "America/Argentina/Buenos_Aires",
-      hour12: false,
-    })
-    .replace(",", "");
+function parseCSVFull(text) {
+  const rows = [];
+  let row = [];
+  let current = "";
+  let inQuotes = false;
+
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i];
+    const nextChar = text[i + 1] || "";
+
+    if (char === '"') {
+      if (inQuotes && nextChar === '"') {
+        current += '"';
+        i++;
+      } else {
+        inQuotes = !inQuotes;
+      }
+    } else if (char === "," && !inQuotes) {
+      row.push(current.trim());
+      current = "";
+    } else if ((char === "\r" || char === "\n") && !inQuotes) {
+      if (char === "\r" && nextChar === "\n") i++;
+      row.push(current.trim());
+      if (row.length > 1 || row[0] !== "") {
+        rows.push(row);
+      }
+      row = [];
+      current = "";
+    } else {
+      current += char;
+    }
+  }
+
+  if (current || row.length > 0) {
+    row.push(current.trim());
+    if (row.length > 1 || row[0] !== "") {
+      rows.push(row);
+    }
+  }
+
+  return rows;
 }
 
 function parseCSVLine(line) {
@@ -169,8 +220,7 @@ function parseFechaDeterminista(rawStr) {
       let year = parseInt(parts[2], 10);
       if (isNaN(day) || isNaN(month) || isNaN(year)) return null;
       if (year < 100) year += 2000;
-      const d = new Date(year, month - 1, day);
-      if (!isNaN(d.getTime())) return d;
+      return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
     }
   }
 
@@ -183,17 +233,112 @@ function parseFechaDeterminista(rawStr) {
       if (isNaN(p0) || isNaN(p1) || isNaN(p2)) return null;
 
       if (p0 > 1000) {
-        const d = new Date(p0, p1 - 1, p2);
-        if (!isNaN(d.getTime())) return d;
+        return `${p0}-${String(p1).padStart(2, "0")}-${String(p2).padStart(2, "0")}`;
       } else {
         const year = p2 < 100 ? p2 + 2000 : p2;
-        const d = new Date(year, p1 - 1, p0);
-        if (!isNaN(d.getTime())) return d;
+        return `${year}-${String(p1).padStart(2, "0")}-${String(p0).padStart(2, "0")}`;
       }
     }
   }
 
   return null;
+}
+
+// ALGORITMO DE AUTO-INFERENCIA DE MÁQUINA POR PATRÓN DE SKU
+function inferMachineCategory(codigo, articulo) {
+  const cod = String(codigo || "")
+    .trim()
+    .toUpperCase();
+  const art = String(articulo || "")
+    .trim()
+    .toUpperCase();
+
+  if (
+    cod.startsWith("B1200") ||
+    cod.startsWith("B2853") ||
+    cod.startsWith("1200L") ||
+    cod.startsWith("1570L") ||
+    cod.startsWith("B2071") ||
+    cod.startsWith("5023") ||
+    cod.startsWith("LP2016") ||
+    cod.startsWith("1200 S/B") ||
+    cod.startsWith("NPC2020") ||
+    cod.startsWith("MP2022") ||
+    cod.startsWith("1570LSF") ||
+    cod.startsWith("B1570") ||
+    cod.startsWith("4000") ||
+    cod.startsWith("4001") ||
+    cod.startsWith("ORUGA") ||
+    cod.startsWith("MP3041") ||
+    cod.startsWith("MP3040") ||
+    cod.startsWith("MP2009 NE")
+  ) {
+    return "EXTRUSIÓN";
+  }
+  if (
+    art.includes("BASE") ||
+    art.includes("CALZA") ||
+    art.includes("TOPE") ||
+    art.includes("ORUGA") ||
+    art.includes("SUBIDA") ||
+    art.includes("SCRAP")
+  ) {
+    return "EXTRUSIÓN";
+  }
+
+  if (
+    cod.startsWith("1311") ||
+    cod.startsWith("1301") ||
+    cod.startsWith("2703") ||
+    cod.startsWith("2401") ||
+    cod.startsWith("2853") ||
+    cod.startsWith("2901") ||
+    cod.startsWith("2953") ||
+    cod.startsWith("3701") ||
+    cod.startsWith("3702") ||
+    cod.startsWith("3805") ||
+    cod.startsWith("2050") ||
+    cod.startsWith("2051") ||
+    cod.startsWith("DRD750") ||
+    cod.startsWith("2702") ||
+    cod.startsWith("2950") ||
+    cod.startsWith("CPC27")
+  ) {
+    return "ROTOMOLDEO";
+  }
+  if (
+    art.includes("BARRERA") ||
+    art.includes("SUBURBANO") ||
+    art.includes("CABALLETE") ||
+    art.includes("ANTICHOQUE") ||
+    art.includes("AUTOPISTA") ||
+    art.includes("VALLA") ||
+    art.includes("COLUMNA") ||
+    art.includes("PALETA") ||
+    art.includes("CARTEL")
+  ) {
+    return "ROTOMOLDEO";
+  }
+
+  if (
+    cod.startsWith("2300") ||
+    cod.startsWith("2012") ||
+    cod.startsWith("2016") ||
+    cod.startsWith("MP2009 LIGHT") ||
+    cod.startsWith("MP2012")
+  ) {
+    return "INYECCIÓN";
+  }
+  if (
+    art.includes("VENCEDOR") ||
+    art.includes("LIGHT") ||
+    art.includes("INYECCION") ||
+    art.includes("INYECCIÓN")
+  ) {
+    return "INYECCIÓN";
+  }
+
+  return "ROTOMOLDEO";
 }
 
 // ==========================================
@@ -224,19 +369,19 @@ app.put("/api/materias-primas/:id/stock", (req, res) => {
 });
 
 // ==========================================
-// MÓDULO 2: CONFIGURACIONES DE PEGADO & REFLECTIVAS
+// MÓDULO 2: CONFIGURACIONES DE PEGADO Y REFLECTIVAS
 // ==========================================
 app.get("/api/configuraciones-pegado", (req, res) => {
   try {
     const rows = db
       .prepare(
         `
-        SELECT c.*, COUNT(s.id) as semielaborados_count
-        FROM configuraciones_pegado c
-        LEFT JOIN semielaborados s ON s.configuracion_pegado_id = c.id
-        GROUP BY c.id
-        ORDER BY c.nombre ASC
-      `,
+      SELECT c.*, COUNT(s.id) as semielaborados_count
+      FROM configuraciones_pegado c
+      LEFT JOIN semielaborados s ON s.configuracion_pegado_id = c.id
+      GROUP BY c.id
+      ORDER BY c.nombre ASC
+    `,
       )
       .all();
     res.json(rows);
@@ -248,17 +393,16 @@ app.get("/api/configuraciones-pegado", (req, res) => {
 app.post("/api/configuraciones-pegado", (req, res) => {
   const { nombre, reflectiva, protector_orajet, aplicacion_protector } =
     req.body;
-  if (!nombre || !nombre.trim()) {
-    return res.status(400).json({ error: "El nombre es obligatorio." });
-  }
+  if (!nombre || !nombre.trim())
+    return res.status(400).json({ error: "Nombre requerido" });
 
   try {
     const info = db
       .prepare(
         `
-        INSERT INTO configuraciones_pegado (nombre, reflectiva, protector_orajet, aplicacion_protector)
-        VALUES (?, ?, ?, ?)
-      `,
+      INSERT INTO configuraciones_pegado (nombre, reflectiva, protector_orajet, aplicacion_protector)
+      VALUES (?, ?, ?, ?)
+    `,
       )
       .run(
         nombre.trim().toUpperCase(),
@@ -325,9 +469,8 @@ app.put("/api/semielaborados/:id/enlazar-pegado", (req, res) => {
 
 app.post("/api/semielaborados/bulk-enlazar-pegado", (req, res) => {
   const { ids, configuracion_pegado_id } = req.body;
-  if (!ids || !Array.isArray(ids)) {
+  if (!ids || !Array.isArray(ids))
     return res.status(400).json({ error: "IDs no válidos" });
-  }
 
   try {
     const stmt = db.prepare(
@@ -345,7 +488,7 @@ app.post("/api/semielaborados/bulk-enlazar-pegado", (req, res) => {
 });
 
 // ==========================================
-// MÓDULO 3: SEMIELABORADOS Y DÍAS DE STOCK
+// MÓDULO 3: SEMIELABORADOS Y CRUCE DE DÍAS DE STOCK
 // ==========================================
 app.get("/api/semielaborados", (req, res) => {
   try {
@@ -357,6 +500,11 @@ app.get("/api/semielaborados", (req, res) => {
                c.reflectiva,
                c.protector_orajet,
                c.aplicacion_protector,
+               (
+                 SELECT MAX(rp.fecha) 
+                 FROM registro_produccion rp 
+                 WHERE UPPER(rp.codigo) = UPPER(s.codigo) OR UPPER(rp.articulo) = UPPER(s.nombre)
+               ) as ultima_produccion_fecha,
                COUNT(i.id) as recetas_count 
         FROM semielaborados s 
         LEFT JOIN configuraciones_pegado c ON s.configuracion_pegado_id = c.id
@@ -411,6 +559,7 @@ app.get("/api/semielaborados", (req, res) => {
         demand > 0 ? Math.round((totalStock / demand) * 30) : null;
       return {
         ...se,
+        stock_total: totalStock,
         demanda_mensual: Math.round(demand),
         dias_stock: dias_stock,
       };
@@ -473,16 +622,16 @@ app.post("/api/semielaborados/recargar-sheets", async (req, res) => {
 });
 
 // ==========================================
-// MÓDULO 4: PRODUCTOS TERMINADOS (VENTAS)
+// MÓDULO 4: PRODUCTOS TERMINADOS Y VENTAS
 // ==========================================
 app.get("/api/productos-terminados", (req, res) => {
   try {
     const rows = db
       .prepare(
         `
-        SELECT p.*, COUNT(i.id) as recetas_count FROM productos_terminados p 
-        LEFT JOIN ingenierias i ON p.id = i.producto_terminado_id GROUP BY p.id ORDER BY p.orden ASC, p.id ASC
-      `,
+      SELECT p.*, COUNT(i.id) as recetas_count FROM productos_terminados p 
+      LEFT JOIN ingenierias i ON p.id = i.producto_terminado_id GROUP BY p.id ORDER BY p.orden ASC, p.id ASC
+    `,
       )
       .all();
     res.json(rows);
@@ -507,10 +656,10 @@ app.post("/api/productos-terminados/sincronizar-ventas", async (req, res) => {
         .json({ error: "No se pudo acceder a la URL del CSV" });
 
     const csvText = await response.text();
-    const lines = csvText.split("\n");
+    const lines = parseCSVFull(csvText);
     if (lines.length < 2) return res.status(400).json({ error: "CSV vacío" });
 
-    const headers = parseCSVLine(lines[0]).map((h) => h.toUpperCase().trim());
+    const headers = lines[0].map((h) => h.toUpperCase().trim());
     const idxFecha = headers.indexOf("FECHA");
     const idxModelo = headers.indexOf("MODELO");
     const idxCantidad = headers.indexOf("CANTIDAD");
@@ -526,7 +675,7 @@ app.post("/api/productos-terminados/sincronizar-ventas", async (req, res) => {
     const parsedRows = [];
 
     for (let i = 1; i < lines.length; i++) {
-      const cols = parseCSVLine(lines[i]);
+      const cols = lines[i];
       if (cols.length <= Math.max(idxFecha, idxModelo, idxCantidad)) continue;
 
       const estado =
@@ -535,7 +684,8 @@ app.post("/api/productos-terminados/sincronizar-ventas", async (req, res) => {
 
       const d = parseFechaDeterminista(cols[idxFecha]);
       if (d) {
-        if (d > maxFecha) maxFecha = d;
+        const dateObj = new Date(d);
+        if (dateObj > maxFecha) maxFecha = dateObj;
 
         let cant = parseFloat(cols[idxCantidad].replace(",", "."));
         if (isNaN(cant)) cant = 0;
@@ -549,7 +699,7 @@ app.post("/api/productos-terminados/sincronizar-ventas", async (req, res) => {
         }
 
         if (cod && cant > 0) {
-          parsedRows.push({ date: d, cod, cant });
+          parsedRows.push({ date: dateObj, cod, cant });
         }
       }
     }
@@ -633,7 +783,7 @@ app.get("/api/ingenierias/producto-terminado/:id", (req, res) => {
 app.post("/api/ingenierias", (req, res) => {
   const { parent_id, parent_type, nombre_version, es_activa, ingredientes } =
     req.body;
-  const now = getCurrentLocalTime();
+  const now = new Date().toISOString();
   try {
     const isSE = parent_type === "SE";
     const insertIngenieria = db.prepare(
@@ -678,7 +828,7 @@ app.put("/api/ingenierias/:id", (req, res) => {
   const { id } = req.params;
   const { parent_id, parent_type, nombre_version, es_activa, ingredientes } =
     req.body;
-  const now = getCurrentLocalTime();
+  const now = new Date().toISOString();
   try {
     const isSE = parent_type === "SE";
     const updateIngenieria = db.prepare(
@@ -725,7 +875,7 @@ app.put("/api/ingenierias/:id/activar", (req, res) => {
       ).run(parent_id);
       db.prepare(
         `UPDATE ingenierias SET es_activa = 1, updated_at = ? WHERE id = ?`,
-      ).run(getCurrentLocalTime(), id);
+      ).run(new Date().toISOString(), id);
     })();
     res.json({ success: true });
   } catch (error) {
@@ -737,6 +887,138 @@ app.delete("/api/ingenierias/:id", (req, res) => {
   try {
     db.prepare(`DELETE FROM ingenierias WHERE id = ?`).run(req.params.id);
     res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ==========================================
+// MÓDULO 6: REGISTRO DE PRODUCCIÓN (MÉTRICAS)
+// ==========================================
+app.get("/api/metricas/produccion", (req, res) => {
+  try {
+    const rows = db
+      .prepare("SELECT * FROM registro_produccion ORDER BY fecha DESC, id DESC")
+      .all();
+    res.json(rows);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post("/api/metricas/recargar", async (req, res) => {
+  const csvUrl = req.body?.csvUrl || PRODUCCION_CSV_URL;
+  if (!csvUrl || csvUrl.startsWith("PEGA_AQUI")) {
+    return res
+      .status(400)
+      .json({ error: "Pega la URL del Google Sheets en PRODUCCION_CSV_URL" });
+  }
+
+  try {
+    const response = await fetch(csvUrl);
+    if (!response.ok)
+      return res
+        .status(400)
+        .json({ error: "No se pudo descargar el archivo CSV" });
+
+    const text = await response.text();
+    const rows = parseCSVFull(text);
+    if (rows.length < 2)
+      return res.status(400).json({ error: "El archivo está vacío" });
+
+    const headers = rows[0].map((h) =>
+      h
+        .toUpperCase()
+        .replace(/\r?\n|\r|\t/g, " ")
+        .replace(/\s+/g, " ")
+        .trim(),
+    );
+
+    const idxFecha = headers.findIndex((h) => h.includes("FECHA"));
+    const idxMaq = headers.findIndex(
+      (h) => h.includes("CATEGORÍA MÁQ") || h.includes("CATEGORIA MÁQ"),
+    );
+    const idxCodigo = headers.findIndex(
+      (h) => h === "CODIGO" || h === "CÓDIGO",
+    );
+    const idxArticulo = headers.findIndex(
+      (h) => h === "ARTICULO" || h === "ARTÍCULO",
+    );
+    const idxBuenos = headers.findIndex(
+      (h) => h.includes("CANT. BUENOS") || h.includes("BUENOS"),
+    );
+    const idxSegunda = headers.findIndex(
+      (h) => h.includes("SEGUNDA CALIDAD") || h.includes("SEGUNDA"),
+    );
+    const idxFallas = headers.findIndex(
+      (h) => h.includes("CANT. FALLAS") || h.includes("FALLAS"),
+    );
+    const idxKgTotal = headers.findIndex(
+      (h) => h === "KG TOTAL" || h.includes("KG TOTAL"),
+    );
+    const idxKgFallas = headers.findIndex(
+      (h) => h === "KG FALLAS" || h.includes("KG FALLAS"),
+    );
+
+    const deleteStmt = db.prepare("DELETE FROM registro_produccion");
+    const insertStmt = db.prepare(`
+      INSERT INTO registro_produccion 
+      (fecha, categoria_maq, codigo, articulo, cant_buenos, segunda_calidad, cant_fallas, kg_total, kg_fallas)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    let count = 0;
+    db.transaction(() => {
+      deleteStmt.run();
+      for (let i = 1; i < rows.length; i++) {
+        const cols = rows[i];
+        if (cols.length < 5) continue;
+        if (
+          (!cols[idxCodigo] || cols[idxCodigo].trim() === "") &&
+          (!cols[idxArticulo] || cols[idxArticulo].trim() === "")
+        )
+          continue;
+
+        const fechaFormatted =
+          parseFechaDeterminista(cols[idxFecha]) || "1970-01-01";
+
+        const parseNum = (val) => {
+          if (!val || val === "-") return 0;
+          const num = parseFloat(String(val).replace(",", "."));
+          return isNaN(num) ? 0 : num;
+        };
+
+        const codigoVal =
+          idxCodigo !== -1 && cols[idxCodigo]
+            ? cols[idxCodigo].toUpperCase()
+            : "";
+        const articuloVal =
+          idxArticulo !== -1 && cols[idxArticulo] ? cols[idxArticulo] : "";
+
+        let catMaqVal =
+          idxMaq !== -1 && cols[idxMaq]
+            ? cols[idxMaq].toUpperCase().trim()
+            : "";
+        if (!catMaqVal || catMaqVal === "NAN" || catMaqVal === "GENERAL") {
+          catMaqVal = inferMachineCategory(codigoVal, articuloVal);
+        }
+
+        insertStmt.run(
+          fechaFormatted,
+          catMaqVal,
+          codigoVal,
+          articuloVal,
+          idxBuenos !== -1 ? parseNum(cols[idxBuenos]) : 0,
+          idxSegunda !== -1 ? parseNum(cols[idxSegunda]) : 0,
+          idxFallas !== -1 ? parseNum(cols[idxFallas]) : 0,
+          idxKgTotal !== -1 ? parseNum(cols[idxKgTotal]) : 0,
+          idxKgFallas !== -1 ? parseNum(cols[idxKgFallas]) : 0,
+        );
+        count++;
+      }
+    })();
+
+    res.json({ success: true, count });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

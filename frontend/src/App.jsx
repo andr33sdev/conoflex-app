@@ -3,6 +3,7 @@ import Layout from "./Layout";
 import Inventory from "./Inventory";
 import Semielaborados from "./Semielaborados";
 import Reflectivas from "./Reflectivas";
+import Metricas from "./Metricas";
 import Ingenieria from "./Ingenieria";
 
 function App() {
@@ -63,13 +64,17 @@ function App() {
       {/* MÓDULO 3: REFLECTIVAS Y PEGADO */}
       {activeModule === "reflectivas" && <Reflectivas key={reloadKey} />}
 
-      {/* MÓDULO 4: INGENIERÍAS (RECETAS DE CRAFTEO) */}
+      {/* MÓDULO 4: MÉTRICAS Y KPIS */}
+      {activeModule === "metricas" && <Metricas key={reloadKey} />}
+
+      {/* MÓDULO 5: INGENIERÍAS */}
       {activeModule === "ingenieria" && <Ingenieria />}
 
-      {/* FALLBACK EN DESARROLLO */}
+      {/* FALLBACK EN DESARROLLO (SÓLO SE MUESTRA EN MÓDULOS NO IMPLEMENTADOS) */}
       {activeModule !== "materias-primas" &&
         activeModule !== "semielaborados" &&
         activeModule !== "reflectivas" &&
+        activeModule !== "metricas" &&
         activeModule !== "ingenieria" && (
           <div className="text-center py-20 text-conoflex-muted space-y-3 font-pixel">
             <p className="text-2xl text-white">

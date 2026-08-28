@@ -5,6 +5,7 @@ import {
   Sparkles,
   FlaskConical,
   ArrowLeftRight,
+  TrendingUp,
   Settings,
   RotateCw,
   ArrowUp,
@@ -28,6 +29,7 @@ export default function Layout({
     { id: "semielaborados", label: "Semielaborados", icon: Layers },
     { id: "reflectivas", label: "Reflectivas", icon: Sparkles },
     { id: "ingenieria", label: "Ingeniería", icon: FlaskConical },
+    { id: "metricas", label: "Métricas & KPI", icon: TrendingUp },
     { id: "movimientos", label: "Movimientos Stock", icon: ArrowLeftRight },
     { id: "configuraciones", label: "Configuración", icon: Settings },
   ];
