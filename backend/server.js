@@ -21,7 +21,8 @@ const STOCK_URLS = {
     "https://docs.google.com/spreadsheets/d/e/2PACX-1vS8kk1oZNfS1AOk6Ylu_rE6uNDdi7BJQBkMFKACCH_dRFpeIsJW8ii5QCdhyKQbSyCaQciC2GgVKLBR/pub?gid=1229097956&single=true&output=csv",
   stock_ayolas:
     "https://docs.google.com/spreadsheets/d/e/2PACX-1vS8kk1oZNfS1AOk6Ylu_rE6uNDdi7BJQBkMFKACCH_dRFpeIsJW8ii5QCdhyKQbSyCaQciC2GgVKLBR/pub?gid=1103232715&single=true&output=csv",
-  stock_37: "PEGA_AQUI_LA_URL_DE_STOCK_37",
+  stock_37:
+    "https://docs.google.com/spreadsheets/d/e/2PACX-1vS8kk1oZNfS1AOk6Ylu_rE6uNDdi7BJQBkMFKACCH_dRFpeIsJW8ii5QCdhyKQbSyCaQciC2GgVKLBR/pub?gid=1269910757&single=true&output=csv",
 };
 
 const PRODUCCION_CSV_URL =
@@ -125,6 +126,7 @@ db.exec(`
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     fecha TEXT,
     categoria_maq TEXT,
+    codigo_ot TEXT,
     codigo TEXT,
     articulo TEXT,
     cant_buenos REAL DEFAULT 0,
@@ -132,9 +134,99 @@ db.exec(`
     cant_fallas REAL DEFAULT 0,
     kg_total REAL DEFAULT 0,
     kg_fallas REAL DEFAULT 0,
+    ingenieria_id INTEGER,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
+
+  CREATE TABLE IF NOT EXISTS cargas_produccion (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    codigo_ot TEXT NOT NULL,
+    semielaborado_codigo TEXT NOT NULL,
+    articulo TEXT,
+    cant_buenos REAL DEFAULT 0,
+    cant_fallas REAL DEFAULT 0,
+    fecha TEXT,
+    operario_nombre TEXT,
+    supervisor_nombre TEXT,
+    observaciones TEXT,
+    estado_aprobacion TEXT DEFAULT 'PENDIENTE',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE IF NOT EXISTS grupos_alerta (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    nombre TEXT NOT NULL,
+    dias_critico INTEGER NOT NULL DEFAULT 5,
+    dias_alerta INTEGER NOT NULL DEFAULT 15,
+    es_predeterminado INTEGER DEFAULT 0
+  );
+
+  CREATE TABLE IF NOT EXISTS ordenes_trabajo (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    codigo_ot TEXT NOT NULL,
+    semielaborado_codigo TEXT NOT NULL,
+    articulo TEXT,
+    maquina TEXT NOT NULL,
+    destino TEXT,
+    cant_objetivo INTEGER NOT NULL DEFAULT 1000,
+    cant_producida INTEGER DEFAULT 0,
+    kg_por_unidad REAL DEFAULT 1.0,
+    estado TEXT DEFAULT 'PROGRAMADO',
+    fecha_inicio TEXT,
+    velocidad_u_hora INTEGER DEFAULT 100,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+
+  /* ÍNDICES DE ALTO RENDIMIENTO SQLITE */
+  CREATE INDEX IF NOT EXISTS idx_ing_detalles_ing_id ON ingenieria_detalles(ingenieria_id);
+  CREATE INDEX IF NOT EXISTS idx_ing_detalles_mp_id ON ingenieria_detalles(materia_prima_id);
+  CREATE INDEX IF NOT EXISTS idx_ing_detalles_se_id ON ingenieria_detalles(semielaborado_id);
+  CREATE INDEX IF NOT EXISTS idx_ingenierias_se_id ON ingenierias(semielaborado_id);
+  CREATE INDEX IF NOT EXISTS idx_ingenierias_pt_id ON ingenierias(producto_terminado_id);
+  CREATE INDEX IF NOT EXISTS idx_cargas_estado ON cargas_produccion(estado_aprobacion);
 `);
+
+// MIGRACIÓN AUTOMÁTICA
+try {
+  const indices = db.prepare("PRAGMA index_list(ordenes_trabajo)").all();
+  const hasUnique = indices.some((idx) => idx.unique);
+  if (hasUnique) {
+    db.exec(`
+      CREATE TABLE ordenes_trabajo_temp (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        codigo_ot TEXT NOT NULL,
+        semielaborado_codigo TEXT NOT NULL,
+        articulo TEXT,
+        maquina TEXT NOT NULL,
+        destino TEXT,
+        cant_objetivo INTEGER NOT NULL DEFAULT 1000,
+        cant_producida INTEGER DEFAULT 0,
+        kg_por_unidad REAL DEFAULT 1.0,
+        estado TEXT DEFAULT 'PROGRAMADO',
+        fecha_inicio TEXT,
+        velocidad_u_hora INTEGER DEFAULT 100,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+      INSERT INTO ordenes_trabajo_temp SELECT * FROM ordenes_trabajo;
+      DROP TABLE ordenes_trabajo;
+      ALTER TABLE ordenes_trabajo_temp RENAME TO ordenes_trabajo;
+    `);
+  }
+} catch (e) {
+  console.log("Migración de ordenes_trabajo no requerida o completada.");
+}
+
+const countGrupos = db
+  .prepare("SELECT COUNT(*) as count FROM grupos_alerta")
+  .get();
+if (countGrupos.count === 0) {
+  db.prepare(
+    `
+    INSERT INTO grupos_alerta (nombre, dias_critico, dias_alerta, es_predeterminado)
+    VALUES ('General', 5, 15, 1)
+  `,
+  ).run();
+}
 
 // ==========================================
 // 2. MIGRACIONES DINÁMICAS
@@ -146,8 +238,34 @@ if (!tblSEInfo.some((c) => c.name === "configuracion_pegado_id")) {
   );
 }
 
+const tblProdInfo = db.prepare("PRAGMA table_info(registro_produccion)").all();
+if (!tblProdInfo.some((c) => c.name === "codigo_ot")) {
+  db.exec("ALTER TABLE registro_produccion ADD COLUMN codigo_ot TEXT;");
+}
+if (!tblProdInfo.some((c) => c.name === "ingenieria_id")) {
+  db.exec("ALTER TABLE registro_produccion ADD COLUMN ingenieria_id INTEGER;");
+}
+
+try {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS registro_produccion_materiales (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      registro_id INTEGER,
+      codigo_ot TEXT,
+      materia_prima_codigo TEXT,
+      materia_prima_nombre TEXT,
+      cantidad_usada REAL,
+      unidad_medida TEXT,
+      fecha TEXT,
+      FOREIGN KEY (registro_id) REFERENCES registro_produccion(id) ON DELETE CASCADE
+    );
+  `);
+} catch (e) {
+  console.log("Error en migración de materiales:", e);
+}
+
 // ==========================================
-// 3. PARSER CSV COMPLETO (MULTILÍNEA Y COMILLAS)
+// 3. PARSER CSV COMPLETO
 // ==========================================
 function parseCSVFull(text) {
   const rows = [];
@@ -209,8 +327,33 @@ function parseCSVLine(line) {
 
 function parseFechaDeterminista(rawStr) {
   if (!rawStr || typeof rawStr !== "string") return null;
-  const clean = rawStr.trim().split(" ")[0];
+  const clean = rawStr.trim().replace(/^\//, "").split(" ")[0];
   if (!clean) return null;
+
+  const mesesMap = {
+    ene: "01",
+    feb: "02",
+    mar: "03",
+    abr: "04",
+    may: "05",
+    jun: "06",
+    jul: "07",
+    ago: "08",
+    sep: "09",
+    oct: "10",
+    nov: "11",
+    dic: "12",
+  };
+
+  const matchTexto = clean.toLowerCase().match(/^([a-z]{3})[-/]?(\d{2,4})$/);
+  if (matchTexto) {
+    const mesStr = matchTexto[1];
+    let yearNum = parseInt(matchTexto[2], 10);
+    if (yearNum < 100) yearNum += 2000;
+    if (mesesMap[mesStr]) {
+      return `${yearNum}-${mesesMap[mesStr]}-01`;
+    }
+  }
 
   if (clean.includes("/")) {
     const parts = clean.split("/");
@@ -244,7 +387,6 @@ function parseFechaDeterminista(rawStr) {
   return null;
 }
 
-// ALGORITMO DE AUTO-INFERENCIA DE MÁQUINA POR PATRÓN DE SKU
 function inferMachineCategory(codigo, articulo) {
   const cod = String(codigo || "")
     .trim()
@@ -364,6 +506,119 @@ app.put("/api/materias-primas/:id/stock", (req, res) => {
     );
     res.json({ success: true });
   } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post("/api/materias-primas/previsualizar-sheets", async (req, res) => {
+  const MATERIAS_PRIMAS_CSV_URL =
+    "https://docs.google.com/spreadsheets/d/e/2PACX-1vTt66qDCe0E3GUbp7BLqGj4IHYK8nrXF1gvfmf45vY2kkP3-gL3fpPcxjltnFBX8EP7kBzEhnIvHw0L/pub?output=csv";
+
+  try {
+    const response = await fetch(MATERIAS_PRIMAS_CSV_URL);
+    if (!response.ok) {
+      return res
+        .status(400)
+        .json({ error: "No se pudo descargar el CSV de Google Sheets" });
+    }
+
+    const csvText = await response.text();
+    const rows = parseCSVFull(csvText);
+    if (rows.length < 2) {
+      return res
+        .status(400)
+        .json({ error: "El archivo de Google Sheets está vacío" });
+    }
+
+    const currentMP = db.prepare("SELECT * FROM materias_primas").all();
+    const currentMap = {};
+    currentMP.forEach((m) => {
+      currentMap[m.codigo.toUpperCase().trim()] = m;
+    });
+
+    const nuevos = [];
+    const modificados = [];
+
+    for (let i = 1; i < rows.length; i++) {
+      const cols = rows[i];
+      if (!cols[0]) continue;
+
+      const codigoUpper = cols[0].toUpperCase().trim();
+      if (EXCLUDED_CODES.includes(codigoUpper)) continue;
+
+      const nombre = cols[1] ? cols[1].trim() : codigoUpper;
+      const unidad = cols[2] ? cols[2].trim().toUpperCase() : "KILOS";
+      const stockNuevo =
+        parseFloat(String(cols[4] || cols[3] || "0").replace(",", ".")) || 0;
+
+      const existing = currentMap[codigoUpper];
+
+      if (existing) {
+        if (Math.abs(existing.stock_actual - stockNuevo) > 0.001) {
+          modificados.push({
+            id: existing.id,
+            codigo: existing.codigo,
+            nombre: existing.nombre,
+            unidad: existing.unidad_medida,
+            stock_actual: existing.stock_actual,
+            stock_nuevo: stockNuevo,
+            diferencia: stockNuevo - existing.stock_actual,
+          });
+        }
+      } else {
+        nuevos.push({
+          codigo: codigoUpper,
+          nombre: nombre,
+          unidad: unidad,
+          stock_nuevo: stockNuevo,
+        });
+      }
+    }
+
+    res.json({ nuevos, modificados });
+  } catch (error) {
+    console.error("Error al previsualizar materias primas:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post("/api/materias-primas/aplicar-sincronizacion", (req, res) => {
+  const { nuevos, modificados } = req.body;
+
+  try {
+    const insertStmt = db.prepare(
+      "INSERT INTO materias_primas (codigo, nombre, unidad_medida, stock_actual) VALUES (?, ?, ?, ?)",
+    );
+    const updateStmt = db.prepare(
+      "UPDATE materias_primas SET stock_actual = ? WHERE id = ?",
+    );
+
+    let nuevosCount = 0;
+    let modificadosCount = 0;
+
+    db.transaction(() => {
+      if (Array.isArray(nuevos)) {
+        for (const n of nuevos) {
+          insertStmt.run(
+            n.codigo,
+            n.nombre,
+            n.unidad || "KILOS",
+            n.stock_nuevo || 0,
+          );
+          nuevosCount++;
+        }
+      }
+      if (Array.isArray(modificados)) {
+        for (const m of modificados) {
+          updateStmt.run(m.stock_nuevo, m.id);
+          modificadosCount++;
+        }
+      }
+    })();
+
+    res.json({ success: true, nuevosCount, modificadosCount });
+  } catch (error) {
+    console.error("Error al aplicar sincronización de materias primas:", error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -549,11 +804,12 @@ app.get("/api/semielaborados", (req, res) => {
     });
 
     const result = semielaborados.map((se) => {
-      const totalStock =
+      const rawStock =
         (se.stock_33 || 0) +
         (se.stock_26 || 0) +
         (se.stock_ayolas || 0) +
         (se.stock_37 || 0);
+      const totalStock = Math.max(0, rawStock);
       const demand = seDemandMap[se.id] || 0;
       let dias_stock =
         demand > 0 ? Math.round((totalStock / demand) * 30) : null;
@@ -615,6 +871,134 @@ app.post("/api/semielaborados/recargar-sheets", async (req, res) => {
         );
       }
     })();
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post("/api/semielaborados/previsualizar-sheets", async (req, res) => {
+  try {
+    const updatesMap = {};
+
+    for (const [sucursalKey, csvUrl] of Object.entries(STOCK_URLS)) {
+      if (!csvUrl || csvUrl.startsWith("PEGA_AQUI")) continue;
+      const response = await fetch(csvUrl);
+      if (!response.ok) continue;
+      const text = await response.text();
+      const lines = text.split("\n");
+
+      for (let line of lines) {
+        const cols = parseCSVLine(line);
+        if (cols.length < 5 || !cols[0]) continue;
+        const codeUpper = cols[0].toUpperCase().trim();
+        if (EXCLUDED_CODES.includes(codeUpper)) continue;
+
+        const parsedStock = parseFloat(cols[4].replace(",", ".")) || 0;
+
+        if (!updatesMap[codeUpper]) {
+          updatesMap[codeUpper] = {
+            codigo: codeUpper,
+            nombre: cols[1] ? cols[1].trim() : codeUpper,
+            stock_33: 0,
+            stock_26: 0,
+            stock_ayolas: 0,
+            stock_37: 0,
+          };
+        }
+        updatesMap[codeUpper][sucursalKey] = parsedStock;
+      }
+    }
+
+    const currentSE = db.prepare("SELECT * FROM semielaborados").all();
+    const currentMap = {};
+    currentSE.forEach((s) => {
+      currentMap[s.codigo.toUpperCase().trim()] = s;
+    });
+
+    const nuevos = [];
+    const modificados = [];
+
+    for (const [codeUpper, sheetData] of Object.entries(updatesMap)) {
+      const existing = currentMap[codeUpper];
+      if (existing) {
+        const diff33 = sheetData.stock_33 - (existing.stock_33 || 0);
+        const diff26 = sheetData.stock_26 - (existing.stock_26 || 0);
+        const diffAyolas =
+          sheetData.stock_ayolas - (existing.stock_ayolas || 0);
+        const diff37 = sheetData.stock_37 - (existing.stock_37 || 0);
+
+        if (
+          Math.abs(diff33) > 0.001 ||
+          Math.abs(diff26) > 0.001 ||
+          Math.abs(diffAyolas) > 0.001 ||
+          Math.abs(diff37) > 0.001
+        ) {
+          modificados.push({
+            id: existing.id,
+            codigo: existing.codigo,
+            nombre: existing.nombre,
+            actual: {
+              stock_33: existing.stock_33 || 0,
+              stock_26: existing.stock_26 || 0,
+              stock_ayolas: existing.stock_ayolas || 0,
+              stock_37: existing.stock_37 || 0,
+            },
+            nuevo: {
+              stock_33: sheetData.stock_33,
+              stock_26: sheetData.stock_26,
+              stock_ayolas: sheetData.stock_ayolas,
+              stock_37: sheetData.stock_37,
+            },
+          });
+        }
+      } else {
+        nuevos.push(sheetData);
+      }
+    }
+
+    res.json({ nuevos, modificados });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post("/api/semielaborados/aplicar-sincronizacion", (req, res) => {
+  const { nuevos, modificados } = req.body;
+  try {
+    const insertStmt = db.prepare(
+      "INSERT INTO semielaborados (codigo, nombre, stock_33, stock_26, stock_ayolas, stock_37) VALUES (?, ?, ?, ?, ?, ?)",
+    );
+    const updateStmt = db.prepare(
+      "UPDATE semielaborados SET stock_33 = ?, stock_26 = ?, stock_ayolas = ?, stock_37 = ? WHERE id = ?",
+    );
+
+    db.transaction(() => {
+      if (Array.isArray(nuevos)) {
+        for (const n of nuevos) {
+          insertStmt.run(
+            n.codigo,
+            n.nombre,
+            n.stock_33 || 0,
+            n.stock_26 || 0,
+            n.stock_ayolas || 0,
+            n.stock_37 || 0,
+          );
+        }
+      }
+      if (Array.isArray(modificados)) {
+        for (const m of modificados) {
+          updateStmt.run(
+            m.nuevo.stock_33,
+            m.nuevo.stock_26,
+            m.nuevo.stock_ayolas,
+            m.nuevo.stock_37,
+            m.id,
+          );
+        }
+      }
+    })();
+
     res.json({ success: true });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -780,6 +1164,49 @@ app.get("/api/ingenierias/producto-terminado/:id", (req, res) => {
   }
 });
 
+app.get("/api/ingenierias/recetas-activas-bulk", (req, res) => {
+  try {
+    const rows = db
+      .prepare(
+        `
+      SELECT 
+        se.codigo as productCode,
+        se.nombre as productName,
+        ing.nombre_version as version,
+        mp.codigo as item_codigo,
+        mp.nombre as item_nombre
+      FROM ingenierias ing
+      JOIN semielaborados se ON ing.semielaborado_id = se.id
+      JOIN ingenieria_detalles d ON d.ingenieria_id = ing.id
+      LEFT JOIN materias_primas mp ON d.materia_prima_id = mp.id
+      WHERE ing.es_activa = 1 AND d.materia_prima_id IS NOT NULL
+    `,
+      )
+      .all();
+
+    const recipesMap = {};
+    for (const r of rows) {
+      const key = `${r.productCode}_${r.version}`;
+      if (!recipesMap[key]) {
+        recipesMap[key] = {
+          productCode: r.productCode,
+          productName: r.productName,
+          version: r.version,
+          ingredientes: [],
+        };
+      }
+      recipesMap[key].ingredientes.push({
+        item_codigo: r.item_codigo,
+        item_nombre: r.item_nombre,
+      });
+    }
+
+    res.json(Object.values(recipesMap));
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 app.post("/api/ingenierias", (req, res) => {
   const { parent_id, parent_type, nombre_version, es_activa, ingredientes } =
     req.body;
@@ -893,7 +1320,7 @@ app.delete("/api/ingenierias/:id", (req, res) => {
 });
 
 // ==========================================
-// MÓDULO 6: REGISTRO DE PRODUCCIÓN (MÉTRICAS)
+// MÓDULO 6: REGISTRO DE PRODUCCIÓN (MÉTRICAS & CARGAS)
 // ==========================================
 app.get("/api/metricas/produccion", (req, res) => {
   try {
@@ -901,6 +1328,298 @@ app.get("/api/metricas/produccion", (req, res) => {
       .prepare("SELECT * FROM registro_produccion ORDER BY fecha DESC, id DESC")
       .all();
     res.json(rows);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get(
+  "/api/metricas/produccion/materiales-consumidos/:codigo_ot",
+  (req, res) => {
+    try {
+      const consumos = db
+        .prepare(
+          `
+      SELECT 
+        materia_prima_codigo as codigo,
+        materia_prima_nombre as nombre,
+        unidad_medida as unidad,
+        SUM(cantidad_usada) as consumido_real
+      FROM registro_produccion_materiales
+      WHERE codigo_ot = ?
+      GROUP BY materia_prima_codigo, materia_prima_nombre, unidad_medida
+    `,
+        )
+        .all(req.params.codigo_ot);
+
+      res.json(consumos);
+    } catch (error) {
+      res.status(500).json({ error: error.message });
+    }
+  },
+);
+
+app.post("/api/metricas/produccion/manual", (req, res) => {
+  const {
+    fecha,
+    categoria_maq,
+    codigo_ot,
+    codigo,
+    articulo,
+    cant_buenos,
+    kg_total,
+    ingenieria_id,
+  } = req.body;
+
+  try {
+    db.transaction(() => {
+      const info = db
+        .prepare(
+          `
+        INSERT INTO registro_produccion 
+        (fecha, categoria_maq, codigo_ot, codigo, articulo, cant_buenos, kg_total, ingenieria_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `,
+        )
+        .run(
+          fecha,
+          categoria_maq,
+          codigo_ot,
+          codigo,
+          articulo,
+          Number(cant_buenos),
+          Number(kg_total),
+          ingenieria_id || null,
+        );
+
+      const registroId = info.lastInsertRowid;
+
+      if (ingenieria_id) {
+        const ingredientes = db
+          .prepare(
+            `
+          SELECT 
+            COALESCE(mp.codigo, se.codigo) as item_codigo,
+            COALESCE(mp.nombre, se.nombre) as item_nombre,
+            d.cantidad,
+            d.unidad_medida
+          FROM ingenieria_detalles d
+          LEFT JOIN materias_primas mp ON d.materia_prima_id = mp.id
+          LEFT JOIN semielaborados se ON d.semielaborado_id = se.id
+          WHERE d.ingenieria_id = ?
+        `,
+          )
+          .all(ingenieria_id);
+
+        const stmtMat = db.prepare(`
+          INSERT INTO registro_produccion_materiales 
+          (registro_id, codigo_ot, materia_prima_codigo, materia_prima_nombre, cantidad_usada, unidad_medida, fecha)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+        `);
+
+        for (const ing of ingredientes) {
+          const cantidadConsumida = Number(cant_buenos) * (ing.cantidad || 0);
+          stmtMat.run(
+            registroId,
+            codigo_ot,
+            ing.item_codigo || "",
+            ing.item_nombre || "",
+            cantidadConsumida,
+            ing.unidad_medida || "Kg",
+            fecha,
+          );
+        }
+      }
+
+      db.prepare(
+        `
+        UPDATE ordenes_trabajo 
+        SET cant_producida = cant_producida + ? 
+        WHERE codigo_ot = ? AND semielaborado_codigo = ?
+      `,
+      ).run(Number(cant_buenos), codigo_ot, codigo);
+    })();
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error("DETALLE DEL ERROR 500 EN SERVER:", error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Cargar producción pendiente de aprobación por supervisor
+app.post("/api/metricas/produccion/cargar-pendiente", (req, res) => {
+  try {
+    const {
+      codigo_ot,
+      semielaborado_codigo,
+      articulo,
+      cant_buenos,
+      cant_fallas,
+      fecha,
+      operario_nombre,
+      observaciones,
+    } = req.body;
+
+    const result = db
+      .prepare(
+        `
+      INSERT INTO cargas_produccion (codigo_ot, semielaborado_codigo, articulo, cant_buenos, cant_fallas, fecha, operario_nombre, observaciones, estado_aprobacion)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'PENDIENTE')
+    `,
+      )
+      .run(
+        codigo_ot,
+        semielaborado_codigo,
+        articulo,
+        Number(cant_buenos) || 0,
+        Number(cant_fallas) || 0,
+        fecha,
+        operario_nombre || "Operario Planta",
+        observaciones || "",
+      );
+
+    res.json({ success: true, id: result.lastInsertRowid });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Consultar cargas de producción (pendientes y aprobadas)
+app.get("/api/metricas/produccion/cargas", (req, res) => {
+  try {
+    const cargas = db
+      .prepare("SELECT * FROM cargas_produccion ORDER BY id DESC")
+      .all();
+    res.json(cargas);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Aprobar Carga de Producción -> Actualiza OT + Genera Registro + Descuenta Materias Primas en BD
+app.put("/api/metricas/produccion/aprobar/:id", (req, res) => {
+  try {
+    const { supervisor_nombre } = req.body;
+    const carga = db
+      .prepare("SELECT * FROM cargas_produccion WHERE id = ?")
+      .get(req.params.id);
+
+    if (!carga) {
+      return res
+        .status(404)
+        .json({ error: "Carga de producción no encontrada" });
+    }
+
+    if (carga.estado_aprobacion === "APROBADO") {
+      return res
+        .status(400)
+        .json({ error: "La carga ya fue aprobada previamente" });
+    }
+
+    db.transaction(() => {
+      // 1. Cambiar estado de la carga a APROBADO
+      db.prepare(
+        `UPDATE cargas_produccion SET estado_aprobacion = 'APROBADO', supervisor_nombre = ? WHERE id = ?`,
+      ).run(supervisor_nombre || "Supervisor", req.params.id);
+
+      // 2. Obtener Semielaborado y Receta Activa
+      const se = db
+        .prepare("SELECT id FROM semielaborados WHERE codigo = ?")
+        .get(carga.semielaborado_codigo);
+
+      let activeIngenieriaId = null;
+      if (se) {
+        const recipe = db
+          .prepare(
+            "SELECT id FROM ingenierias WHERE semielaborado_id = ? AND es_activa = 1",
+          )
+          .get(se.id);
+        if (recipe) activeIngenieriaId = recipe.id;
+      }
+
+      // 3. Insertar registro formal en registro_produccion para métricas y calendario
+      const infoProd = db
+        .prepare(
+          `
+        INSERT INTO registro_produccion 
+        (fecha, categoria_maq, codigo_ot, codigo, articulo, cant_buenos, cant_fallas, ingenieria_id)
+        VALUES (?, 'EXTRUSIÓN', ?, ?, ?, ?, ?, ?)
+      `,
+        )
+        .run(
+          carga.fecha,
+          carga.codigo_ot,
+          carga.semielaborado_codigo,
+          carga.articulo,
+          carga.cant_buenos,
+          carga.cant_fallas,
+          activeIngenieriaId,
+        );
+
+      const registroId = infoProd.lastInsertRowid;
+
+      // 4. Actualizar cantidad producida acumulada en la Orden de Trabajo (OT)
+      db.prepare(
+        `
+        UPDATE ordenes_trabajo 
+        SET cant_producida = cant_producida + ? 
+        WHERE codigo_ot = ? AND semielaborado_codigo = ?
+      `,
+      ).run(carga.cant_buenos, carga.codigo_ot, carga.semielaborado_codigo);
+
+      // 5. Descontar materias primas del stock según ingredientes de la receta activa
+      if (activeIngenieriaId) {
+        const detalles = db
+          .prepare(
+            `
+          SELECT d.materia_prima_id, d.cantidad, d.unidad_medida, mp.codigo as item_codigo, mp.nombre as item_nombre
+          FROM ingenieria_detalles d
+          LEFT JOIN materias_primas mp ON d.materia_prima_id = mp.id
+          WHERE d.ingenieria_id = ? AND d.materia_prima_id IS NOT NULL
+        `,
+          )
+          .all(activeIngenieriaId);
+
+        const stmtMat = db.prepare(`
+          INSERT INTO registro_produccion_materiales 
+          (registro_id, codigo_ot, materia_prima_codigo, materia_prima_nombre, cantidad_usada, unidad_medida, fecha)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+        `);
+
+        for (const det of detalles) {
+          const descuentoKg =
+            Number(carga.cant_buenos) * Number(det.cantidad || 0);
+
+          db.prepare(
+            `UPDATE materias_primas SET stock_actual = stock_actual - ? WHERE id = ?`,
+          ).run(descuentoKg, det.materia_prima_id);
+
+          stmtMat.run(
+            registroId,
+            carga.codigo_ot,
+            det.item_codigo || "",
+            det.item_nombre || "",
+            descuentoKg,
+            det.unidad_medida || "Kg",
+            carga.fecha,
+          );
+        }
+      }
+    })();
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error("Error al aprobar carga:", error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Rechazar Carga de Producción
+app.delete("/api/metricas/produccion/rechazar/:id", (req, res) => {
+  try {
+    db.prepare("DELETE FROM cargas_produccion WHERE id = ?").run(req.params.id);
+    res.json({ success: true });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -1019,6 +1738,181 @@ app.post("/api/metricas/recargar", async (req, res) => {
     })();
 
     res.json({ success: true, count });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ==========================================
+// MÓDULO 7: GRUPOS DE ALERTA DE STOCK
+// ==========================================
+app.get("/api/grupos-alerta", (req, res) => {
+  try {
+    const grupos = db
+      .prepare("SELECT * FROM grupos_alerta ORDER BY id ASC")
+      .all();
+    res.json(grupos);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post("/api/grupos-alerta", (req, res) => {
+  try {
+    const { id, nombre, dias_critico, dias_alerta } = req.body;
+    if (!nombre || dias_critico === undefined || dias_alerta === undefined) {
+      return res.status(400).json({ error: "Faltan campos obligatorios." });
+    }
+
+    if (id) {
+      db.prepare(
+        `
+        UPDATE grupos_alerta 
+        SET nombre = ?, dias_critico = ?, dias_alerta = ? 
+        WHERE id = ?
+      `,
+      ).run(nombre.trim(), Number(dias_critico), Number(dias_alerta), id);
+    } else {
+      db.prepare(
+        `
+        INSERT INTO grupos_alerta (nombre, dias_critico, dias_alerta, es_predeterminado) 
+        VALUES (?, ?, ?, 0)
+      `,
+      ).run(nombre.trim(), Number(dias_critico), Number(dias_alerta));
+    }
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.delete("/api/grupos-alerta/:id", (req, res) => {
+  try {
+    const { id } = req.params;
+    db.prepare(
+      "DELETE FROM grupos_alerta WHERE id = ? AND es_predeterminado = 0",
+    ).run(id);
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ==========================================
+// MÓDULO 8: ÓRDENES DE TRABAJO (PLANIFICACIÓN)
+// ==========================================
+app.get("/api/ordenes-trabajo", (req, res) => {
+  try {
+    const rows = db
+      .prepare("SELECT * FROM ordenes_trabajo ORDER BY id DESC")
+      .all();
+    res.json(rows);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post("/api/ordenes-trabajo", (req, res) => {
+  try {
+    const {
+      codigo_ot,
+      semielaborado_codigo,
+      articulo,
+      maquina,
+      destino,
+      cant_objetivo,
+      kg_por_unidad,
+      estado,
+      fecha_inicio,
+      velocidad_u_hora,
+    } = req.body;
+
+    const stmt = db.prepare(`
+      INSERT INTO ordenes_trabajo 
+      (codigo_ot, semielaborado_codigo, articulo, maquina, destino, cant_objetivo, kg_por_unidad, estado, fecha_inicio, velocidad_u_hora)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    const info = stmt.run(
+      codigo_ot,
+      semielaborado_codigo,
+      articulo || semielaborado_codigo,
+      maquina,
+      destino || "Stock",
+      cant_objetivo || 1000,
+      kg_por_unidad || 1.0,
+      estado || "PROGRAMADO",
+      fecha_inicio || "",
+      velocidad_u_hora || 100,
+    );
+
+    res.json({ success: true, id: info.lastInsertRowid });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.put("/api/ordenes-trabajo/:id/estado", (req, res) => {
+  try {
+    const { estado } = req.body;
+    db.prepare("UPDATE ordenes_trabajo SET estado = ? WHERE id = ?").run(
+      estado,
+      req.params.id,
+    );
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.put("/api/ordenes-trabajo/ot/:codigo_ot/estado-lote", (req, res) => {
+  try {
+    const { estado } = req.body;
+    const { codigo_ot } = req.params;
+    db.prepare("UPDATE ordenes_trabajo SET estado = ? WHERE codigo_ot = ?").run(
+      estado,
+      codigo_ot,
+    );
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.put("/api/ordenes-trabajo/:id", (req, res) => {
+  try {
+    const { velocidad_u_hora, cant_objetivo, fecha_inicio, articulo, destino } =
+      req.body;
+
+    db.prepare(
+      `
+      UPDATE ordenes_trabajo 
+      SET velocidad_u_hora = COALESCE(?, velocidad_u_hora),
+          cant_objetivo = COALESCE(?, cant_objetivo),
+          fecha_inicio = COALESCE(?, fecha_inicio),
+          articulo = COALESCE(?, articulo),
+          destino = COALESCE(?, destino)
+      WHERE id = ?
+    `,
+    ).run(
+      velocidad_u_hora ?? null,
+      cant_objetivo ?? null,
+      fecha_inicio ?? null,
+      articulo ?? null,
+      destino ?? null,
+      req.params.id,
+    );
+
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.delete("/api/ordenes-trabajo/:id", (req, res) => {
+  try {
+    db.prepare("DELETE FROM ordenes_trabajo WHERE id = ?").run(req.params.id);
+    res.json({ success: true });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
