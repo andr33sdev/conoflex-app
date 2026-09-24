@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
+import AIAvatar from "./AIAvatar";
 import {
   Calendar,
   Filter,
@@ -262,13 +263,14 @@ export default function Metricas() {
   });
 
   // ESTADO CHAT IA CON LA BD
-  const [mensajes, setMensajes] = useState([
-    {
-      rol: "assistant",
-      texto:
-        "¡Hola! Soy la IA de Inteligencia Operativa de Conoflex. Tengo acceso en tiempo real a la base de datos de la planta (Materias Primas, Semielaborados, Ventas y Órdenes de Trabajo). ¿Qué información o diagnóstico querés consultar?",
-    },
-  ]);
+  // En Metricas.jsx:
+const [mensajes, setMensajes] = useState([
+  {
+    rol: "assistant",
+    texto:
+      "¡Hola! Soy Connie. Tengo la info de toda la planta en tiempo real. ¿Qué querés revisar?",
+  },
+]);
   const [inputChat, setInputChat] = useState("");
   const [enviandoChat, setEnviandoChat] = useState(false);
   const chatBottomRef = useRef(null);
@@ -912,24 +914,20 @@ export default function Metricas() {
           </div>
         )}
 
-        {/* VISTA 2: CHAT INTERACTIVO CON IA CONTEXTUALIZADA */}
+        {/* VISTA CHAT INTERACTIVO CON AVATAR EN LA PARTE SUPERIOR */}
         {activeTab === "chat" && (
           <div className="h-full flex flex-col min-h-0 bg-[#0e1422] border border-slate-800/80 rounded-2xl overflow-hidden shadow-2xl">
-            {/* CABECERA DEL CHAT */}
-            <div className="p-3.5 border-b border-slate-800/80 bg-[#070a12]/60 flex items-center justify-between">
-              <div className="flex items-center gap-2.5">
-                <Bot size={18} className="text-emerald-400" />
-                <div>
-                  <h3 className="text-xs font-bold text-white font-mono uppercase tracking-wider">
-                    ASISTENTE CONVERSACIONAL DE PLANTA
-                  </h3>
-                  <p className="text-[10px] text-slate-400">
-                    Sincronizado con tablas de Materias Primas, Semielaborados,
-                    Ventas y OT.
-                  </p>
-                </div>
-              </div>
-            </div>
+            {/* AVATAR INTERACTIVO EN LA CABECERA DEL CHAT */}
+            <AIAvatar
+              estado={
+                enviandoChat
+                  ? "thinking"
+                  : mensajes[mensajes.length - 1]?.rol === "assistant"
+                    ? "speaking"
+                    : "idle"
+              }
+              nombre="Connie — Asistente de Planta"
+            />
 
             {/* ÁREA DE MENSAJES DE CHAT */}
             <div className="flex-1 overflow-y-auto p-4 space-y-4 min-h-0">
@@ -1012,7 +1010,7 @@ export default function Metricas() {
                 value={inputChat}
                 onChange={(e) => setInputChat(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && enviarMensajeChat()}
-                placeholder="Preguntale a la IA sobre materias primas, semielaborados, ventas u OT..."
+                placeholder="Preguntale a Elena sobre materias primas, semielaborados, ventas u OT..."
                 className="flex-1 bg-[#0e1422] border border-slate-800 px-3.5 py-2 text-xs text-slate-100 outline-none focus:border-emerald-500/50 rounded-xl"
               />
               <button

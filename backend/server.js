@@ -2834,13 +2834,13 @@ app.delete("/api/ordenes-trabajo/:id", async (req, res) => {
 });
 
 // ==========================================
-// CHAT CONVERSACIONAL CON CONTEXTO COMPLETO DE BD
+// CHAT CONVERSACIONAL CON CONTEXTO COMPLETO Y PERSONALIDAD CONNIE
 // ==========================================
 app.post("/api/chat-ia", async (req, res) => {
   try {
     const { mensaje, historial } = req.body;
 
-    // Extraemos snapshot de toda la base de datos en paralelo
+    // Snapshot de la base de datos
     const [materiasPrimas] = await db.query(
       "SELECT codigo, nombre, stock_actual, unidad_medida FROM materias_primas",
     );
@@ -2858,35 +2858,30 @@ app.post("/api/chat-ia", async (req, res) => {
     );
 
     const promptContexto = `
-    Sos el Asistente de Datos e Inteligencia Operativa de Conoflex Argentina.
-    Tenés acceso directo y en tiempo real a toda la base de datos de la planta industrial:
+    Sos Connie, la encargada de Inteligencia Operativa y datos en Conoflex Argentina.
 
-    1. MATERIAS PRIMAS E INSUMOS:
-    ${JSON.stringify(materiasPrimas)}
+    PERSONALIDAD Y TONO:
+    - Sos súper amable, cálida, copada y cercana, manteniendo siempre el profesionalismo ejecutivo.
+    - Hablás de manera natural y fluida en español rioplatense/argentino profesional.
+    - NUNCA te presentes ni te refieras a vos misma como "un bot", "una IA", "un modelo de lenguaje" ni "asistente virtual". Si te preguntan quién sos, sos Connie, parte del equipo de gestión de Conoflex.
 
-    2. SEMIELABORADOS Y STOCK POR DEPÓSITO (33, 26, Ayolas, 37):
-    ${JSON.stringify(semielaborados)}
+    REGLAS DE FORMATO Y CONCISIÓN:
+    - Respuestas MUY breves, al grano y directas por defecto (2 a 4 oraciones o viñetas cortas).
+    - Evitá introducciones largas, saludos repetitivos o conclusiones innecesarias.
+    - Solo explayate o redactá informes extensos cuando el usuario te lo pida explícitamente (ej: "explayate", "dame un reporte detallado", "analizá a fondo").
 
-    3. PRODUCTOS TERMINADOS Y PROMEDIO VENTAS MENSUALES:
-    ${JSON.stringify(productosTerminados)}
-
-    4. ÓRDENES DE TRABAJO (OT) EN CURSO Y PROGRAMADAS:
-    ${JSON.stringify(ordenesTrabajo)}
-
-    5. REGISTRO RECIENTE DE PRODUCCIÓN Y FALLAS:
-    ${JSON.stringify(registrosProduccion)}
-
-    INSTRUCCIONES DE RESPUESTA:
-    - Responde consultas concretas sobre stock, fallas, ventas, planificación y compras.
-    - Si el usuario te pide un cálculo o comparativa, realizalo con los datos precisos suministrados.
-    - Sé directo, profesional, técnico y ejecutivo. Usa viñetas y negritas cuando corresponda.
-    - Si te preguntan algo fuera de la operativa de Conoflex, reorientá amablemente la conversación a los datos de la planta.
+    BASE DE DATOS EN TIEMPO REAL DE PLANTA:
+    1. MATERIAS PRIMAS: ${JSON.stringify(materiasPrimas)}
+    2. SEMIELABORADOS Y STOCK POR DEPÓSITO: ${JSON.stringify(semielaborados)}
+    3. PRODUCTOS TERMINADOS Y VENTAS: ${JSON.stringify(productosTerminados)}
+    4. ÓRDENES DE TRABAJO (OT): ${JSON.stringify(ordenesTrabajo)}
+    5. REGISTROS DE PRODUCCIÓN Y FALLAS: ${JSON.stringify(registrosProduccion)}
     `;
 
     const contents = [
       promptContexto,
       ...(historial || []).map(
-        (h) => `${h.rol === "user" ? "Usuario" : "IA"}: ${h.texto}`,
+        (h) => `${h.rol === "user" ? "Usuario" : "Connie"}: ${h.texto}`,
       ),
       `Usuario: ${mensaje}`,
     ];
@@ -2898,10 +2893,8 @@ app.post("/api/chat-ia", async (req, res) => {
 
     res.json({ success: true, respuesta: response.text });
   } catch (error) {
-    console.error("Error en chat IA de datos:", error);
-    res
-      .status(500)
-      .json({ error: "Error al procesar consulta: " + error.message });
+    console.error("Error en chat Connie:", error);
+    res.status(500).json({ error: "Error al procesar consulta." });
   }
 });
 
