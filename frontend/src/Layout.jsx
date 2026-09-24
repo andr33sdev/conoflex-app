@@ -10,7 +10,8 @@ import {
   Menu,
   X,
   Zap,
-  Flame, // 👈 Ícono para Carga Producción
+  Flame,
+  Bot, // 👈 ÍCONO PARA IA COMERCIAL
 } from "lucide-react";
 
 export default function Layout({ children, activeModule, setActiveModule }) {
@@ -23,7 +24,8 @@ export default function Layout({ children, activeModule, setActiveModule }) {
     { id: "ingenieria", label: "Ingeniería", icon: FlaskConical },
     { id: "metricas", label: "Métricas & KPI", icon: TrendingUp },
     { id: "planificacion", label: "Planificación OT", icon: Zap },
-    { id: "carga-produccion", label: "Carga Producción", icon: Flame }, // 👈 NUEVO MÓDULO
+    { id: "carga-produccion", label: "Carga Producción", icon: Flame },
+    { id: "comercial", label: "IA Comercial", icon: Bot }, // 👈 NUEVO MÓDULO AGREGADO
     { id: "movimientos", label: "Movimientos Stock", icon: ArrowLeftRight },
     { id: "configuraciones", label: "Configuración", icon: Settings },
   ];

@@ -7,6 +7,7 @@ import Metricas from "./Metricas";
 import Ingenieria from "./Ingenieria";
 import PlanificacionProduccion from "./PlanificacionProduccion";
 import CargaProduccion from "./CargaProduccion";
+import ComercialIA from "./ComercialIA";
 
 function App() {
   // DETECCIÓN AUTOMÁTICA DE URL DEL QR AL ARRANCAR LA APLICACIÓN
@@ -103,6 +104,9 @@ function App() {
 
       {/* MÓDULO 7: CARGA Y APROBACIÓN DE PRODUCCIÓN */}
       {activeModule === "carga-produccion" && <CargaProduccion />}
+
+      {/* MÓDULO 8: IA COMERCIAL */}
+      {activeModule === "comercial" && <ComercialIA />}
 
       {/* FALLBACK EN DESARROLLO */}
       {activeModule !== "materias-primas" &&

@@ -760,14 +760,32 @@ app.post(
   },
 );
 
+// ==========================================
+// RUTAS DE AUTENTICACIÓN GOOGLE (DINÁMICAS)
+// ==========================================
 app.get("/auth/google", (req, res) => {
+  const referer = req.headers.referer || req.headers.origin || "";
+  const isLocal = referer.includes("localhost");
+
+  // Si estás en local usa localhost:5173, si estás en producción usa Vercel
+  const redirectUri = isLocal
+    ? "http://localhost:5173/auth/google/callback"
+    : "https://plataforma-conoflex.vercel.app/auth/google/callback";
+
+  const client = new google.auth.OAuth2(
+    process.env.GOOGLE_CLIENT_ID,
+    process.env.GOOGLE_CLIENT_SECRET,
+    redirectUri,
+  );
+
   const scopes = [
     "https://www.googleapis.com/auth/gmail.readonly",
     "https://www.googleapis.com/auth/gmail.compose",
     "https://www.googleapis.com/auth/gmail.modify",
   ];
+
   res.redirect(
-    oauth2Client.generateAuthUrl({
+    client.generateAuthUrl({
       access_type: "offline",
       prompt: "consent",
       scope: scopes.join(" "),
@@ -777,12 +795,31 @@ app.get("/auth/google", (req, res) => {
 
 app.get("/auth/google/callback", async (req, res) => {
   try {
-    const { tokens } = await oauth2Client.getToken(req.query.code);
+    const referer = req.headers.referer || req.headers.host || "";
+    const isLocal = referer.includes("localhost");
+
+    const redirectUri = isLocal
+      ? "http://localhost:5173/auth/google/callback"
+      : "https://plataforma-conoflex.vercel.app/auth/google/callback";
+
+    const client = new google.auth.OAuth2(
+      process.env.GOOGLE_CLIENT_ID,
+      process.env.GOOGLE_CLIENT_SECRET,
+      redirectUri,
+    );
+
+    const { tokens } = await client.getToken(req.query.code);
     oauth2Client.setCredentials(tokens);
     fs.writeFileSync(TOKEN_PATH, JSON.stringify(tokens));
-    res.redirect(`${FRONTEND_URL}?status=conectado`);
+
+    const targetUrl = isLocal
+      ? "http://localhost:5173"
+      : process.env.FRONTEND_URL || "https://plataforma-conoflex.vercel.app";
+
+    res.redirect(`${targetUrl}?status=conectado`);
   } catch (error) {
-    res.status(500).send("Error de autenticación con Google");
+    console.error("Error en callback de Google:", error);
+    res.status(500).send("Error de autenticación con Google: " + error.message);
   }
 });
 
