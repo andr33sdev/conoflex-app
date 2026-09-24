@@ -761,13 +761,12 @@ app.post(
 );
 
 // ==========================================
-// RUTAS DE AUTENTICACIÓN GOOGLE (DINÁMICAS)
+// RUTAS DE AUTENTICACIÓN GOOGLE (CON STATE DYNAMIC)
 // ==========================================
 app.get("/auth/google", (req, res) => {
   const referer = req.headers.referer || req.headers.origin || "";
   const isLocal = referer.includes("localhost");
 
-  // Si estás en local usa localhost:5173, si estás en producción usa Vercel
   const redirectUri = isLocal
     ? "http://localhost:5173/auth/google/callback"
     : "https://plataforma-conoflex.vercel.app/auth/google/callback";
@@ -789,14 +788,15 @@ app.get("/auth/google", (req, res) => {
       access_type: "offline",
       prompt: "consent",
       scope: scopes.join(" "),
+      state: isLocal ? "local" : "prod", // 👈 Le pasamos a Google la etiqueta del entorno
     }),
   );
 });
 
 app.get("/auth/google/callback", async (req, res) => {
   try {
-    const referer = req.headers.referer || req.headers.host || "";
-    const isLocal = referer.includes("localhost");
+    // Leemos la etiqueta que Google nos devuelve intacta
+    const isLocal = req.query.state === "local";
 
     const redirectUri = isLocal
       ? "http://localhost:5173/auth/google/callback"
