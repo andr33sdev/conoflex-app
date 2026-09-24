@@ -1,12 +1,51 @@
 const express = require("express");
 const cors = require("cors");
+const multer = require("multer");
 const Database = require("better-sqlite3");
+const xlsx = require("xlsx");
+const { google } = require("googleapis");
+const { GoogleGenAI } = require("@google/genai");
+const fs = require("fs");
+const path = require("path");
+const jwt = require("jsonwebtoken");
+require("dotenv").config();
 
 const app = express();
 
 app.use(cors());
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ limit: "50mb", extended: true }));
+
+const PORT = process.env.PORT || 3001;
+const JWT_SECRET = process.env.JWT_SECRET || "conoflex_secreto_super_seguro";
+
+// URL Dinámica para Frontend (Local vs Producción)
+const FRONTEND_URL =
+  process.env.FRONTEND_URL ||
+  (process.env.BASE_URL && process.env.BASE_URL.includes("onrender")
+    ? "https://plataforma-conoflex.vercel.app"
+    : "http://localhost:5173");
+
+// Directorios físicos para imágenes y archivos temporales
+const IMAGENES_DIR = path.join(__dirname, "public/imagenes");
+const UPLOADS_DIR = path.join(__dirname, "uploads");
+if (!fs.existsSync(IMAGENES_DIR))
+  fs.mkdirSync(IMAGENES_DIR, { recursive: true });
+if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+
+app.use("/imagenes", express.static(IMAGENES_DIR));
+
+// Multer Config
+const uploadTemp = multer({ dest: UPLOADS_DIR });
+const storageFotos = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, IMAGENES_DIR),
+  filename: (req, file, cb) => {
+    const ext = path.extname(file.originalname).toLowerCase();
+    const uniqueName = `prod_${req.params.id}_${req.body.tipo || "foto"}_${Date.now()}${ext}`;
+    cb(null, uniqueName);
+  },
+});
+const uploadFoto = multer({ storage: storageFotos });
 
 // ==========================================
 // 🔗 CONFIGURACIÓN DE URLS DE GOOGLE SHEETS
@@ -51,10 +90,78 @@ const EXCLUDED_CODES = [
 
 const db = new Database("conoflex_local.db");
 
+// Configuración de Google OAuth & Gemini AI
+const oauth2Client = new google.auth.OAuth2(
+  process.env.GOOGLE_CLIENT_ID,
+  process.env.GOOGLE_CLIENT_SECRET,
+  process.env.GOOGLE_REDIRECT_URI,
+);
+const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+const TOKEN_PATH = path.join(__dirname, "tokens_web.json");
+
+if (process.env.GOOGLE_REFRESH_TOKEN) {
+  oauth2Client.setCredentials({
+    refresh_token: process.env.GOOGLE_REFRESH_TOKEN,
+  });
+  console.log(
+    "✅ Credenciales de Google API cargadas desde variables de entorno.",
+  );
+} else if (fs.existsSync(TOKEN_PATH)) {
+  oauth2Client.setCredentials(JSON.parse(fs.readFileSync(TOKEN_PATH)));
+  console.log("✅ Credenciales de Google API cargadas desde token local.");
+}
+
+function crearRawEmail(to, subject, htmlBody, threadId) {
+  const emailLines = [
+    `To: ${to}`,
+    "Content-Type: text/html; charset=utf-8",
+    "MIME-Version: 1.0",
+    `Subject: Re: ${subject.replace(/^Re:\s*/i, "")}`,
+    "",
+    htmlBody,
+  ];
+  const emailStr = emailLines.join("\r\n");
+  const base64Encoded = Buffer.from(emailStr)
+    .toString("base64")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
+  const requestBody = { message: { raw: base64Encoded } };
+  if (threadId) requestBody.message.threadId = threadId;
+  return requestBody;
+}
+
 // ==========================================
-// 1. TABLAS BASE
+// 1. TABLAS BASE Y AUTENTICACIÓN POR ROLES
 // ==========================================
 db.exec(`
+  CREATE TABLE IF NOT EXISTS usuarios (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    nombre TEXT NOT NULL,
+    email TEXT UNIQUE NOT NULL,
+    password_hash TEXT NOT NULL,
+    rol TEXT CHECK(rol IN ('ADMIN', 'COMERCIAL', 'PRODUCCION')) NOT NULL DEFAULT 'COMERCIAL',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE IF NOT EXISTS reglas (
+    clave TEXT PRIMARY KEY,
+    valor TEXT
+  );
+
+  CREATE TABLE IF NOT EXISTS productos (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    codigo TEXT,
+    nombre TEXT,
+    medidas TEXT,
+    precio_lista TEXT,
+    especificacion TEXT,
+    aplicacion TEXT,
+    foto_tecnica TEXT,
+    foto_catalogo TEXT,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+
   CREATE TABLE IF NOT EXISTS materias_primas (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     codigo TEXT UNIQUE NOT NULL,
@@ -185,6 +292,49 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_ingenierias_pt_id ON ingenierias(producto_terminado_id);
   CREATE INDEX IF NOT EXISTS idx_cargas_estado ON cargas_produccion(estado_aprobacion);
 `);
+
+// USUARIO ADMIN POR DEFECTO SI NO EXISTE
+const adminExistente = db
+  .prepare("SELECT COUNT(*) as count FROM usuarios")
+  .get();
+if (adminExistente.count === 0) {
+  db.prepare(
+    `
+    INSERT INTO usuarios (nombre, email, password_hash, rol)
+    VALUES ('Administrador Conoflex', 'admin@conoflex.com.ar', 'admin123', 'ADMIN')
+  `,
+  ).run();
+  console.log(
+    "👤 Usuario Administrador creado por defecto: admin@conoflex.com.ar / admin123",
+  );
+}
+
+// MIDDLEWARES DE AUTENTICACIÓN Y ROLES
+function autenticarToken(req, res, next) {
+  const authHeader = req.headers["authorization"];
+  const token = authHeader && authHeader.split(" ")[1];
+
+  if (!token)
+    return res.status(401).json({ error: "Acceso denegado: Token requerido" });
+
+  jwt.verify(token, JWT_SECRET, (err, usuario) => {
+    if (err)
+      return res.status(403).json({ error: "Token inválido o expirado" });
+    req.usuario = usuario;
+    next();
+  });
+}
+
+function autorizarRoles(...rolesPermitidos) {
+  return (req, res, next) => {
+    if (!req.usuario || !rolesPermitidos.includes(req.usuario.rol)) {
+      return res
+        .status(403)
+        .json({ error: "No tenés permisos para realizar esta acción." });
+    }
+    next();
+  };
+}
 
 // MIGRACIÓN AUTOMÁTICA
 try {
@@ -482,6 +632,460 @@ function inferMachineCategory(codigo, articulo) {
 
   return "ROTOMOLDEO";
 }
+
+// ==========================================
+// MÓDULO 0: AUTENTICACIÓN Y GESTIÓN DE USUARIOS
+// ==========================================
+
+app.post("/api/auth/register", (req, res) => {
+  const { nombre, email, password, rol } = req.body;
+  if (!nombre || !email || !password) {
+    return res.status(400).json({ error: "Faltan campos obligatorios." });
+  }
+
+  try {
+    const rolValido = ["ADMIN", "COMERCIAL", "PRODUCCION"].includes(rol)
+      ? rol
+      : "COMERCIAL";
+    const result = db
+      .prepare(
+        `
+      INSERT INTO usuarios (nombre, email, password_hash, rol)
+      VALUES (?, ?, ?, ?)
+    `,
+      )
+      .run(nombre.trim(), email.trim().toLowerCase(), password, rolValido);
+
+    res.json({
+      success: true,
+      id: result.lastInsertRowid,
+      mensaje: "Usuario registrado con éxito",
+    });
+  } catch (error) {
+    res
+      .status(400)
+      .json({ error: "El email ya está registrado o datos inválidos." });
+  }
+});
+
+app.post("/api/auth/login", (req, res) => {
+  const { email, password } = req.body;
+  if (!email || !password) {
+    return res.status(400).json({ error: "Email y contraseña requeridos." });
+  }
+
+  try {
+    const user = db
+      .prepare("SELECT * FROM usuarios WHERE email = ?")
+      .get(email.trim().toLowerCase());
+
+    if (!user || user.password_hash !== password) {
+      return res.status(401).json({ error: "Credenciales inválidas" });
+    }
+
+    const token = jwt.sign(
+      { id: user.id, email: user.email, rol: user.rol, nombre: user.nombre },
+      JWT_SECRET,
+      { expiresIn: "12h" },
+    );
+
+    res.json({
+      success: true,
+      token,
+      usuario: {
+        id: user.id,
+        nombre: user.nombre,
+        email: user.email,
+        rol: user.rol,
+      },
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get("/api/auth/me", autenticarToken, (req, res) => {
+  res.json({ usuario: req.usuario });
+});
+
+app.get(
+  "/api/usuarios",
+  autenticarToken,
+  autorizarRoles("ADMIN"),
+  (req, res) => {
+    try {
+      const users = db
+        .prepare("SELECT id, nombre, email, rol, created_at FROM usuarios")
+        .all();
+      res.json(users);
+    } catch (error) {
+      res.status(500).json({ error: error.message });
+    }
+  },
+);
+
+app.put(
+  "/api/usuarios/:id/rol",
+  autenticarToken,
+  autorizarRoles("ADMIN"),
+  (req, res) => {
+    const { rol } = req.body;
+    if (!["ADMIN", "COMERCIAL", "PRODUCCION"].includes(rol)) {
+      return res.status(400).json({ error: "Rol no válido" });
+    }
+    try {
+      db.prepare("UPDATE usuarios SET rol = ? WHERE id = ?").run(
+        rol,
+        req.params.id,
+      );
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ error: error.message });
+    }
+  },
+);
+
+// ==========================================
+// MÓDULO EMAIL BOT, GEMINI Y CATÁLOGO COMERCIAL
+// ==========================================
+
+app.get("/api/reglas", (req, res) => {
+  const row = db
+    .prepare("SELECT valor FROM reglas WHERE clave = 'prompt_comercial'")
+    .get();
+  res.json({ reglas: row ? row.valor : "" });
+});
+
+app.post(
+  "/api/reglas",
+  autenticarToken,
+  autorizarRoles("ADMIN", "COMERCIAL"),
+  (req, res) => {
+    const { reglas } = req.body;
+    db.prepare(
+      "INSERT INTO reglas (clave, valor) VALUES ('prompt_comercial', ?) ON CONFLICT(clave) DO UPDATE SET valor = excluded.valor",
+    ).run(reglas || "");
+    res.json({ success: true, mensaje: "Configuración guardada" });
+  },
+);
+
+app.get("/auth/google", (req, res) => {
+  const scopes = [
+    "https://www.googleapis.com/auth/gmail.readonly",
+    "https://www.googleapis.com/auth/gmail.compose",
+    "https://www.googleapis.com/auth/gmail.modify",
+  ];
+  res.redirect(
+    oauth2Client.generateAuthUrl({
+      access_type: "offline",
+      prompt: "consent",
+      scope: scopes.join(" "),
+    }),
+  );
+});
+
+app.get("/auth/google/callback", async (req, res) => {
+  try {
+    const { tokens } = await oauth2Client.getToken(req.query.code);
+    oauth2Client.setCredentials(tokens);
+    fs.writeFileSync(TOKEN_PATH, JSON.stringify(tokens));
+    res.redirect(`${FRONTEND_URL}?status=conectado`);
+  } catch (error) {
+    res.status(500).send("Error de autenticación con Google");
+  }
+});
+
+app.get(
+  "/api/mails",
+  autenticarToken,
+  autorizarRoles("ADMIN", "COMERCIAL"),
+  async (req, res) => {
+    try {
+      if (
+        !oauth2Client.credentials ||
+        (!oauth2Client.credentials.access_token &&
+          !oauth2Client.credentials.refresh_token)
+      ) {
+        return res.status(401).json({ error: "No autenticado en Gmail" });
+      }
+
+      const gmail = google.gmail({ version: "v1", auth: oauth2Client });
+      const listRes = await gmail.users.messages.list({
+        userId: "me",
+        q: "label:IA-Consulta",
+        maxResults: 10,
+      });
+      const messages = listRes.data.messages || [];
+      const mailsDetalle = [];
+
+      for (const msg of messages) {
+        const detail = await gmail.users.messages.get({
+          userId: "me",
+          id: msg.id,
+          format: "full",
+        });
+        const headers = detail.data.payload.headers;
+        const subject =
+          headers.find((h) => h.name === "Subject")?.value || "Sin asunto";
+        const from =
+          headers.find((h) => h.name === "From")?.value || "Desconocido";
+        const emailMatch = from.match(/<([^>]+)>/) || [null, from];
+
+        mailsDetalle.push({
+          id: msg.id,
+          threadId: detail.data.threadId,
+          asunto: subject,
+          remitente: from,
+          emailCliente: emailMatch[1],
+          resumen: detail.data.snippet || "",
+        });
+      }
+      res.json({ mails: mailsDetalle });
+    } catch (error) {
+      res.status(500).json({ error: "Error leyendo Gmail: " + error.message });
+    }
+  },
+);
+
+app.post(
+  "/api/crear-borrador-gmail",
+  autenticarToken,
+  autorizarRoles("ADMIN", "COMERCIAL"),
+  async (req, res) => {
+    try {
+      const { mailCliente, consultaText, asunto, threadId } = req.body;
+
+      const reglaRow = db
+        .prepare("SELECT valor FROM reglas WHERE clave = 'prompt_comercial'")
+        .get();
+      const reglasEntrenamiento = reglaRow ? reglaRow.valor : "";
+
+      const productosDB = db
+        .prepare(
+          "SELECT codigo, nombre, medidas, precio_lista, especificacion, aplicacion, foto_tecnica, foto_catalogo FROM productos",
+        )
+        .all();
+
+      const prompt = `
+      Sos el asesor comercial técnico senior de Conoflex Argentina.
+
+      CATÁLOGO DE PRODUCTOS DISPONIBLES:
+      ${JSON.stringify(productosDB, null, 2)}
+
+      REGLAS DE NEGOCIO Y POLITICAS:
+      ${reglasEntrenamiento}
+
+      CONSULTA DEL CLIENTE (${mailCliente}):
+      "${consultaText}"
+
+      ESTRATEGIA COMERCIAL DE SELECCIÓN (CRÍTICO):
+      1. ANALIZAR EL USO REQUERIDO: Identifica si la consulta es para tránsito liviano, pesado, barrio cerrado, obra, garaje, etc.
+      2. MÁXIMO 3 OPCIONES: Si la consulta es abierta o general, selecciona MÁXIMO 3 alternativas del catálogo que mejor se adapten. NUNCA cotices más de 3 productos.
+      3. CRITERIO DE VARIABILIDAD (3 NIVELES):
+         - Opción 1: La alternativa principal / más recomendada.
+         - Opción 2: Una alternativa reforzada o Premium.
+         - Opción 3: Una alternativa más económica o modular.
+      4. JUSTIFICACIÓN COMERCIAL: En la tarjeta de cada producto, explica en una frase corta por qué aplica bien a su necesidad.
+
+      INSTRUCCIONES DE ESTRUCTURA Y HTML:
+      - Redacta una introducción breve, amable y profesional.
+      - Para cada una de las 3 opciones cotizadas, arma una TARJETA HORIZONTAL en HTML (tabla con borde #e2e8f0, esquinas redondeadas y padding de 10px).
+      - Muestra las imágenes usando únicamente estas variables crudas:
+        - {FOTO_TECNICA_URL=poner_aqui_la_url_de_la_BD}
+        - {FOTO_CATALOGO_URL=poner_aqui_la_url_de_la_BD}
+        (Si el campo en la BD es null, no pongas la variable).
+      - Muestra Nombre en negrita, Código, Medidas y la frase de Justificación Comercial.
+      - Incluye las 3 cajas naranjas de precios (Lista, Descuento y Total).
+      - Cierra con el cuadro informativo de IVA, bonificaciones por cantidad y despacho en CABA/GBA.
+
+      Devuelve ÚNICAMENTE el código HTML crudo sin bloques de código Markdown ni explicaciones.
+    `;
+
+      const response = await ai.models.generateContent({
+        model: "gemini-2.5-flash",
+        contents: prompt,
+      });
+
+      let htmlBody = response.text
+        .replace(/```html/g, "")
+        .replace(/```/g, "")
+        .trim();
+
+      htmlBody = htmlBody.replace(
+        /\{FOTO_TECNICA_URL=(https?:\/\/[^\}]+)\}/g,
+        '<img src="$1" width="100%" style="max-height:220px; height: auto; object-fit:contain; border-radius:4px; margin: 0 5px;" alt="Técnica" />',
+      );
+      htmlBody = htmlBody.replace(
+        /\{FOTO_CATALOGO_URL=(https?:\/\/[^\}]+)\}/g,
+        '<img src="$1" width="100%" style="max-height:220px; height: auto; object-fit:contain; border-radius:4px; margin: 0 5px;" alt="Catálogo" />',
+      );
+
+      htmlBody = htmlBody.replace(/\{FOTO_TECNICA_URL=[^\}]*\}/g, "");
+      htmlBody = htmlBody.replace(/\{FOTO_CATALOGO_URL=[^\}]*\}/g, "");
+
+      const gmail = google.gmail({ version: "v1", auth: oauth2Client });
+      const draftPayload = crearRawEmail(
+        mailCliente,
+        asunto || "Presupuesto Conoflex Argentina",
+        htmlBody,
+        threadId,
+      );
+
+      const draftCreated = await gmail.users.drafts.create({
+        userId: "me",
+        requestBody: draftPayload,
+      });
+
+      res.json({
+        success: true,
+        mensaje: "Borrador generado en Gmail",
+        draftId: draftCreated.data.id,
+      });
+    } catch (error) {
+      console.error("Error creando borrador:", error);
+      res
+        .status(500)
+        .json({ error: "Error al generar borrador: " + error.message });
+    }
+  },
+);
+
+// ANÁLISIS ESTRATÉGICO Y DIAGNÓSTICO OPERATIVO CON IA
+app.post(
+  "/api/analisis-estrategico",
+  autenticarToken,
+  autorizarRoles("ADMIN", "PRODUCCION"),
+  async (req, res) => {
+    try {
+      const productosTerminados = db
+        .prepare("SELECT * FROM productos_terminados")
+        .all();
+      const semielaborados = db.prepare("SELECT * FROM semielaborados").all();
+      const materiasPrimas = db.prepare("SELECT * FROM materias_primas").all();
+      const registrosProd = db
+        .prepare("SELECT * FROM registro_produccion ORDER BY id DESC LIMIT 50")
+        .all();
+
+      const prompt = `
+      Sos el Director de Operaciones, Cadena de Suministro y Calidad Industrial de Conoflex Argentina.
+
+      DATOS DE PLANTA EN TIEMPO REAL:
+      - Productos Terminados (Ventas y Stock): ${JSON.stringify(productosTerminados, null, 2)}
+      - Semielaborados (Stock por Depósito): ${JSON.stringify(semielaborados, null, 2)}
+      - Materias Primas e Insumos: ${JSON.stringify(materiasPrimas, null, 2)}
+      - Producción y Fallas Recientes: ${JSON.stringify(registrosProd, null, 2)}
+
+      TAREA DE ANÁLISIS Y TOMA DE DECISIONES:
+      1. COMPRA DE MATERIAS PRIMAS: Identificá los insumos cuyo stock esté bajo. Recomendá qué comprar e indicá prioridades.
+      2. PLANIFICACIÓN DE PRODUCCIÓN: Analizá la demanda y stock de semielaborados e indicá qué modelos conviene fabricar primero.
+      3. CONTROL DE CALIDAD Y FALLAS: Analizá el historial de fallas e indicá 3 acciones correctivas concretas.
+
+      ESTRUCTURA DEL REPORTE:
+      Generá un informe ejecutivo bien maquetado en HTML (usando tablas limpias, etiquetas de estado de color y viñetas).
+      Devolvé ÚNICAMENTE el código HTML sin bloques Markdown ni introducciones.
+    `;
+
+      const response = await ai.models.generateContent({
+        model: "gemini-2.5-flash",
+        contents: prompt,
+      });
+
+      let htmlReporte = response.text
+        .replace(/```html/g, "")
+        .replace(/```/g, "")
+        .trim();
+
+      res.json({ success: true, informe: htmlReporte });
+    } catch (error) {
+      console.error("Error generando análisis estratégico:", error);
+      res
+        .status(500)
+        .json({ error: "Error al generar el informe: " + error.message });
+    }
+  },
+);
+
+// PRODUCTOS DEL CATÁLOGO COMERCIAL
+app.get("/api/productos", (req, res) => {
+  const productos = db.prepare("SELECT * FROM productos ORDER BY id ASC").all();
+  res.json({ productos });
+});
+
+app.put(
+  "/api/productos/:id",
+  autenticarToken,
+  autorizarRoles("ADMIN", "COMERCIAL"),
+  (req, res) => {
+    try {
+      const { id } = req.params;
+      const {
+        codigo,
+        nombre,
+        medidas,
+        precio_lista,
+        especificacion,
+        aplicacion,
+      } = req.body;
+
+      db.prepare(
+        `
+      UPDATE productos
+      SET codigo = ?, nombre = ?, medidas = ?, precio_lista = ?, especificacion = ?, aplicacion = ?, updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `,
+      ).run(
+        codigo || "",
+        nombre || "",
+        medidas || "",
+        precio_lista || "",
+        especificacion || "",
+        aplicacion || "",
+        id,
+      );
+
+      res.json({
+        success: true,
+        mensaje: "Producto actualizado correctamente.",
+      });
+    } catch (err) {
+      res
+        .status(500)
+        .json({ error: "Error actualizando producto: " + err.message });
+    }
+  },
+);
+
+app.post(
+  "/api/productos/:id/imagen",
+  autenticarToken,
+  autorizarRoles("ADMIN", "COMERCIAL"),
+  uploadFoto.single("imagen"),
+  (req, res) => {
+    try {
+      const { id } = req.params;
+      const { tipo } = req.body;
+      if (!req.file)
+        return res.status(400).json({ error: "No se recibió ninguna imagen." });
+
+      const baseUrl = process.env.BASE_URL || `http://localhost:${PORT}`;
+      const imageUrl = `${baseUrl}/imagenes/${req.file.filename}`;
+      const campoBD = tipo === "tecnica" ? "foto_tecnica" : "foto_catalogo";
+
+      db.prepare(`UPDATE productos SET ${campoBD} = ? WHERE id = ?`).run(
+        imageUrl,
+        id,
+      );
+
+      res.json({
+        success: true,
+        mensaje: `Foto ${tipo} subida correctamente.`,
+        imageUrl,
+      });
+    } catch (err) {
+      res.status(500).json({ error: "Error al guardar la imagen." });
+    }
+  },
+);
 
 // ==========================================
 // MÓDULO 1: MATERIAS PRIMAS
@@ -1918,7 +2522,6 @@ app.delete("/api/ordenes-trabajo/:id", (req, res) => {
   }
 });
 
-const PORT = 3001;
 app.listen(PORT, () =>
-  console.log(`Backend local corriendo en http://localhost:${PORT}`),
+  console.log(`🚀 Servidor Conoflex unificado ejecutándose en puerto ${PORT}`),
 );
