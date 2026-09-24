@@ -1,7 +1,7 @@
 const express = require("express");
 const cors = require("cors");
 const multer = require("multer");
-const Database = require("better-sqlite3");
+const mysql = require("mysql2/promise");
 const xlsx = require("xlsx");
 const { google } = require("googleapis");
 const { GoogleGenAI } = require("@google/genai");
@@ -18,6 +18,17 @@ app.use(express.urlencoded({ limit: "50mb", extended: true }));
 
 const PORT = process.env.PORT || 3001;
 const JWT_SECRET = process.env.JWT_SECRET || "conoflex_secreto_super_seguro";
+
+// Configuración de la base de datos MySQL en Ferozo / Local
+const db = mysql.createPool({
+  host: process.env.DB_HOST || "localhost",
+  user: process.env.DB_USER,
+  password: process.env.DB_PASSWORD,
+  database: process.env.DB_NAME,
+  waitForConnections: true,
+  connectionLimit: 10,
+  queueLimit: 0,
+});
 
 // URL Dinámica para Frontend (Local vs Producción)
 const FRONTEND_URL =
@@ -88,8 +99,6 @@ const EXCLUDED_CODES = [
   "MASTERBATCHES",
 ];
 
-const db = new Database("conoflex_local.db");
-
 // Configuración de Google OAuth & Gemini AI
 const oauth2Client = new google.auth.OAuth2(
   process.env.GOOGLE_CLIENT_ID,
@@ -132,182 +141,236 @@ function crearRawEmail(to, subject, htmlBody, threadId) {
 }
 
 // ==========================================
-// 1. TABLAS BASE Y AUTENTICACIÓN POR ROLES
+// INICIALIZACIÓN Y TABLAS MYSQL
 // ==========================================
-db.exec(`
-  CREATE TABLE IF NOT EXISTS usuarios (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    nombre TEXT NOT NULL,
-    email TEXT UNIQUE NOT NULL,
-    password_hash TEXT NOT NULL,
-    rol TEXT CHECK(rol IN ('ADMIN', 'COMERCIAL', 'PRODUCCION')) NOT NULL DEFAULT 'COMERCIAL',
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-  );
+async function initDB() {
+  try {
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS usuarios (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        nombre VARCHAR(255) NOT NULL,
+        email VARCHAR(255) UNIQUE NOT NULL,
+        password_hash VARCHAR(255) NOT NULL,
+        rol VARCHAR(50) NOT NULL DEFAULT 'COMERCIAL',
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
 
-  CREATE TABLE IF NOT EXISTS reglas (
-    clave TEXT PRIMARY KEY,
-    valor TEXT
-  );
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS reglas (
+        clave VARCHAR(255) PRIMARY KEY,
+        valor TEXT
+      );
+    `);
 
-  CREATE TABLE IF NOT EXISTS productos (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    codigo TEXT,
-    nombre TEXT,
-    medidas TEXT,
-    precio_lista TEXT,
-    especificacion TEXT,
-    aplicacion TEXT,
-    foto_tecnica TEXT,
-    foto_catalogo TEXT,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-  );
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS productos (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        codigo VARCHAR(255),
+        nombre VARCHAR(255),
+        medidas VARCHAR(255),
+        precio_lista VARCHAR(255),
+        especificacion TEXT,
+        aplicacion TEXT,
+        foto_tecnica TEXT,
+        foto_catalogo TEXT,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+      );
+    `);
 
-  CREATE TABLE IF NOT EXISTS materias_primas (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    codigo TEXT UNIQUE NOT NULL,
-    nombre TEXT NOT NULL,
-    unidad_medida TEXT DEFAULT 'Unidades',
-    stock_actual REAL DEFAULT 0.00,
-    orden INTEGER DEFAULT 0,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-  );
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS materias_primas (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        codigo VARCHAR(255) UNIQUE NOT NULL,
+        nombre VARCHAR(255) NOT NULL,
+        unidad_medida VARCHAR(50) DEFAULT 'Unidades',
+        stock_actual DOUBLE DEFAULT 0.00,
+        orden INT DEFAULT 0,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
 
-  CREATE TABLE IF NOT EXISTS configuraciones_pegado (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    nombre TEXT UNIQUE NOT NULL,
-    reflectiva TEXT DEFAULT 'NINGUNA',
-    protector_orajet INTEGER DEFAULT 0,
-    aplicacion_protector TEXT DEFAULT 'NINGUNA',
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-  );
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS configuraciones_pegado (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        nombre VARCHAR(255) UNIQUE NOT NULL,
+        reflectiva VARCHAR(255) DEFAULT 'NINGUNA',
+        protector_orajet INT DEFAULT 0,
+        aplicacion_protector VARCHAR(255) DEFAULT 'NINGUNA',
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
 
-  CREATE TABLE IF NOT EXISTS semielaborados (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    codigo TEXT UNIQUE NOT NULL,
-    nombre TEXT NOT NULL,
-    unidad_medida TEXT DEFAULT 'Unidades',
-    stock_33 REAL DEFAULT 0.00,
-    stock_26 REAL DEFAULT 0.00,
-    stock_ayolas REAL DEFAULT 0.00,
-    stock_37 REAL DEFAULT 0.00,
-    orden INTEGER DEFAULT 0,
-    configuracion_pegado_id INTEGER,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (configuracion_pegado_id) REFERENCES configuraciones_pegado (id) ON DELETE SET NULL
-  );
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS semielaborados (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        codigo VARCHAR(255) UNIQUE NOT NULL,
+        nombre VARCHAR(255) NOT NULL,
+        unidad_medida VARCHAR(50) DEFAULT 'Unidades',
+        stock_33 DOUBLE DEFAULT 0.00,
+        stock_26 DOUBLE DEFAULT 0.00,
+        stock_ayolas DOUBLE DEFAULT 0.00,
+        stock_37 DOUBLE DEFAULT 0.00,
+        orden INT DEFAULT 0,
+        configuracion_pegado_id INT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (configuracion_pegado_id) REFERENCES configuraciones_pegado (id) ON DELETE SET NULL
+      );
+    `);
 
-  CREATE TABLE IF NOT EXISTS productos_terminados (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    codigo TEXT UNIQUE NOT NULL,
-    nombre TEXT NOT NULL,
-    promedio_ventas_mensual REAL DEFAULT 0.00,
-    orden INTEGER DEFAULT 0,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-  );
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS productos_terminados (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        codigo VARCHAR(255) UNIQUE NOT NULL,
+        nombre VARCHAR(255) NOT NULL,
+        promedio_ventas_mensual DOUBLE DEFAULT 0.00,
+        orden INT DEFAULT 0,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
 
-  CREATE TABLE IF NOT EXISTS ingenierias (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    semielaborado_id INTEGER,
-    producto_terminado_id INTEGER,
-    nombre_version TEXT NOT NULL,
-    es_activa INTEGER DEFAULT 1,
-    updated_at DATETIME,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (semielaborado_id) REFERENCES semielaborados (id) ON DELETE CASCADE,
-    FOREIGN KEY (producto_terminado_id) REFERENCES productos_terminados (id) ON DELETE CASCADE
-  );
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS ingenierias (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        semielaborado_id INT,
+        producto_terminado_id INT,
+        nombre_version VARCHAR(255) NOT NULL,
+        es_activa INT DEFAULT 1,
+        updated_at DATETIME,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (semielaborado_id) REFERENCES semielaborados (id) ON DELETE CASCADE,
+        FOREIGN KEY (producto_terminado_id) REFERENCES productos_terminados (id) ON DELETE CASCADE
+      );
+    `);
 
-  CREATE TABLE IF NOT EXISTS ingenieria_detalles (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    ingenieria_id INTEGER NOT NULL,
-    materia_prima_id INTEGER,
-    semielaborado_id INTEGER,
-    cantidad REAL NOT NULL,
-    unidad_medida TEXT DEFAULT 'Unidades',
-    FOREIGN KEY (ingenieria_id) REFERENCES ingenierias (id) ON DELETE CASCADE,
-    FOREIGN KEY (materia_prima_id) REFERENCES materias_primas (id) ON DELETE CASCADE,
-    FOREIGN KEY (semielaborado_id) REFERENCES semielaborados (id) ON DELETE CASCADE
-  );
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS ingenieria_detalles (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        ingenieria_id INT NOT NULL,
+        materia_prima_id INT,
+        semielaborado_id INT,
+        cantidad DOUBLE NOT NULL,
+        unidad_medida VARCHAR(50) DEFAULT 'Unidades',
+        FOREIGN KEY (ingenieria_id) REFERENCES ingenierias (id) ON DELETE CASCADE,
+        FOREIGN KEY (materia_prima_id) REFERENCES materias_primas (id) ON DELETE CASCADE,
+        FOREIGN KEY (semielaborado_id) REFERENCES semielaborados (id) ON DELETE CASCADE
+      );
+    `);
 
-  CREATE TABLE IF NOT EXISTS registro_produccion (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    fecha TEXT,
-    categoria_maq TEXT,
-    codigo_ot TEXT,
-    codigo TEXT,
-    articulo TEXT,
-    cant_buenos REAL DEFAULT 0,
-    segunda_calidad REAL DEFAULT 0,
-    cant_fallas REAL DEFAULT 0,
-    kg_total REAL DEFAULT 0,
-    kg_fallas REAL DEFAULT 0,
-    ingenieria_id INTEGER,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-  );
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS registro_produccion (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        fecha VARCHAR(50),
+        categoria_maq VARCHAR(255),
+        codigo_ot VARCHAR(255),
+        codigo VARCHAR(255),
+        articulo VARCHAR(255),
+        cant_buenos DOUBLE DEFAULT 0,
+        segunda_calidad DOUBLE DEFAULT 0,
+        cant_fallas DOUBLE DEFAULT 0,
+        kg_total DOUBLE DEFAULT 0,
+        kg_fallas DOUBLE DEFAULT 0,
+        ingenieria_id INT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
 
-  CREATE TABLE IF NOT EXISTS cargas_produccion (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    codigo_ot TEXT NOT NULL,
-    semielaborado_codigo TEXT NOT NULL,
-    articulo TEXT,
-    cant_buenos REAL DEFAULT 0,
-    cant_fallas REAL DEFAULT 0,
-    fecha TEXT,
-    operario_nombre TEXT,
-    supervisor_nombre TEXT,
-    observaciones TEXT,
-    estado_aprobacion TEXT DEFAULT 'PENDIENTE',
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-  );
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS cargas_produccion (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        codigo_ot VARCHAR(255) NOT NULL,
+        semielaborado_codigo VARCHAR(255) NOT NULL,
+        articulo VARCHAR(255),
+        cant_buenos DOUBLE DEFAULT 0,
+        cant_fallas DOUBLE DEFAULT 0,
+        fecha VARCHAR(50),
+        operario_nombre VARCHAR(255),
+        supervisor_nombre VARCHAR(255),
+        observaciones TEXT,
+        estado_aprobacion VARCHAR(50) DEFAULT 'PENDIENTE',
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
 
-  CREATE TABLE IF NOT EXISTS grupos_alerta (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    nombre TEXT NOT NULL,
-    dias_critico INTEGER NOT NULL DEFAULT 5,
-    dias_alerta INTEGER NOT NULL DEFAULT 15,
-    es_predeterminado INTEGER DEFAULT 0
-  );
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS grupos_alerta (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        nombre VARCHAR(255) NOT NULL,
+        dias_critico INT NOT NULL DEFAULT 5,
+        dias_alerta INT NOT NULL DEFAULT 15,
+        es_predeterminado INT DEFAULT 0
+      );
+    `);
 
-  CREATE TABLE IF NOT EXISTS ordenes_trabajo (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    codigo_ot TEXT NOT NULL,
-    semielaborado_codigo TEXT NOT NULL,
-    articulo TEXT,
-    maquina TEXT NOT NULL,
-    destino TEXT,
-    cant_objetivo INTEGER NOT NULL DEFAULT 1000,
-    cant_producida INTEGER DEFAULT 0,
-    kg_por_unidad REAL DEFAULT 1.0,
-    estado TEXT DEFAULT 'PROGRAMADO',
-    fecha_inicio TEXT,
-    velocidad_u_hora INTEGER DEFAULT 100,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-  );
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS ordenes_trabajo (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        codigo_ot VARCHAR(255) NOT NULL,
+        semielaborado_codigo VARCHAR(255) NOT NULL,
+        articulo VARCHAR(255),
+        maquina VARCHAR(255) NOT NULL,
+        destino VARCHAR(255),
+        cant_objetivo INT NOT NULL DEFAULT 1000,
+        cant_producida INT DEFAULT 0,
+        kg_por_unidad DOUBLE DEFAULT 1.0,
+        estado VARCHAR(50) DEFAULT 'PROGRAMADO',
+        fecha_inicio VARCHAR(50),
+        velocidad_u_hora INT DEFAULT 100,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
 
-  /* ÍNDICES DE ALTO RENDIMIENTO SQLITE */
-  CREATE INDEX IF NOT EXISTS idx_ing_detalles_ing_id ON ingenieria_detalles(ingenieria_id);
-  CREATE INDEX IF NOT EXISTS idx_ing_detalles_mp_id ON ingenieria_detalles(materia_prima_id);
-  CREATE INDEX IF NOT EXISTS idx_ing_detalles_se_id ON ingenieria_detalles(semielaborado_id);
-  CREATE INDEX IF NOT EXISTS idx_ingenierias_se_id ON ingenierias(semielaborado_id);
-  CREATE INDEX IF NOT EXISTS idx_ingenierias_pt_id ON ingenierias(producto_terminado_id);
-  CREATE INDEX IF NOT EXISTS idx_cargas_estado ON cargas_produccion(estado_aprobacion);
-`);
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS registro_produccion_materiales (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        registro_id INT,
+        codigo_ot VARCHAR(255),
+        materia_prima_codigo VARCHAR(255),
+        materia_prima_nombre VARCHAR(255),
+        cantidad_usada DOUBLE,
+        unidad_medida VARCHAR(50),
+        fecha VARCHAR(50),
+        FOREIGN KEY (registro_id) REFERENCES registro_produccion(id) ON DELETE CASCADE
+      );
+    `);
 
-// USUARIO ADMIN POR DEFECTO SI NO EXISTE
-const adminExistente = db
-  .prepare("SELECT COUNT(*) as count FROM usuarios")
-  .get();
-if (adminExistente.count === 0) {
-  db.prepare(
-    `
-    INSERT INTO usuarios (nombre, email, password_hash, rol)
-    VALUES ('Administrador Conoflex', 'admin@conoflex.com.ar', 'admin123', 'ADMIN')
-  `,
-  ).run();
-  console.log(
-    "👤 Usuario Administrador creado por defecto: admin@conoflex.com.ar / admin123",
-  );
+    // USUARIO ADMIN POR DEFECTO
+    const [adminRows] = await db.query(
+      "SELECT COUNT(*) as count FROM usuarios",
+    );
+    if (adminRows[0].count === 0) {
+      await db.query(
+        "INSERT INTO usuarios (nombre, email, password_hash, rol) VALUES (?, ?, ?, ?)",
+        [
+          "Administrador Conoflex",
+          "admin@conoflex.com.ar",
+          "admin123",
+          "ADMIN",
+        ],
+      );
+      console.log(
+        "👤 Usuario Administrador creado por defecto: admin@conoflex.com.ar / admin123",
+      );
+    }
+
+    // GRUPOS ALERTA POR DEFECTO
+    const [grupoRows] = await db.query(
+      "SELECT COUNT(*) as count FROM grupos_alerta",
+    );
+    if (grupoRows[0].count === 0) {
+      await db.query(
+        "INSERT INTO grupos_alerta (nombre, dias_critico, dias_alerta, es_predeterminado) VALUES (?, ?, ?, ?)",
+        ["General", 5, 15, 1],
+      );
+    }
+
+    console.log("✅ Estructura MySQL inicializada correctamente.");
+  } catch (err) {
+    console.error("❌ Error inicializando base de datos MySQL:", err);
+  }
 }
+
+initDB();
 
 // MIDDLEWARES DE AUTENTICACIÓN Y ROLES
 function autenticarToken(req, res, next) {
@@ -336,86 +399,8 @@ function autorizarRoles(...rolesPermitidos) {
   };
 }
 
-// MIGRACIÓN AUTOMÁTICA
-try {
-  const indices = db.prepare("PRAGMA index_list(ordenes_trabajo)").all();
-  const hasUnique = indices.some((idx) => idx.unique);
-  if (hasUnique) {
-    db.exec(`
-      CREATE TABLE ordenes_trabajo_temp (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        codigo_ot TEXT NOT NULL,
-        semielaborado_codigo TEXT NOT NULL,
-        articulo TEXT,
-        maquina TEXT NOT NULL,
-        destino TEXT,
-        cant_objetivo INTEGER NOT NULL DEFAULT 1000,
-        cant_producida INTEGER DEFAULT 0,
-        kg_por_unidad REAL DEFAULT 1.0,
-        estado TEXT DEFAULT 'PROGRAMADO',
-        fecha_inicio TEXT,
-        velocidad_u_hora INTEGER DEFAULT 100,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-      );
-      INSERT INTO ordenes_trabajo_temp SELECT * FROM ordenes_trabajo;
-      DROP TABLE ordenes_trabajo;
-      ALTER TABLE ordenes_trabajo_temp RENAME TO ordenes_trabajo;
-    `);
-  }
-} catch (e) {
-  console.log("Migración de ordenes_trabajo no requerida o completada.");
-}
-
-const countGrupos = db
-  .prepare("SELECT COUNT(*) as count FROM grupos_alerta")
-  .get();
-if (countGrupos.count === 0) {
-  db.prepare(
-    `
-    INSERT INTO grupos_alerta (nombre, dias_critico, dias_alerta, es_predeterminado)
-    VALUES ('General', 5, 15, 1)
-  `,
-  ).run();
-}
-
 // ==========================================
-// 2. MIGRACIONES DINÁMICAS
-// ==========================================
-const tblSEInfo = db.prepare("PRAGMA table_info(semielaborados)").all();
-if (!tblSEInfo.some((c) => c.name === "configuracion_pegado_id")) {
-  db.exec(
-    "ALTER TABLE semielaborados ADD COLUMN configuracion_pegado_id INTEGER;",
-  );
-}
-
-const tblProdInfo = db.prepare("PRAGMA table_info(registro_produccion)").all();
-if (!tblProdInfo.some((c) => c.name === "codigo_ot")) {
-  db.exec("ALTER TABLE registro_produccion ADD COLUMN codigo_ot TEXT;");
-}
-if (!tblProdInfo.some((c) => c.name === "ingenieria_id")) {
-  db.exec("ALTER TABLE registro_produccion ADD COLUMN ingenieria_id INTEGER;");
-}
-
-try {
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS registro_produccion_materiales (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      registro_id INTEGER,
-      codigo_ot TEXT,
-      materia_prima_codigo TEXT,
-      materia_prima_nombre TEXT,
-      cantidad_usada REAL,
-      unidad_medida TEXT,
-      fecha TEXT,
-      FOREIGN KEY (registro_id) REFERENCES registro_produccion(id) ON DELETE CASCADE
-    );
-  `);
-} catch (e) {
-  console.log("Error en migración de materiales:", e);
-}
-
-// ==========================================
-// 3. PARSER CSV COMPLETO
+// PARSER CSV COMPLETO
 // ==========================================
 function parseCSVFull(text) {
   const rows = [];
@@ -637,7 +622,7 @@ function inferMachineCategory(codigo, articulo) {
 // MÓDULO 0: AUTENTICACIÓN Y GESTIÓN DE USUARIOS
 // ==========================================
 
-app.post("/api/auth/register", (req, res) => {
+app.post("/api/auth/register", async (req, res) => {
   const { nombre, email, password, rol } = req.body;
   if (!nombre || !email || !password) {
     return res.status(400).json({ error: "Faltan campos obligatorios." });
@@ -647,18 +632,14 @@ app.post("/api/auth/register", (req, res) => {
     const rolValido = ["ADMIN", "COMERCIAL", "PRODUCCION"].includes(rol)
       ? rol
       : "COMERCIAL";
-    const result = db
-      .prepare(
-        `
-      INSERT INTO usuarios (nombre, email, password_hash, rol)
-      VALUES (?, ?, ?, ?)
-    `,
-      )
-      .run(nombre.trim(), email.trim().toLowerCase(), password, rolValido);
+    const [result] = await db.query(
+      "INSERT INTO usuarios (nombre, email, password_hash, rol) VALUES (?, ?, ?, ?)",
+      [nombre.trim(), email.trim().toLowerCase(), password, rolValido],
+    );
 
     res.json({
       success: true,
-      id: result.lastInsertRowid,
+      id: result.insertId,
       mensaje: "Usuario registrado con éxito",
     });
   } catch (error) {
@@ -668,16 +649,17 @@ app.post("/api/auth/register", (req, res) => {
   }
 });
 
-app.post("/api/auth/login", (req, res) => {
+app.post("/api/auth/login", async (req, res) => {
   const { email, password } = req.body;
   if (!email || !password) {
     return res.status(400).json({ error: "Email y contraseña requeridos." });
   }
 
   try {
-    const user = db
-      .prepare("SELECT * FROM usuarios WHERE email = ?")
-      .get(email.trim().toLowerCase());
+    const [rows] = await db.query("SELECT * FROM usuarios WHERE email = ?", [
+      email.trim().toLowerCase(),
+    ]);
+    const user = rows[0];
 
     if (!user || user.password_hash !== password) {
       return res.status(401).json({ error: "Credenciales inválidas" });
@@ -712,11 +694,11 @@ app.get(
   "/api/usuarios",
   autenticarToken,
   autorizarRoles("ADMIN"),
-  (req, res) => {
+  async (req, res) => {
     try {
-      const users = db
-        .prepare("SELECT id, nombre, email, rol, created_at FROM usuarios")
-        .all();
+      const [users] = await db.query(
+        "SELECT id, nombre, email, rol, created_at FROM usuarios",
+      );
       res.json(users);
     } catch (error) {
       res.status(500).json({ error: error.message });
@@ -728,16 +710,16 @@ app.put(
   "/api/usuarios/:id/rol",
   autenticarToken,
   autorizarRoles("ADMIN"),
-  (req, res) => {
+  async (req, res) => {
     const { rol } = req.body;
     if (!["ADMIN", "COMERCIAL", "PRODUCCION"].includes(rol)) {
       return res.status(400).json({ error: "Rol no válido" });
     }
     try {
-      db.prepare("UPDATE usuarios SET rol = ? WHERE id = ?").run(
+      await db.query("UPDATE usuarios SET rol = ? WHERE id = ?", [
         rol,
         req.params.id,
-      );
+      ]);
       res.json({ success: true });
     } catch (error) {
       res.status(500).json({ error: error.message });
@@ -749,23 +731,32 @@ app.put(
 // MÓDULO EMAIL BOT, GEMINI Y CATÁLOGO COMERCIAL
 // ==========================================
 
-app.get("/api/reglas", (req, res) => {
-  const row = db
-    .prepare("SELECT valor FROM reglas WHERE clave = 'prompt_comercial'")
-    .get();
-  res.json({ reglas: row ? row.valor : "" });
+app.get("/api/reglas", async (req, res) => {
+  try {
+    const [rows] = await db.query(
+      "SELECT valor FROM reglas WHERE clave = 'prompt_comercial'",
+    );
+    res.json({ reglas: rows[0] ? rows[0].valor : "" });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
 });
 
 app.post(
   "/api/reglas",
   autenticarToken,
   autorizarRoles("ADMIN", "COMERCIAL"),
-  (req, res) => {
+  async (req, res) => {
     const { reglas } = req.body;
-    db.prepare(
-      "INSERT INTO reglas (clave, valor) VALUES ('prompt_comercial', ?) ON CONFLICT(clave) DO UPDATE SET valor = excluded.valor",
-    ).run(reglas || "");
-    res.json({ success: true, mensaje: "Configuración guardada" });
+    try {
+      await db.query(
+        "INSERT INTO reglas (clave, valor) VALUES ('prompt_comercial', ?) ON DUPLICATE KEY UPDATE valor = VALUES(valor)",
+        [reglas || ""],
+      );
+      res.json({ success: true, mensaje: "Configuración guardada" });
+    } catch (error) {
+      res.status(500).json({ error: error.message });
+    }
   },
 );
 
@@ -855,16 +846,14 @@ app.post(
     try {
       const { mailCliente, consultaText, asunto, threadId } = req.body;
 
-      const reglaRow = db
-        .prepare("SELECT valor FROM reglas WHERE clave = 'prompt_comercial'")
-        .get();
-      const reglasEntrenamiento = reglaRow ? reglaRow.valor : "";
+      const [reglaRows] = await db.query(
+        "SELECT valor FROM reglas WHERE clave = 'prompt_comercial'",
+      );
+      const reglasEntrenamiento = reglaRows[0] ? reglaRows[0].valor : "";
 
-      const productosDB = db
-        .prepare(
-          "SELECT codigo, nombre, medidas, precio_lista, especificacion, aplicacion, foto_tecnica, foto_catalogo FROM productos",
-        )
-        .all();
+      const [productosDB] = await db.query(
+        "SELECT codigo, nombre, medidas, precio_lista, especificacion, aplicacion, foto_tecnica, foto_catalogo FROM productos",
+      );
 
       const prompt = `
       Sos el asesor comercial técnico senior de Conoflex Argentina.
@@ -957,14 +946,14 @@ app.post(
   autorizarRoles("ADMIN", "PRODUCCION"),
   async (req, res) => {
     try {
-      const productosTerminados = db
-        .prepare("SELECT * FROM productos_terminados")
-        .all();
-      const semielaborados = db.prepare("SELECT * FROM semielaborados").all();
-      const materiasPrimas = db.prepare("SELECT * FROM materias_primas").all();
-      const registrosProd = db
-        .prepare("SELECT * FROM registro_produccion ORDER BY id DESC LIMIT 50")
-        .all();
+      const [productosTerminados] = await db.query(
+        "SELECT * FROM productos_terminados",
+      );
+      const [semielaborados] = await db.query("SELECT * FROM semielaborados");
+      const [materiasPrimas] = await db.query("SELECT * FROM materias_primas");
+      const [registrosProd] = await db.query(
+        "SELECT * FROM registro_produccion ORDER BY id DESC LIMIT 50",
+      );
 
       const prompt = `
       Sos el Director de Operaciones, Cadena de Suministro y Calidad Industrial de Conoflex Argentina.
@@ -1006,16 +995,22 @@ app.post(
 );
 
 // PRODUCTOS DEL CATÁLOGO COMERCIAL
-app.get("/api/productos", (req, res) => {
-  const productos = db.prepare("SELECT * FROM productos ORDER BY id ASC").all();
-  res.json({ productos });
+app.get("/api/productos", async (req, res) => {
+  try {
+    const [productos] = await db.query(
+      "SELECT * FROM productos ORDER BY id ASC",
+    );
+    res.json({ productos });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
 });
 
 app.put(
   "/api/productos/:id",
   autenticarToken,
   autorizarRoles("ADMIN", "COMERCIAL"),
-  (req, res) => {
+  async (req, res) => {
     try {
       const { id } = req.params;
       const {
@@ -1027,20 +1022,21 @@ app.put(
         aplicacion,
       } = req.body;
 
-      db.prepare(
+      await db.query(
         `
-      UPDATE productos
-      SET codigo = ?, nombre = ?, medidas = ?, precio_lista = ?, especificacion = ?, aplicacion = ?, updated_at = CURRENT_TIMESTAMP
-      WHERE id = ?
-    `,
-      ).run(
-        codigo || "",
-        nombre || "",
-        medidas || "",
-        precio_lista || "",
-        especificacion || "",
-        aplicacion || "",
-        id,
+        UPDATE productos
+        SET codigo = ?, nombre = ?, medidas = ?, precio_lista = ?, especificacion = ?, aplicacion = ?, updated_at = NOW()
+        WHERE id = ?
+      `,
+        [
+          codigo || "",
+          nombre || "",
+          medidas || "",
+          precio_lista || "",
+          especificacion || "",
+          aplicacion || "",
+          id,
+        ],
       );
 
       res.json({
@@ -1060,7 +1056,7 @@ app.post(
   autenticarToken,
   autorizarRoles("ADMIN", "COMERCIAL"),
   uploadFoto.single("imagen"),
-  (req, res) => {
+  async (req, res) => {
     try {
       const { id } = req.params;
       const { tipo } = req.body;
@@ -1071,10 +1067,10 @@ app.post(
       const imageUrl = `${baseUrl}/imagenes/${req.file.filename}`;
       const campoBD = tipo === "tecnica" ? "foto_tecnica" : "foto_catalogo";
 
-      db.prepare(`UPDATE productos SET ${campoBD} = ? WHERE id = ?`).run(
+      await db.query(`UPDATE productos SET ${campoBD} = ? WHERE id = ?`, [
         imageUrl,
         id,
-      );
+      ]);
 
       res.json({
         success: true,
@@ -1090,24 +1086,23 @@ app.post(
 // ==========================================
 // MÓDULO 1: MATERIAS PRIMAS
 // ==========================================
-app.get("/api/materias-primas", (req, res) => {
+app.get("/api/materias-primas", async (req, res) => {
   try {
-    res.json(
-      db
-        .prepare("SELECT * FROM materias_primas ORDER BY orden ASC, id ASC")
-        .all(),
+    const [rows] = await db.query(
+      "SELECT * FROM materias_primas ORDER BY orden ASC, id ASC",
     );
+    res.json(rows);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
-app.put("/api/materias-primas/:id/stock", (req, res) => {
+app.put("/api/materias-primas/:id/stock", async (req, res) => {
   try {
-    db.prepare("UPDATE materias_primas SET stock_actual = ? WHERE id = ?").run(
+    await db.query("UPDATE materias_primas SET stock_actual = ? WHERE id = ?", [
       req.body.stock,
       req.params.id,
-    );
+    ]);
     res.json({ success: true });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -1134,7 +1129,7 @@ app.post("/api/materias-primas/previsualizar-sheets", async (req, res) => {
         .json({ error: "El archivo de Google Sheets está vacío" });
     }
 
-    const currentMP = db.prepare("SELECT * FROM materias_primas").all();
+    const [currentMP] = await db.query("SELECT * FROM materias_primas");
     const currentMap = {};
     currentMP.forEach((m) => {
       currentMap[m.codigo.toUpperCase().trim()] = m;
@@ -1186,111 +1181,107 @@ app.post("/api/materias-primas/previsualizar-sheets", async (req, res) => {
   }
 });
 
-app.post("/api/materias-primas/aplicar-sincronizacion", (req, res) => {
+app.post("/api/materias-primas/aplicar-sincronizacion", async (req, res) => {
   const { nuevos, modificados } = req.body;
+  const conn = await db.getConnection();
 
   try {
-    const insertStmt = db.prepare(
-      "INSERT INTO materias_primas (codigo, nombre, unidad_medida, stock_actual) VALUES (?, ?, ?, ?)",
-    );
-    const updateStmt = db.prepare(
-      "UPDATE materias_primas SET stock_actual = ? WHERE id = ?",
-    );
+    await conn.beginTransaction();
 
     let nuevosCount = 0;
     let modificadosCount = 0;
 
-    db.transaction(() => {
-      if (Array.isArray(nuevos)) {
-        for (const n of nuevos) {
-          insertStmt.run(
-            n.codigo,
-            n.nombre,
-            n.unidad || "KILOS",
-            n.stock_nuevo || 0,
-          );
-          nuevosCount++;
-        }
+    if (Array.isArray(nuevos)) {
+      for (const n of nuevos) {
+        await conn.query(
+          "INSERT INTO materias_primas (codigo, nombre, unidad_medida, stock_actual) VALUES (?, ?, ?, ?)",
+          [n.codigo, n.nombre, n.unidad || "KILOS", n.stock_nuevo || 0],
+        );
+        nuevosCount++;
       }
-      if (Array.isArray(modificados)) {
-        for (const m of modificados) {
-          updateStmt.run(m.stock_nuevo, m.id);
-          modificadosCount++;
-        }
-      }
-    })();
+    }
 
+    if (Array.isArray(modificados)) {
+      for (const m of modificados) {
+        await conn.query(
+          "UPDATE materias_primas SET stock_actual = ? WHERE id = ?",
+          [m.stock_nuevo, m.id],
+        );
+        modificadosCount++;
+      }
+    }
+
+    await conn.commit();
     res.json({ success: true, nuevosCount, modificadosCount });
   } catch (error) {
+    await conn.rollback();
     console.error("Error al aplicar sincronización de materias primas:", error);
     res.status(500).json({ error: error.message });
+  } finally {
+    conn.release();
   }
 });
 
 // ==========================================
 // MÓDULO 2: CONFIGURACIONES DE PEGADO Y REFLECTIVAS
 // ==========================================
-app.get("/api/configuraciones-pegado", (req, res) => {
+app.get("/api/configuraciones-pegado", async (req, res) => {
   try {
-    const rows = db
-      .prepare(
-        `
+    const [rows] = await db.query(`
       SELECT c.*, COUNT(s.id) as semielaborados_count
       FROM configuraciones_pegado c
       LEFT JOIN semielaborados s ON s.configuracion_pegado_id = c.id
       GROUP BY c.id
       ORDER BY c.nombre ASC
-    `,
-      )
-      .all();
+    `);
     res.json(rows);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
-app.post("/api/configuraciones-pegado", (req, res) => {
+app.post("/api/configuraciones-pegado", async (req, res) => {
   const { nombre, reflectiva, protector_orajet, aplicacion_protector } =
     req.body;
   if (!nombre || !nombre.trim())
     return res.status(400).json({ error: "Nombre requerido" });
 
   try {
-    const info = db
-      .prepare(
-        `
+    const [result] = await db.query(
+      `
       INSERT INTO configuraciones_pegado (nombre, reflectiva, protector_orajet, aplicacion_protector)
       VALUES (?, ?, ?, ?)
     `,
-      )
-      .run(
+      [
         nombre.trim().toUpperCase(),
         reflectiva || "NINGUNA",
         protector_orajet ? 1 : 0,
         aplicacion_protector || "NINGUNA",
-      );
-    res.json({ success: true, id: info.lastInsertRowid });
+      ],
+    );
+    res.json({ success: true, id: result.insertId });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
-app.put("/api/configuraciones-pegado/:id", (req, res) => {
+app.put("/api/configuraciones-pegado/:id", async (req, res) => {
   const { nombre, reflectiva, protector_orajet, aplicacion_protector } =
     req.body;
   try {
-    db.prepare(
+    await db.query(
       `
       UPDATE configuraciones_pegado
       SET nombre = ?, reflectiva = ?, protector_orajet = ?, aplicacion_protector = ?
       WHERE id = ?
     `,
-    ).run(
-      nombre.trim().toUpperCase(),
-      reflectiva || "NINGUNA",
-      protector_orajet ? 1 : 0,
-      aplicacion_protector || "NINGUNA",
-      req.params.id,
+      [
+        nombre.trim().toUpperCase(),
+        reflectiva || "NINGUNA",
+        protector_orajet ? 1 : 0,
+        aplicacion_protector || "NINGUNA",
+        req.params.id,
+      ],
     );
     res.json({ success: true });
   } catch (error) {
@@ -1298,95 +1289,97 @@ app.put("/api/configuraciones-pegado/:id", (req, res) => {
   }
 });
 
-app.delete("/api/configuraciones-pegado/:id", (req, res) => {
+app.delete("/api/configuraciones-pegado/:id", async (req, res) => {
+  const conn = await db.getConnection();
   try {
-    db.transaction(() => {
-      db.prepare(
-        "UPDATE semielaborados SET configuracion_pegado_id = NULL WHERE configuracion_pegado_id = ?",
-      ).run(req.params.id);
-      db.prepare("DELETE FROM configuraciones_pegado WHERE id = ?").run(
-        req.params.id,
-      );
-    })();
+    await conn.beginTransaction();
+    await conn.query(
+      "UPDATE semielaborados SET configuracion_pegado_id = NULL WHERE configuracion_pegado_id = ?",
+      [req.params.id],
+    );
+    await conn.query("DELETE FROM configuraciones_pegado WHERE id = ?", [
+      req.params.id,
+    ]);
+    await conn.commit();
     res.json({ success: true });
   } catch (error) {
+    await conn.rollback();
     res.status(500).json({ error: error.message });
+  } finally {
+    conn.release();
   }
 });
 
-app.put("/api/semielaborados/:id/enlazar-pegado", (req, res) => {
+app.put("/api/semielaborados/:id/enlazar-pegado", async (req, res) => {
   const { configuracion_pegado_id } = req.body;
   try {
-    db.prepare(
+    await db.query(
       "UPDATE semielaborados SET configuracion_pegado_id = ? WHERE id = ?",
-    ).run(configuracion_pegado_id || null, req.params.id);
+      [configuracion_pegado_id || null, req.params.id],
+    );
     res.json({ success: true });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
-app.post("/api/semielaborados/bulk-enlazar-pegado", (req, res) => {
+app.post("/api/semielaborados/bulk-enlazar-pegado", async (req, res) => {
   const { ids, configuracion_pegado_id } = req.body;
   if (!ids || !Array.isArray(ids))
     return res.status(400).json({ error: "IDs no válidos" });
 
+  const conn = await db.getConnection();
   try {
-    const stmt = db.prepare(
-      "UPDATE semielaborados SET configuracion_pegado_id = ? WHERE id = ?",
-    );
-    db.transaction(() => {
-      for (let id of ids) {
-        stmt.run(configuracion_pegado_id || null, id);
-      }
-    })();
+    await conn.beginTransaction();
+    for (let id of ids) {
+      await conn.query(
+        "UPDATE semielaborados SET configuracion_pegado_id = ? WHERE id = ?",
+        [configuracion_pegado_id || null, id],
+      );
+    }
+    await conn.commit();
     res.json({ success: true, count: ids.length });
   } catch (error) {
+    await conn.rollback();
     res.status(500).json({ error: error.message });
+  } finally {
+    conn.release();
   }
 });
 
 // ==========================================
 // MÓDULO 3: SEMIELABORADOS Y CRUCE DE DÍAS DE STOCK
 // ==========================================
-app.get("/api/semielaborados", (req, res) => {
+app.get("/api/semielaborados", async (req, res) => {
   try {
-    const semielaborados = db
-      .prepare(
-        `
-        SELECT s.*, 
-               c.nombre as pegado_nombre,
-               c.reflectiva,
-               c.protector_orajet,
-               c.aplicacion_protector,
-               (
-                 SELECT MAX(rp.fecha) 
-                 FROM registro_produccion rp 
-                 WHERE UPPER(rp.codigo) = UPPER(s.codigo) OR UPPER(rp.articulo) = UPPER(s.nombre)
-               ) as ultima_produccion_fecha,
-               COUNT(i.id) as recetas_count 
-        FROM semielaborados s 
-        LEFT JOIN configuraciones_pegado c ON s.configuracion_pegado_id = c.id
-        LEFT JOIN ingenierias i ON s.id = i.semielaborado_id 
-        GROUP BY s.id 
-        ORDER BY s.orden ASC, s.id ASC
-      `,
-      )
-      .all();
+    const [semielaborados] = await db.query(`
+      SELECT s.*, 
+             c.nombre as pegado_nombre,
+             c.reflectiva,
+             c.protector_orajet,
+             c.aplicacion_protector,
+             (
+               SELECT MAX(rp.fecha) 
+               FROM registro_produccion rp 
+               WHERE UPPER(rp.codigo) = UPPER(s.codigo) OR UPPER(rp.articulo) = UPPER(s.nombre)
+             ) as ultima_produccion_fecha,
+             COUNT(i.id) as recetas_count 
+      FROM semielaborados s 
+      LEFT JOIN configuraciones_pegado c ON s.configuracion_pegado_id = c.id
+      LEFT JOIN ingenierias i ON s.id = i.semielaborado_id 
+      GROUP BY s.id 
+      ORDER BY s.orden ASC, s.id ASC
+    `);
 
-    const pts = db
-      .prepare("SELECT id, promedio_ventas_mensual FROM productos_terminados")
-      .all();
-    const activeRecipesPT = db
-      .prepare(
-        "SELECT id, producto_terminado_id FROM ingenierias WHERE es_activa = 1 AND producto_terminado_id IS NOT NULL",
-      )
-      .all();
-    const recipeDetailsPT = db
-      .prepare(
-        "SELECT ingenieria_id, semielaborado_id, cantidad FROM ingenieria_detalles WHERE semielaborado_id IS NOT NULL",
-      )
-      .all();
+    const [pts] = await db.query(
+      "SELECT id, promedio_ventas_mensual FROM productos_terminados",
+    );
+    const [activeRecipesPT] = await db.query(
+      "SELECT id, producto_terminado_id FROM ingenierias WHERE es_activa = 1 AND producto_terminado_id IS NOT NULL",
+    );
+    const [recipeDetailsPT] = await db.query(
+      "SELECT ingenieria_id, semielaborado_id, cantidad FROM ingenieria_detalles WHERE semielaborado_id IS NOT NULL",
+    );
 
     const seDemandMap = {};
     pts.forEach((pt) => {
@@ -1431,11 +1424,19 @@ app.get("/api/semielaborados", (req, res) => {
   }
 });
 
-app.put("/api/semielaborados/:id/stock", (req, res) => {
+app.put("/api/semielaborados/:id/stock", async (req, res) => {
+  const { campoDeposito, stock } = req.body;
+  const permitidos = ["stock_33", "stock_26", "stock_ayolas", "stock_37"];
+
+  if (!permitidos.includes(campoDeposito)) {
+    return res.status(400).json({ error: "Campo de depósito inválido" });
+  }
+
   try {
-    db.prepare(
-      `UPDATE semielaborados SET ${req.body.campoDeposito} = ? WHERE id = ?`,
-    ).run(req.body.stock, req.params.id);
+    await db.query(
+      `UPDATE semielaborados SET ${campoDeposito} = ? WHERE id = ?`,
+      [stock, req.params.id],
+    );
     res.json({ success: true });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -1461,20 +1462,35 @@ app.post("/api/semielaborados/recargar-sheets", async (req, res) => {
         updatesMap[codeUpper][sucursalKey] = parsedStock;
       }
     }
-    const updateStmt = db.prepare(
-      `UPDATE semielaborados SET stock_33 = COALESCE(?, stock_33), stock_26 = COALESCE(?, stock_26), stock_ayolas = COALESCE(?, stock_ayolas), stock_37 = COALESCE(?, stock_37) WHERE codigo = ?`,
-    );
-    db.transaction(() => {
+
+    const conn = await db.getConnection();
+    try {
+      await conn.beginTransaction();
       for (const [codeUpper, stocks] of Object.entries(updatesMap)) {
-        updateStmt.run(
-          stocks.stock_33 !== undefined ? stocks.stock_33 : null,
-          stocks.stock_26 !== undefined ? stocks.stock_26 : null,
-          stocks.stock_ayolas !== undefined ? stocks.stock_ayolas : null,
-          stocks.stock_37 !== undefined ? stocks.stock_37 : null,
-          codeUpper,
+        await conn.query(
+          `UPDATE semielaborados 
+           SET stock_33 = COALESCE(?, stock_33), 
+               stock_26 = COALESCE(?, stock_26), 
+               stock_ayolas = COALESCE(?, stock_ayolas), 
+               stock_37 = COALESCE(?, stock_37) 
+           WHERE codigo = ?`,
+          [
+            stocks.stock_33 !== undefined ? stocks.stock_33 : null,
+            stocks.stock_26 !== undefined ? stocks.stock_26 : null,
+            stocks.stock_ayolas !== undefined ? stocks.stock_ayolas : null,
+            stocks.stock_37 !== undefined ? stocks.stock_37 : null,
+            codeUpper,
+          ],
         );
       }
-    })();
+      await conn.commit();
+    } catch (err) {
+      await conn.rollback();
+      throw err;
+    } finally {
+      conn.release();
+    }
+
     res.json({ success: true });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -1514,7 +1530,7 @@ app.post("/api/semielaborados/previsualizar-sheets", async (req, res) => {
       }
     }
 
-    const currentSE = db.prepare("SELECT * FROM semielaborados").all();
+    const [currentSE] = await db.query("SELECT * FROM semielaborados");
     const currentMap = {};
     currentSE.forEach((s) => {
       currentMap[s.codigo.toUpperCase().trim()] = s;
@@ -1567,61 +1583,66 @@ app.post("/api/semielaborados/previsualizar-sheets", async (req, res) => {
   }
 });
 
-app.post("/api/semielaborados/aplicar-sincronizacion", (req, res) => {
+app.post("/api/semielaborados/aplicar-sincronizacion", async (req, res) => {
   const { nuevos, modificados } = req.body;
-  try {
-    const insertStmt = db.prepare(
-      "INSERT INTO semielaborados (codigo, nombre, stock_33, stock_26, stock_ayolas, stock_37) VALUES (?, ?, ?, ?, ?, ?)",
-    );
-    const updateStmt = db.prepare(
-      "UPDATE semielaborados SET stock_33 = ?, stock_26 = ?, stock_ayolas = ?, stock_37 = ? WHERE id = ?",
-    );
+  const conn = await db.getConnection();
 
-    db.transaction(() => {
-      if (Array.isArray(nuevos)) {
-        for (const n of nuevos) {
-          insertStmt.run(
+  try {
+    await conn.beginTransaction();
+
+    if (Array.isArray(nuevos)) {
+      for (const n of nuevos) {
+        await conn.query(
+          "INSERT INTO semielaborados (codigo, nombre, stock_33, stock_26, stock_ayolas, stock_37) VALUES (?, ?, ?, ?, ?, ?)",
+          [
             n.codigo,
             n.nombre,
             n.stock_33 || 0,
             n.stock_26 || 0,
             n.stock_ayolas || 0,
             n.stock_37 || 0,
-          );
-        }
+          ],
+        );
       }
-      if (Array.isArray(modificados)) {
-        for (const m of modificados) {
-          updateStmt.run(
+    }
+
+    if (Array.isArray(modificados)) {
+      for (const m of modificados) {
+        await conn.query(
+          "UPDATE semielaborados SET stock_33 = ?, stock_26 = ?, stock_ayolas = ?, stock_37 = ? WHERE id = ?",
+          [
             m.nuevo.stock_33,
             m.nuevo.stock_26,
             m.nuevo.stock_ayolas,
             m.nuevo.stock_37,
             m.id,
-          );
-        }
+          ],
+        );
       }
-    })();
+    }
 
+    await conn.commit();
     res.json({ success: true });
   } catch (error) {
+    await conn.rollback();
     res.status(500).json({ error: error.message });
+  } finally {
+    conn.release();
   }
 });
 
 // ==========================================
 // MÓDULO 4: PRODUCTOS TERMINADOS Y VENTAS
 // ==========================================
-app.get("/api/productos-terminados", (req, res) => {
+app.get("/api/productos-terminados", async (req, res) => {
   try {
-    const rows = db
-      .prepare(
-        `
-      SELECT p.*, COUNT(i.id) as recetas_count FROM productos_terminados p 
-      LEFT JOIN ingenierias i ON p.id = i.producto_terminado_id GROUP BY p.id ORDER BY p.orden ASC, p.id ASC
-    `,
-      )
-      .all();
+    const [rows] = await db.query(`
+      SELECT p.*, COUNT(i.id) as recetas_count 
+      FROM productos_terminados p 
+      LEFT JOIN ingenierias i ON p.id = i.producto_terminado_id 
+      GROUP BY p.id 
+      ORDER BY p.orden ASC, p.id ASC
+    `);
     res.json(rows);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -1703,18 +1724,29 @@ app.post("/api/productos-terminados/sincronizar-ventas", async (req, res) => {
       }
     }
 
-    const upsertStmt = db.prepare(`
-      INSERT INTO productos_terminados (codigo, nombre, promedio_ventas_mensual)
-      VALUES (?, ?, ?) ON CONFLICT(codigo) DO UPDATE SET promedio_ventas_mensual = excluded.promedio_ventas_mensual
-    `);
+    const conn = await db.getConnection();
+    try {
+      await conn.beginTransaction();
+      await conn.query(
+        "UPDATE productos_terminados SET promedio_ventas_mensual = 0",
+      );
 
-    db.transaction(() => {
-      db.exec("UPDATE productos_terminados SET promedio_ventas_mensual = 0");
       for (const [cod, totalTrimestre] of Object.entries(ventasMap)) {
         const promedioMensual = totalTrimestre / 3;
-        upsertStmt.run(cod, cod, promedioMensual);
+        await conn.query(
+          `INSERT INTO productos_terminados (codigo, nombre, promedio_ventas_mensual)
+           VALUES (?, ?, ?) 
+           ON DUPLICATE KEY UPDATE promedio_ventas_mensual = VALUES(promedio_ventas_mensual)`,
+          [cod, cod, promedioMensual],
+        );
       }
-    })();
+      await conn.commit();
+    } catch (err) {
+      await conn.rollback();
+      throw err;
+    } finally {
+      conn.release();
+    }
 
     res.json({ success: true, count: Object.keys(ventasMap).length });
   } catch (error) {
@@ -1726,53 +1758,67 @@ app.post("/api/productos-terminados/sincronizar-ventas", async (req, res) => {
 // ==========================================
 // MÓDULO 5: INGENIERÍAS / BOM
 // ==========================================
-app.get("/api/ingenierias/semielaborado/:id", (req, res) => {
+app.get("/api/ingenierias/semielaborado/:id", async (req, res) => {
   try {
-    const ingenierias = db
-      .prepare(
-        "SELECT * FROM ingenierias WHERE semielaborado_id = ? ORDER BY es_activa DESC, id DESC",
-      )
-      .all(req.params.id);
-    const getIngredientes = db.prepare(`
-      SELECT d.id, d.ingenieria_id, d.materia_prima_id, d.semielaborado_id, d.cantidad, d.unidad_medida, COALESCE(mp.codigo, se.codigo) as item_codigo, COALESCE(mp.nombre, se.nombre) as item_nombre, CASE WHEN d.materia_prima_id IS NOT NULL THEN 'MP' ELSE 'SE' END as item_type FROM ingenieria_detalles d LEFT JOIN materias_primas mp ON d.materia_prima_id = mp.id LEFT JOIN semielaborados se ON d.semielaborado_id = se.id WHERE d.ingenieria_id = ?
-    `);
-    res.json(
-      ingenierias.map((ing) => ({
-        ...ing,
-        ingredientes: getIngredientes.all(ing.id),
-      })),
+    const [ingenierias] = await db.query(
+      "SELECT * FROM ingenierias WHERE semielaborado_id = ? ORDER BY es_activa DESC, id DESC",
+      [req.params.id],
     );
+
+    const result = [];
+    for (const ing of ingenierias) {
+      const [ingredientes] = await db.query(
+        `SELECT d.id, d.ingenieria_id, d.materia_prima_id, d.semielaborado_id, d.cantidad, d.unidad_medida, 
+                COALESCE(mp.codigo, se.codigo) as item_codigo, 
+                COALESCE(mp.nombre, se.nombre) as item_nombre, 
+                CASE WHEN d.materia_prima_id IS NOT NULL THEN 'MP' ELSE 'SE' END as item_type 
+         FROM ingenieria_detalles d 
+         LEFT JOIN materias_primas mp ON d.materia_prima_id = mp.id 
+         LEFT JOIN semielaborados se ON d.semielaborado_id = se.id 
+         WHERE d.ingenieria_id = ?`,
+        [ing.id],
+      );
+      result.push({ ...ing, ingredientes });
+    }
+
+    res.json(result);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
-app.get("/api/ingenierias/producto-terminado/:id", (req, res) => {
+app.get("/api/ingenierias/producto-terminado/:id", async (req, res) => {
   try {
-    const ingenierias = db
-      .prepare(
-        "SELECT * FROM ingenierias WHERE producto_terminado_id = ? ORDER BY es_activa DESC, id DESC",
-      )
-      .all(req.params.id);
-    const getIngredientes = db.prepare(`
-      SELECT d.id, d.ingenieria_id, d.materia_prima_id, d.semielaborado_id, d.cantidad, d.unidad_medida, COALESCE(mp.codigo, se.codigo) as item_codigo, COALESCE(mp.nombre, se.nombre) as item_nombre, CASE WHEN d.materia_prima_id IS NOT NULL THEN 'MP' ELSE 'SE' END as item_type FROM ingenieria_detalles d LEFT JOIN materias_primas mp ON d.materia_prima_id = mp.id LEFT JOIN semielaborados se ON d.semielaborado_id = se.id WHERE d.ingenieria_id = ?
-    `);
-    res.json(
-      ingenierias.map((ing) => ({
-        ...ing,
-        ingredientes: getIngredientes.all(ing.id),
-      })),
+    const [ingenierias] = await db.query(
+      "SELECT * FROM ingenierias WHERE producto_terminado_id = ? ORDER BY es_activa DESC, id DESC",
+      [req.params.id],
     );
+
+    const result = [];
+    for (const ing of ingenierias) {
+      const [ingredientes] = await db.query(
+        `SELECT d.id, d.ingenieria_id, d.materia_prima_id, d.semielaborado_id, d.cantidad, d.unidad_medida, 
+                COALESCE(mp.codigo, se.codigo) as item_codigo, 
+                COALESCE(mp.nombre, se.nombre) as item_nombre, 
+                CASE WHEN d.materia_prima_id IS NOT NULL THEN 'MP' ELSE 'SE' END as item_type 
+         FROM ingenieria_detalles d 
+         LEFT JOIN materias_primas mp ON d.materia_prima_id = mp.id 
+         LEFT JOIN semielaborados se ON d.semielaborado_id = se.id 
+         WHERE d.ingenieria_id = ?`,
+        [ing.id],
+      );
+      result.push({ ...ing, ingredientes });
+    }
+
+    res.json(result);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
-app.get("/api/ingenierias/recetas-activas-bulk", (req, res) => {
+app.get("/api/ingenierias/recetas-activas-bulk", async (req, res) => {
   try {
-    const rows = db
-      .prepare(
-        `
+    const [rows] = await db.query(`
       SELECT 
         se.codigo as productCode,
         se.nombre as productName,
@@ -1784,9 +1830,7 @@ app.get("/api/ingenierias/recetas-activas-bulk", (req, res) => {
       JOIN ingenieria_detalles d ON d.ingenieria_id = ing.id
       LEFT JOIN materias_primas mp ON d.materia_prima_id = mp.id
       WHERE ing.es_activa = 1 AND d.materia_prima_id IS NOT NULL
-    `,
-      )
-      .all();
+    `);
 
     const recipesMap = {};
     for (const r of rows) {
@@ -1811,112 +1855,145 @@ app.get("/api/ingenierias/recetas-activas-bulk", (req, res) => {
   }
 });
 
-app.post("/api/ingenierias", (req, res) => {
+app.post("/api/ingenierias", async (req, res) => {
   const { parent_id, parent_type, nombre_version, es_activa, ingredientes } =
     req.body;
-  const now = new Date().toISOString();
-  try {
-    const isSE = parent_type === "SE";
-    const insertIngenieria = db.prepare(
-      `INSERT INTO ingenierias (semielaborado_id, producto_terminado_id, nombre_version, es_activa, updated_at) VALUES (?, ?, ?, ?, ?)`,
-    );
-    const insertDetalle = db.prepare(
-      `INSERT INTO ingenieria_detalles (ingenieria_id, materia_prima_id, semielaborado_id, cantidad, unidad_medida) VALUES (?, ?, ?, ?, ?)`,
-    );
-    const resetActivas = db.prepare(
-      `UPDATE ingenierias SET es_activa = 0 WHERE ${isSE ? "semielaborado_id" : "producto_terminado_id"} = ?`,
-    );
+  const isSE = parent_type === "SE";
+  const conn = await db.getConnection();
 
-    let newId;
-    db.transaction(() => {
-      if (es_activa) resetActivas.run(parent_id);
-      const info = insertIngenieria.run(
+  try {
+    await conn.beginTransaction();
+
+    if (es_activa) {
+      const campoFK = isSE ? "semielaborado_id" : "producto_terminado_id";
+      await conn.query(
+        `UPDATE ingenierias SET es_activa = 0 WHERE ${campoFK} = ?`,
+        [parent_id],
+      );
+    }
+
+    const [info] = await conn.query(
+      `INSERT INTO ingenierias (semielaborado_id, producto_terminado_id, nombre_version, es_activa, updated_at) VALUES (?, ?, ?, ?, NOW())`,
+      [
         isSE ? parent_id : null,
         !isSE ? parent_id : null,
         nombre_version,
         es_activa ? 1 : 0,
-        now,
-      );
-      newId = info.lastInsertRowid;
-      if (ingredientes) {
-        for (let ing of ingredientes)
-          insertDetalle.run(
+      ],
+    );
+
+    const newId = info.insertId;
+
+    if (ingredientes && Array.isArray(ingredientes)) {
+      for (let ing of ingredientes) {
+        await conn.query(
+          `INSERT INTO ingenieria_detalles (ingenieria_id, materia_prima_id, semielaborado_id, cantidad, unidad_medida) VALUES (?, ?, ?, ?, ?)`,
+          [
             newId,
             ing.materia_prima_id || null,
             ing.semielaborado_id || null,
             ing.cantidad,
             ing.unidad_medida || "Unidades",
-          );
+          ],
+        );
       }
-    })();
+    }
+
+    await conn.commit();
     res.json({ success: true, id: newId });
   } catch (error) {
+    await conn.rollback();
     res.status(500).json({ error: error.message });
+  } finally {
+    conn.release();
   }
 });
 
-app.put("/api/ingenierias/:id", (req, res) => {
+app.put("/api/ingenierias/:id", async (req, res) => {
   const { id } = req.params;
   const { parent_id, parent_type, nombre_version, es_activa, ingredientes } =
     req.body;
-  const now = new Date().toISOString();
+  const isSE = parent_type === "SE";
+  const conn = await db.getConnection();
+
   try {
-    const isSE = parent_type === "SE";
-    const updateIngenieria = db.prepare(
-      `UPDATE ingenierias SET nombre_version = ?, es_activa = ?, updated_at = ? WHERE id = ?`,
-    );
-    const resetActivas = db.prepare(
-      `UPDATE ingenierias SET es_activa = 0 WHERE ${isSE ? "semielaborado_id" : "producto_terminado_id"} = ?`,
-    );
-    const deleteDetalles = db.prepare(
-      `DELETE FROM ingenieria_detalles WHERE ingenieria_id = ?`,
-    );
-    const insertDetalle = db.prepare(
-      `INSERT INTO ingenieria_detalles (ingenieria_id, materia_prima_id, semielaborado_id, cantidad, unidad_medida) VALUES (?, ?, ?, ?, ?)`,
+    await conn.beginTransaction();
+
+    if (es_activa) {
+      const campoFK = isSE ? "semielaborado_id" : "producto_terminado_id";
+      await conn.query(
+        `UPDATE ingenierias SET es_activa = 0 WHERE ${campoFK} = ?`,
+        [parent_id],
+      );
+    }
+
+    await conn.query(
+      `UPDATE ingenierias SET nombre_version = ?, es_activa = ?, updated_at = NOW() WHERE id = ?`,
+      [nombre_version, es_activa ? 1 : 0, id],
     );
 
-    db.transaction(() => {
-      if (es_activa) resetActivas.run(parent_id);
-      updateIngenieria.run(nombre_version, es_activa ? 1 : 0, now, id);
-      deleteDetalles.run(id);
-      if (ingredientes) {
-        for (let ing of ingredientes)
-          insertDetalle.run(
+    await conn.query(
+      `DELETE FROM ingenieria_detalles WHERE ingenieria_id = ?`,
+      [id],
+    );
+
+    if (ingredientes && Array.isArray(ingredientes)) {
+      for (let ing of ingredientes) {
+        await conn.query(
+          `INSERT INTO ingenieria_detalles (ingenieria_id, materia_prima_id, semielaborado_id, cantidad, unidad_medida) VALUES (?, ?, ?, ?, ?)`,
+          [
             id,
             ing.materia_prima_id || null,
             ing.semielaborado_id || null,
             ing.cantidad,
             ing.unidad_medida || "Unidades",
-          );
+          ],
+        );
       }
-    })();
+    }
+
+    await conn.commit();
     res.json({ success: true });
   } catch (error) {
+    await conn.rollback();
     res.status(500).json({ error: error.message });
+  } finally {
+    conn.release();
   }
 });
 
-app.put("/api/ingenierias/:id/activar", (req, res) => {
+app.put("/api/ingenierias/:id/activar", async (req, res) => {
   const { id } = req.params;
   const { parent_id, parent_type } = req.body;
+  const conn = await db.getConnection();
+
   try {
-    db.transaction(() => {
-      db.prepare(
-        `UPDATE ingenierias SET es_activa = 0 WHERE ${parent_type === "SE" ? "semielaborado_id" : "producto_terminado_id"} = ?`,
-      ).run(parent_id);
-      db.prepare(
-        `UPDATE ingenierias SET es_activa = 1, updated_at = ? WHERE id = ?`,
-      ).run(new Date().toISOString(), id);
-    })();
+    await conn.beginTransaction();
+    const campoFK =
+      parent_type === "SE" ? "semielaborado_id" : "producto_terminado_id";
+
+    await conn.query(
+      `UPDATE ingenierias SET es_activa = 0 WHERE ${campoFK} = ?`,
+      [parent_id],
+    );
+    await conn.query(
+      `UPDATE ingenierias SET es_activa = 1, updated_at = NOW() WHERE id = ?`,
+      [id],
+    );
+
+    await conn.commit();
     res.json({ success: true });
   } catch (error) {
+    await conn.rollback();
     res.status(500).json({ error: error.message });
+  } finally {
+    conn.release();
   }
 });
 
-app.delete("/api/ingenierias/:id", (req, res) => {
+app.delete("/api/ingenierias/:id", async (req, res) => {
   try {
-    db.prepare(`DELETE FROM ingenierias WHERE id = ?`).run(req.params.id);
+    await db.query(`DELETE FROM ingenierias WHERE id = ?`, [req.params.id]);
     res.json({ success: true });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -1926,11 +2003,11 @@ app.delete("/api/ingenierias/:id", (req, res) => {
 // ==========================================
 // MÓDULO 6: REGISTRO DE PRODUCCIÓN (MÉTRICAS & CARGAS)
 // ==========================================
-app.get("/api/metricas/produccion", (req, res) => {
+app.get("/api/metricas/produccion", async (req, res) => {
   try {
-    const rows = db
-      .prepare("SELECT * FROM registro_produccion ORDER BY fecha DESC, id DESC")
-      .all();
+    const [rows] = await db.query(
+      "SELECT * FROM registro_produccion ORDER BY fecha DESC, id DESC",
+    );
     res.json(rows);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -1939,22 +2016,21 @@ app.get("/api/metricas/produccion", (req, res) => {
 
 app.get(
   "/api/metricas/produccion/materiales-consumidos/:codigo_ot",
-  (req, res) => {
+  async (req, res) => {
     try {
-      const consumos = db
-        .prepare(
-          `
-      SELECT 
-        materia_prima_codigo as codigo,
-        materia_prima_nombre as nombre,
-        unidad_medida as unidad,
-        SUM(cantidad_usada) as consumido_real
-      FROM registro_produccion_materiales
-      WHERE codigo_ot = ?
-      GROUP BY materia_prima_codigo, materia_prima_nombre, unidad_medida
-    `,
-        )
-        .all(req.params.codigo_ot);
+      const [consumos] = await db.query(
+        `
+        SELECT 
+          materia_prima_codigo as codigo,
+          materia_prima_nombre as nombre,
+          unidad_medida as unidad,
+          SUM(cantidad_usada) as consumido_real
+        FROM registro_produccion_materiales
+        WHERE codigo_ot = ?
+        GROUP BY materia_prima_codigo, materia_prima_nombre, unidad_medida
+      `,
+        [req.params.codigo_ot],
+      );
 
       res.json(consumos);
     } catch (error) {
@@ -1963,7 +2039,7 @@ app.get(
   },
 );
 
-app.post("/api/metricas/produccion/manual", (req, res) => {
+app.post("/api/metricas/produccion/manual", async (req, res) => {
   const {
     fecha,
     categoria_maq,
@@ -1975,33 +2051,34 @@ app.post("/api/metricas/produccion/manual", (req, res) => {
     ingenieria_id,
   } = req.body;
 
+  const conn = await db.getConnection();
+
   try {
-    db.transaction(() => {
-      const info = db
-        .prepare(
-          `
+    await conn.beginTransaction();
+
+    const [info] = await conn.query(
+      `
         INSERT INTO registro_produccion 
         (fecha, categoria_maq, codigo_ot, codigo, articulo, cant_buenos, kg_total, ingenieria_id)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
       `,
-        )
-        .run(
-          fecha,
-          categoria_maq,
-          codigo_ot,
-          codigo,
-          articulo,
-          Number(cant_buenos),
-          Number(kg_total),
-          ingenieria_id || null,
-        );
+      [
+        fecha,
+        categoria_maq,
+        codigo_ot,
+        codigo,
+        articulo,
+        Number(cant_buenos),
+        Number(kg_total),
+        ingenieria_id || null,
+      ],
+    );
 
-      const registroId = info.lastInsertRowid;
+    const registroId = info.insertId;
 
-      if (ingenieria_id) {
-        const ingredientes = db
-          .prepare(
-            `
+    if (ingenieria_id) {
+      const [ingredientes] = await conn.query(
+        `
           SELECT 
             COALESCE(mp.codigo, se.codigo) as item_codigo,
             COALESCE(mp.nombre, se.nombre) as item_nombre,
@@ -2012,18 +2089,18 @@ app.post("/api/metricas/produccion/manual", (req, res) => {
           LEFT JOIN semielaborados se ON d.semielaborado_id = se.id
           WHERE d.ingenieria_id = ?
         `,
-          )
-          .all(ingenieria_id);
+        [ingenieria_id],
+      );
 
-        const stmtMat = db.prepare(`
-          INSERT INTO registro_produccion_materiales 
-          (registro_id, codigo_ot, materia_prima_codigo, materia_prima_nombre, cantidad_usada, unidad_medida, fecha)
-          VALUES (?, ?, ?, ?, ?, ?, ?)
-        `);
-
-        for (const ing of ingredientes) {
-          const cantidadConsumida = Number(cant_buenos) * (ing.cantidad || 0);
-          stmtMat.run(
+      for (const ing of ingredientes) {
+        const cantidadConsumida = Number(cant_buenos) * (ing.cantidad || 0);
+        await conn.query(
+          `
+            INSERT INTO registro_produccion_materiales 
+            (registro_id, codigo_ot, materia_prima_codigo, materia_prima_nombre, cantidad_usada, unidad_medida, fecha)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+          `,
+          [
             registroId,
             codigo_ot,
             ing.item_codigo || "",
@@ -2031,28 +2108,33 @@ app.post("/api/metricas/produccion/manual", (req, res) => {
             cantidadConsumida,
             ing.unidad_medida || "Kg",
             fecha,
-          );
-        }
+          ],
+        );
       }
+    }
 
-      db.prepare(
-        `
+    await conn.query(
+      `
         UPDATE ordenes_trabajo 
         SET cant_producida = cant_producida + ? 
         WHERE codigo_ot = ? AND semielaborado_codigo = ?
       `,
-      ).run(Number(cant_buenos), codigo_ot, codigo);
-    })();
+      [Number(cant_buenos), codigo_ot, codigo],
+    );
 
+    await conn.commit();
     res.json({ success: true });
   } catch (error) {
-    console.error("DETALLE DEL ERROR 500 EN SERVER:", error.message);
+    await conn.rollback();
+    console.error("DETALLE DEL ERROR EN SERVER:", error.message);
     res.status(500).json({ error: error.message });
+  } finally {
+    conn.release();
   }
 });
 
 // Cargar producción pendiente de aprobación por supervisor
-app.post("/api/metricas/produccion/cargar-pendiente", (req, res) => {
+app.post("/api/metricas/produccion/cargar-pendiente", async (req, res) => {
   try {
     const {
       codigo_ot,
@@ -2065,14 +2147,12 @@ app.post("/api/metricas/produccion/cargar-pendiente", (req, res) => {
       observaciones,
     } = req.body;
 
-    const result = db
-      .prepare(
-        `
+    const [result] = await db.query(
+      `
       INSERT INTO cargas_produccion (codigo_ot, semielaborado_codigo, articulo, cant_buenos, cant_fallas, fecha, operario_nombre, observaciones, estado_aprobacion)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'PENDIENTE')
     `,
-      )
-      .run(
+      [
         codigo_ot,
         semielaborado_codigo,
         articulo,
@@ -2081,20 +2161,21 @@ app.post("/api/metricas/produccion/cargar-pendiente", (req, res) => {
         fecha,
         operario_nombre || "Operario Planta",
         observaciones || "",
-      );
+      ],
+    );
 
-    res.json({ success: true, id: result.lastInsertRowid });
+    res.json({ success: true, id: result.insertId });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
 // Consultar cargas de producción (pendientes y aprobadas)
-app.get("/api/metricas/produccion/cargas", (req, res) => {
+app.get("/api/metricas/produccion/cargas", async (req, res) => {
   try {
-    const cargas = db
-      .prepare("SELECT * FROM cargas_produccion ORDER BY id DESC")
-      .all();
+    const [cargas] = await db.query(
+      "SELECT * FROM cargas_produccion ORDER BY id DESC",
+    );
     res.json(cargas);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -2102,104 +2183,112 @@ app.get("/api/metricas/produccion/cargas", (req, res) => {
 });
 
 // Aprobar Carga de Producción -> Actualiza OT + Genera Registro + Descuenta Materias Primas en BD
-app.put("/api/metricas/produccion/aprobar/:id", (req, res) => {
+app.put("/api/metricas/produccion/aprobar/:id", async (req, res) => {
+  const conn = await db.getConnection();
   try {
     const { supervisor_nombre } = req.body;
-    const carga = db
-      .prepare("SELECT * FROM cargas_produccion WHERE id = ?")
-      .get(req.params.id);
+    const [cargas] = await conn.query(
+      "SELECT * FROM cargas_produccion WHERE id = ?",
+      [req.params.id],
+    );
+    const carga = cargas[0];
 
     if (!carga) {
+      conn.release();
       return res
         .status(404)
         .json({ error: "Carga de producción no encontrada" });
     }
 
     if (carga.estado_aprobacion === "APROBADO") {
+      conn.release();
       return res
         .status(400)
         .json({ error: "La carga ya fue aprobada previamente" });
     }
 
-    db.transaction(() => {
-      // 1. Cambiar estado de la carga a APROBADO
-      db.prepare(
-        `UPDATE cargas_produccion SET estado_aprobacion = 'APROBADO', supervisor_nombre = ? WHERE id = ?`,
-      ).run(supervisor_nombre || "Supervisor", req.params.id);
+    await conn.beginTransaction();
 
-      // 2. Obtener Semielaborado y Receta Activa
-      const se = db
-        .prepare("SELECT id FROM semielaborados WHERE codigo = ?")
-        .get(carga.semielaborado_codigo);
+    // 1. Cambiar estado de la carga a APROBADO
+    await conn.query(
+      `UPDATE cargas_produccion SET estado_aprobacion = 'APROBADO', supervisor_nombre = ? WHERE id = ?`,
+      [supervisor_nombre || "Supervisor", req.params.id],
+    );
 
-      let activeIngenieriaId = null;
-      if (se) {
-        const recipe = db
-          .prepare(
-            "SELECT id FROM ingenierias WHERE semielaborado_id = ? AND es_activa = 1",
-          )
-          .get(se.id);
-        if (recipe) activeIngenieriaId = recipe.id;
-      }
+    // 2. Obtener Semielaborado y Receta Activa
+    const [ses] = await conn.query(
+      "SELECT id FROM semielaborados WHERE codigo = ?",
+      [carga.semielaborado_codigo],
+    );
+    const se = ses[0];
 
-      // 3. Insertar registro formal en registro_produccion para métricas y calendario
-      const infoProd = db
-        .prepare(
-          `
+    let activeIngenieriaId = null;
+    if (se) {
+      const [recipes] = await conn.query(
+        "SELECT id FROM ingenierias WHERE semielaborado_id = ? AND es_activa = 1",
+        [se.id],
+      );
+      if (recipes[0]) activeIngenieriaId = recipes[0].id;
+    }
+
+    // 3. Insertar registro formal en registro_produccion para métricas y calendario
+    const [infoProd] = await conn.query(
+      `
         INSERT INTO registro_produccion 
         (fecha, categoria_maq, codigo_ot, codigo, articulo, cant_buenos, cant_fallas, ingenieria_id)
         VALUES (?, 'EXTRUSIÓN', ?, ?, ?, ?, ?, ?)
       `,
-        )
-        .run(
-          carga.fecha,
-          carga.codigo_ot,
-          carga.semielaborado_codigo,
-          carga.articulo,
-          carga.cant_buenos,
-          carga.cant_fallas,
-          activeIngenieriaId,
-        );
+      [
+        carga.fecha,
+        carga.codigo_ot,
+        carga.semielaborado_codigo,
+        carga.articulo,
+        carga.cant_buenos,
+        carga.cant_fallas,
+        activeIngenieriaId,
+      ],
+    );
 
-      const registroId = infoProd.lastInsertRowid;
+    const registroId = infoProd.insertId;
 
-      // 4. Actualizar cantidad producida acumulada en la Orden de Trabajo (OT)
-      db.prepare(
-        `
+    // 4. Actualizar cantidad producida acumulada en la Orden de Trabajo (OT)
+    await conn.query(
+      `
         UPDATE ordenes_trabajo 
         SET cant_producida = cant_producida + ? 
         WHERE codigo_ot = ? AND semielaborado_codigo = ?
       `,
-      ).run(carga.cant_buenos, carga.codigo_ot, carga.semielaborado_codigo);
+      [carga.cant_buenos, carga.codigo_ot, carga.semielaborado_codigo],
+    );
 
-      // 5. Descontar materias primas del stock según ingredientes de la receta activa
-      if (activeIngenieriaId) {
-        const detalles = db
-          .prepare(
-            `
+    // 5. Descontar materias primas del stock según ingredientes de la receta activa
+    if (activeIngenieriaId) {
+      const [detalles] = await conn.query(
+        `
           SELECT d.materia_prima_id, d.cantidad, d.unidad_medida, mp.codigo as item_codigo, mp.nombre as item_nombre
           FROM ingenieria_detalles d
           LEFT JOIN materias_primas mp ON d.materia_prima_id = mp.id
           WHERE d.ingenieria_id = ? AND d.materia_prima_id IS NOT NULL
         `,
-          )
-          .all(activeIngenieriaId);
+        [activeIngenieriaId],
+      );
 
-        const stmtMat = db.prepare(`
-          INSERT INTO registro_produccion_materiales 
-          (registro_id, codigo_ot, materia_prima_codigo, materia_prima_nombre, cantidad_usada, unidad_medida, fecha)
-          VALUES (?, ?, ?, ?, ?, ?, ?)
-        `);
+      for (const det of detalles) {
+        const descuentoKg =
+          Number(carga.cant_buenos) * Number(det.cantidad || 0);
 
-        for (const det of detalles) {
-          const descuentoKg =
-            Number(carga.cant_buenos) * Number(det.cantidad || 0);
+        await conn.query(
+          `UPDATE materias_primas SET stock_actual = stock_actual - ? WHERE id = ?`,
+          [descuentoKg, det.materia_prima_id],
+        );
 
-          db.prepare(
-            `UPDATE materias_primas SET stock_actual = stock_actual - ? WHERE id = ?`,
-          ).run(descuentoKg, det.materia_prima_id);
-
-          stmtMat.run(
+        await conn.query(
+          `
+            INSERT INTO registro_produccion_materiales 
+            (registro_id, codigo_ot, materia_prima_codigo, materia_prima_nombre, cantidad_usada, unidad_medida, fecha)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+          `,
+          [
             registroId,
             carga.codigo_ot,
             det.item_codigo || "",
@@ -2207,22 +2296,28 @@ app.put("/api/metricas/produccion/aprobar/:id", (req, res) => {
             descuentoKg,
             det.unidad_medida || "Kg",
             carga.fecha,
-          );
-        }
+          ],
+        );
       }
-    })();
+    }
 
+    await conn.commit();
     res.json({ success: true });
   } catch (error) {
+    await conn.rollback();
     console.error("Error al aprobar carga:", error.message);
     res.status(500).json({ error: error.message });
+  } finally {
+    conn.release();
   }
 });
 
 // Rechazar Carga de Producción
-app.delete("/api/metricas/produccion/rechazar/:id", (req, res) => {
+app.delete("/api/metricas/produccion/rechazar/:id", async (req, res) => {
   try {
-    db.prepare("DELETE FROM cargas_produccion WHERE id = ?").run(req.params.id);
+    await db.query("DELETE FROM cargas_produccion WHERE id = ?", [
+      req.params.id,
+    ]);
     res.json({ success: true });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -2283,16 +2378,13 @@ app.post("/api/metricas/recargar", async (req, res) => {
       (h) => h === "KG FALLAS" || h.includes("KG FALLAS"),
     );
 
-    const deleteStmt = db.prepare("DELETE FROM registro_produccion");
-    const insertStmt = db.prepare(`
-      INSERT INTO registro_produccion 
-      (fecha, categoria_maq, codigo, articulo, cant_buenos, segunda_calidad, cant_fallas, kg_total, kg_fallas)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-
+    const conn = await db.getConnection();
     let count = 0;
-    db.transaction(() => {
-      deleteStmt.run();
+
+    try {
+      await conn.beginTransaction();
+      await conn.query("DELETE FROM registro_produccion");
+
       for (let i = 1; i < rows.length; i++) {
         const cols = rows[i];
         if (cols.length < 5) continue;
@@ -2326,20 +2418,34 @@ app.post("/api/metricas/recargar", async (req, res) => {
           catMaqVal = inferMachineCategory(codigoVal, articuloVal);
         }
 
-        insertStmt.run(
-          fechaFormatted,
-          catMaqVal,
-          codigoVal,
-          articuloVal,
-          idxBuenos !== -1 ? parseNum(cols[idxBuenos]) : 0,
-          idxSegunda !== -1 ? parseNum(cols[idxSegunda]) : 0,
-          idxFallas !== -1 ? parseNum(cols[idxFallas]) : 0,
-          idxKgTotal !== -1 ? parseNum(cols[idxKgTotal]) : 0,
-          idxKgFallas !== -1 ? parseNum(cols[idxKgFallas]) : 0,
+        await conn.query(
+          `
+          INSERT INTO registro_produccion 
+          (fecha, categoria_maq, codigo, articulo, cant_buenos, segunda_calidad, cant_fallas, kg_total, kg_fallas)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `,
+          [
+            fechaFormatted,
+            catMaqVal,
+            codigoVal,
+            articuloVal,
+            idxBuenos !== -1 ? parseNum(cols[idxBuenos]) : 0,
+            idxSegunda !== -1 ? parseNum(cols[idxSegunda]) : 0,
+            idxFallas !== -1 ? parseNum(cols[idxFallas]) : 0,
+            idxKgTotal !== -1 ? parseNum(cols[idxKgTotal]) : 0,
+            idxKgFallas !== -1 ? parseNum(cols[idxKgFallas]) : 0,
+          ],
         );
         count++;
       }
-    })();
+
+      await conn.commit();
+    } catch (err) {
+      await conn.rollback();
+      throw err;
+    } finally {
+      conn.release();
+    }
 
     res.json({ success: true, count });
   } catch (error) {
@@ -2350,18 +2456,18 @@ app.post("/api/metricas/recargar", async (req, res) => {
 // ==========================================
 // MÓDULO 7: GRUPOS DE ALERTA DE STOCK
 // ==========================================
-app.get("/api/grupos-alerta", (req, res) => {
+app.get("/api/grupos-alerta", async (req, res) => {
   try {
-    const grupos = db
-      .prepare("SELECT * FROM grupos_alerta ORDER BY id ASC")
-      .all();
+    const [grupos] = await db.query(
+      "SELECT * FROM grupos_alerta ORDER BY id ASC",
+    );
     res.json(grupos);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
-app.post("/api/grupos-alerta", (req, res) => {
+app.post("/api/grupos-alerta", async (req, res) => {
   try {
     const { id, nombre, dias_critico, dias_alerta } = req.body;
     if (!nombre || dias_critico === undefined || dias_alerta === undefined) {
@@ -2369,20 +2475,22 @@ app.post("/api/grupos-alerta", (req, res) => {
     }
 
     if (id) {
-      db.prepare(
+      await db.query(
         `
         UPDATE grupos_alerta 
         SET nombre = ?, dias_critico = ?, dias_alerta = ? 
         WHERE id = ?
       `,
-      ).run(nombre.trim(), Number(dias_critico), Number(dias_alerta), id);
+        [nombre.trim(), Number(dias_critico), Number(dias_alerta), id],
+      );
     } else {
-      db.prepare(
+      await db.query(
         `
         INSERT INTO grupos_alerta (nombre, dias_critico, dias_alerta, es_predeterminado) 
         VALUES (?, ?, ?, 0)
       `,
-      ).run(nombre.trim(), Number(dias_critico), Number(dias_alerta));
+        [nombre.trim(), Number(dias_critico), Number(dias_alerta)],
+      );
     }
     res.json({ success: true });
   } catch (error) {
@@ -2390,12 +2498,13 @@ app.post("/api/grupos-alerta", (req, res) => {
   }
 });
 
-app.delete("/api/grupos-alerta/:id", (req, res) => {
+app.delete("/api/grupos-alerta/:id", async (req, res) => {
   try {
     const { id } = req.params;
-    db.prepare(
+    await db.query(
       "DELETE FROM grupos_alerta WHERE id = ? AND es_predeterminado = 0",
-    ).run(id);
+      [id],
+    );
     res.json({ success: true });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -2405,18 +2514,18 @@ app.delete("/api/grupos-alerta/:id", (req, res) => {
 // ==========================================
 // MÓDULO 8: ÓRDENES DE TRABAJO (PLANIFICACIÓN)
 // ==========================================
-app.get("/api/ordenes-trabajo", (req, res) => {
+app.get("/api/ordenes-trabajo", async (req, res) => {
   try {
-    const rows = db
-      .prepare("SELECT * FROM ordenes_trabajo ORDER BY id DESC")
-      .all();
+    const [rows] = await db.query(
+      "SELECT * FROM ordenes_trabajo ORDER BY id DESC",
+    );
     res.json(rows);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
-app.post("/api/ordenes-trabajo", (req, res) => {
+app.post("/api/ordenes-trabajo", async (req, res) => {
   try {
     const {
       codigo_ot,
@@ -2431,51 +2540,52 @@ app.post("/api/ordenes-trabajo", (req, res) => {
       velocidad_u_hora,
     } = req.body;
 
-    const stmt = db.prepare(`
+    const [info] = await db.query(
+      `
       INSERT INTO ordenes_trabajo 
       (codigo_ot, semielaborado_codigo, articulo, maquina, destino, cant_objetivo, kg_por_unidad, estado, fecha_inicio, velocidad_u_hora)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-
-    const info = stmt.run(
-      codigo_ot,
-      semielaborado_codigo,
-      articulo || semielaborado_codigo,
-      maquina,
-      destino || "Stock",
-      cant_objetivo || 1000,
-      kg_por_unidad || 1.0,
-      estado || "PROGRAMADO",
-      fecha_inicio || "",
-      velocidad_u_hora || 100,
+    `,
+      [
+        codigo_ot,
+        semielaborado_codigo,
+        articulo || semielaborado_codigo,
+        maquina,
+        destino || "Stock",
+        cant_objetivo || 1000,
+        kg_por_unidad || 1.0,
+        estado || "PROGRAMADO",
+        fecha_inicio || "",
+        velocidad_u_hora || 100,
+      ],
     );
 
-    res.json({ success: true, id: info.lastInsertRowid });
+    res.json({ success: true, id: info.insertId });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
-app.put("/api/ordenes-trabajo/:id/estado", (req, res) => {
+app.put("/api/ordenes-trabajo/:id/estado", async (req, res) => {
   try {
     const { estado } = req.body;
-    db.prepare("UPDATE ordenes_trabajo SET estado = ? WHERE id = ?").run(
+    await db.query("UPDATE ordenes_trabajo SET estado = ? WHERE id = ?", [
       estado,
       req.params.id,
-    );
+    ]);
     res.json({ success: true });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
-app.put("/api/ordenes-trabajo/ot/:codigo_ot/estado-lote", (req, res) => {
+app.put("/api/ordenes-trabajo/ot/:codigo_ot/estado-lote", async (req, res) => {
   try {
     const { estado } = req.body;
     const { codigo_ot } = req.params;
-    db.prepare("UPDATE ordenes_trabajo SET estado = ? WHERE codigo_ot = ?").run(
-      estado,
-      codigo_ot,
+    await db.query(
+      "UPDATE ordenes_trabajo SET estado = ? WHERE codigo_ot = ?",
+      [estado, codigo_ot],
     );
     res.json({ success: true });
   } catch (error) {
@@ -2483,12 +2593,12 @@ app.put("/api/ordenes-trabajo/ot/:codigo_ot/estado-lote", (req, res) => {
   }
 });
 
-app.put("/api/ordenes-trabajo/:id", (req, res) => {
+app.put("/api/ordenes-trabajo/:id", async (req, res) => {
   try {
     const { velocidad_u_hora, cant_objetivo, fecha_inicio, articulo, destino } =
       req.body;
 
-    db.prepare(
+    await db.query(
       `
       UPDATE ordenes_trabajo 
       SET velocidad_u_hora = COALESCE(?, velocidad_u_hora),
@@ -2498,13 +2608,14 @@ app.put("/api/ordenes-trabajo/:id", (req, res) => {
           destino = COALESCE(?, destino)
       WHERE id = ?
     `,
-    ).run(
-      velocidad_u_hora ?? null,
-      cant_objetivo ?? null,
-      fecha_inicio ?? null,
-      articulo ?? null,
-      destino ?? null,
-      req.params.id,
+      [
+        velocidad_u_hora ?? null,
+        cant_objetivo ?? null,
+        fecha_inicio ?? null,
+        articulo ?? null,
+        destino ?? null,
+        req.params.id,
+      ],
     );
 
     res.json({ success: true });
@@ -2513,9 +2624,9 @@ app.put("/api/ordenes-trabajo/:id", (req, res) => {
   }
 });
 
-app.delete("/api/ordenes-trabajo/:id", (req, res) => {
+app.delete("/api/ordenes-trabajo/:id", async (req, res) => {
   try {
-    db.prepare("DELETE FROM ordenes_trabajo WHERE id = ?").run(req.params.id);
+    await db.query("DELETE FROM ordenes_trabajo WHERE id = ?", [req.params.id]);
     res.json({ success: true });
   } catch (error) {
     res.status(500).json({ error: error.message });
