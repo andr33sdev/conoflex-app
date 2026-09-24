@@ -42,24 +42,18 @@ export default function ComercialIA() {
     }
   };
 
+  // 1. OBTENER MAILS
   const fetchMails = async () => {
     setLoading(true);
     setErrorMsg("");
     try {
-      const token = localStorage.getItem("token");
-      const res = await fetch("/api/mails", {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const res = await fetch("/api/mails");
+      const data = await res.json();
 
-      // 👈 AHORA DETECTA 401 Y 403 PARA ACTIVAR EL BOTÓN DE CONEXIÓN
-      if (res.status === 401 || res.status === 403) {
+      if (!res.ok) {
         setConectado(false);
-        const data = await res.json().catch(() => ({}));
-        setErrorMsg(
-          data.error || "Se requiere autenticación o permisos con Google.",
-        );
+        setErrorMsg(data.error || "Se requiere vincular la cuenta de Gmail.");
       } else {
-        const data = await res.json();
         setMails(data.mails || []);
         setConectado(true);
       }
@@ -71,21 +65,13 @@ export default function ComercialIA() {
     }
   };
 
-  const abrirLoginGoogle = () => {
-    // Redirige al endpoint de OAuth del backend en el VPS
-    window.location.href = "http://66.97.34.163:3001/auth/google";
-  };
-
+  // 2. GUARDAR REGLAS
   const guardarReglas = async () => {
     setLoading(true);
     try {
-      const token = localStorage.getItem("token");
       const res = await fetch("/api/reglas", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ reglas }),
       });
       if (res.ok) alert("✅ Reglas comerciales guardadas correctamente");
@@ -96,16 +82,13 @@ export default function ComercialIA() {
     }
   };
 
+  // 3. GENERAR BORRADOR
   const generarBorrador = async (mail) => {
     setLoading(true);
     try {
-      const token = localStorage.getItem("token");
       const res = await fetch("/api/crear-borrador-gmail", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           mailCliente: mail.emailCliente,
           consultaText: mail.resumen,
@@ -127,14 +110,11 @@ export default function ComercialIA() {
     }
   };
 
+  // 4. GENERAR INFORME
   const generarInformeEstrategico = async () => {
     setLoading(true);
     try {
-      const token = localStorage.getItem("token");
-      const res = await fetch("/api/analisis-estrategico", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const res = await fetch("/api/analisis-estrategico", { method: "POST" });
       const data = await res.json();
       if (data.success) {
         setInformeHtml(data.informe);
