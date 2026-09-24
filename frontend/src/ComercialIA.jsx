@@ -20,6 +20,14 @@ export default function ComercialIA() {
   const [errorMsg, setErrorMsg] = useState("");
 
   useEffect(() => {
+    // Detectar si venimos redirigidos de Google
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get("status") === "conectado") {
+      // Limpiar el parámetro de la URL sin recargar la página
+      window.history.replaceState({}, document.title, window.location.pathname);
+      setConectado(true);
+    }
+
     fetchMails();
     fetchReglas();
   }, []);

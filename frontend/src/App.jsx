@@ -10,10 +10,18 @@ import CargaProduccion from "./CargaProduccion";
 import ComercialIA from "./ComercialIA";
 
 function App() {
-  // DETECCIÓN AUTOMÁTICA DE URL DEL QR AL ARRANCAR LA APLICACIÓN
+  // DETECCIÓN AUTOMÁTICA DE URL O REDIRECCIÓN DE GOOGLE AL ARRANCAR
   const [activeModule, setActiveModule] = useState(() => {
     const path = window.location.pathname;
     const params = new URLSearchParams(window.location.search);
+
+    // Si viene redirigido del login de Google para la IA Comercial
+    if (
+      params.get("status") === "conectado" ||
+      params.get("module") === "comercial"
+    ) {
+      return "comercial";
+    }
     if (path.startsWith("/plan/") || params.has("ot")) {
       return "planificacion";
     }
@@ -23,18 +31,25 @@ function App() {
     return "materias-primas";
   });
 
-  // ESCUCHAR CAMBIOS DE NAVEGACIÓN EN TIEMPO REAL
+  // ESCUCHAR CAMBIOS DE NAVEGACIÓN Y PARÁMETROS EN TIEMPO REAL
   useEffect(() => {
     const checkUrl = () => {
       const path = window.location.pathname;
       const params = new URLSearchParams(window.location.search);
-      if (path.startsWith("/plan/") || params.has("ot")) {
+
+      if (
+        params.get("status") === "conectado" ||
+        params.get("module") === "comercial"
+      ) {
+        setActiveModule("comercial");
+      } else if (path.startsWith("/plan/") || params.has("ot")) {
         setActiveModule("planificacion");
-      }
-      if (path.startsWith("/carga-produccion")) {
+      } else if (path.startsWith("/carga-produccion")) {
         setActiveModule("carga-produccion");
       }
     };
+
+    checkUrl();
     window.addEventListener("popstate", checkUrl);
     return () => window.removeEventListener("popstate", checkUrl);
   }, []);
@@ -48,7 +63,6 @@ function App() {
 
     setIsReloading(true);
     try {
-      // 👈 CAMBIO AQUÍ: Se cambió "http://localhost:3001/api/..." por "/api/..."
       const res = await fetch("/api/semielaborados/recargar-sheets", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -115,7 +129,8 @@ function App() {
         activeModule !== "metricas" &&
         activeModule !== "ingenieria" &&
         activeModule !== "planificacion" &&
-        activeModule !== "carga-produccion" && (
+        activeModule !== "carga-produccion" &&
+        activeModule !== "comercial" && (
           <div className="text-center py-20 text-conoflex-muted space-y-3 font-pixel">
             <p className="text-2xl text-white">
               Módulo [{activeModule.toUpperCase()}] en desarrollo

@@ -34,7 +34,7 @@ const db = mysql.createPool({
 const FRONTEND_URL =
   process.env.FRONTEND_URL ||
   (process.env.BASE_URL && process.env.BASE_URL.includes("onrender")
-    ? "https://plataforma-conoflex.vercel.app"
+    ? "https://conoflex-app.vercel.app"
     : "http://localhost:5173");
 
 // Directorios físicos para imágenes y archivos temporales
@@ -769,7 +769,7 @@ app.get("/auth/google", (req, res) => {
 
   const redirectUri = isLocal
     ? "http://localhost:5173/auth/google/callback"
-    : "https://plataforma-conoflex.vercel.app/auth/google/callback";
+    : "https://conoflex-app.vercel.app/auth/google/callback";
 
   const client = new google.auth.OAuth2(
     process.env.GOOGLE_CLIENT_ID,
@@ -795,12 +795,11 @@ app.get("/auth/google", (req, res) => {
 
 app.get("/auth/google/callback", async (req, res) => {
   try {
-    // Leemos la etiqueta que Google nos devuelve intacta
     const isLocal = req.query.state === "local";
 
     const redirectUri = isLocal
       ? "http://localhost:5173/auth/google/callback"
-      : "https://plataforma-conoflex.vercel.app/auth/google/callback";
+      : "https://conoflex-app.vercel.app/auth/google/callback";
 
     const client = new google.auth.OAuth2(
       process.env.GOOGLE_CLIENT_ID,
@@ -809,14 +808,17 @@ app.get("/auth/google/callback", async (req, res) => {
     );
 
     const { tokens } = await client.getToken(req.query.code);
+
+    // Asignamos tokens al cliente global y guardamos en archivo
     oauth2Client.setCredentials(tokens);
+    const TOKEN_PATH = path.join(__dirname, "token.json");
     fs.writeFileSync(TOKEN_PATH, JSON.stringify(tokens));
 
     const targetUrl = isLocal
       ? "http://localhost:5173"
-      : process.env.FRONTEND_URL || "https://plataforma-conoflex.vercel.app";
+      : process.env.FRONTEND_URL || "https://conoflex-app.vercel.app";
 
-    res.redirect(`${targetUrl}?status=conectado`);
+    res.redirect(`${targetUrl}?status=conectado&module=comercial`);
   } catch (error) {
     console.error("Error en callback de Google:", error);
     res.status(500).send("Error de autenticación con Google: " + error.message);
