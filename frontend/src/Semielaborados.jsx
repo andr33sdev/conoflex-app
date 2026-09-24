@@ -79,7 +79,7 @@ export default function Semielaborados() {
   const fetchItems = async () => {
     setLoading(true);
     try {
-      const res = await fetch("http://localhost:3001/api/semielaborados");
+      const res = await fetch("/api/semielaborados");
       if (res.ok) {
         const data = await res.json();
         setItems(data);
@@ -99,7 +99,7 @@ export default function Semielaborados() {
     setIsSyncing(true);
     try {
       const res = await fetch(
-        "http://localhost:3001/api/semielaborados/previsualizar-sheets",
+        "/api/semielaborados/previsualizar-sheets",
         { method: "POST", headers: { "Content-Type": "application/json" } },
       );
 
@@ -134,7 +134,7 @@ export default function Semielaborados() {
     setIsSyncing(true);
     try {
       const res = await fetch(
-        "http://localhost:3001/api/semielaborados/aplicar-sincronizacion",
+        "/api/semielaborados/aplicar-sincronizacion",
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },

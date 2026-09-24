@@ -79,8 +79,8 @@ export default function Inventory() {
     setLoading(true);
     try {
       const [resMP, resRecipes] = await Promise.all([
-        fetch("http://localhost:3001/api/materias-primas"),
-        fetch("http://localhost:3001/api/ingenierias/recetas-activas-bulk"),
+        fetch("/api/materias-primas"),
+        fetch("/api/ingenierias/recetas-activas-bulk"),
       ]);
 
       if (resMP.ok) setItems(await resMP.json());
@@ -101,7 +101,7 @@ export default function Inventory() {
     setIsSyncing(true);
     try {
       const res = await fetch(
-        "http://localhost:3001/api/materias-primas/previsualizar-sheets",
+        "/api/materias-primas/previsualizar-sheets",
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -139,7 +139,7 @@ export default function Inventory() {
     setIsSyncing(true);
     try {
       const res = await fetch(
-        "http://localhost:3001/api/materias-primas/aplicar-sincronizacion",
+        "/api/materias-primas/aplicar-sincronizacion",
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -249,7 +249,7 @@ export default function Inventory() {
 
     try {
       const res = await fetch(
-        `http://localhost:3001/api/materias-primas/${editingItem.id}/stock`,
+        `/api/materias-primas/${editingItem.id}/stock`,
         {
           method: "PUT",
           headers: { "Content-Type": "application/json" },

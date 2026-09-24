@@ -6,7 +6,7 @@ import Reflectivas from "./Reflectivas";
 import Metricas from "./Metricas";
 import Ingenieria from "./Ingenieria";
 import PlanificacionProduccion from "./PlanificacionProduccion";
-import CargaProduccion from "./CargaProduccion"; // 👈 IMPORTACIÓN DEL MÓDULO
+import CargaProduccion from "./CargaProduccion";
 
 function App() {
   // DETECCIÓN AUTOMÁTICA DE URL DEL QR AL ARRANCAR LA APLICACIÓN
@@ -47,13 +47,11 @@ function App() {
 
     setIsReloading(true);
     try {
-      const res = await fetch(
-        "http://localhost:3001/api/semielaborados/recargar-sheets",
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-        },
-      );
+      // 👈 CAMBIO AQUÍ: Se cambió "http://localhost:3001/api/..." por "/api/..."
+      const res = await fetch("/api/semielaborados/recargar-sheets", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
 
       if (res.ok) {
         setReloadKey((prev) => prev + 1);

@@ -121,10 +121,10 @@ export default function PlanificacionProduccion() {
     setLoading(true);
     try {
       const [resOT, resSE, resMP, resLogs] = await Promise.all([
-        fetch("http://localhost:3001/api/ordenes-trabajo"),
-        fetch("http://localhost:3001/api/semielaborados"),
-        fetch("http://localhost:3001/api/materias-primas"),
-        fetch("http://localhost:3001/api/metricas/produccion"),
+        fetch("/api/ordenes-trabajo"),
+        fetch("/api/semielaborados"),
+        fetch("/api/materias-primas"),
+        fetch("/api/metricas/produccion"),
       ]);
 
       if (resOT.ok) setOrdenes(await resOT.json());
@@ -140,7 +140,7 @@ export default function PlanificacionProduccion() {
           semielaborados.map(async (se) => {
             try {
               const resRecipe = await fetch(
-                `http://localhost:3001/api/ingenierias/semielaborado/${se.id}`,
+                `/api/ingenierias/semielaborado/${se.id}`,
               );
               if (resRecipe.ok) {
                 const recipes = await resRecipe.json();
@@ -448,7 +448,7 @@ export default function PlanificacionProduccion() {
       return alert("Seleccioná un producto.");
 
     try {
-      const res = await fetch("http://localhost:3001/api/ordenes-trabajo", {
+      const res = await fetch("/api/ordenes-trabajo", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -482,7 +482,7 @@ export default function PlanificacionProduccion() {
 
     try {
       const res = await fetch(
-        `http://localhost:3001/api/ordenes-trabajo/${editingRitmoItem.id}`,
+        `/api/ordenes-trabajo/${editingRitmoItem.id}`,
         {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
@@ -574,7 +574,7 @@ export default function PlanificacionProduccion() {
 
     try {
       if (dropModalData.type === "DESDE_PADRE") {
-        const res = await fetch("http://localhost:3001/api/ordenes-trabajo", {
+        const res = await fetch("/api/ordenes-trabajo", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -597,7 +597,7 @@ export default function PlanificacionProduccion() {
         }
       } else if (dropModalData.type === "REPROGRAMAR") {
         const res = await fetch(
-          `http://localhost:3001/api/ordenes-trabajo/${dropModalData.ot.id}`,
+          `/api/ordenes-trabajo/${dropModalData.ot.id}`,
           {
             method: "PUT",
             headers: { "Content-Type": "application/json" },
@@ -634,7 +634,7 @@ export default function PlanificacionProduccion() {
 
       if (instancias.length > 1) {
         const res = await fetch(
-          `http://localhost:3001/api/ordenes-trabajo/${otItem.id}`,
+          `/api/ordenes-trabajo/${otItem.id}`,
           {
             method: "DELETE",
           },
@@ -642,7 +642,7 @@ export default function PlanificacionProduccion() {
         if (res.ok) fetchData();
       } else {
         const res = await fetch(
-          `http://localhost:3001/api/ordenes-trabajo/${otItem.id}`,
+          `/api/ordenes-trabajo/${otItem.id}`,
           {
             method: "PUT",
             headers: { "Content-Type": "application/json" },
@@ -670,7 +670,7 @@ export default function PlanificacionProduccion() {
 
     try {
       const res = await fetch(
-        `http://localhost:3001/api/ordenes-trabajo/ot/${encodeURIComponent(currentPlan.codigo_ot)}/estado-lote`,
+        `/api/ordenes-trabajo/ot/${encodeURIComponent(currentPlan.codigo_ot)}/estado-lote`,
         {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
@@ -694,7 +694,7 @@ export default function PlanificacionProduccion() {
       return;
     try {
       for (const item of group.rawItems) {
-        await fetch(`http://localhost:3001/api/ordenes-trabajo/${item.id}`, {
+        await fetch(`/api/ordenes-trabajo/${item.id}`, {
           method: "DELETE",
         });
       }

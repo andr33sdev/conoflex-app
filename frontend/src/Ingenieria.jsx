@@ -76,9 +76,9 @@ export default function Ingenieria() {
     setLoading(true);
     try {
       const [resSE, resPT, resMP] = await Promise.all([
-        fetch("http://localhost:3001/api/semielaborados"),
-        fetch("http://localhost:3001/api/productos-terminados"),
-        fetch("http://localhost:3001/api/materias-primas"),
+        fetch("/api/semielaborados"),
+        fetch("/api/productos-terminados"),
+        fetch("/api/materias-primas"),
       ]);
 
       if (resSE.ok) setItemsSE(await resSE.json());
@@ -99,8 +99,8 @@ export default function Ingenieria() {
     setLoadingRecipes(true);
     const endpoint =
       parent.type === "SE"
-        ? `http://localhost:3001/api/ingenierias/semielaborado/${parent.id}`
-        : `http://localhost:3001/api/ingenierias/producto-terminado/${parent.id}`;
+        ? `/api/ingenierias/semielaborado/${parent.id}`
+        : `/api/ingenierias/producto-terminado/${parent.id}`;
 
     try {
       const res = await fetch(endpoint);
@@ -125,7 +125,7 @@ export default function Ingenieria() {
 
     try {
       const res = await fetch(
-        `http://localhost:3001/api/ingenierias/${recipeId}/activar`,
+        `/api/ingenierias/${recipeId}/activar`,
         {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
@@ -150,7 +150,7 @@ export default function Ingenieria() {
 
     try {
       const res = await fetch(
-        `http://localhost:3001/api/ingenierias/${recipeId}`,
+        `/api/ingenierias/${recipeId}`,
         {
           method: "DELETE",
         },
@@ -239,8 +239,8 @@ export default function Ingenieria() {
 
     try {
       const url = editingRecipeId
-        ? `http://localhost:3001/api/ingenierias/${editingRecipeId}`
-        : "http://localhost:3001/api/ingenierias";
+        ? `/api/ingenierias/${editingRecipeId}`
+        : "/api/ingenierias";
       const method = editingRecipeId ? "PUT" : "POST";
 
       const res = await fetch(url, {

@@ -254,7 +254,7 @@ export default function Metricas() {
 
   const fetchGrupos = async () => {
     try {
-      const res = await fetch("http://localhost:3001/api/grupos-alerta");
+      const res = await fetch("/api/grupos-alerta");
       const data = await res.json();
       setGruposAlerta(data);
       if (data.length > 0) {
@@ -271,9 +271,9 @@ export default function Metricas() {
     setLoading(true);
     try {
       const [resProd, resSE, resGrupos] = await Promise.all([
-        fetch("http://localhost:3001/api/metricas/produccion"),
-        fetch("http://localhost:3001/api/semielaborados"),
-        fetch("http://localhost:3001/api/grupos-alerta"),
+        fetch("/api/metricas/produccion"),
+        fetch("/api/semielaborados"),
+        fetch("/api/grupos-alerta"),
       ]);
       setProduccion(await resProd.json());
       setSemielaborados(await resSE.json());
@@ -323,7 +323,7 @@ export default function Metricas() {
   const handleSyncSheets = async () => {
     setIsSyncing(true);
     try {
-      const res = await fetch("http://localhost:3001/api/metricas/recargar", {
+      const res = await fetch("/api/metricas/recargar", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ csvUrl: sheetUrl || undefined }),
@@ -1759,7 +1759,7 @@ export default function Metricas() {
                     return alert("Ingresa un nombre para el grupo");
                   try {
                     const res = await fetch(
-                      "http://localhost:3001/api/grupos-alerta",
+                      "/api/grupos-alerta",
                       {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
@@ -1822,7 +1822,7 @@ export default function Metricas() {
                         onClick={async () => {
                           if (confirm(`¿Eliminar grupo "${g.nombre}"?`)) {
                             await fetch(
-                              `http://localhost:3001/api/grupos-alerta/${g.id}`,
+                              `/api/grupos-alerta/${g.id}`,
                               { method: "DELETE" },
                             );
                             await fetchGrupos();

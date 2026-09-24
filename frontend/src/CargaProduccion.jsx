@@ -48,10 +48,10 @@ export default function CargaProduccion() {
     setLoading(true);
     try {
       const [resOT, resSE, resMP, resCargas] = await Promise.all([
-        fetch("http://localhost:3001/api/ordenes-trabajo"),
-        fetch("http://localhost:3001/api/semielaborados"),
-        fetch("http://localhost:3001/api/materias-primas"),
-        fetch("http://localhost:3001/api/metricas/produccion/cargas"),
+        fetch("/api/ordenes-trabajo"),
+        fetch("/api/semielaborados"),
+        fetch("/api/materias-primas"),
+        fetch("/api/metricas/produccion/cargas"),
       ]);
 
       if (resOT.ok) setOrdenes(await resOT.json());
@@ -76,7 +76,7 @@ export default function CargaProduccion() {
           semielaborados.map(async (se) => {
             try {
               const resRecipe = await fetch(
-                `http://localhost:3001/api/ingenierias/semielaborado/${se.id}`,
+                `/api/ingenierias/semielaborado/${se.id}`,
               );
               if (resRecipe.ok) {
                 const recipes = await resRecipe.json();
@@ -182,7 +182,7 @@ export default function CargaProduccion() {
 
     try {
       const res = await fetch(
-        "http://localhost:3001/api/metricas/produccion/cargar-pendiente",
+        "/api/metricas/produccion/cargar-pendiente",
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -226,7 +226,7 @@ export default function CargaProduccion() {
 
     try {
       const res = await fetch(
-        `http://localhost:3001/api/metricas/produccion/aprobar/${carga.id}`,
+        `/api/metricas/produccion/aprobar/${carga.id}`,
         {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
@@ -255,7 +255,7 @@ export default function CargaProduccion() {
     if (!confirm("¿Rechazar esta carga de producción?")) return;
     try {
       const res = await fetch(
-        `http://localhost:3001/api/metricas/produccion/rechazar/${id}`,
+        `/api/metricas/produccion/rechazar/${id}`,
         {
           method: "DELETE",
         },

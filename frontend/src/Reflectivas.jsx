@@ -84,8 +84,8 @@ export default function Reflectivas() {
     setLoading(true);
     try {
       const [resConfig, resSE] = await Promise.all([
-        fetch("http://localhost:3001/api/configuraciones-pegado"),
-        fetch("http://localhost:3001/api/semielaborados"),
+        fetch("/api/configuraciones-pegado"),
+        fetch("/api/semielaborados"),
       ]);
 
       if (resConfig.ok) setConfigs(await resConfig.json());
@@ -192,8 +192,8 @@ export default function Reflectivas() {
 
     try {
       const url = editingConfig
-        ? `http://localhost:3001/api/configuraciones-pegado/${editingConfig.id}`
-        : "http://localhost:3001/api/configuraciones-pegado";
+        ? `/api/configuraciones-pegado/${editingConfig.id}`
+        : `/api/configuraciones-pegado`;
 
       const method = editingConfig ? "PUT" : "POST";
 
@@ -224,7 +224,7 @@ export default function Reflectivas() {
 
     try {
       const res = await fetch(
-        `http://localhost:3001/api/configuraciones-pegado/${id}`,
+        `/api/configuraciones-pegado/${id}`,
         {
           method: "DELETE",
         },
@@ -242,7 +242,7 @@ export default function Reflectivas() {
 
     try {
       const res = await fetch(
-        `http://localhost:3001/api/semielaborados/${seId}/enlazar-pegado`,
+        `/api/semielaborados/${seId}/enlazar-pegado`,
         {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
@@ -265,7 +265,7 @@ export default function Reflectivas() {
 
     try {
       const res = await fetch(
-        "http://localhost:3001/api/semielaborados/bulk-enlazar-pegado",
+        "/api/semielaborados/bulk-enlazar-pegado",
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
