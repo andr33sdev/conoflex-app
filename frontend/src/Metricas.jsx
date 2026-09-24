@@ -1,17 +1,16 @@
-import { useState, useEffect, useMemo, useRef } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import {
   Calendar,
   Filter,
   RotateCw,
   Printer,
-  Link,
+  Link as LinkIcon,
   RefreshCw,
   Save,
   X,
   TrendingUp,
   GripVertical,
   Maximize2,
-  CheckCircle,
   CheckCircle2,
   Scale,
   AlertOctagon,
@@ -32,33 +31,43 @@ import {
   Activity,
   Shield,
   Layers,
+  Bot,
+  Send,
+  Boxes,
+  Cpu,
+  Inbox,
+  Sliders,
+  FileText,
+  User,
+  Plus,
+  MessageSquare,
 } from "lucide-react";
 
-// COLORES MÁQUINAS Y MODO UNIFICADO ESTILO RPG
+// COLORES MÁQUINAS - ESTILO CYBER INDUSTRIAL
 const CATEGORY_COLORS = {
   EXTRUSIÓN: {
-    stroke: "#ffbe00",
-    fill: "rgba(255, 190, 0, 0.25)",
+    stroke: "#f59e0b", // Ámbar
+    fill: "rgba(245, 158, 11, 0.15)",
     id: "grad-ext",
   },
   INYECCIÓN: {
-    stroke: "#38bdf8",
-    fill: "rgba(56, 189, 248, 0.25)",
+    stroke: "#38bdf8", // Cian
+    fill: "rgba(56, 189, 248, 0.15)",
     id: "grad-iny",
   },
   ROTOMOLDEO: {
-    stroke: "#24cc8f",
-    fill: "rgba(36, 204, 143, 0.25)",
+    stroke: "#10b981", // Esmeralda
+    fill: "rgba(16, 185, 129, 0.15)",
     id: "grad-rot",
   },
   UNIFICADO: {
-    stroke: "#a594c9",
-    fill: "rgba(165, 148, 201, 0.25)",
+    stroke: "#a855f7", // Púrpura mate
+    fill: "rgba(168, 85, 247, 0.15)",
     id: "grad-uni",
   },
 };
 
-const ROW_HEIGHT = 42; // Altura fija RPG para paginación pixel-perfect
+const ROW_HEIGHT = 40; // Altura fija para paginación adaptariva
 
 // GENERADOR DE CURVAS BÉZIER SUAVES
 function generateBezierPaths(points, tension = 0.25) {
@@ -195,8 +204,10 @@ function inferCategoryFrontend(codigo, articulo) {
 }
 
 export default function Metricas() {
+  const [activeTab, setActiveTab] = useState("kpis"); // 'kpis' | 'chat'
   const [produccion, setProduccion] = useState([]);
   const [semielaborados, setSemielaborados] = useState([]);
+  const [materiasPrimas, setMateriasPrimas] = useState([]);
   const [loading, setLoading] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
 
@@ -215,13 +226,13 @@ export default function Metricas() {
   const [fechaDesde, setFechaDesde] = useState("2024-01-01");
   const [fechaHasta, setFechaHasta] = useState("2026-12-31");
 
-  // MODALES RPG
+  // MODALES
   const [isChartModalOpen, setIsChartModalOpen] = useState(false);
   const [isMatrizModalOpen, setIsMatrizModalOpen] = useState(false);
   const [isUrlModalOpen, setIsUrlModalOpen] = useState(false);
   const [sheetUrl, setSheetUrl] = useState("");
 
-  // ESTADOS DEL COMPARADOR EVOLUTIVO
+  // ESTADOS COMPARADOR BÉZIER
   const [activeCategories, setActiveCategories] = useState([
     "EXTRUSIÓN",
     "INYECCIÓN",
@@ -233,12 +244,10 @@ export default function Metricas() {
   const [hoveredPoint, setHoveredPoint] = useState(null);
   const [clickToast, setClickToast] = useState(false);
 
-  // ESTADOS MATRIZ PLANIFICACIÓN
+  // MATRIZ PLANIFICACIÓN
   const [searchTermSE, setSearchTermSE] = useState("");
   const [filtroEstadoStock, setFiltroEstadoStock] = useState("TODOS");
   const [currentPageSE, setCurrentPageSE] = useState(1);
-
-  // REFS PAGINACIÓN ADAPTATIVA
   const tableContainerRef = useRef(null);
   const tableHeaderRef = useRef(null);
   const [itemsPerPageSE, setItemsPerPageSE] = useState(10);
@@ -251,6 +260,26 @@ export default function Metricas() {
     d.setDate(d.getDate() + 15);
     return d.toISOString().split("T")[0];
   });
+
+  // ESTADO CHAT IA CON LA BD
+  const [mensajes, setMensajes] = useState([
+    {
+      rol: "assistant",
+      texto:
+        "¡Hola! Soy la IA de Inteligencia Operativa de Conoflex. Tengo acceso en tiempo real a la base de datos de la planta (Materias Primas, Semielaborados, Ventas y Órdenes de Trabajo). ¿Qué información o diagnóstico querés consultar?",
+    },
+  ]);
+  const [inputChat, setInputChat] = useState("");
+  const [enviandoChat, setEnviandoChat] = useState(false);
+  const chatBottomRef = useRef(null);
+
+  useEffect(() => {
+    fetchAllData();
+  }, []);
+
+  useEffect(() => {
+    chatBottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [mensajes]);
 
   const fetchGrupos = async () => {
     try {
@@ -270,22 +299,27 @@ export default function Metricas() {
   const fetchAllData = async () => {
     setLoading(true);
     try {
-      const [resProd, resSE, resGrupos] = await Promise.all([
+      const [resProd, resSE, resGrupos, resMP] = await Promise.all([
         fetch("/api/metricas/produccion"),
         fetch("/api/semielaborados"),
         fetch("/api/grupos-alerta"),
+        fetch("/api/materias-primas"),
       ]);
-      setProduccion(await resProd.json());
-      setSemielaborados(await resSE.json());
-      const dataGrupos = await resGrupos.json();
-      setGruposAlerta(dataGrupos);
-      if (dataGrupos.length > 0) {
-        setGrupoActivo(
-          (prev) =>
-            prev ||
-            dataGrupos.find((g) => g.es_predeterminado) ||
-            dataGrupos[0],
-        );
+      if (resProd.ok) setProduccion(await resProd.json());
+      if (resSE.ok) setSemielaborados(await resSE.json());
+      if (resMP.ok) setMateriasPrimas(await resMP.json());
+
+      if (resGrupos.ok) {
+        const dataGrupos = await resGrupos.json();
+        setGruposAlerta(dataGrupos);
+        if (dataGrupos.length > 0) {
+          setGrupoActivo(
+            (prev) =>
+              prev ||
+              dataGrupos.find((g) => g.es_predeterminado) ||
+              dataGrupos[0],
+          );
+        }
       }
     } catch (err) {
       console.error("Error cargando datos:", err);
@@ -294,11 +328,56 @@ export default function Metricas() {
     }
   };
 
-  useEffect(() => {
-    fetchAllData();
-  }, []);
+  const enviarMensajeChat = async (promptDirecto) => {
+    const textoAEnviar = promptDirecto || inputChat;
+    if (!textoAEnviar.trim() || enviandoChat) return;
 
-  // OBSERVER MATRIZ MODAL RPG
+    const nuevosMensajes = [...mensajes, { rol: "user", texto: textoAEnviar }];
+    setMensajes(nuevosMensajes);
+    setInputChat("");
+    setEnviandoChat(true);
+
+    try {
+      const res = await fetch("/api/chat-ia", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          mensaje: textoAEnviar,
+          historial: nuevosMensajes,
+        }),
+      });
+
+      const data = await res.json();
+      if (data.success) {
+        setMensajes([
+          ...nuevosMensajes,
+          { rol: "assistant", texto: data.respuesta },
+        ]);
+      } else {
+        setMensajes([
+          ...nuevosMensajes,
+          {
+            rol: "assistant",
+            texto:
+              "❌ Error: " +
+              (data.error || "No se pudo procesar la solicitud."),
+          },
+        ]);
+      }
+    } catch (err) {
+      setMensajes([
+        ...nuevosMensajes,
+        {
+          rol: "assistant",
+          texto: "❌ Error de conexión con el servidor de la IA.",
+        },
+      ]);
+    } finally {
+      setEnviandoChat(false);
+    }
+  };
+
+  // OBSERVER PARA MATRIZ ADAPTATIVA
   useEffect(() => {
     if (!isMatrizModalOpen || !tableContainerRef.current) return;
 
@@ -351,10 +430,9 @@ export default function Metricas() {
       return r.fecha >= fechaDesde && r.fecha <= fechaHasta;
     });
 
-    let buenas = 0;
-    let fallas = 0;
-    let kgTotal = 0;
-
+    let buenas = 0,
+      fallas = 0,
+      kgTotal = 0;
     filtrados.forEach((r) => {
       buenas += r.cant_buenos || 0;
       fallas += r.cant_fallas || 0;
@@ -415,13 +493,11 @@ export default function Metricas() {
     });
 
     const mesesLista = Array.from(mesesSet).sort();
-
     const SVG_WIDTH = 1000;
     const SVG_HEIGHT = 500;
     const categoriasExistentes = ["EXTRUSIÓN", "INYECCIÓN", "ROTOMOLDEO"];
 
     let maxY = 5;
-
     categoriasExistentes.forEach((cat) => {
       mesesLista.forEach((mes) => {
         const d = mapa[mes]?.[cat] || { buenas: 0, fallas: 0 };
@@ -479,7 +555,6 @@ export default function Metricas() {
     });
 
     maxY = Math.ceil(maxY * 1.15);
-
     return { mesesLista, series, serieUnificada, maxY, SVG_WIDTH, SVG_HEIGHT };
   }, [produccion, fechaDesde, fechaHasta]);
 
@@ -544,10 +619,9 @@ export default function Metricas() {
     indexOfFirstSE,
     indexOfLastSE,
   );
-
   const emptySlotsSE = Math.max(0, itemsPerPageSE - currentPaginatedSE.length);
 
-  // DRAG & DROP EVENT HANDLERS
+  // HANDLERS DRAG & DROP
   const handleDragStart = (e, category) =>
     e.dataTransfer.setData("text/plain", category);
   const handleDragOver = (e) => {
@@ -570,210 +644,425 @@ export default function Metricas() {
     setActiveCategories(activeCategories.filter((c) => c !== cat));
 
   return (
-    <div className="h-full flex flex-col font-mono text-[#e1d7f5] select-none space-y-2 sm:space-y-3 min-h-0 bg-[#1a0f2e] p-1 overflow-hidden">
-      {/* 1. HEADER CONTROL DE PRODUCCIÓN Y SINC */}
-      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between pb-2 sm:pb-3 border-b-2 border-[#432874] gap-2 shrink-0">
-        <div>
-          <h2 className="font-pixel text-sm sm:text-lg text-[#ffbe00] font-bold flex items-center gap-1.5 sm:gap-2 tracking-wide drop-shadow-[1px_1px_0px_#000]">
-            <TrendingUp size={16} className="text-[#38bdf8] shrink-0" /> CONTROL
-            DE PRODUCCIÓN & DEFECTOS
-          </h2>
-          <p className="text-[10px] sm:text-xs text-[#a594c9] mt-0.5 font-mono hidden sm:block">
-            Métricas integradas con ingenierías y planificación de matrices.
-          </p>
+    <div className="flex-1 flex flex-col h-full min-h-0 bg-[#070a12] border border-slate-800/80 rounded-2xl font-sans text-slate-200 shadow-2xl overflow-hidden backdrop-blur-2xl">
+      {/* HEADER DE MÓDULO CON CONTROL PANEL */}
+      <div className="bg-[#0f172a]/70 border-b border-slate-800/80 p-4 flex flex-wrap items-center justify-between gap-4 shrink-0 backdrop-blur-xl">
+        <div className="flex items-center gap-3.5">
+          <div className="p-2.5 bg-emerald-500/10 border border-emerald-500/20 rounded-xl shadow-[0_0_15px_rgba(16,185,129,0.15)]">
+            <BarChart3 size={20} className="text-emerald-400" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2.5">
+              <h2 className="text-xs font-bold text-white tracking-widest uppercase font-mono">
+                MÉTRICAS & INTELLIGENCE
+              </h2>
+              <span className="text-[10px] bg-emerald-500/10 text-emerald-300 border border-emerald-500/20 px-2.5 py-0.5 rounded-full font-mono flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_8px_#10b981]" />{" "}
+                LIVE DATA
+              </span>
+            </div>
+            <p className="text-[11px] text-slate-400 mt-0.5">
+              Panel de control operativo e interacción conversacional
+            </p>
+          </div>
         </div>
 
-        <div className="flex items-center gap-1.5 font-pixel text-xs bg-[#24173e] p-1.5 border-2 border-[#432874] rounded-xs shadow-[2px_2px_0px_#000] shrink-0">
-          <Calendar size={13} className="text-[#a594c9] hidden sm:block" />
-          <input
-            type="date"
-            value={fechaDesde}
-            onChange={(e) => setFechaDesde(e.target.value)}
-            className="bg-[#160c2b] border border-[#432874] text-white text-[10px] sm:text-[11px] px-1.5 py-0.5 rounded-2xs focus:outline-none focus:border-[#ffbe00]"
-          />
-          <span className="text-[#a594c9] text-[10px]">-</span>
-          <input
-            type="date"
-            value={fechaHasta}
-            onChange={(e) => setFechaHasta(e.target.value)}
-            className="bg-[#160c2b] border border-[#432874] text-white text-[10px] sm:text-[11px] px-1.5 py-0.5 rounded-2xs focus:outline-none focus:border-[#ffbe00]"
-          />
+        {/* CONTROLES NAVEGACIÓN PESTAÑAS */}
+        <div className="flex items-center gap-2">
+          {/* FILTRO DE FECHAS COMPACTO */}
+          <div className="hidden sm:flex items-center gap-1.5 bg-[#090d16] border border-slate-800 px-2.5 py-1 rounded-xl text-xs font-mono text-slate-300">
+            <Calendar size={13} className="text-emerald-400" />
+            <input
+              type="date"
+              value={fechaDesde}
+              onChange={(e) => setFechaDesde(e.target.value)}
+              className="bg-transparent text-white outline-none"
+            />
+            <span className="text-slate-600">-</span>
+            <input
+              type="date"
+              value={fechaHasta}
+              onChange={(e) => setFechaHasta(e.target.value)}
+              className="bg-transparent text-white outline-none"
+            />
+          </div>
 
-          <button
-            onClick={handleSyncSheets}
-            disabled={isSyncing}
-            className="px-2.5 py-1 bg-[#38bdf8] border border-[#0284c7] text-[#2c1a4d] font-bold text-[10px] hover:bg-[#7dd3fc] active:translate-y-0.5 shadow-[1px_1px_0px_#000] rounded-2xs flex items-center gap-1 ml-1"
-          >
-            <RefreshCw size={11} className={isSyncing ? "animate-spin" : ""} />
-            <span>SINC</span>
-          </button>
+          <div className="flex items-center gap-1 bg-[#090d16]/80 p-1 border border-slate-800/80 rounded-xl shadow-inner">
+            <button
+              onClick={() => setActiveTab("kpis")}
+              className={`px-3.5 py-1.5 text-xs font-medium transition-all duration-200 rounded-lg flex items-center gap-2 cursor-pointer ${
+                activeTab === "kpis"
+                  ? "bg-[#131c2d] text-emerald-300 font-semibold border border-emerald-500/30 shadow-[0_0_12px_rgba(16,185,129,0.15)]"
+                  : "text-slate-400 hover:text-slate-200"
+              }`}
+            >
+              <Activity size={14} /> Tablero General
+            </button>
+
+            <button
+              onClick={() => setActiveTab("chat")}
+              className={`px-3.5 py-1.5 text-xs font-medium transition-all duration-200 rounded-lg flex items-center gap-2 cursor-pointer ${
+                activeTab === "chat"
+                  ? "bg-[#131c2d] text-emerald-300 font-semibold border border-emerald-500/30 shadow-[0_0_12px_rgba(16,185,129,0.15)]"
+                  : "text-slate-400 hover:text-slate-200"
+              }`}
+            >
+              <Bot size={14} /> Asistente IA BD
+            </button>
+          </div>
         </div>
       </div>
 
-      {/* 2. TARJETAS KPI RPG BARS */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-3 shrink-0 font-pixel">
-        <div className="bg-[#24173e] border-2 border-[#24cc8f]/50 p-2.5 rounded-xs shadow-[3px_3px_0px_#000] relative overflow-hidden group">
-          <div className="flex justify-between items-start">
-            <span className="text-[10px] text-[#a594c9] font-bold block">
-              PIEZAS BUENAS
-            </span>
-            <CheckCircle2 size={16} className="text-[#24cc8f]" />
-          </div>
-          <strong className="text-sm sm:text-lg text-white font-bold block mt-1">
-            {loading ? "..." : globalStats.buenas.toLocaleString()}{" "}
-            <span className="text-[10px] text-[#24cc8f]">u.</span>
-          </strong>
-          <div className="mt-2 bg-[#160c2b] h-1.5 w-full rounded-2xs overflow-hidden border border-[#432874]">
-            <div
-              className="bg-[#24cc8f] h-full transition-all duration-500"
-              style={{ width: `${globalStats.tasaCalidad}%` }}
-            />
-          </div>
-        </div>
+      {/* ÁREA DE CONTENIDO */}
+      <div className="flex-1 min-h-0 overflow-hidden bg-[#070a12] p-5">
+        {/* VISTA 1: TABLERO GENERAL DE KPIS */}
+        {activeTab === "kpis" && (
+          <div className="h-full overflow-y-auto space-y-5 pr-1 transition-all duration-300 ease-out">
+            {/* KPIS RESTRUCTURADOS */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className="bg-[#0e1422] border border-slate-800/80 p-4 rounded-2xl space-y-2 shadow-sm relative overflow-hidden group hover:border-emerald-500/40 transition-colors">
+                <div className="flex justify-between items-center text-slate-400 text-xs font-mono">
+                  <span>PIEZAS PRODUCIDAS</span>
+                  <TrendingUp size={15} className="text-emerald-400" />
+                </div>
+                <div className="text-2xl font-bold font-mono text-white">
+                  {loading ? "..." : globalStats.buenas.toLocaleString()}{" "}
+                  <span className="text-xs text-slate-500 font-normal">u.</span>
+                </div>
+                <p className="text-[11px] text-slate-400">
+                  Total acumulado en el rango
+                </p>
+              </div>
 
-        <div className="bg-[#24173e] border-2 border-[#f87171]/50 p-2.5 rounded-xs shadow-[3px_3px_0px_#000] relative overflow-hidden group">
-          <div className="flex justify-between items-start">
-            <span className="text-[10px] text-[#a594c9] font-bold block">
-              PIEZAS FALLADAS
-            </span>
-            <AlertTriangle size={16} className="text-[#f87171]" />
-          </div>
-          <strong className="text-sm sm:text-lg text-[#f87171] font-bold block mt-1">
-            {loading ? "..." : globalStats.fallas.toLocaleString()}{" "}
-            <span className="text-[10px] text-[#f87171]">u.</span>
-          </strong>
-          <div className="mt-2 bg-[#160c2b] h-1.5 w-full rounded-2xs overflow-hidden border border-[#432874]">
-            <div
-              className="bg-[#f87171] h-full transition-all duration-500"
-              style={{
-                width: `${Math.min(100, parseFloat(globalStats.porcDefectuosas) * 10)}%`,
-              }}
-            />
-          </div>
-        </div>
+              <div className="bg-[#0e1422] border border-slate-800/80 p-4 rounded-2xl space-y-2 shadow-sm relative overflow-hidden group hover:border-amber-500/40 transition-colors">
+                <div className="flex justify-between items-center text-slate-400 text-xs font-mono">
+                  <span>TASA DE DEFECTOS</span>
+                  <AlertTriangle
+                    size={15}
+                    className={
+                      globalStats.porcDefectuosas > 5
+                        ? "text-amber-400"
+                        : "text-emerald-400"
+                    }
+                  />
+                </div>
+                <div className="text-2xl font-bold font-mono text-amber-400">
+                  {loading ? "..." : `${globalStats.porcDefectuosas}%`}
+                </div>
+                <p className="text-[11px] text-slate-400">
+                  {globalStats.fallas.toLocaleString()} piezas descartadas
+                </p>
+              </div>
 
-        <div className="bg-[#24173e] border-2 border-[#fb923c]/50 p-2.5 rounded-xs shadow-[3px_3px_0px_#000] relative overflow-hidden group">
-          <div className="flex justify-between items-start">
-            <span className="text-[10px] text-[#a594c9] font-bold block">
-              TASA DEFECTUOSA
-            </span>
-            <Activity size={16} className="text-[#fb923c]" />
-          </div>
-          <strong className="text-sm sm:text-lg text-[#fb923c] font-bold block mt-1">
-            {loading ? "..." : `${globalStats.porcDefectuosas}%`}
-          </strong>
-          <span className="text-[9px] text-[#a594c9] block mt-1 truncate">
-            {globalStats.tasaCalidad}% Eficiencia de Planta
-          </span>
-        </div>
+              <div className="bg-[#0e1422] border border-slate-800/80 p-4 rounded-2xl space-y-2 shadow-sm relative overflow-hidden group hover:border-amber-500/40 transition-colors">
+                <div className="flex justify-between items-center text-slate-400 text-xs font-mono">
+                  <span>RIESGO STOCK (&lt;{diasCriticoActivo}D)</span>
+                  <Shield size={15} className="text-amber-400" />
+                </div>
+                <div className="text-2xl font-bold font-mono text-white">
+                  {loading ? "..." : globalStats.semielaboradosEnRiesgo}{" "}
+                  <span className="text-xs text-slate-500 font-normal">
+                    items
+                  </span>
+                </div>
+                <button
+                  onClick={() => setIsMatrizModalOpen(true)}
+                  className="text-[11px] text-amber-400 hover:underline cursor-pointer block font-mono"
+                >
+                  Ver matriz de riesgo →
+                </button>
+              </div>
 
-        <div className="bg-[#24173e] border-2 border-[#ffbe00] p-2.5 rounded-xs shadow-[3px_3px_0px_#000] relative overflow-hidden group border-l-4 border-l-[#f87171]">
-          <div className="flex justify-between items-start">
-            <span className="text-[10px] text-[#ffbe00] font-bold block">
-              RIESGO (&lt;{diasCriticoActivo}D)
-            </span>
-            <Shield size={16} className="text-[#f87171] animate-pulse" />
-          </div>
-          <strong className="text-sm sm:text-lg text-white font-bold block mt-1">
-            {loading ? "..." : `${globalStats.semielaboradosEnRiesgo} matrices`}
-          </strong>
-          <span
-            className="text-[9px] text-[#ffbe00] block mt-1 underline cursor-pointer hover:text-white"
-            onClick={() => setIsMatrizModalOpen(true)}
-          >
-            Ver matriz de stock →
-          </span>
-        </div>
-      </div>
-
-      {/* 3. DOS PANELES DE CONTROL PRINCIPAL */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 flex-1 min-h-0 font-pixel">
-        <div className="bg-[#24173e] border-2 border-[#432874] p-4 flex flex-col justify-between rounded-xs shadow-[4px_4px_0px_#000] relative overflow-hidden group hover:border-[#38bdf8]/60 transition-colors">
-          <div className="space-y-3">
-            <div className="w-12 h-12 bg-[#160c2b] border-2 border-[#38bdf8] flex items-center justify-center p-2 rounded-xs shadow-[2px_2px_0px_#000] group-hover:scale-110 transition-transform">
-              <BarChart3 size={24} className="text-[#38bdf8]" />
+              <div className="bg-[#0e1422] border border-slate-800/80 p-4 rounded-2xl space-y-2 shadow-sm relative overflow-hidden group hover:border-emerald-500/40 transition-colors">
+                <div className="flex justify-between items-center text-slate-400 text-xs font-mono">
+                  <span>EFICIENCIA GLOBAL</span>
+                  <CheckCircle2 size={15} className="text-emerald-400" />
+                </div>
+                <div className="text-2xl font-bold font-mono text-emerald-400">
+                  {loading ? "..." : `${globalStats.tasaCalidad}%`}
+                </div>
+                <p className="text-[11px] text-slate-400">
+                  Tasa de primera calidad
+                </p>
+              </div>
             </div>
-            <div>
-              <h3 className="text-sm sm:text-base text-white font-bold group-hover:text-[#38bdf8] transition-colors">
-                COMPARADOR EVOLUTIVO DRAG & DROP
-              </h3>
-              <p className="text-xs text-[#a594c9] font-mono mt-1.5 leading-relaxed">
-                Analizá la evolución mensual de producción buena versus piezas
-                falladas arrastrando tecnologías sobre el lienzo.
-              </p>
-            </div>
-          </div>
-          <button
-            onClick={() => setIsChartModalOpen(true)}
-            className="w-full py-2.5 bg-[#160c2b] border-2 border-[#38bdf8] text-[#38bdf8] hover:bg-[#38bdf8] hover:text-[#2c1a4d] font-pixel text-xs font-bold transition-all shadow-[2px_2px_0px_#000] active:translate-y-0.5 rounded-xs flex items-center justify-center gap-2 mt-4"
-          >
-            <Maximize2 size={14} />
-            <span>ABRIR GRÁFICO EVOLUTIVO</span>
-          </button>
-        </div>
 
-        <div className="bg-[#24173e] border-2 border-[#432874] p-4 flex flex-col justify-between rounded-xs shadow-[4px_4px_0px_#000] relative overflow-hidden group hover:border-[#ffbe00]/60 transition-colors">
-          <div className="space-y-3">
-            <div className="w-12 h-12 bg-[#160c2b] border-2 border-[#ffbe00] flex items-center justify-center p-2 rounded-xs shadow-[2px_2px_0px_#000] group-hover:scale-110 transition-transform">
-              <Calculator size={24} className="text-[#ffbe00]" />
+            {/* COMANDOS DE ACCIÓN / ANÁLISIS */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="bg-[#0e1422] border border-slate-800/80 p-5 rounded-2xl flex flex-col justify-between space-y-4 hover:border-emerald-500/30 transition-colors">
+                <div className="space-y-2">
+                  <div className="p-2.5 bg-emerald-500/10 border border-emerald-500/20 rounded-xl w-fit">
+                    <BarChart3 size={20} className="text-emerald-400" />
+                  </div>
+                  <h3 className="text-sm font-bold text-white font-mono">
+                    COMPARADOR EVOLUTIVO DRAG & DROP
+                  </h3>
+                  <p className="text-xs text-slate-400 leading-relaxed">
+                    Visualizá curvas Bézier suaves de tasa de fallas por
+                    tecnología (Extrusión, Inyección y Rotomoldeo). Podés
+                    arrastrar cartuchos y fusionar promedios.
+                  </p>
+                </div>
+                <button
+                  onClick={() => setIsChartModalOpen(true)}
+                  className="w-full bg-[#131c2d] hover:bg-[#1a263c] text-emerald-400 border border-emerald-500/30 py-2.5 text-xs font-bold rounded-xl transition shadow-md flex items-center justify-center gap-2 cursor-pointer font-mono"
+                >
+                  <Maximize2 size={14} />
+                  <span>ABRIR COMPARADOR BÉZIER</span>
+                </button>
+              </div>
+
+              <div className="bg-[#0e1422] border border-slate-800/80 p-5 rounded-2xl flex flex-col justify-between space-y-4 hover:border-amber-500/30 transition-colors">
+                <div className="space-y-2">
+                  <div className="p-2.5 bg-amber-500/10 border border-amber-500/20 rounded-xl w-fit">
+                    <Calculator size={20} className="text-amber-400" />
+                  </div>
+                  <h3 className="text-sm font-bold text-white font-mono">
+                    MATRIZ Y PLANIFICACIÓN DE COBERTURA
+                  </h3>
+                  <p className="text-xs text-slate-400 leading-relaxed">
+                    Cruza stock de semielaborados con promedio mensual de ventas
+                    para calcular días de cobertura y simular ingresos de lotes
+                    proyectados a futuro.
+                  </p>
+                </div>
+                <button
+                  onClick={() => {
+                    setCurrentPageSE(1);
+                    setIsMatrizModalOpen(true);
+                  }}
+                  className="w-full bg-amber-500 hover:bg-amber-400 text-slate-950 py-2.5 text-xs font-bold rounded-xl transition shadow-md flex items-center justify-center gap-2 cursor-pointer font-mono"
+                >
+                  <Maximize2 size={14} />
+                  <span>ABRIR MATRIZ & SIMULADOR</span>
+                </button>
+              </div>
             </div>
-            <div>
-              <h3 className="text-sm sm:text-base text-white font-bold group-hover:text-[#ffbe00] transition-colors">
-                MATRIZ Y PLANIFICACIÓN DE STOCK CRÍTICO
-              </h3>
-              <p className="text-xs text-[#a594c9] font-mono mt-1.5 leading-relaxed">
-                Cruza la última producción de semielaborados con la demanda de
-                ventas e identifica la cobertura según grupos de alerta.
-              </p>
+
+            {/* TABLA RESUMEN RECIENTE */}
+            <div className="bg-[#0e1422] border border-slate-800/80 rounded-2xl p-4 space-y-3">
+              <div className="flex justify-between items-center border-b border-slate-800/80 pb-3">
+                <h3 className="text-xs font-bold text-emerald-400 font-mono flex items-center gap-2">
+                  <Activity size={14} /> HISTORIAL RECIENTE DE REGISTROS DE
+                  PLANTA
+                </h3>
+                <button
+                  onClick={fetchAllData}
+                  className="p-1.5 hover:bg-slate-800 text-slate-400 hover:text-emerald-400 rounded-lg transition cursor-pointer"
+                >
+                  <RefreshCw
+                    size={13}
+                    className={loading ? "animate-spin text-emerald-400" : ""}
+                  />
+                </button>
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead className="bg-[#070a12] text-slate-400 font-mono text-[10px] uppercase">
+                    <tr>
+                      <th className="p-2.5 border-b border-slate-800">Fecha</th>
+                      <th className="p-2.5 border-b border-slate-800">
+                        Categoría
+                      </th>
+                      <th className="p-2.5 border-b border-slate-800">
+                        Código
+                      </th>
+                      <th className="p-2.5 border-b border-slate-800">
+                        Artículo
+                      </th>
+                      <th className="p-2.5 border-b border-slate-800 text-right">
+                        Buenos
+                      </th>
+                      <th className="p-2.5 border-b border-slate-800 text-right">
+                        Fallas
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800/50 bg-[#070a12]/30 font-sans">
+                    {produccion.slice(0, 10).map((p, idx) => (
+                      <tr
+                        key={idx}
+                        className="hover:bg-[#121824]/60 transition-colors"
+                      >
+                        <td className="p-2.5 font-mono text-slate-400">
+                          {p.fecha || "-"}
+                        </td>
+                        <td className="p-2.5 text-slate-300 font-mono">
+                          {p.categoria_maq || "GENERAL"}
+                        </td>
+                        <td className="p-2.5 font-mono font-bold text-amber-400">
+                          {p.codigo || "-"}
+                        </td>
+                        <td className="p-2.5 text-slate-200">
+                          {p.articulo || "-"}
+                        </td>
+                        <td className="p-2.5 text-right font-mono text-emerald-400 font-semibold">
+                          {Number(p.cant_buenos || 0).toLocaleString()}
+                        </td>
+                        <td className="p-2.5 text-right font-mono text-amber-400 font-semibold">
+                          {Number(p.cant_fallas || 0).toLocaleString()}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
-          <button
-            onClick={() => {
-              setCurrentPageSE(1);
-              setIsMatrizModalOpen(true);
-            }}
-            className="w-full py-2.5 bg-[#ffbe00] border-2 border-[#b38600] text-[#2c1a4d] font-pixel text-xs font-bold hover:bg-[#ffe066] transition-all shadow-[2px_2px_0px_#000] active:translate-y-0.5 rounded-xs flex items-center justify-center gap-2 mt-4"
-          >
-            <Maximize2 size={14} />
-            <span>ABRIR MATRIZ Y PLANIFICACIÓN</span>
-          </button>
-        </div>
+        )}
+
+        {/* VISTA 2: CHAT INTERACTIVO CON IA CONTEXTUALIZADA */}
+        {activeTab === "chat" && (
+          <div className="h-full flex flex-col min-h-0 bg-[#0e1422] border border-slate-800/80 rounded-2xl overflow-hidden shadow-2xl">
+            {/* CABECERA DEL CHAT */}
+            <div className="p-3.5 border-b border-slate-800/80 bg-[#070a12]/60 flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <Bot size={18} className="text-emerald-400" />
+                <div>
+                  <h3 className="text-xs font-bold text-white font-mono uppercase tracking-wider">
+                    ASISTENTE CONVERSACIONAL DE PLANTA
+                  </h3>
+                  <p className="text-[10px] text-slate-400">
+                    Sincronizado con tablas de Materias Primas, Semielaborados,
+                    Ventas y OT.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* ÁREA DE MENSAJES DE CHAT */}
+            <div className="flex-1 overflow-y-auto p-4 space-y-4 min-h-0">
+              {mensajes.map((m, i) => (
+                <div
+                  key={i}
+                  className={`flex gap-3 max-w-3xl ${
+                    m.rol === "user"
+                      ? "ml-auto justify-end"
+                      : "mr-auto justify-start"
+                  }`}
+                >
+                  {m.rol === "assistant" && (
+                    <div className="w-8 h-8 rounded-xl bg-[#070a12] border border-emerald-500/30 flex items-center justify-center text-emerald-400 shrink-0 mt-0.5 shadow-[0_0_10px_rgba(16,185,129,0.15)]">
+                      <Bot size={15} />
+                    </div>
+                  )}
+
+                  <div
+                    className={`p-3.5 rounded-2xl text-xs leading-relaxed ${
+                      m.rol === "user"
+                        ? "bg-emerald-500/10 border border-emerald-500/30 text-emerald-200 font-medium rounded-br-none"
+                        : "bg-[#070a12] border border-slate-800 text-slate-200 rounded-bl-none whitespace-pre-wrap font-sans"
+                    }`}
+                  >
+                    {m.texto}
+                  </div>
+
+                  {m.rol === "user" && (
+                    <div className="w-8 h-8 rounded-xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-300 font-mono text-xs font-bold shrink-0 mt-0.5">
+                      U
+                    </div>
+                  )}
+                </div>
+              ))}
+              <div ref={chatBottomRef} />
+            </div>
+
+            {/* SUGERENCIAS RÁPIDAS DE PROMPT */}
+            <div className="px-4 py-2 bg-[#070a12]/60 border-t border-slate-800/60 flex items-center gap-2 overflow-x-auto text-[11px]">
+              <span className="text-slate-500 font-mono shrink-0">
+                Sugerencias:
+              </span>
+              <button
+                onClick={() =>
+                  enviarMensajeChat(
+                    "¿Cuáles son las 3 materias primas con stock más crítico?",
+                  )
+                }
+                className="bg-[#121824] hover:bg-[#1a2336] border border-slate-800 text-slate-300 px-2.5 py-1 rounded-lg shrink-0 transition cursor-pointer font-sans"
+              >
+                Insumos Críticos
+              </button>
+              <button
+                onClick={() =>
+                  enviarMensajeChat(
+                    "¿Qué semielaborados están en riesgo en el depósito 33?",
+                  )
+                }
+                className="bg-[#121824] hover:bg-[#1a2336] border border-slate-800 text-slate-300 px-2.5 py-1 rounded-lg shrink-0 transition cursor-pointer font-sans"
+              >
+                Riesgo Depósito 33
+              </button>
+              <button
+                onClick={() =>
+                  enviarMensajeChat(
+                    "Haceme un diagnóstico general de la eficiencia de planta.",
+                  )
+                }
+                className="bg-[#121824] hover:bg-[#1a2336] border border-slate-800 text-slate-300 px-2.5 py-1 rounded-lg shrink-0 transition cursor-pointer font-sans"
+              >
+                Diagnóstico de Eficiencia
+              </button>
+            </div>
+
+            {/* BARRA DE ENTRADA CHAT */}
+            <div className="p-3 bg-[#070a12] border-t border-slate-800/80 flex items-center gap-2">
+              <input
+                type="text"
+                value={inputChat}
+                onChange={(e) => setInputChat(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && enviarMensajeChat()}
+                placeholder="Preguntale a la IA sobre materias primas, semielaborados, ventas u OT..."
+                className="flex-1 bg-[#0e1422] border border-slate-800 px-3.5 py-2 text-xs text-slate-100 outline-none focus:border-emerald-500/50 rounded-xl"
+              />
+              <button
+                onClick={() => enviarMensajeChat()}
+                disabled={enviandoChat}
+                className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 p-2 rounded-xl transition cursor-pointer disabled:opacity-50 shadow-[0_0_12px_rgba(16,185,129,0.25)]"
+              >
+                <Send size={15} />
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* =========================================================
-          MODAL 1: COMPARADOR EVOLUTIVO (DRAG & DROP CANVAS SVG)
+          MODAL 1: COMPARADOR EVOLUTIVO (DRAG & DROP SVG BÉZIER)
       ========================================================= */}
       {isChartModalOpen && (
-        <div className="fixed inset-0 bg-black/90 backdrop-blur-xs z-[100] flex items-center justify-center p-2 sm:p-4 animate-in fade-in duration-200 font-mono">
-          <div className="bg-[#24173e] border-2 border-[#38bdf8] w-full max-w-6xl h-[90vh] p-4 sm:p-5 shadow-[0_0_40px_rgba(56,189,248,0.25)] flex flex-col relative rounded-xs overflow-hidden">
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-xs z-[100] flex items-center justify-center p-3 font-sans">
+          <div className="bg-[#0e1422] border border-slate-800 w-full max-w-5xl h-[88vh] p-4 sm:p-5 shadow-2xl flex flex-col relative rounded-2xl overflow-hidden">
             <button
               onClick={() => setIsChartModalOpen(false)}
-              className="absolute top-4 right-4 text-[#a594c9] hover:text-white"
+              className="absolute top-4 right-4 text-slate-400 hover:text-white"
             >
               <X size={16} />
             </button>
 
-            <div className="border-b-2 border-[#432874] pb-2 shrink-0 pr-6">
-              <span className="text-[10px] font-pixel text-[#38bdf8] bg-[#38bdf8]/10 px-2 py-0.5 border border-[#38bdf8]/30 rounded-xs font-bold">
-                CANVAS DE ANÁLISIS TÉCNICO
+            <div className="border-b border-slate-800 pb-3 shrink-0 pr-6">
+              <span className="text-[10px] font-mono font-bold text-emerald-400 bg-emerald-500/10 px-2.5 py-0.5 border border-emerald-500/20 rounded-full">
+                ANÁLISIS EVOLUTIVO
               </span>
-              <h3 className="font-pixel text-sm sm:text-base text-white font-bold mt-1.5 flex items-center gap-2">
-                <BarChart3 size={16} className="text-[#ffbe00]" /> EVOLUCIÓN
-                HISTÓRICA DE PIEZAS DEFECTUOSAS
+              <h3 className="text-sm font-bold text-white mt-1.5 flex items-center gap-2">
+                <BarChart3 size={16} className="text-amber-400" /> HISTORIAL DE
+                PIEZAS DEFECTUOSAS POR MÁQUINA
               </h3>
             </div>
 
             {/* DRAG & DROP TOOLBAR */}
-            <div className="bg-[#160c2b] border-b border-[#432874] p-3 flex flex-wrap items-center justify-between gap-2 shrink-0">
-              <div className="flex items-center gap-2 text-[10px] font-pixel text-[#a594c9]">
+            <div className="bg-[#070a12] border-b border-slate-800/80 p-3 flex flex-wrap items-center justify-between gap-2 shrink-0 my-2 rounded-xl">
+              <div className="flex items-center gap-2 text-[11px] font-mono text-slate-400">
                 <GripVertical
                   size={14}
-                  className="text-[#ffbe00] animate-bounce"
+                  className="text-amber-400 animate-bounce"
                 />
-                <span>ARRASTRÁ EL CARTUCHO Y SOLTALO EN EL GRÁFICO:</span>
+                <span>
+                  ARRASTRÁ EL CARTUCHO AL LIENZO PARA TRAZAR LA CURVA:
+                </span>
               </div>
 
-              <div className="flex items-center gap-2 font-pixel text-[10px]">
+              <div className="flex items-center gap-2 font-mono text-[11px]">
                 {["EXTRUSIÓN", "INYECCIÓN", "ROTOMOLDEO"].map((cat) => {
                   const isAlreadyActive = activeCategories.includes(cat);
                   const color = CATEGORY_COLORS[cat].stroke;
@@ -784,12 +1073,12 @@ export default function Metricas() {
                       draggable={!isMerged}
                       onDragStart={(e) => handleDragStart(e, cat)}
                       onClick={handlePillClick}
-                      className={`px-2.5 py-1.5 border-2 font-bold transition-all shadow-[2px_2px_0px_#000] rounded-2xs ${
+                      className={`px-3 py-1 border rounded-lg transition-all font-semibold ${
                         isMerged
-                          ? "opacity-30 cursor-not-allowed bg-[#24173e] border-[#432874] text-[#a594c9]"
+                          ? "opacity-30 cursor-not-allowed bg-slate-900 border-slate-800 text-slate-500"
                           : isAlreadyActive
-                            ? "bg-[#160c2b] text-white border-white opacity-40 cursor-not-allowed"
-                            : "bg-[#2c1a4d] text-white cursor-grab active:cursor-grabbing hover:scale-105"
+                            ? "bg-slate-900 text-slate-400 border-slate-800 opacity-40 cursor-not-allowed"
+                            : "bg-slate-800 text-white cursor-grab hover:scale-105"
                       }`}
                       style={{ borderColor: !isMerged ? color : undefined }}
                     >
@@ -804,344 +1093,173 @@ export default function Metricas() {
 
                 <button
                   onClick={() => setIsMerged(!isMerged)}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 border-2 font-bold transition-all shadow-[2px_2px_0px_#000] active:translate-y-0.5 ml-2 rounded-2xs ${
+                  className={`flex items-center gap-1.5 px-3 py-1 border text-xs font-bold rounded-lg transition cursor-pointer ${
                     isMerged
-                      ? "bg-[#a594c9] text-[#2c1a4d] border-[#a594c9] shadow-[0_0_15px_rgba(165,148,201,0.6)]"
-                      : "bg-[#2c1a4d] border-[#a594c9] text-[#a594c9] hover:bg-[#a594c9] hover:text-[#2c1a4d]"
+                      ? "bg-purple-500/20 text-purple-300 border-purple-500/50 shadow-[0_0_12px_rgba(168,85,247,0.3)]"
+                      : "bg-slate-900 border-slate-700 text-slate-300 hover:text-white"
                   }`}
                 >
                   <GitMerge size={13} />
                   <span>
-                    {isMerged ? "SEPARAR LÍNEAS" : "FUSIONAR PROMEDIOS"}
+                    {isMerged ? "SEPARAR LÍNEAS" : "FUSIONAR PROMEDIO"}
                   </span>
                 </button>
               </div>
-
-              {clickToast && !isMerged && (
-                <div className="absolute top-16 left-1/2 -translate-x-1/2 bg-[#ffbe00] text-[#2c1a4d] font-pixel text-[10px] p-2 shadow-[2px_2px_0px_#000] z-50 border border-white animate-bounce rounded-2xs font-bold">
-                  ✋ ¡Mantené apretado y ARRASTRÁ el cartucho hacia abajo!
-                </div>
-              )}
             </div>
 
-            {/* CANVAS SVG CON DRAG OVER */}
+            {/* CANVAS SVG */}
             <div
               onDragOver={handleDragOver}
               onDragLeave={handleDragLeave}
               onDrop={handleDrop}
-              className={`flex-1 relative flex flex-col justify-between overflow-hidden transition-colors border-b-2 border-[#432874] ${
+              className={`flex-1 relative flex flex-col justify-between overflow-hidden rounded-xl border ${
                 isDraggingOverChart
-                  ? "bg-[#38bdf8]/10 border-2 border-dashed border-[#38bdf8]"
-                  : "bg-[#160c2b]"
+                  ? "bg-emerald-500/10 border-dashed border-emerald-400"
+                  : "bg-[#070a12] border-slate-800"
               }`}
             >
               {isDraggingOverChart && (
-                <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/50 backdrop-blur-xs font-pixel text-xs text-[#38bdf8] font-bold animate-pulse">
+                <div className="absolute inset-0 z-30 flex items-center justify-center bg-slate-950/70 backdrop-blur-xs font-mono text-xs text-emerald-400 font-bold animate-pulse">
                   ¡SOLTÁ AQUÍ PARA TRAZAR LA CURVA BÉZIER!
                 </div>
               )}
 
-              <div className="absolute right-4 top-3 z-20 flex items-center gap-2">
-                {isMerged ? (
-                  <span className="px-3 py-1 bg-[#a594c9]/20 border-2 border-[#a594c9] text-[#a594c9] font-pixel text-[10px] font-bold flex items-center gap-1.5 shadow-[0_0_12px_rgba(165,148,201,0.5)] rounded-2xs">
-                    <Sparkles size={12} /> PROMEDIO GLOBAL FUSIONADO
-                  </span>
-                ) : (
-                  activeCategories.map((cat) => {
-                    const color = CATEGORY_COLORS[cat].stroke;
-                    const isHoveredPill = highlightedCategory === cat;
-
-                    return (
-                      <span
+              <div className="w-full h-full relative z-10 p-6">
+                <svg
+                  viewBox="0 0 1000 500"
+                  preserveAspectRatio="none"
+                  className="w-full h-full overflow-visible"
+                >
+                  <defs>
+                    {Object.entries(CATEGORY_COLORS).map(([cat, colors]) => (
+                      <linearGradient
                         key={cat}
-                        onMouseEnter={() => setHighlightedCategory(cat)}
-                        onMouseLeave={() => setHighlightedCategory(null)}
-                        className={`px-2.5 py-1 bg-[#2c1a4d] border-2 font-pixel text-[10px] text-white font-bold flex items-center gap-1.5 shadow-[1px_1px_0px_#000] cursor-pointer transition-all rounded-2xs ${
-                          isHoveredPill
-                            ? "scale-105 border-white shadow-[0_0_10px_rgba(255,255,255,0.4)]"
-                            : "opacity-90"
-                        }`}
-                        style={{ borderColor: color }}
+                        id={colors.id}
+                        x1="0"
+                        y1="0"
+                        x2="0"
+                        y2="1"
                       >
-                        <span
-                          className="w-1.5 h-1.5 rounded-full"
-                          style={{ backgroundColor: color }}
+                        <stop
+                          offset="0%"
+                          stopColor={colors.stroke}
+                          stopOpacity="0.3"
                         />
-                        <span>{cat}</span>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            removeCategory(cat);
-                          }}
-                          className="hover:text-[#f87171] ml-1"
-                        >
-                          ✕
-                        </button>
-                      </span>
-                    );
-                  })
-                )}
-              </div>
-
-              <div className="absolute left-2 top-3 text-[9px] font-pixel text-[#a594c9]">
-                % DEFECTUOSAS
-              </div>
-
-              {evolutionaryData.mesesLista.length === 0 ? (
-                <div className="flex-1 flex items-center justify-center text-[#6e588a] font-pixel text-xs">
-                  No hay datos para el rango ({fechaDesde} a {fechaHasta}).
-                </div>
-              ) : !isMerged && activeCategories.length === 0 ? (
-                <div className="flex-1 flex items-center justify-center text-[#6e588a] font-pixel text-[11px] text-center">
-                  <div>
-                    <p className="text-[#ffbe00] font-bold mb-1">
-                      NINGUNA MÁQUINA SELECCIONADA
-                    </p>
-                    <p>
-                      Arrastrá y soltá cualquiera de los cartuchos superiores
-                      dentro del lienzo.
-                    </p>
-                  </div>
-                </div>
-              ) : (
-                <div className="w-full h-full flex flex-col justify-between pt-8 pb-6 px-12 relative">
-                  <div className="absolute inset-x-12 top-8 bottom-8 flex flex-col justify-between pointer-events-none">
-                    {[1, 0.75, 0.5, 0.25, 0].map((step) => (
-                      <div
-                        key={step}
-                        className="border-b border-[#432874]/30 w-full flex items-center text-[9px] font-pixel text-[#6e588a]"
-                      >
-                        <span className="-ml-8">
-                          {(evolutionaryData.maxY * step).toFixed(1)}%
-                        </span>
-                      </div>
+                        <stop
+                          offset="100%"
+                          stopColor={colors.stroke}
+                          stopOpacity="0.0"
+                        />
+                      </linearGradient>
                     ))}
-                  </div>
+                  </defs>
 
-                  <div className="w-full h-full relative z-10">
-                    <svg
-                      viewBox="0 0 1000 500"
-                      preserveAspectRatio="none"
-                      className="w-full h-full overflow-visible"
-                    >
-                      <defs>
-                        {Object.entries(CATEGORY_COLORS).map(
-                          ([cat, colors]) => (
-                            <linearGradient
+                  <g id="layer-areas">
+                    {isMerged
+                      ? (() => {
+                          const { areaD } = generateBezierPaths(
+                            evolutionaryData.serieUnificada,
+                            0.25,
+                          );
+                          return (
+                            <path
+                              d={areaD}
+                              fill={`url(#${CATEGORY_COLORS.UNIFICADO.id})`}
+                            />
+                          );
+                        })()
+                      : activeCategories.map((cat) => {
+                          const puntos = evolutionaryData.series[cat] || [];
+                          if (puntos.length === 0) return null;
+                          const { areaD } = generateBezierPaths(puntos, 0.25);
+                          return (
+                            <path
                               key={cat}
-                              id={colors.id}
-                              x1="0"
-                              y1="0"
-                              x2="0"
-                              y2="1"
-                            >
-                              <stop
-                                offset="0%"
-                                stopColor={colors.stroke}
-                                stopOpacity="0.4"
-                              />
-                              <stop
-                                offset="100%"
-                                stopColor={colors.stroke}
-                                stopOpacity="0.0"
-                              />
-                            </linearGradient>
-                          ),
-                        )}
-                      </defs>
+                              d={areaD}
+                              fill={`url(#${CATEGORY_COLORS[cat].id})`}
+                            />
+                          );
+                        })}
+                  </g>
 
-                      <g id="layer-areas">
-                        {isMerged
-                          ? (() => {
-                              const { areaD } = generateBezierPaths(
-                                evolutionaryData.serieUnificada,
-                                0.25,
-                              );
-                              return (
-                                <path
-                                  d={areaD}
-                                  fill={`url(#${CATEGORY_COLORS.UNIFICADO.id})`}
-                                  className="transition-all duration-500"
-                                />
-                              );
-                            })()
-                          : activeCategories.map((cat) => {
-                              const puntos = evolutionaryData.series[cat] || [];
-                              if (puntos.length === 0) return null;
-                              const { areaD } = generateBezierPaths(
-                                puntos,
-                                0.25,
-                              );
-                              const isBlurred =
-                                highlightedCategory !== null &&
-                                highlightedCategory !== cat;
-                              return (
-                                <path
-                                  key={cat}
-                                  d={areaD}
-                                  fill={`url(#${CATEGORY_COLORS[cat].id})`}
-                                  className={`transition-all duration-300 ${isBlurred ? "opacity-10" : "opacity-100"}`}
-                                />
-                              );
-                            })}
-                      </g>
+                  <g id="layer-lines">
+                    {isMerged
+                      ? (() => {
+                          const { lineD } = generateBezierPaths(
+                            evolutionaryData.serieUnificada,
+                            0.25,
+                          );
+                          return (
+                            <path
+                              d={lineD}
+                              fill="none"
+                              stroke={CATEGORY_COLORS.UNIFICADO.stroke}
+                              strokeWidth="3.5"
+                              strokeLinecap="round"
+                            />
+                          );
+                        })()
+                      : activeCategories.map((cat) => {
+                          const puntos = evolutionaryData.series[cat] || [];
+                          if (puntos.length === 0) return null;
+                          const { lineD } = generateBezierPaths(puntos, 0.25);
+                          return (
+                            <path
+                              key={cat}
+                              d={lineD}
+                              fill="none"
+                              stroke={CATEGORY_COLORS[cat].stroke}
+                              strokeWidth="3"
+                              strokeLinecap="round"
+                            />
+                          );
+                        })}
+                  </g>
 
-                      <g id="layer-lines">
-                        {isMerged
-                          ? (() => {
-                              const { lineD } = generateBezierPaths(
-                                evolutionaryData.serieUnificada,
-                                0.25,
-                              );
-                              return (
-                                <path
-                                  d={lineD}
-                                  fill="none"
-                                  stroke={CATEGORY_COLORS.UNIFICADO.stroke}
-                                  strokeWidth="4"
-                                  strokeLinecap="round"
-                                  strokeLinejoin="round"
-                                  className="transition-all duration-500 drop-shadow-[0_0_8px_rgba(165,148,201,0.8)]"
-                                />
-                              );
-                            })()
-                          : activeCategories.map((cat) => {
-                              const puntos = evolutionaryData.series[cat] || [];
-                              if (puntos.length === 0) return null;
-                              const { lineD } = generateBezierPaths(
-                                puntos,
-                                0.25,
-                              );
-                              const isBlurred =
-                                highlightedCategory !== null &&
-                                highlightedCategory !== cat;
-                              return (
-                                <path
-                                  key={cat}
-                                  d={lineD}
-                                  fill="none"
-                                  stroke={CATEGORY_COLORS[cat].stroke}
-                                  strokeWidth={
-                                    highlightedCategory === cat ? "5" : "3.5"
-                                  }
-                                  strokeLinecap="round"
-                                  strokeLinejoin="round"
-                                  className={`transition-all duration-300 ${isBlurred ? "opacity-15 blur-[1px]" : "opacity-100"}`}
-                                />
-                              );
-                            })}
-                      </g>
+                  <g id="layer-points">
+                    {isMerged
+                      ? evolutionaryData.serieUnificada.map((pt, idx) => (
+                          <circle
+                            key={idx}
+                            cx={pt.x}
+                            cy={pt.y}
+                            r="5"
+                            fill="#070a12"
+                            stroke={CATEGORY_COLORS.UNIFICADO.stroke}
+                            strokeWidth="3"
+                          />
+                        ))
+                      : activeCategories.map((cat) => {
+                          const puntos = evolutionaryData.series[cat] || [];
+                          return puntos.map((pt, idx) => (
+                            <circle
+                              key={`${cat}-${idx}`}
+                              cx={pt.x}
+                              cy={pt.y}
+                              r="4"
+                              fill="#070a12"
+                              stroke={CATEGORY_COLORS[cat].stroke}
+                              strokeWidth="2.5"
+                            />
+                          ));
+                        })}
+                  </g>
+                </svg>
 
-                      <g id="layer-points">
-                        {isMerged
-                          ? evolutionaryData.serieUnificada.map((pt, idx) => (
-                              <g key={idx}>
-                                <circle
-                                  cx={pt.x}
-                                  cy={pt.y}
-                                  r="14"
-                                  fill="transparent"
-                                  className="cursor-pointer"
-                                  onMouseEnter={() => setHoveredPoint(pt)}
-                                  onMouseLeave={() => setHoveredPoint(null)}
-                                />
-                                <circle
-                                  cx={pt.x}
-                                  cy={pt.y}
-                                  r="6"
-                                  fill="#160c2b"
-                                  stroke={CATEGORY_COLORS.UNIFICADO.stroke}
-                                  strokeWidth="3"
-                                  className="pointer-events-none transition-all"
-                                />
-                              </g>
-                            ))
-                          : activeCategories.map((cat) => {
-                              const puntos = evolutionaryData.series[cat] || [];
-                              const isBlurred =
-                                highlightedCategory !== null &&
-                                highlightedCategory !== cat;
-                              return puntos.map((pt, idx) => (
-                                <g
-                                  key={`${cat}-${idx}`}
-                                  className={`transition-all duration-300 ${isBlurred ? "opacity-20" : "opacity-100"}`}
-                                >
-                                  <circle
-                                    cx={pt.x}
-                                    cy={pt.y}
-                                    r="14"
-                                    fill="transparent"
-                                    className="cursor-pointer"
-                                    onMouseEnter={() => setHoveredPoint(pt)}
-                                    onMouseLeave={() => setHoveredPoint(null)}
-                                  />
-                                  <circle
-                                    cx={pt.x}
-                                    cy={pt.y}
-                                    r={highlightedCategory === cat ? "7" : "5"}
-                                    fill="#160c2b"
-                                    stroke={CATEGORY_COLORS[cat].stroke}
-                                    strokeWidth="3"
-                                    className="pointer-events-none transition-all"
-                                  />
-                                </g>
-                              ));
-                            })}
-                      </g>
-                    </svg>
-
-                    {hoveredPoint && (
-                      <div
-                        className="absolute z-40 bg-[#24173e] border-2 p-2.5 font-pixel text-[10px] shadow-[3px_3px_0px_#000] pointer-events-none -translate-x-1/2 -translate-y-full mb-3 rounded-xs"
-                        style={{
-                          left: `${(hoveredPoint.x / 1000) * 100}%`,
-                          top: `${(hoveredPoint.y / 500) * 100}%`,
-                          borderColor: isMerged
-                            ? CATEGORY_COLORS.UNIFICADO.stroke
-                            : CATEGORY_COLORS[hoveredPoint.cat]?.stroke ||
-                              "#38bdf8",
-                        }}
-                      >
-                        <div
-                          className="font-bold border-b border-[#432874] pb-1.5 mb-1.5"
-                          style={{
-                            color: isMerged
-                              ? CATEGORY_COLORS.UNIFICADO.stroke
-                              : CATEGORY_COLORS[hoveredPoint.cat]?.stroke,
-                          }}
-                        >
-                          {hoveredPoint.cat} ({hoveredPoint.mes})
-                        </div>
-                        <div className="text-white">
-                          DEFECTUOSAS:{" "}
-                          <strong className="text-[#f87171] text-[11px]">
-                            {hoveredPoint.porcDefectuosas}%
-                          </strong>
-                        </div>
-                        <div className="text-[#a594c9] mt-1">
-                          Fallas: {hoveredPoint.fallas.toLocaleString()} u.{" "}
-                          <br />
-                          Total: {hoveredPoint.total.toLocaleString()} u.
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="flex justify-between items-center pt-2 text-[9px] font-pixel text-[#a594c9] border-t border-[#432874] z-10">
-                    {evolutionaryData.mesesLista.map((mes) => (
-                      <span key={mes}>/{mes}</span>
-                    ))}
-                  </div>
+                <div className="flex justify-between items-center pt-2 text-[10px] font-mono text-slate-500 border-t border-slate-800/80">
+                  {evolutionaryData.mesesLista.map((mes) => (
+                    <span key={mes}>{mes}</span>
+                  ))}
                 </div>
-              )}
+              </div>
             </div>
 
-            <div className="pt-2 flex justify-end font-pixel">
+            <div className="pt-3 flex justify-end">
               <button
                 onClick={() => setIsChartModalOpen(false)}
-                className="px-4 py-1.5 bg-[#38bdf8] text-[#2c1a4d] font-bold text-xs hover:bg-[#7dd3fc] shadow-[2px_2px_0px_#000] rounded-xs"
+                className="bg-slate-800 hover:bg-slate-700 text-slate-200 font-mono text-xs px-4 py-2 rounded-xl transition cursor-pointer"
               >
-                CERRAR GRÁFICO
+                Cerrar Comparador
               </button>
             </div>
           </div>
@@ -1149,32 +1267,32 @@ export default function Metricas() {
       )}
 
       {/* =========================================================
-          MODAL 2: MATRIZ DE PLANIFICACIÓN (PAGINACIÓN EXACTA h-[85vh])
+          MODAL 2: MATRIZ DE PLANIFICACIÓN (RIESGO STOCK)
       ========================================================= */}
       {isMatrizModalOpen && (
-        <div className="fixed inset-0 bg-black/90 backdrop-blur-xs z-[100] flex items-center justify-center p-2 sm:p-4 animate-in fade-in duration-200 font-mono">
-          <div className="bg-[#24173e] border-2 border-[#ffbe00] w-full max-w-7xl h-[85vh] p-3 sm:p-4 shadow-[0_0_40px_rgba(255,190,0,0.3)] flex flex-col relative rounded-xs overflow-hidden">
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-xs z-[100] flex items-center justify-center p-3 font-sans">
+          <div className="bg-[#0e1422] border border-slate-800 w-full max-w-6xl h-[85vh] p-4 sm:p-5 shadow-2xl flex flex-col relative rounded-2xl overflow-hidden">
             <button
               onClick={() => setIsMatrizModalOpen(false)}
-              className="absolute top-4 right-4 text-[#a594c9] hover:text-white z-50"
+              className="absolute top-4 right-4 text-slate-400 hover:text-white z-50"
             >
               <X size={16} />
             </button>
 
-            <div className="border-b-2 border-[#432874] pb-2 shrink-0 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 pr-8">
+            <div className="border-b border-slate-800 pb-3 shrink-0 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 pr-8">
               <div>
-                <span className="text-[10px] font-pixel text-[#ffbe00] bg-[#ffbe00]/10 px-2 py-0.5 border border-[#ffbe00]/30 rounded-xs font-bold">
-                  TABLA DE COBERTURA & PLANIFICACIÓN
+                <span className="text-[10px] font-mono font-bold text-amber-400 bg-amber-500/10 px-2.5 py-0.5 border border-amber-500/20 rounded-full">
+                  PLANIFICACIÓN DE DEPOSITOS
                 </span>
-                <h3 className="font-pixel text-sm sm:text-base text-white font-bold mt-1.5 flex items-center gap-2">
-                  <Calculator size={16} className="text-[#ffbe00]" /> MATRIZ DE
-                  RIESGO DE SEMIELABORADOS
+                <h3 className="text-sm font-bold text-white mt-1.5 flex items-center gap-2">
+                  <Calculator size={16} className="text-amber-400" /> MATRIZ DE
+                  COBERTURA DE SEMIELABORADOS
                 </h3>
               </div>
 
-              {/* SELECTOR DE GRUPOS DE ALERTA */}
-              <div className="flex items-center gap-2 font-pixel text-[10px] bg-[#160c2b] border border-[#432874] px-2 py-1.5 rounded-xs">
-                <span className="text-[#a594c9] font-bold">GRUPO:</span>
+              {/* GRUPO ACTIVO */}
+              <div className="flex items-center gap-2 font-mono text-xs bg-[#070a12] border border-slate-800 px-3 py-1.5 rounded-xl">
+                <span className="text-slate-400">Grupo:</span>
                 <select
                   value={grupoActivo?.id || ""}
                   onChange={(e) => {
@@ -1186,10 +1304,14 @@ export default function Metricas() {
                       setCurrentPageSE(1);
                     }
                   }}
-                  className="bg-[#24173e] text-[#38bdf8] focus:outline-none focus:border-[#38bdf8] font-bold px-1"
+                  className="bg-transparent text-emerald-400 font-bold outline-none"
                 >
                   {gruposAlerta.map((g) => (
-                    <option key={g.id} value={g.id}>
+                    <option
+                      key={g.id}
+                      value={g.id}
+                      className="bg-slate-900 text-white"
+                    >
                       {g.nombre} (&lt;{g.dias_critico}d)
                     </option>
                   ))}
@@ -1204,33 +1326,33 @@ export default function Metricas() {
                     });
                     setIsGroupModalOpen(true);
                   }}
-                  className="text-[#a594c9] hover:text-[#ffbe00]"
+                  className="text-slate-400 hover:text-amber-400"
                 >
                   <Settings size={13} />
                 </button>
               </div>
             </div>
 
-            {/* CONTROLES: BÚSQUEDA Y RIESGO */}
-            <div className="py-2 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 shrink-0">
-              <div className="relative flex-1 w-full max-w-sm font-pixel">
+            {/* CONTROLES */}
+            <div className="py-2.5 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 shrink-0">
+              <div className="relative flex-1 w-full max-w-sm">
                 <Search
-                  size={13}
-                  className="absolute left-3 top-1/2 -translate-y-1/2 text-[#a594c9]"
+                  size={14}
+                  className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500"
                 />
                 <input
                   type="text"
-                  placeholder="Buscar por código o semielaborado..."
+                  placeholder="Buscar por código o nombre..."
                   value={searchTermSE}
                   onChange={(e) => {
                     setSearchTermSE(e.target.value);
                     setCurrentPageSE(1);
                   }}
-                  className="w-full bg-[#160c2b] border-2 border-[#432874] text-xs text-white pl-8 pr-3 py-1.5 focus:border-[#ffbe00] focus:outline-none rounded-xs"
+                  className="w-full bg-[#070a12] border border-slate-800 text-xs text-white pl-9 pr-3 py-1.5 focus:border-amber-500/50 outline-none rounded-lg"
                 />
               </div>
 
-              <div className="flex flex-wrap items-center gap-1.5 font-pixel text-[10px]">
+              <div className="flex flex-wrap items-center gap-1.5 text-[11px] font-mono">
                 {[
                   { id: "TODOS", label: "TODOS" },
                   {
@@ -1246,10 +1368,10 @@ export default function Metricas() {
                       setFiltroEstadoStock(f.id);
                       setCurrentPageSE(1);
                     }}
-                    className={`px-2.5 py-1 border transition-colors rounded-2xs ${
+                    className={`px-3 py-1 border rounded-lg transition-colors cursor-pointer ${
                       filtroEstadoStock === f.id
-                        ? "bg-[#ffbe00] text-[#2c1a4d] border-[#b38600] font-bold"
-                        : "bg-[#2c1a4d] border-[#432874] text-[#a594c9] hover:text-white"
+                        ? "bg-amber-500/10 text-amber-400 border-amber-500/40 font-bold"
+                        : "bg-[#070a12] border-slate-800 text-slate-400 hover:text-white"
                     }`}
                   >
                     {f.label}
@@ -1258,205 +1380,114 @@ export default function Metricas() {
               </div>
             </div>
 
-            {/* TABLA ADAPTATIVA (RESIZE OBSERVER h-full) */}
+            {/* TABLA ADAPTATIVA */}
             <div
               ref={tableContainerRef}
-              className="flex-1 bg-[#160c2b] border-2 border-[#432874] rounded-xs min-h-0 overflow-hidden flex flex-col font-pixel text-[11px]"
+              className="flex-1 bg-[#070a12] border border-slate-800 rounded-xl min-h-0 overflow-hidden flex flex-col text-xs"
             >
               <table className="w-full text-left border-collapse table-fixed h-full">
                 <thead
                   ref={tableHeaderRef}
-                  className="bg-[#2c1a4d] border-b-2 border-[#432874] text-[#a594c9] sticky top-0 z-10 h-[36px] shrink-0"
+                  className="bg-[#0e1422] border-b border-slate-800 text-slate-400 font-mono text-[10px] uppercase sticky top-0 z-10 h-[36px]"
                 >
                   <tr>
-                    <th className="w-[12%] px-3 font-normal">CÓDIGO</th>
-                    <th className="w-[30%] px-3 font-normal">SEMIELABORADO</th>
-                    <th className="w-[11%] px-3 font-normal text-right">
-                      STOCK
-                    </th>
-                    <th className="w-[12%] px-3 font-normal text-right">
-                      DEMANDA/M
-                    </th>
-                    <th className="w-[12%] px-3 font-normal text-center">
-                      DÍAS COB.
-                    </th>
-                    <th className="w-[15%] px-3 font-normal text-center">
-                      ÚLTIMO LOTE
-                    </th>
-                    <th className="w-[8%] px-3 font-normal text-center">
-                      SIM.
-                    </th>
+                    <th className="w-[15%] px-3">CÓDIGO</th>
+                    <th className="w-[35%] px-3">SEMIELABORADO</th>
+                    <th className="w-[12%] px-3 text-right">STOCK</th>
+                    <th className="w-[12%] px-3 text-right">DEMANDA/M</th>
+                    <th className="w-[14%] px-3 text-center">DÍAS COB.</th>
+                    <th className="w-[12%] px-3 text-center">SIMULADOR</th>
                   </tr>
                 </thead>
 
-                <tbody className="divide-y divide-[#432874]/30">
-                  {currentPaginatedSE.length === 0 ? (
-                    <tr>
-                      <td
-                        colSpan="7"
-                        className="py-16 text-center text-[#6e588a]"
-                      >
-                        Sin resultados para los filtros aplicados.
-                      </td>
-                    </tr>
-                  ) : (
-                    <>
-                      {currentPaginatedSE.map((item) => {
-                        let badgeStyle =
-                          "bg-[#24173e] text-[#a594c9] border-[#432874]";
-                        if (item.estadoMatriz === "CRITICO")
-                          badgeStyle =
-                            "bg-[#f87171]/20 text-[#f87171] border-[#f87171]/50 font-bold animate-pulse shadow-[1px_1px_0px_#000]";
-                        else if (item.estadoMatriz === "ALERTA")
-                          badgeStyle =
-                            "bg-[#facc15]/20 text-[#facc15] border-[#facc15]/50 font-bold shadow-[1px_1px_0px_#000]";
-                        else if (
-                          item.estadoMatriz === "OK" ||
-                          item.estadoMatriz === "PRUDENTE"
-                        )
-                          badgeStyle =
-                            "bg-[#24cc8f]/20 text-[#24cc8f] border-[#24cc8f]/50 font-bold shadow-[1px_1px_0px_#000]";
+                <tbody className="divide-y divide-slate-800/50 bg-[#070a12]">
+                  {currentPaginatedSE.map((item) => {
+                    let badgeStyle =
+                      "bg-slate-900 text-slate-400 border-slate-800";
+                    if (item.estadoMatriz === "CRITICO")
+                      badgeStyle =
+                        "bg-rose-500/10 text-rose-400 border-rose-500/30 font-bold";
+                    else if (item.estadoMatriz === "ALERTA")
+                      badgeStyle =
+                        "bg-amber-500/10 text-amber-400 border-amber-500/30 font-bold";
+                    else if (
+                      item.estadoMatriz === "OK" ||
+                      item.estadoMatriz === "PRUDENTE"
+                    )
+                      badgeStyle =
+                        "bg-emerald-500/10 text-emerald-400 border-emerald-500/30 font-bold";
 
-                        return (
-                          <tr
-                            key={item.id}
-                            className="h-[42px] hover:bg-[#281747] transition-colors align-middle group cursor-pointer"
+                    return (
+                      <tr
+                        key={item.id}
+                        className="h-[40px] hover:bg-[#121824] transition-colors align-middle font-sans"
+                      >
+                        <td className="px-3 font-mono font-bold text-amber-400 truncate">
+                          {item.codigo}
+                        </td>
+                        <td className="px-3 text-slate-200 font-medium truncate">
+                          {item.nombre}
+                        </td>
+                        <td className="px-3 text-right font-mono font-bold text-emerald-400">
+                          {item.stock_total.toLocaleString()}
+                        </td>
+                        <td className="px-3 text-right font-mono text-cyan-400">
+                          {item.demanda_mensual > 0
+                            ? item.demanda_mensual.toLocaleString()
+                            : "--"}
+                        </td>
+                        <td className="px-3 text-center font-mono">
+                          {item.dias_stock !== null ? (
+                            <span
+                              className={`inline-block px-2.5 py-0.5 border rounded-full text-[11px] ${badgeStyle}`}
+                            >
+                              {item.dias_stock} días
+                            </span>
+                          ) : (
+                            <span className="text-slate-600">--</span>
+                          )}
+                        </td>
+                        <td className="px-3 text-center">
+                          <button
                             onClick={() => {
                               setSimulatedItem(item);
                               setSimulatedBatchQty(500);
                             }}
+                            className="p-1.5 bg-slate-900 border border-slate-700 text-cyan-400 hover:bg-cyan-500/10 hover:border-cyan-400 transition-colors rounded-lg cursor-pointer inline-flex items-center"
+                            title="Simular lote proyectado"
                           >
-                            <td className="px-3 text-[#ffbe00] font-bold tracking-wider truncate group-hover:underline">
-                              {item.codigo}
-                            </td>
-                            <td className="px-3 text-white font-bold truncate">
-                              {item.nombre}
-                            </td>
-                            <td className="px-3 text-right font-bold text-[#24cc8f]">
-                              {item.stock_total.toLocaleString()}
-                            </td>
-                            <td className="px-3 text-right text-[#38bdf8]">
-                              {item.demanda_mensual > 0
-                                ? item.demanda_mensual.toLocaleString()
-                                : "--"}
-                            </td>
-                            <td className="px-3 text-center whitespace-nowrap">
-                              {item.dias_stock !== null ? (
-                                <span
-                                  className={`inline-block px-2 py-0.5 border rounded-2xs ${badgeStyle}`}
-                                >
-                                  {item.dias_stock} días
-                                </span>
-                              ) : (
-                                <span className="text-[#6e588a]">--</span>
-                              )}
-                            </td>
-                            <td className="px-3 text-center text-[#a594c9] whitespace-nowrap">
-                              {item.ultima_produccion_fecha ? (
-                                <div className="flex items-center justify-center gap-1.5">
-                                  <Clock size={11} className="text-[#ffbe00]" />
-                                  <span>{item.ultima_produccion_fecha}</span>
-                                </div>
-                              ) : (
-                                <span className="text-[#6e588a]">
-                                  Sin registro
-                                </span>
-                              )}
-                            </td>
-                            <td className="px-3 text-center">
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setSimulatedItem(item);
-                                  setSimulatedBatchQty(500);
-                                }}
-                                className="p-1.5 bg-[#2c1a4d] border border-[#432874] text-[#38bdf8] hover:bg-[#38bdf8] hover:text-[#2c1a4d] hover:border-[#38bdf8] transition-colors shadow-[1px_1px_0px_#000] rounded-2xs inline-flex items-center"
-                                title="Simular lote a futuro"
-                              >
-                                <Zap size={13} />
-                              </button>
-                            </td>
-                          </tr>
-                        );
-                      })}
-
-                      {/* RANURAS VACÍAS EXACTAS */}
-                      {Array.from({ length: emptySlotsSE }).map((_, idx) => (
-                        <tr
-                          key={`empty-${idx}`}
-                          className="h-[42px] opacity-15 pointer-events-none"
-                        >
-                          <td className="px-3 text-[#432874]">--</td>
-                          <td className="px-3 text-[#432874]">
-                            -- RANURA VACÍA --
-                          </td>
-                          <td className="px-3 text-center text-[#432874]">
-                            --
-                          </td>
-                          <td className="px-3 text-center text-[#432874]">
-                            --
-                          </td>
-                          <td className="px-3 text-center text-[#432874]">
-                            --
-                          </td>
-                          <td className="px-3 text-center text-[#432874]">
-                            --
-                          </td>
-                          <td className="px-3 text-center text-[#432874]">
-                            --
-                          </td>
-                        </tr>
-                      ))}
-                    </>
-                  )}
+                            <Zap size={13} />
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
 
-            {/* FOOTER Y PAGINACIÓN */}
-            <div className="flex flex-col sm:flex-row items-center justify-between pt-2 mt-2 border-t-2 border-[#432874] shrink-0 text-[10px] font-pixel gap-2">
-              <span className="text-[#a594c9]">
-                Mostrando página{" "}
-                <strong className="text-white">{currentPageSE}</strong> de{" "}
-                <strong className="text-white">{totalPagesSE}</strong> (
-                {semielaboradosCruzados.length} ítems)
+            {/* PAGINACIÓN */}
+            <div className="flex justify-between items-center pt-3 border-t border-slate-800 text-xs font-mono text-slate-400 shrink-0">
+              <span>
+                Página <strong className="text-white">{currentPageSE}</strong>{" "}
+                de <strong className="text-white">{totalPagesSE}</strong>
               </span>
-
-              <div className="flex items-center gap-1">
-                <button
-                  onClick={() => setCurrentPageSE(1)}
-                  disabled={currentPageSE === 1}
-                  className="p-1 sm:p-1.5 bg-[#2c1a4d] border border-[#432874] text-[#a594c9] hover:text-[#ffbe00] disabled:opacity-30 shadow-[1px_1px_0px_#000] rounded-xs"
-                >
-                  <ChevronsLeft size={13} />
-                </button>
+              <div className="flex gap-1.5">
                 <button
                   onClick={() => setCurrentPageSE((p) => Math.max(p - 1, 1))}
                   disabled={currentPageSE === 1}
-                  className="px-2 py-1 bg-[#2c1a4d] border border-[#432874] text-[#a594c9] hover:text-[#ffbe00] disabled:opacity-30 shadow-[1px_1px_0px_#000] flex items-center gap-0.5 rounded-xs"
+                  className="px-3 py-1 bg-slate-900 border border-slate-800 hover:bg-slate-800 disabled:opacity-40 rounded-lg cursor-pointer"
                 >
-                  <ChevronLeft size={13} /> ANT
+                  Anterior
                 </button>
-
-                <span className="px-2.5 py-0.5 bg-[#160c2b] border border-[#432874] text-[#ffbe00] font-bold rounded-xs">
-                  {currentPageSE} / {totalPagesSE}
-                </span>
-
                 <button
                   onClick={() =>
                     setCurrentPageSE((p) => Math.min(p + 1, totalPagesSE))
                   }
                   disabled={currentPageSE === totalPagesSE}
-                  className="px-2 py-1 bg-[#2c1a4d] border border-[#432874] text-[#a594c9] hover:text-[#ffbe00] disabled:opacity-30 shadow-[1px_1px_0px_#000] flex items-center gap-0.5 rounded-xs"
+                  className="px-3 py-1 bg-slate-900 border border-slate-800 hover:bg-slate-800 disabled:opacity-40 rounded-lg cursor-pointer"
                 >
-                  SIG <ChevronRight size={13} />
-                </button>
-                <button
-                  onClick={() => setCurrentPageSE(totalPagesSE)}
-                  disabled={currentPageSE === totalPagesSE}
-                  className="p-1 sm:p-1.5 bg-[#2c1a4d] border border-[#432874] text-[#a594c9] hover:text-[#ffbe00] disabled:opacity-30 shadow-[1px_1px_0px_#000] rounded-xs"
-                >
-                  <ChevronsRight size={13} />
+                  Siguiente
                 </button>
               </div>
             </div>
@@ -1464,71 +1495,65 @@ export default function Metricas() {
         </div>
       )}
 
-      {/* =========================================================
-          MODAL 3: SIMULADOR DE LOTE PROYECTADO
-      ========================================================= */}
+      {/* MODAL 3: SIMULADOR DE LOTE FUTURO */}
       {simulatedItem && (
-        <div className="fixed inset-0 bg-black/90 backdrop-blur-sm z-[110] flex items-center justify-center p-3 font-mono animate-in zoom-in-95 duration-150">
-          <div className="bg-[#24173e] border-2 border-[#38bdf8] w-full max-w-lg p-5 shadow-[0_0_35px_rgba(56,189,248,0.3)] space-y-4 relative rounded-xs">
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-xs z-[110] flex items-center justify-center p-4 font-sans">
+          <div className="bg-[#0e1422] border border-slate-800 w-full max-w-md p-5 rounded-2xl shadow-2xl space-y-4 relative text-xs">
             <button
               onClick={() => setSimulatedItem(null)}
-              className="absolute top-4 right-4 text-[#a594c9] hover:text-white"
+              className="absolute top-4 right-4 text-slate-400 hover:text-white"
             >
               <X size={16} />
             </button>
 
-            <div className="border-b-2 border-[#432874] pb-2">
-              <span className="text-[10px] font-pixel text-[#38bdf8] bg-[#38bdf8]/10 px-2 py-0.5 border border-[#38bdf8]/30 rounded-xs font-bold">
-                PROYECCIÓN Y SIMULADOR
+            <div className="border-b border-slate-800 pb-2">
+              <span className="text-[10px] font-mono font-bold text-amber-400 bg-amber-500/10 px-2 py-0.5 border border-amber-500/20 rounded-full">
+                SIMULADOR OPERATIVO
               </span>
-              <h3 className="font-pixel text-sm sm:text-base text-white font-bold mt-1.5 flex items-center gap-2">
-                <Zap size={16} className="text-[#ffbe00]" /> SIMULAR ARRIBO DE
-                LOTE FUTURO
+              <h3 className="text-sm font-bold text-white mt-1 flex items-center gap-2">
+                <Zap size={15} className="text-amber-400" /> PROYECTAR LOTE DE
+                PRODUCCIÓN
               </h3>
-              <p className="text-xs text-[#a594c9] font-bold mt-0.5 truncate">
+              <p className="text-xs text-slate-400 font-mono mt-0.5">
                 [{simulatedItem.codigo}] {simulatedItem.nombre}
               </p>
             </div>
 
-            <div className="space-y-3 text-xs font-pixel">
-              <div className="grid grid-cols-2 gap-2">
-                <div className="p-2.5 bg-[#160c2b] border border-[#432874] rounded-xs shadow-[1px_1px_0px_#000]">
-                  <span className="text-[#a594c9] block text-[9px] mb-1">
-                    STOCK HOY:
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-2 font-mono">
+                <div className="bg-[#070a12] p-2.5 rounded-xl border border-slate-800">
+                  <span className="text-[10px] text-slate-500 block">
+                    STOCK ACTUAL:
                   </span>
                   <strong className="text-white text-sm">
-                    {simulatedItem.stock_total.toLocaleString()}{" "}
-                    <span className="text-[10px]">u.</span>
+                    {simulatedItem.stock_total.toLocaleString()} u.
                   </strong>
                 </div>
-
-                <div className="p-2.5 bg-[#160c2b] border border-[#432874] rounded-xs shadow-[1px_1px_0px_#000]">
-                  <span className="text-[#a594c9] block text-[9px] mb-1">
-                    DEMANDA ESTIMADA:
+                <div className="bg-[#070a12] p-2.5 rounded-xl border border-slate-800">
+                  <span className="text-[10px] text-slate-500 block">
+                    DEMANDA MENSUAL:
                   </span>
-                  <strong className="text-[#38bdf8] text-sm">
-                    {simulatedItem.demanda_mensual.toLocaleString()}{" "}
-                    <span className="text-[10px]">u./mes</span>
+                  <strong className="text-cyan-400 text-sm">
+                    {simulatedItem.demanda_mensual.toLocaleString()} u.
                   </strong>
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-2 border-t border-[#432874]">
+              <div className="space-y-2">
                 <div>
-                  <label className="text-[#a594c9] block font-bold mb-1">
-                    FECHA FUTURA DE ARRIBO:
+                  <label className="text-[11px] text-slate-400 font-mono">
+                    Fecha de Arribo Proyectada:
                   </label>
                   <input
                     type="date"
                     value={simulatedDate}
                     onChange={(e) => setSimulatedBatchDate(e.target.value)}
-                    className="w-full bg-[#160c2b] border border-[#432874] text-white p-2 text-xs focus:outline-none focus:border-[#38bdf8] rounded-xs font-mono"
+                    className="w-full bg-[#070a12] border border-slate-800 text-white p-2 rounded-xl outline-none focus:border-amber-500/50 mt-1 font-mono"
                   />
                 </div>
-
                 <div>
-                  <label className="text-[#a594c9] block font-bold mb-1">
-                    UNIDADES A INGRESAR (+):
+                  <label className="text-[11px] text-slate-400 font-mono">
+                    Cantidad del Lote (+):
                   </label>
                   <input
                     type="number"
@@ -1538,167 +1563,46 @@ export default function Metricas() {
                         Math.max(0, parseInt(e.target.value) || 0),
                       )
                     }
-                    className="w-full bg-[#160c2b] border-2 border-[#38bdf8] text-white font-bold p-2 text-xs focus:outline-none focus:border-[#ffbe00] text-right rounded-xs font-mono"
+                    className="w-full bg-[#070a12] border border-slate-800 text-emerald-400 font-mono font-bold p-2 rounded-xl outline-none focus:border-amber-500/50 mt-1"
                   />
                 </div>
               </div>
-
-              {/* LÓGICA DE PROYECCIÓN MATEMÁTICA */}
-              {(() => {
-                const hoy = new Date();
-                hoy.setHours(0, 0, 0, 0);
-
-                const objetivo = new Date(simulatedDate + "T00:00:00");
-                const diffTime = objetivo.getTime() - hoy.getTime();
-                const diasEspera = Math.max(
-                  0,
-                  Math.ceil(diffTime / (1000 * 60 * 60 * 24)),
-                );
-
-                const consumoDiario = simulatedItem.demanda_mensual / 30;
-                const consumoEnEspera = Math.round(diasEspera * consumoDiario);
-
-                const stockRemanenteAFecha = Math.max(
-                  0,
-                  simulatedItem.stock_total - consumoEnEspera,
-                );
-                const quiebreAntes =
-                  simulatedItem.demanda_mensual > 0 &&
-                  simulatedItem.stock_total - consumoEnEspera < 0;
-
-                const diasHastaAgotar =
-                  simulatedItem.demanda_mensual > 0
-                    ? Math.floor(
-                        (simulatedItem.stock_total /
-                          simulatedItem.demanda_mensual) *
-                          30,
-                      )
-                    : 999;
-                const nuevoStockPostLote =
-                  stockRemanenteAFecha + simulatedBatchQty;
-                const nuevosDiasCobertura =
-                  simulatedItem.demanda_mensual > 0
-                    ? Math.round(
-                        (nuevoStockPostLote / simulatedItem.demanda_mensual) *
-                          30,
-                      )
-                    : 999;
-
-                return (
-                  <div className="space-y-2 pt-2 border-t border-[#432874]">
-                    <div className="p-3 bg-[#160c2b] border border-[#432874] space-y-1.5 rounded-xs shadow-[1px_1px_0px_#000]">
-                      <div className="flex justify-between text-[#a594c9] text-[10px]">
-                        <span>DÍAS HASTA EL ARRIBO ({simulatedDate}):</span>
-                        <strong className="text-white">
-                          {diasEspera} días
-                        </strong>
-                      </div>
-                      <div className="flex justify-between text-[#a594c9] text-[10px]">
-                        <span>CONSUMO ESTIMADO EN ESPERA:</span>
-                        <strong className="text-[#facc15]">
-                          -{consumoEnEspera.toLocaleString()} u.
-                        </strong>
-                      </div>
-                      <div className="flex justify-between text-white font-bold border-t border-[#432874] pt-1.5 mt-1.5 text-xs">
-                        <span>STOCK AL MOMENTO DEL ARRIBO:</span>
-                        <span
-                          className={
-                            quiebreAntes ? "text-[#f87171]" : "text-[#24cc8f]"
-                          }
-                        >
-                          {stockRemanenteAFecha.toLocaleString()} u.
-                        </span>
-                      </div>
-                    </div>
-
-                    {quiebreAntes && (
-                      <div className="p-2.5 bg-[#f87171]/10 border-2 border-[#f87171] text-[#f87171] font-bold space-y-1 animate-pulse rounded-xs shadow-[1px_1px_0px_#000]">
-                        <div className="flex items-center gap-1.5 text-xs">
-                          <AlertTriangle size={15} />{" "}
-                          <span>¡ALERTA DE QUIEBRE PREVIO!</span>
-                        </div>
-                        <p className="text-[10px] font-normal font-mono text-white">
-                          El stock actual se agotará a los{" "}
-                          <strong>{diasHastaAgotar} días</strong>. ¡Quedarán{" "}
-                          {diasEspera - diasHastaAgotar} días sin stock antes de
-                          que llegue la producción el {simulatedDate}!
-                        </p>
-                      </div>
-                    )}
-
-                    <div
-                      className={`p-3 border-2 rounded-xs shadow-[2px_2px_0px_#000] ${
-                        nuevosDiasCobertura >= diasCriticoActivo
-                          ? "bg-[#24cc8f]/10 border-[#24cc8f] text-[#24cc8f]"
-                          : "bg-[#f87171]/10 border-[#f87171] text-[#f87171]"
-                      } space-y-1.5`}
-                    >
-                      <div className="flex items-center justify-between font-bold text-[11px]">
-                        <span>NUEVO STOCK POST-ARRIBO:</span>
-                        <span className="text-white text-sm">
-                          {nuevoStockPostLote.toLocaleString()} u.
-                        </span>
-                      </div>
-                      <div className="flex items-center justify-between font-bold text-[11px]">
-                        <span>COBERTURA A PARTIR DE {simulatedDate}:</span>
-                        <span className="text-white text-sm">
-                          {nuevosDiasCobertura} DÍAS
-                        </span>
-                      </div>
-                      <p className="text-[9px] font-mono mt-1.5 pt-1.5 border-t border-current/30 text-white opacity-80">
-                        {nuevosDiasCobertura >= diasCriticoActivo
-                          ? `✅ Cobertura segura: Otorga stock prudente igual o mayor a ${diasCriticoActivo} días.`
-                          : `⚠️ Cobertura insuficiente: Seguirá por debajo de los ${diasCriticoActivo} días críticos.`}
-                      </p>
-                    </div>
-                  </div>
-                );
-              })()}
             </div>
 
-            <div className="pt-2 flex justify-end font-pixel">
+            <div className="flex justify-end pt-2 border-t border-slate-800">
               <button
                 onClick={() => setSimulatedItem(null)}
-                className="px-4 py-1.5 bg-[#38bdf8] text-[#2c1a4d] font-bold text-xs hover:bg-[#7dd3fc] shadow-[2px_2px_0px_#000] rounded-xs"
+                className="bg-slate-800 hover:bg-slate-700 text-slate-200 font-mono text-xs px-4 py-2 rounded-xl transition cursor-pointer"
               >
-                CERRAR SIMULADOR
+                Cerrar Simulador
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* =========================================================
-          MODAL CONFIGURACIÓN GRUPOS DE ALERTA
-      ========================================================= */}
+      {/* MODAL 4: CONFIGURAR UMBRALES GRUPO */}
       {isGroupModalOpen && (
-        <div className="fixed inset-0 bg-black/85 backdrop-blur-xs z-[110] flex items-center justify-center p-4 font-mono animate-in zoom-in-95 duration-200">
-          <div className="bg-[#24173e] border-2 border-[#ffbe00] w-full max-w-lg p-5 shadow-[0_0_35px_rgba(255,190,0,0.3)] space-y-4 relative rounded-xs">
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-xs z-[110] flex items-center justify-center p-4 font-sans">
+          <div className="bg-[#0e1422] border border-slate-800 w-full max-w-md p-5 rounded-2xl shadow-2xl space-y-4 relative text-xs">
             <button
               onClick={() => setIsGroupModalOpen(false)}
-              className="absolute top-4 right-4 text-[#a594c9] hover:text-white"
+              className="absolute top-4 right-4 text-slate-400 hover:text-white"
             >
               <X size={16} />
             </button>
 
-            <div className="border-b-2 border-[#432874] pb-2">
-              <span className="text-[10px] font-pixel text-[#ffbe00] bg-[#ffbe00]/10 px-2 py-0.5 border border-[#ffbe00]/30 rounded-xs font-bold">
-                AJUSTES DEL SISTEMA
-              </span>
-              <h3 className="font-pixel text-base text-white font-bold mt-1.5 flex items-center gap-2">
-                <Settings size={18} className="text-[#38bdf8]" /> CONFIGURAR
-                GRUPOS DE RIESGO
+            <div className="border-b border-slate-800 pb-2">
+              <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                <Settings size={16} className="text-amber-400" /> CONFIGURAR
+                UMBRALES DE RIESGO
               </h3>
-              <p className="text-[11px] text-[#a594c9] font-mono mt-1">
-                Define umbrales de días críticos y de alerta personalizados para
-                los cálculos de la matriz de planificación.
-              </p>
             </div>
 
-            <div className="space-y-3 bg-[#160c2b] p-3 border border-[#432874] text-xs font-pixel rounded-xs shadow-[inset_0_0_15px_rgba(0,0,0,0.5)]">
+            <div className="space-y-3">
               <div>
-                <label className="text-[#a594c9] block font-bold mb-1">
-                  NOMBRE DEL GRUPO / REGIÓN:
+                <label className="text-[11px] text-slate-400 font-mono">
+                  Nombre del Grupo / Región:
                 </label>
                 <input
                   type="text"
@@ -1707,14 +1611,14 @@ export default function Metricas() {
                   onChange={(e) =>
                     setGroupForm({ ...groupForm, nombre: e.target.value })
                   }
-                  className="w-full bg-[#24173e] border border-[#432874] text-white p-2 text-xs focus:outline-none focus:border-[#ffbe00] rounded-2xs"
+                  className="w-full bg-[#070a12] border border-slate-800 text-white p-2 rounded-xl outline-none focus:border-amber-500/50 mt-1"
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-2 gap-2 font-mono">
                 <div>
-                  <label className="text-[#f87171] block font-bold mb-1 flex items-center gap-1">
-                    <Shield size={12} /> CRÍTICO (&lt; DÍAS):
+                  <label className="text-[11px] text-rose-400">
+                    Días Críticos (&lt;):
                   </label>
                   <input
                     type="number"
@@ -1725,13 +1629,12 @@ export default function Metricas() {
                         dias_critico: parseInt(e.target.value) || 0,
                       })
                     }
-                    className="w-full bg-[#24173e] border-2 border-[#f87171]/50 text-white p-2 text-xs focus:outline-none focus:border-[#f87171] font-bold rounded-2xs"
+                    className="w-full bg-[#070a12] border border-slate-800 text-rose-400 font-bold p-2 rounded-xl outline-none focus:border-rose-500/50 mt-1"
                   />
                 </div>
-
                 <div>
-                  <label className="text-[#facc15] block font-bold mb-1 flex items-center gap-1">
-                    <AlertTriangle size={12} /> ALERTA (&lt; DÍAS):
+                  <label className="text-[11px] text-amber-400">
+                    Días Alerta (&lt;):
                   </label>
                   <input
                     type="number"
@@ -1742,166 +1645,32 @@ export default function Metricas() {
                         dias_alerta: parseInt(e.target.value) || 0,
                       })
                     }
-                    className="w-full bg-[#24173e] border-2 border-[#facc15]/50 text-white p-2 text-xs focus:outline-none focus:border-[#facc15] font-bold rounded-2xs"
+                    className="w-full bg-[#070a12] border border-slate-800 text-amber-400 font-bold p-2 rounded-xl outline-none focus:border-amber-500/50 mt-1"
                   />
                 </div>
               </div>
 
-              <p className="text-[9px] text-[#24cc8f] font-mono mt-2 pt-2 border-t border-[#432874]">
-                ✅ Todo stock por encima de los{" "}
-                <strong>{groupForm.dias_alerta} días</strong> será considerado
-                PRUDENTE / ÓPTIMO.
-              </p>
-
               <button
                 onClick={async () => {
                   if (!groupForm.nombre.trim())
-                    return alert("Ingresa un nombre para el grupo");
+                    return alert("Ingresá un nombre para el grupo");
                   try {
-                    const res = await fetch(
-                      "/api/grupos-alerta",
-                      {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify(groupForm),
-                      },
-                    );
+                    const res = await fetch("/api/grupos-alerta", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify(groupForm),
+                    });
                     if (res.ok) {
                       await fetchGrupos();
-                      setGroupForm({
-                        id: null,
-                        nombre: "",
-                        dias_critico: 5,
-                        dias_alerta: 15,
-                      });
+                      setIsGroupModalOpen(false);
                     }
                   } catch (err) {
                     alert("Error al guardar grupo.");
                   }
                 }}
-                className="w-full py-2 bg-[#ffbe00] text-[#2c1a4d] font-bold text-[11px] hover:bg-[#ffe066] transition-colors shadow-[2px_2px_0px_#000] active:translate-y-0.5 rounded-2xs mt-2"
+                className="w-full bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold py-2 text-xs rounded-xl shadow transition cursor-pointer font-mono"
               >
-                <Plus size={14} className="inline mr-1" />{" "}
-                {groupForm.id ? "ACTUALIZAR" : "CREAR NUEVO GRUPO"}
-              </button>
-            </div>
-
-            <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
-              <span className="text-[10px] font-pixel text-[#a594c9] block">
-                GRUPOS CONFIGURADOS EN BASE DE DATOS:
-              </span>
-              {gruposAlerta.map((g) => (
-                <div
-                  key={g.id}
-                  className="flex items-center justify-between p-2.5 bg-[#160c2b] border border-[#432874] text-xs font-pixel rounded-2xs"
-                >
-                  <div>
-                    <span className="text-white font-bold block">
-                      {g.nombre}
-                    </span>
-                    <span className="text-[#a594c9] text-[9px] font-mono block mt-0.5">
-                      Riesgo &lt;{g.dias_critico}d | Advertencia &lt;
-                      {g.dias_alerta}d
-                    </span>
-                    {g.es_predeterminado === 1 && (
-                      <span className="text-[9px] bg-[#38bdf8]/20 border border-[#38bdf8]/50 text-[#38bdf8] px-1.5 py-0.5 rounded-2xs inline-block mt-1">
-                        SISTEMA (DEFAULT)
-                      </span>
-                    )}
-                  </div>
-
-                  <div className="flex flex-col gap-1.5 shrink-0">
-                    <button
-                      onClick={() => setGroupForm(g)}
-                      className="text-[#ffbe00] hover:underline text-[10px] text-right"
-                    >
-                      Editar
-                    </button>
-                    {g.es_predeterminado !== 1 && (
-                      <button
-                        onClick={async () => {
-                          if (confirm(`¿Eliminar grupo "${g.nombre}"?`)) {
-                            await fetch(
-                              `/api/grupos-alerta/${g.id}`,
-                              { method: "DELETE" },
-                            );
-                            await fetchGrupos();
-                          }
-                        }}
-                        className="text-[#f87171] hover:underline text-[10px] text-right"
-                      >
-                        Borrar
-                      </button>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            <div className="pt-2 border-t border-[#432874] flex justify-end font-pixel">
-              <button
-                onClick={() => setIsGroupModalOpen(false)}
-                className="px-4 py-1.5 border border-[#432874] text-[#a594c9] hover:text-white text-xs rounded-xs"
-              >
-                CERRAR AJUSTES
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* MODAL CONFIGURAR URL SHEETS */}
-      {isUrlModalOpen && (
-        <div className="fixed inset-0 bg-black/85 backdrop-blur-xs z-[100] flex items-center justify-center p-4 font-mono animate-in zoom-in-95 duration-200">
-          <div className="bg-[#24173e] border-2 border-[#38bdf8] w-full max-w-lg p-5 shadow-[0_0_35px_rgba(56,189,248,0.3)] space-y-4 relative rounded-xs">
-            <button
-              onClick={() => setIsUrlModalOpen(false)}
-              className="absolute top-4 right-4 text-[#a594c9] hover:text-white"
-            >
-              <X size={16} />
-            </button>
-
-            <div className="border-b-2 border-[#432874] pb-2">
-              <span className="text-[10px] font-pixel text-[#38bdf8] bg-[#38bdf8]/10 px-2 py-0.5 border border-[#38bdf8]/30 rounded-xs font-bold">
-                ENLACE EXTERNO DE DATOS
-              </span>
-              <h3 className="font-pixel text-base text-white font-bold mt-1.5 flex items-center gap-2">
-                <Link size={18} className="text-[#38bdf8]" /> PLANILLA DE
-                PRODUCCIÓN (CSV)
-              </h3>
-            </div>
-
-            <div className="space-y-1 font-pixel text-xs">
-              <label className="text-[#a594c9] block mb-1">
-                URL DEL CSV PUBLICADO EN GOOGLE SHEETS:
-              </label>
-              <input
-                type="text"
-                placeholder="https://docs.google.com/spreadsheets/d/e/.../pub?output=csv"
-                value={sheetUrl}
-                onChange={(e) => setSheetUrl(e.target.value)}
-                className="w-full bg-[#160c2b] border-2 border-[#432874] text-white p-2 text-xs focus:border-[#38bdf8] focus:outline-none rounded-xs font-mono"
-              />
-              <p className="text-[9px] text-[#6e588a] font-mono mt-1">
-                La planilla debe contener obligatoriamente las columnas: FECHA,
-                CÓDIGO/ARTÍCULO, CANTIDAD DE BUENAS, FALLADAS.
-              </p>
-            </div>
-
-            <div className="pt-3 border-t border-[#432874] flex justify-end gap-2 font-pixel text-xs">
-              <button
-                onClick={() => setIsUrlModalOpen(false)}
-                className="px-4 py-1.5 border border-[#432874] text-[#a594c9] hover:text-white rounded-xs"
-              >
-                CANCELAR
-              </button>
-              <button
-                onClick={handleSyncSheets}
-                disabled={isSyncing}
-                className="flex items-center gap-2 px-4 py-1.5 bg-[#38bdf8] text-[#2c1a4d] font-bold hover:bg-[#7dd3fc] shadow-[2px_2px_0px_#000] active:translate-y-0.5 rounded-xs disabled:opacity-50"
-              >
-                <Save size={14} />
-                <span>{isSyncing ? "GUARDANDO..." : "GUARDAR Y RECARGAR"}</span>
+                Guardar Umbrales
               </button>
             </div>
           </div>

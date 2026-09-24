@@ -1,157 +1,152 @@
 import { useState } from "react";
 import {
-  Package,
+  Boxes,
   Layers,
   Sparkles,
-  FlaskConical,
-  ArrowLeftRight,
-  TrendingUp,
-  Settings,
-  Menu,
-  X,
-  Zap,
-  Flame,
-  Bot, // 👈 ÍCONO PARA IA COMERCIAL
+  Cpu,
+  BarChart3,
+  CalendarDays,
+  ClipboardCheck,
+  Activity,
+  Bot,
+  RefreshCw,
 } from "lucide-react";
 
-export default function Layout({ children, activeModule, setActiveModule }) {
-  const [mobileOpen, setMobileOpen] = useState(false);
-
+export default function Layout({
+  children,
+  activeModule,
+  setActiveModule,
+  onReloadSheets,
+  isReloading,
+}) {
   const menuItems = [
-    { id: "materias-primas", label: "Materias Primas", icon: Package },
+    { id: "materias-primas", label: "Materias Primas", icon: Boxes },
     { id: "semielaborados", label: "Semielaborados", icon: Layers },
-    { id: "reflectivas", label: "Reflectivas", icon: Sparkles },
-    { id: "ingenieria", label: "Ingeniería", icon: FlaskConical },
-    { id: "metricas", label: "Métricas & KPI", icon: TrendingUp },
-    { id: "planificacion", label: "Planificación OT", icon: Zap },
-    { id: "carga-produccion", label: "Carga Producción", icon: Flame },
-    { id: "comercial", label: "IA Comercial", icon: Bot }, // 👈 NUEVO MÓDULO AGREGADO
-    { id: "movimientos", label: "Movimientos Stock", icon: ArrowLeftRight },
-    { id: "configuraciones", label: "Configuración", icon: Settings },
+    { id: "reflectivas", label: "Reflectivas & Pegado", icon: Sparkles },
+    { id: "ingenieria", label: "Ingeniería & BOM", icon: Cpu },
+    {
+      id: "metricas",
+      label: "Métricas & KPI",
+      icon: BarChart3,
+      highlight: true,
+    },
+    { id: "planificacion", label: "Planificación OT", icon: CalendarDays },
+    { id: "carga-produccion", label: "Carga Producción", icon: ClipboardCheck },
+    { id: "comercial", label: "IA Comercial", icon: Bot },
   ];
 
   return (
-    <div className="h-[100dvh] p-2 md:p-4 flex items-center justify-center font-mono bg-[#140a24] overflow-hidden select-none">
-      <div className="w-full max-w-7xl h-full bg-[#24173e] border-2 border-[#432874] shadow-[6px_6px_0px_#000] flex flex-col relative overflow-hidden rounded-xs">
-        {/* ENCABEZADO SUPERIOR */}
-        <header className="bg-[#160c2b] border-b-2 border-[#432874] p-3 flex items-center justify-between shrink-0">
-          <div className="flex items-center gap-3">
-            {/* LOGO CONO VIAL ESTILO RPG */}
-            <div className="w-10 h-10 bg-[#2c1a4d] border-2 border-[#ffbe00] flex items-center justify-center p-1.5 shrink-0 shadow-[2px_2px_0px_#000] rounded-xs">
-              <svg
-                viewBox="0 0 24 24"
-                fill="none"
-                xmlns="http://www.w3.org/2000/svg"
-                className="w-full h-full"
-              >
-                <polygon points="12,3 9.5,9.5 14.5,9.5" fill="#ffbe00" />
-                <polygon
-                  points="9.5,9.5 14.5,9.5 16.5,14.5 7.5,14.5"
-                  fill="#FFFFFF"
-                />
-                <polygon
-                  points="7.5,14.5 16.5,14.5 18.5,19.5 5.5,19.5"
-                  fill="#ffbe00"
-                />
-                <rect
-                  x="3"
-                  y="19.5"
-                  width="18"
-                  height="2.5"
-                  rx="0.5"
-                  fill="#ffbe00"
-                />
-              </svg>
-            </div>
-
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="font-pixel text-xl text-[#ffbe00] font-bold tracking-wider drop-shadow-[1px_1px_0px_#000]">
-                  CONOFLEX
+    <div className="h-screen w-full bg-[#04060c] flex items-center justify-center p-2 sm:p-4 lg:p-5 overflow-hidden font-sans text-slate-100 antialiased selection:bg-emerald-500 selection:text-slate-950">
+      {/* MARCO DE LA APLICACIÓN CENTRADA */}
+      <div className="w-full max-w-[1480px] h-full max-h-[96vh] flex rounded-2xl border border-slate-800/80 bg-[#070a12] shadow-[0_0_50px_rgba(0,0,0,0.8)] overflow-hidden">
+        {/* SIDEBAR LATERAL */}
+        <aside className="w-60 bg-[#090d16]/95 border-r border-[#1e293b] flex flex-col justify-between p-4 backdrop-blur-xl shrink-0 z-20 transition-all duration-300">
+          <div className="space-y-5">
+            {/* BRANDING */}
+            <div className="flex items-center gap-3 px-2 py-2.5 border-b border-[#1e293b]">
+              <div className="p-2 bg-gradient-to-br from-amber-500/20 to-amber-600/10 border border-amber-500/40 rounded-xl shadow-[0_0_15px_rgba(245,158,11,0.15)]">
+                <span className="font-mono font-black text-amber-400 text-sm tracking-tighter">
+                  CX
                 </span>
               </div>
-              <p className="text-[11px] text-[#a594c9] truncate font-mono">
-                Gestión Industrial •{" "}
-                <span className="text-white capitalize">
-                  {activeModule.replace("-", " ")}
-                </span>
-              </p>
+              <div>
+                <h1 className="font-mono font-bold text-xs tracking-widest text-white uppercase">
+                  CONOFLEX
+                </h1>
+                <p className="text-[10px] text-emerald-400 font-mono flex items-center gap-1.5 mt-0.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_8px_#10b981]" />
+                  GESTIÓN INDUSTRIAL
+                </p>
+              </div>
             </div>
+
+            {/* MENÚ DE MÓDULOS */}
+            <nav className="space-y-1">
+              <span className="px-2 text-[10px] font-mono uppercase text-slate-500 tracking-wider">
+                Módulos del Sistema
+              </span>
+              <div className="pt-2 space-y-1">
+                {menuItems.map((item) => {
+                  const Icon = item.icon;
+                  const isActive = activeModule === item.id;
+                  return (
+                    <button
+                      key={item.id}
+                      onClick={() => setActiveModule(item.id)}
+                      className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-medium transition-all duration-200 cursor-pointer group ${
+                        isActive
+                          ? item.highlight
+                            ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 shadow-[0_0_15px_rgba(16,185,129,0.12)] font-semibold"
+                            : "bg-amber-500/10 text-amber-400 border border-amber-500/30 shadow-[0_0_15px_rgba(245,158,11,0.12)] font-semibold"
+                          : "text-slate-400 hover:text-slate-200 hover:bg-[#121824] border border-transparent"
+                      }`}
+                    >
+                      <Icon
+                        size={15}
+                        className={`transition-transform duration-200 group-hover:scale-110 ${
+                          isActive
+                            ? item.highlight
+                              ? "text-emerald-400"
+                              : "text-amber-400"
+                            : "text-slate-500 group-hover:text-slate-300"
+                        }`}
+                      />
+                      <span className="truncate">{item.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </nav>
           </div>
 
-          {/* BOTÓN MENÚ MOBILE */}
-          <button
-            className="md:hidden text-[#ffbe00] p-1.5 border-2 border-[#432874] bg-[#2c1a4d] shadow-[2px_2px_0px_#000]"
-            onClick={() => setMobileOpen(!mobileOpen)}
-          >
-            {mobileOpen ? <X size={20} /> : <Menu size={20} />}
-          </button>
-        </header>
-
-        {/* CUERPO PRINCIPAL Y SIDEBAR */}
-        <div className="flex-1 flex flex-col md:flex-row min-h-0 relative">
-          <aside
-            className={`
-              w-full md:w-64 bg-[#160c2b] border-r-2 border-[#432874] p-3 flex flex-col justify-between shrink-0
-              ${mobileOpen ? "absolute inset-0 z-50 bg-[#160c2b]" : "hidden md:flex"}
-            `}
-          >
-            <div className="space-y-1">
-              <div className="text-[10px] font-pixel text-[#24cc8f] tracking-widest px-3 py-2 uppercase border-b border-[#432874] mb-2 flex items-center justify-between">
-                <span>Módulos del Sistema</span>
-                {mobileOpen && (
-                  <button
-                    onClick={() => setMobileOpen(false)}
-                    className="md:hidden text-white"
-                  >
-                    <X size={16} />
-                  </button>
-                )}
+          {/* ESTADO CONEXIÓN */}
+          <div className="pt-3 border-t border-[#1e293b]">
+            <div className="bg-[#0e1422] p-2.5 rounded-xl border border-[#1e293b] flex items-center justify-between">
+              <div className="flex items-center gap-2 text-[11px] text-slate-400 font-mono">
+                <Activity
+                  size={13}
+                  className="text-emerald-400 animate-pulse"
+                />
+                <span>Planta On-Line</span>
               </div>
+              <span className="text-[10px] text-slate-500 font-mono">v3.8</span>
+            </div>
+          </div>
+        </aside>
 
-              {menuItems.map((item) => {
-                const Icon = item.icon;
-                const isSelected = activeModule === item.id;
-                return (
-                  <button
-                    key={item.id}
-                    onClick={() => {
-                      setActiveModule(item.id);
-                      setMobileOpen(false);
-                    }}
-                    className={`
-                      w-full flex items-center gap-3 px-3 py-2.5 text-xs font-semibold transition-all duration-150 border-l-4 text-left rounded-xs group
-                      ${
-                        isSelected
-                          ? "bg-[#2c1a4d] border-[#ffbe00] text-white shadow-sm"
-                          : "border-transparent text-[#a594c9] hover:text-white hover:bg-[#2c1a4d]/50 hover:border-[#432874]"
-                      }
-                    `}
-                  >
-                    <Icon
-                      size={16}
-                      className={
-                        isSelected
-                          ? "text-[#ffbe00]"
-                          : "text-[#a594c9] group-hover:text-white"
-                      }
-                    />
-                    <span className="flex-1 font-pixel text-[11px]">
-                      {item.label}
-                    </span>
-                  </button>
-                );
-              })}
+        {/* ÁREA PRINCIPAL */}
+        <div className="flex-1 flex flex-col min-w-0 bg-[#070a12] overflow-hidden">
+          {/* HEADER TOP-BAR LIMPIO */}
+          <header className="bg-[#0f172a]/60 border-b border-[#1e293b] px-5 py-3 flex items-center justify-between backdrop-blur-md shrink-0 z-10">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-mono text-slate-500">Módulo /</span>
+              <span className="text-xs font-mono font-bold text-amber-400 uppercase tracking-wider">
+                {activeModule.replace("-", " ")}
+              </span>
             </div>
 
-            <div className="pt-3 border-t border-[#432874] text-[11px] text-[#6e588a] flex items-center justify-between px-2 shrink-0">
-              <span className="font-pixel">Conoflex Argentina</span>
+            <div className="flex items-center gap-2">
+              {activeModule === "semielaborados" && (
+                <button
+                  onClick={onReloadSheets}
+                  disabled={isReloading}
+                  className="bg-[#121824] hover:bg-[#1c253b] text-emerald-400 border border-emerald-500/30 px-3 py-1.5 text-xs font-mono rounded-lg transition-all flex items-center gap-2 cursor-pointer shadow-sm"
+                >
+                  <RefreshCw
+                    size={13}
+                    className={isReloading ? "animate-spin" : ""}
+                  />
+                  <span>Sincronizar Sheets</span>
+                </button>
+              )}
             </div>
-          </aside>
+          </header>
 
-          {/* CONTENIDO DE MÓDULO */}
-          <main className="flex-1 p-2 md:p-4 bg-[#1a0f2e] overflow-hidden flex flex-col min-h-0">
-            {children}
+          {/* CONTENIDO INTERNO */}
+          <main className="flex-1 overflow-y-auto overflow-x-hidden p-4 md:p-5 min-h-0 relative">
+            <div className="h-full transition-all duration-300 ease-out">
+              {children}
+            </div>
           </main>
         </div>
       </div>

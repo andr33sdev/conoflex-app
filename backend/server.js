@@ -2833,6 +2833,78 @@ app.delete("/api/ordenes-trabajo/:id", async (req, res) => {
   }
 });
 
+// ==========================================
+// CHAT CONVERSACIONAL CON CONTEXTO COMPLETO DE BD
+// ==========================================
+app.post("/api/chat-ia", async (req, res) => {
+  try {
+    const { mensaje, historial } = req.body;
+
+    // Extraemos snapshot de toda la base de datos en paralelo
+    const [materiasPrimas] = await db.query(
+      "SELECT codigo, nombre, stock_actual, unidad_medida FROM materias_primas",
+    );
+    const [semielaborados] = await db.query(
+      "SELECT codigo, nombre, stock_33, stock_26, stock_ayolas, stock_37 FROM semielaborados",
+    );
+    const [productosTerminados] = await db.query(
+      "SELECT codigo, nombre, promedio_ventas_mensual FROM productos_terminados",
+    );
+    const [ordenesTrabajo] = await db.query(
+      "SELECT codigo_ot, semielaborado_codigo, cant_objetivo, cant_producida, estado, maquina FROM ordenes_trabajo ORDER BY id DESC LIMIT 20",
+    );
+    const [registrosProduccion] = await db.query(
+      "SELECT fecha, categoria_maq, codigo, cant_buenos, cant_fallas FROM registro_produccion ORDER BY id DESC LIMIT 30",
+    );
+
+    const promptContexto = `
+    Sos el Asistente de Datos e Inteligencia Operativa de Conoflex Argentina.
+    Tenés acceso directo y en tiempo real a toda la base de datos de la planta industrial:
+
+    1. MATERIAS PRIMAS E INSUMOS:
+    ${JSON.stringify(materiasPrimas)}
+
+    2. SEMIELABORADOS Y STOCK POR DEPÓSITO (33, 26, Ayolas, 37):
+    ${JSON.stringify(semielaborados)}
+
+    3. PRODUCTOS TERMINADOS Y PROMEDIO VENTAS MENSUALES:
+    ${JSON.stringify(productosTerminados)}
+
+    4. ÓRDENES DE TRABAJO (OT) EN CURSO Y PROGRAMADAS:
+    ${JSON.stringify(ordenesTrabajo)}
+
+    5. REGISTRO RECIENTE DE PRODUCCIÓN Y FALLAS:
+    ${JSON.stringify(registrosProduccion)}
+
+    INSTRUCCIONES DE RESPUESTA:
+    - Responde consultas concretas sobre stock, fallas, ventas, planificación y compras.
+    - Si el usuario te pide un cálculo o comparativa, realizalo con los datos precisos suministrados.
+    - Sé directo, profesional, técnico y ejecutivo. Usa viñetas y negritas cuando corresponda.
+    - Si te preguntan algo fuera de la operativa de Conoflex, reorientá amablemente la conversación a los datos de la planta.
+    `;
+
+    const contents = [
+      promptContexto,
+      ...(historial || []).map(
+        (h) => `${h.rol === "user" ? "Usuario" : "IA"}: ${h.texto}`,
+      ),
+      `Usuario: ${mensaje}`,
+    ];
+
+    const response = await ai.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: contents.join("\n\n"),
+    });
+
+    res.json({ success: true, respuesta: response.text });
+  } catch (error) {
+    console.error("Error en chat IA de datos:", error);
+    res
+      .status(500)
+      .json({ error: "Error al procesar consulta: " + error.message });
+  }
+});
+
 app.listen(PORT, () =>
   console.log(`🚀 Servidor Conoflex unificado ejecutándose en puerto ${PORT}`),
 );
