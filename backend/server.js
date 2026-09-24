@@ -1073,27 +1073,19 @@ app.post(
       CONSULTA DEL CLIENTE (${mailCliente}):
       "${consultaText}"
 
-      ESTRATEGIA COMERCIAL DE SELECCIÓN (CRÍTICO):
-      1. ANALIZAR EL USO REQUERIDO: Identifica si la consulta es para tránsito liviano, pesado, barrio cerrado, obra, garaje, etc.
-      2. MÁXIMO 3 OPCIONES: Si la consulta es abierta o general, selecciona MÁXIMO 3 alternativas del catálogo que mejor se adapten. NUNCA cotices más de 3 productos.
-      3. CRITERIO DE VARIABILIDAD (3 NIVELES):
-         - Opción 1: La alternativa principal / más recomendada.
-         - Opción 2: Una alternativa reforzada o Premium.
-         - Opción 3: Una alternativa más económica o modular.
-      4. JUSTIFICACIÓN COMERCIAL: En la tarjeta de cada producto, explica en una frase corta por qué aplica bien a su necesidad.
+      INSTRUCCIONES DE MAQUETACIÓN HTML Y SELECCIÓN DE PRODUCTOS:
+      1. Analiza la consulta y busca los productos cuyo campo 'aplicacion' o 'especificacion' mejor responden al requerimiento (garages, autopistas, obras, etc.).
+      2. Redacta un saludo comercial cordial.
+      3. Para cada producto cotizado, crea una TARJETA HORIZONTAL en HTML (tabla con borde #e2e8f0, esquinas redondeadas y padding de 10px).
+      4. MUY IMPORTANTE PARA LAS IMÁGENES:
+         - Si el producto tiene valor en 'foto_tecnica', escribí exactamente este texto crudo centrado arriba: {FOTO_TECNICA_URL=poner_aqui_la_url_de_la_BD}
+         - Si tiene 'foto_catalogo', escribí exactamente: {FOTO_CATALOGO_URL=poner_aqui_la_url_de_la_BD}
+         - NUNCA uses la etiqueta <img>. Yo me encargo de procesarlo. Si el valor es null, no escribas nada.
+      5. Muestra Nombre en negrita, Código, Medidas y Especificaciones/Aplicación.
+      6. Muestra las 3 cajas de precio naranjas (Lista, Precio c/Descuento y Total).
+      7. Agrega el cuadro final con notas comerciales sobre IVA, bonificaciones y despacho gratis.
 
-      INSTRUCCIONES DE ESTRUCTURA Y HTML:
-      - Redacta una introducción breve, amable y profesional.
-      - Para cada una de las 3 opciones cotizadas, arma una TARJETA HORIZONTAL en HTML (tabla con borde #e2e8f0, esquinas redondeadas y padding de 10px).
-      - Muestra las imágenes usando únicamente estas variables crudas:
-        - {FOTO_TECNICA_URL=poner_aqui_la_url_de_la_BD}
-        - {FOTO_CATALOGO_URL=poner_aqui_la_url_de_la_BD}
-        (Si el campo en la BD es null, no pongas la variable).
-      - Muestra Nombre en negrita, Código, Medidas y la frase de Justificación Comercial.
-      - Incluye las 3 cajas naranjas de precios (Lista, Descuento y Total).
-      - Cierra con el cuadro informativo de IVA, bonificaciones por cantidad y despacho en CABA/GBA.
-
-      Devuelve ÚNICAMENTE el código HTML crudo sin bloques de código Markdown ni explicaciones.
+      Devuelve ÚNICAMENTE el código HTML crudo sin bloques Markdown, sin explicaciones.
     `;
 
       const response = await ai.models.generateContent({
@@ -1106,6 +1098,7 @@ app.post(
         .replace(/```/g, "")
         .trim();
 
+      // PROCESAMIENTO POST-IA: Node.js reemplaza las variables por las etiquetas de imagen reales
       htmlBody = htmlBody.replace(
         /\{FOTO_TECNICA_URL=(https?:\/\/[^\}]+)\}/g,
         '<img src="$1" width="100%" style="max-height:220px; height: auto; object-fit:contain; border-radius:4px; margin: 0 5px;" alt="Técnica" />',
@@ -1115,6 +1108,7 @@ app.post(
         '<img src="$1" width="100%" style="max-height:220px; height: auto; object-fit:contain; border-radius:4px; margin: 0 5px;" alt="Catálogo" />',
       );
 
+      // Limpieza de seguridad por si la IA dejó variables sueltas por productos sin foto
       htmlBody = htmlBody.replace(/\{FOTO_TECNICA_URL=[^\}]*\}/g, "");
       htmlBody = htmlBody.replace(/\{FOTO_CATALOGO_URL=[^\}]*\}/g, "");
 
