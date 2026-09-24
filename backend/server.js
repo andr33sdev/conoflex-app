@@ -748,6 +748,174 @@ app.post(
   },
 );
 
+// SINCRONIZACIÓN DE CATÁLOGO DESDE TEXTO (MYSQL)
+async function poblarDBDesdeCatalogoTXT() {
+  const CATALOGO_PATH = path.join(__dirname, "catalogo.txt");
+  if (!fs.existsSync(CATALOGO_PATH)) return 0;
+
+  const contenido = fs.readFileSync(CATALOGO_PATH, "utf-8");
+  const bloques = contenido.split(
+    /----------------------------------------|-----------------------------------/,
+  );
+
+  let totalProcesados = 0;
+  const conn = await db.getConnection();
+
+  try {
+    await conn.beginTransaction();
+
+    for (const bloque of bloques) {
+      const lineas = bloque.trim().split("\n");
+      if (lineas.length < 2) continue;
+
+      let cod = "",
+        nombre = "",
+        medidas = "",
+        precio = "",
+        espec = "";
+
+      for (const l of lineas) {
+        const linea = l.trim();
+        if (linea.match(/^Cód:|^Cod:|^Código:/i))
+          cod = linea.replace(/^Cód:|^Cod:|^Código:/i, "").trim();
+        else if (linea.match(/^Nombre:/i))
+          nombre = linea.replace(/^Nombre:/i, "").trim();
+        else if (linea.match(/^Medidas:/i))
+          medidas = linea.replace(/^Medidas:/i, "").trim();
+        else if (linea.match(/^Precio Lista:/i))
+          precio = linea.replace(/^Precio Lista:/i, "").trim();
+        else if (linea.match(/^Especificación:|^Especificacion:/i))
+          espec = linea
+            .replace(/^Especificación:|^Especificacion:/i, "")
+            .trim();
+      }
+
+      if (cod && cod !== "-") {
+        const [existente] = await conn.query(
+          "SELECT id FROM productos WHERE codigo = ?",
+          [cod],
+        );
+
+        if (existente && existente.length > 0) {
+          await conn.query(
+            `UPDATE productos 
+             SET nombre = ?, medidas = ?, precio_lista = ?, especificacion = ?, updated_at = NOW() 
+             WHERE codigo = ?`,
+            [nombre || "", medidas || "", precio || "", espec || "", cod],
+          );
+        } else {
+          await conn.query(
+            `INSERT INTO productos 
+             (codigo, nombre, medidas, precio_lista, especificacion, aplicacion, foto_tecnica, foto_catalogo) 
+             VALUES (?, ?, ?, ?, ?, '', NULL, NULL)`,
+            [cod, nombre || "", medidas || "", precio || "", espec || ""],
+          );
+        }
+        totalProcesados++;
+      }
+    }
+
+    await conn.commit();
+  } catch (err) {
+    await conn.rollback();
+    console.error("❌ Error al poblar MySQL desde catalogo.txt:", err);
+    throw err;
+  } finally {
+    conn.release();
+  }
+
+  return totalProcesados;
+}
+
+// ENDPOINT PARA PROCESAR PDF / EXCEL / CSV DE PRECIOS CON GEMINI
+app.post(
+  "/api/catalogo/procesar",
+  uploadTemp.single("lista_precios"),
+  async (req, res) => {
+    try {
+      if (!req.file)
+        return res.status(400).json({ error: "No se subió ningún archivo." });
+
+      console.log(`📤 Procesando lista de precios: ${req.file.originalname}`);
+      const ext = path.extname(req.file.originalname).toLowerCase();
+
+      const promptText = `
+      Analizá este documento de lista de precios/catálogo y convertí TODOS sus productos al siguiente formato de texto plano estructurado.
+      Debes mantener exactamente estas etiquetas y el separador de guiones entre cada producto:
+
+      Cód: [Código del producto]
+      Nombre: [Nombre del producto]
+      Medidas: [Medidas o especificaciones clave]
+      Precio Lista: [Precio de lista o desglose de variantes de precio]
+      Especificación: [Detalles técnicos adicionales o las mismas medidas]
+      ----------------------------------------
+
+      Reglas estrictamente obligatorias:
+      - Respetá todos los precios en Pesos Argentinos ($) tal cual figuran.
+      - No omitas ningún producto.
+      - Devuelve ÚNICAMENTE el texto formateado, sin explicaciones, ni introducciones, ni bloques de código markdown.
+    `;
+
+      let contentsPayload = [];
+
+      if (ext === ".xlsx" || ext === ".xls") {
+        const workbook = xlsx.readFile(req.file.path);
+        let textoExcel = "";
+        workbook.SheetNames.forEach((sheetName) => {
+          textoExcel +=
+            `\n--- HOJA: ${sheetName} ---\n` +
+            xlsx.utils.sheet_to_csv(workbook.Sheets[sheetName]);
+        });
+        contentsPayload = [`DATOS EXCEL:\n${textoExcel}`, promptText];
+      } else if (ext === ".pdf") {
+        const uploadResult = await ai.files.upload({
+          file: req.file.path,
+          mimeType: "application/pdf",
+        });
+        const fileUri =
+          uploadResult.uri || (uploadResult.file && uploadResult.file.uri);
+        contentsPayload = [
+          { fileData: { fileUri, mimeType: "application/pdf" } },
+          promptText,
+        ];
+      } else {
+        contentsPayload = [
+          `TEXTO:\n${fs.readFileSync(req.file.path, "utf-8")}`,
+          promptText,
+        ];
+      }
+
+      const response = await ai.models.generateContent({
+        model: "gemini-2.5-flash",
+        contents: contentsPayload,
+      });
+
+      const catalogoTextoFormateado = response.text.replace(/```/g, "").trim();
+
+      const CATALOGO_PATH = path.join(__dirname, "catalogo.txt");
+      fs.writeFileSync(CATALOGO_PATH, catalogoTextoFormateado, "utf-8");
+
+      const totalCargados = await poblarDBDesdeCatalogoTXT();
+
+      if (fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
+
+      res.json({
+        success: true,
+        mensaje: `¡Se actualizó el catálogo y se sincronizaron ${totalCargados} productos en MySQL!`,
+        totalProductos: totalCargados,
+        contenidoPreview: catalogoTextoFormateado,
+      });
+    } catch (error) {
+      console.error("Error procesando lista de precios:", error);
+      if (req.file && fs.existsSync(req.file.path))
+        fs.unlinkSync(req.file.path);
+      res
+        .status(500)
+        .json({ error: "Error procesando lista de precios: " + error.message });
+    }
+  },
+);
+
 // ==========================================
 // RUTAS DE AUTENTICACIÓN GOOGLE (CON STATE DYNAMIC)
 // ==========================================
@@ -757,7 +925,7 @@ app.get("/auth/google", (req, res) => {
 
   const redirectUri = isLocal
     ? "http://localhost:5173/auth/google/callback"
-    : "https://conoflex-app.vercel.app/auth/google/callback";
+    : "[https://conoflex-app.vercel.app/auth/google/callback](https://conoflex-app.vercel.app/auth/google/callback)";
 
   const client = new google.auth.OAuth2(
     process.env.GOOGLE_CLIENT_ID,
@@ -766,9 +934,9 @@ app.get("/auth/google", (req, res) => {
   );
 
   const scopes = [
-    "https://www.googleapis.com/auth/gmail.readonly",
-    "https://www.googleapis.com/auth/gmail.compose",
-    "https://www.googleapis.com/auth/gmail.modify",
+    "[https://www.googleapis.com/auth/gmail.readonly](https://www.googleapis.com/auth/gmail.readonly)",
+    "[https://www.googleapis.com/auth/gmail.compose](https://www.googleapis.com/auth/gmail.compose)",
+    "[https://www.googleapis.com/auth/gmail.modify](https://www.googleapis.com/auth/gmail.modify)",
   ];
 
   res.redirect(
@@ -787,7 +955,7 @@ app.get("/auth/google/callback", async (req, res) => {
 
     const redirectUri = isLocal
       ? "http://localhost:5173/auth/google/callback"
-      : "https://conoflex-app.vercel.app/auth/google/callback";
+      : "[https://conoflex-app.vercel.app/auth/google/callback](https://conoflex-app.vercel.app/auth/google/callback)";
 
     const client = new google.auth.OAuth2(
       process.env.GOOGLE_CLIENT_ID,
@@ -804,7 +972,8 @@ app.get("/auth/google/callback", async (req, res) => {
 
     const targetUrl = isLocal
       ? "http://localhost:5173"
-      : process.env.FRONTEND_URL || "https://conoflex-app.vercel.app";
+      : process.env.FRONTEND_URL ||
+        "[https://conoflex-app.vercel.app](https://conoflex-app.vercel.app)";
 
     res.redirect(`${targetUrl}?status=conectado&module=comercial`);
   } catch (error) {
@@ -1148,7 +1317,7 @@ app.put("/api/materias-primas/:id/stock", async (req, res) => {
 
 app.post("/api/materias-primas/previsualizar-sheets", async (req, res) => {
   const MATERIAS_PRIMAS_CSV_URL =
-    "https://docs.google.com/spreadsheets/d/e/2PACX-1vTt66qDCe0E3GUbp7BLqGj4IHYK8nrXF1gvfmf45vY2kkP3-gL3fpPcxjltnFBX8EP7kBzEhnIvHw0L/pub?output=csv";
+    "[https://docs.google.com/spreadsheets/d/e/2PACX-1vTt66qDCe0E3GUbp7BLqGj4IHYK8nrXF1gvfmf45vY2kkP3-gL3fpPcxjltnFBX8EP7kBzEhnIvHw0L/pub?output=csv](https://docs.google.com/spreadsheets/d/e/2PACX-1vTt66qDCe0E3GUbp7BLqGj4IHYK8nrXF1gvfmf45vY2kkP3-gL3fpPcxjltnFBX8EP7kBzEhnIvHw0L/pub?output=csv)";
 
   try {
     const response = await fetch(MATERIAS_PRIMAS_CSV_URL);
