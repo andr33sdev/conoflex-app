@@ -20,10 +20,9 @@ export default function ComercialIA() {
   const [errorMsg, setErrorMsg] = useState("");
 
   useEffect(() => {
-    // Detectar si venimos redirigidos de Google
+    // Detectar si volvemos del flujo de redirección de Google
     const urlParams = new URLSearchParams(window.location.search);
     if (urlParams.get("status") === "conectado") {
-      // Limpiar el parámetro de la URL sin recargar la página
       window.history.replaceState({}, document.title, window.location.pathname);
       setConectado(true);
     }
@@ -31,6 +30,10 @@ export default function ComercialIA() {
     fetchMails();
     fetchReglas();
   }, []);
+
+  const abrirLoginGoogle = () => {
+    window.location.href = "/auth/google";
+  };
 
   const fetchReglas = async () => {
     try {
@@ -42,7 +45,6 @@ export default function ComercialIA() {
     }
   };
 
-  // 1. OBTENER MAILS
   const fetchMails = async () => {
     setLoading(true);
     setErrorMsg("");
@@ -65,7 +67,6 @@ export default function ComercialIA() {
     }
   };
 
-  // 2. GUARDAR REGLAS
   const guardarReglas = async () => {
     setLoading(true);
     try {
@@ -82,7 +83,6 @@ export default function ComercialIA() {
     }
   };
 
-  // 3. GENERAR BORRADOR
   const generarBorrador = async (mail) => {
     setLoading(true);
     try {
@@ -110,7 +110,6 @@ export default function ComercialIA() {
     }
   };
 
-  // 4. GENERAR INFORME
   const generarInformeEstrategico = async () => {
     setLoading(true);
     try {
@@ -130,14 +129,14 @@ export default function ComercialIA() {
 
   if (!conectado) {
     return (
-      <div className="flex-1 flex flex-col items-center justify-center p-6 text-center space-y-4">
+      <div className="flex-1 flex flex-col items-center justify-center p-6 text-center space-y-4 font-mono">
         <Bot size={48} className="text-[#ffbe00] animate-bounce" />
         <h2 className="text-xl font-bold font-pixel text-white">
           Vincular Cuenta de Gmail
         </h2>
         <p className="text-xs text-[#a594c9] max-w-md font-mono">
           {errorMsg ||
-            "Para utilizar la respuesta automática con IA es necesario otorgar permisos de lectura y borrador en Gmail."}
+            "Para utilizar la respuesta automática con IA es necesario otorgar permisos en Gmail."}
         </p>
         <button
           onClick={abrirLoginGoogle}
@@ -171,7 +170,7 @@ export default function ComercialIA() {
 
           <button
             onClick={() => setActiveTab("bandeja")}
-            className={`px-3 py-1.5 text-xs font-pixel border-2 transition-all flex items-center gap-1.5 ${
+            className={`px-3 py-1.5 text-xs font-pixel border-2 transition-all flex items-center gap-1.5 cursor-pointer ${
               activeTab === "bandeja"
                 ? "bg-[#2c1a4d] border-[#ffbe00] text-white"
                 : "bg-transparent border-[#432874] text-[#a594c9] hover:text-white"
@@ -181,7 +180,7 @@ export default function ComercialIA() {
           </button>
           <button
             onClick={() => setActiveTab("prompt")}
-            className={`px-3 py-1.5 text-xs font-pixel border-2 transition-all flex items-center gap-1.5 ${
+            className={`px-3 py-1.5 text-xs font-pixel border-2 transition-all flex items-center gap-1.5 cursor-pointer ${
               activeTab === "prompt"
                 ? "bg-[#2c1a4d] border-[#ffbe00] text-white"
                 : "bg-transparent border-[#432874] text-[#a594c9] hover:text-white"
@@ -191,7 +190,7 @@ export default function ComercialIA() {
           </button>
           <button
             onClick={() => setActiveTab("reportes")}
-            className={`px-3 py-1.5 text-xs font-pixel border-2 transition-all flex items-center gap-1.5 ${
+            className={`px-3 py-1.5 text-xs font-pixel border-2 transition-all flex items-center gap-1.5 cursor-pointer ${
               activeTab === "reportes"
                 ? "bg-[#2c1a4d] border-[#ffbe00] text-white"
                 : "bg-transparent border-[#432874] text-[#a594c9] hover:text-white"

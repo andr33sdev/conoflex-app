@@ -106,7 +106,8 @@ const oauth2Client = new google.auth.OAuth2(
   process.env.GOOGLE_REDIRECT_URI,
 );
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-const TOKEN_PATH = path.join(__dirname, "tokens_web.json");
+const TOKEN_PATH = path.join(__dirname, "token.json");
+const TOKEN_PATH_WEB = path.join(__dirname, "tokens_web.json");
 
 if (process.env.GOOGLE_REFRESH_TOKEN) {
   oauth2Client.setCredentials({
@@ -117,7 +118,10 @@ if (process.env.GOOGLE_REFRESH_TOKEN) {
   );
 } else if (fs.existsSync(TOKEN_PATH)) {
   oauth2Client.setCredentials(JSON.parse(fs.readFileSync(TOKEN_PATH)));
-  console.log("✅ Credenciales de Google API cargadas desde token local.");
+  console.log("✅ Credenciales de Google API cargadas desde token.json.");
+} else if (fs.existsSync(TOKEN_PATH_WEB)) {
+  oauth2Client.setCredentials(JSON.parse(fs.readFileSync(TOKEN_PATH_WEB)));
+  console.log("✅ Credenciales de Google API cargadas desde tokens_web.json.");
 }
 
 function crearRawEmail(to, subject, htmlBody, threadId) {
@@ -372,29 +376,13 @@ async function initDB() {
 
 initDB();
 
-// MIDDLEWARES DE AUTENTICACIÓN Y ROLES
+// MIDDLEWARES DE AUTENTICACIÓN Y ROLES (DESACTIVADOS PARA ACCESO DIRECTO LIBRE)
 function autenticarToken(req, res, next) {
-  //const authHeader = req.headers["authorization"];
-  //const token = authHeader && authHeader.split(" ")[1];
-
-  // if (!token)
-  //   return res.status(401).json({ error: "Acceso denegado: Token requerido" });
-
-  // jwt.verify(token, JWT_SECRET, (err, usuario) => {
-  //   if (err)
-  //     return res.status(403).json({ error: "Token inválido o expirado" });
-  //  req.usuario = usuario;
-    next();
-  //});
+  next();
 }
 
 function autorizarRoles(...rolesPermitidos) {
   return (req, res, next) => {
-    if (!req.usuario || !rolesPermitidos.includes(req.usuario.rol)) {
-      return res
-        .status(403)
-        .json({ error: "No tenés permisos para realizar esta acción." });
-    }
     next();
   };
 }
@@ -687,7 +675,7 @@ app.post("/api/auth/login", async (req, res) => {
 });
 
 app.get("/api/auth/me", autenticarToken, (req, res) => {
-  res.json({ usuario: req.usuario });
+  res.json({ usuario: req.usuario || { rol: "ADMIN", nombre: "Usuario" } });
 });
 
 app.get(
@@ -788,7 +776,7 @@ app.get("/auth/google", (req, res) => {
       access_type: "offline",
       prompt: "consent",
       scope: scopes.join(" "),
-      state: isLocal ? "local" : "prod", // 👈 Le pasamos a Google la etiqueta del entorno
+      state: isLocal ? "local" : "prod",
     }),
   );
 });
@@ -811,8 +799,8 @@ app.get("/auth/google/callback", async (req, res) => {
 
     // Asignamos tokens al cliente global y guardamos en archivo
     oauth2Client.setCredentials(tokens);
-    const TOKEN_PATH = path.join(__dirname, "token.json");
-    fs.writeFileSync(TOKEN_PATH, JSON.stringify(tokens));
+    const mainTokenPath = path.join(__dirname, "token.json");
+    fs.writeFileSync(mainTokenPath, JSON.stringify(tokens));
 
     const targetUrl = isLocal
       ? "http://localhost:5173"
@@ -831,6 +819,16 @@ app.get(
   autorizarRoles("ADMIN", "COMERCIAL"),
   async (req, res) => {
     try {
+      // Cargar tokens guardados si aún no están vinculados en memoria
+      const pathToken = fs.existsSync(path.join(__dirname, "token.json"))
+        ? path.join(__dirname, "token.json")
+        : path.join(__dirname, "tokens_web.json");
+
+      if (fs.existsSync(pathToken)) {
+        const tokens = JSON.parse(fs.readFileSync(pathToken));
+        oauth2Client.setCredentials(tokens);
+      }
+
       if (
         !oauth2Client.credentials ||
         (!oauth2Client.credentials.access_token &&
@@ -1010,7 +1008,7 @@ app.post(
 
       ESTRUCTURA DEL REPORTE:
       Generá un informe ejecutivo bien maquetado en HTML (usando tablas limpias, etiquetas de estado de color y viñetas).
-      Devolvé ÚNICAMENTE el código HTML sin bloques Markdown ni introducciones.
+      Devolver ÚNICAMENTE el código HTML sin bloques Markdown ni introducciones.
     `;
 
       const response = await ai.models.generateContent({
