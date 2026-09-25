@@ -839,8 +839,13 @@ app.post(
       console.log(`📤 Procesando lista de precios: ${req.file.originalname}`);
       const ext = path.extname(req.file.originalname).toLowerCase();
 
+      // PROMPT REFORZADO PARA EVITAR CORTES PARCIALES
       const promptText = `
-      Analizá este documento de lista de precios/catálogo y convertí TODOS sus productos al siguiente formato de texto plano estructurado.
+      Actúa como un procesador de datos experto.
+      Necesito que extraigas y conviertas ABSOLUTAMENTE TODOS Y CADA UNO de los productos de este documento a un formato de texto plano estructurado.
+      
+      ADVERTENCIA CRÍTICA: Debes recorrer el documento completo (todas las hojas o páginas). NO cortes el procesamiento, NO resumas, NO hagas una muestra. Tienes que devolver todos los ítems hasta llegar al final del archivo.
+
       Debes mantener exactamente estas etiquetas y el separador de guiones entre cada producto:
 
       Cód: [Código del producto]
@@ -852,9 +857,9 @@ app.post(
 
       Reglas estrictamente obligatorias:
       - Respetá todos los precios en Pesos Argentinos ($) tal cual figuran.
-      - No omitas ningún producto.
-      - Devuelve ÚNICAMENTE el texto formateado, sin explicaciones, ni introducciones, ni bloques de código markdown.
-    `;
+      - Si el producto tiene un código, debe ser extraído.
+      - Devuelve ÚNICAMENTE el texto formateado, sin explicaciones previas, sin saludos, ni bloques de código markdown (\`\`\`).
+      `;
 
       let contentsPayload = [];
 
@@ -885,30 +890,40 @@ app.post(
         ];
       }
 
+      // LLAMADA A GEMINI CON MAXIMUM TOKENS
       const response = await ai.models.generateContent({
         model: "gemini-2.5-flash",
         contents: contentsPayload,
+        config: {
+          maxOutputTokens: 8192, // Garantiza que no se corte por límite de longitud en catálogos largos
+          temperature: 0.1, // Baja temperatura para que sea extremadamente preciso y no invente ni resuma
+        },
       });
 
-      const catalogoTextoFormateado = response.text.replace(/```/g, "").trim();
+      // Limpieza adicional de bloques markdown que a veces Gemini incluye de todas formas
+      let catalogoTextoFormateado = response.text.trim();
+      if (catalogoTextoFormateado.startsWith("```")) {
+        catalogoTextoFormateado = catalogoTextoFormateado
+          .replace(/^```[a-z]*\n/, "")
+          .replace(/\n```$/, "");
+      }
 
       const CATALOGO_PATH = path.join(__dirname, "catalogo.txt");
       fs.writeFileSync(CATALOGO_PATH, catalogoTextoFormateado, "utf-8");
 
-      const totalCargados = await poblarDBDesdeCatalogoTXT();
+      // Llamada a la función de guardado
+      const totalCargados = poblarDBDesdeCatalogoTXT();
 
       if (fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
 
       res.json({
         success: true,
-        mensaje: `¡Se actualizó el catálogo y se sincronizaron ${totalCargados} productos en MySQL!`,
+        mensaje: `¡Se procesó el documento y se actualizaron ${totalCargados} productos en la base de datos!`,
         totalProductos: totalCargados,
         contenidoPreview: catalogoTextoFormateado,
       });
     } catch (error) {
-      console.error("Error procesando lista de precios:", error);
-      if (req.file && fs.existsSync(req.file.path))
-        fs.unlinkSync(req.file.path);
+      console.error("Error procesando lista:", error);
       res
         .status(500)
         .json({ error: "Error procesando lista de precios: " + error.message });
