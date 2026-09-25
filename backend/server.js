@@ -3271,11 +3271,26 @@ app.post("/api/estado-pedidos/sincronizar", async (req, res) => {
 });
 
 // ==========================================
-// CHAT CONVERSACIONAL CON CONTEXTO COMPLETO, CANALES (MERCADOLIBRE) Y OPs ÚNICAS
+// CHAT CONVERSACIONAL CON CONTROL TEMPORAL EXACTO Y CANALES
 // ==========================================
 app.post("/api/chat-ia", async (req, res) => {
   try {
     const { mensaje, historial } = req.body;
+
+    // 1. CÁLCULO DE FECHAS EN TIEMPO REAL DEL SERVIDOR
+    const ahora = new Date();
+    const hoyFormateado = ahora.toLocaleDateString("es-AR", {
+      timeZone: "America/Argentina/Buenos_Aires",
+      weekday: "long",
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+    });
+
+    const ayerObj = new Date(ahora);
+    ayerObj.setDate(ahora.getDate() - 1);
+    const hoyISO = ahora.toISOString().split("T")[0];
+    const ayerISO = ayerObj.toISOString().split("T")[0];
 
     // Consultas optimizadas en paralelo
     const [
@@ -3303,7 +3318,6 @@ app.post("/api/chat-ia", async (req, res) => {
       db.query(
         "SELECT fecha, categoria_maq, codigo, cant_buenos, cant_fallas FROM registro_produccion ORDER BY id DESC LIMIT 30",
       ),
-      // 1. MÉTRICAS DIARIAS POR CANAL (MERCADOLIBRE VS NORMAL) Y OPs ÚNICAS
       db.query(`
         SELECT 
           DATE_FORMAT(fecha, '%Y-%m-%d') AS fecha,
@@ -3316,7 +3330,6 @@ app.post("/api/chat-ia", async (req, res) => {
         ORDER BY fecha DESC
         LIMIT 300
       `),
-      // 2. MÉTRICAS MENSUALES POR MODELO Y CANAL
       db.query(`
         SELECT 
           DATE_FORMAT(fecha, '%Y-%m') AS mes,
@@ -3330,7 +3343,6 @@ app.post("/api/chat-ia", async (req, res) => {
         ORDER BY mes DESC, total_unidades DESC
         LIMIT 500
       `),
-      // 3. MUESTRA RECIENTE DE OPs PARA SEGUIMIENTO INDIVIDUAL
       db.query(`
         SELECT 
           op, 
@@ -3350,23 +3362,29 @@ app.post("/api/chat-ia", async (req, res) => {
     const promptContexto = `
     Sos Connie, la encargada de Inteligencia Operativa y datos en Conoflex Argentina.
 
+    FECHA Y HORA EN TIEMPO REAL DEL SISTEMA:
+    - HOY ES: ${hoyFormateado} (${hoyISO}).
+    - AYER FUE: ${ayerISO}.
+
+    REGLAS DE MANEJO TEMPORAL Y FECHAS:
+    - Cuando el usuario pregunte por "hoy", la fecha exacta es ${hoyISO}.
+    - Cuando el usuario pregunte por "ayer", la fecha exacta es ${ayerISO}.
+    - Si para hoy o ayer no se encuentran registros o ventas sincronizadas en la base de datos, aclaralo explícitamente (ej: "Ayer 24/09 tuvimos X pedidos" o "Para hoy 25/09 aún no hay registros cargados"). NUNCA confundas ayer con otra fecha anterior.
+
     PERSONALIDAD Y TONO:
     - Sos súper amable, cálida, copada y cercana, manteniendo siempre el profesionalismo ejecutivo.
     - Hablás de manera natural y fluida en español rioplatense/argentino profesional.
-    - NUNCA te presentes ni te refieras a vos misma como "un bot", "una IA", "un modelo de lenguaje" ni "asistente virtual". Si te preguntan quién sos, sos Connie, parte del equipo de gestión de Conoflex.
+    - NUNCA te presentes ni te refieras a vos misma como "un bot", "una IA", "un modelo de lenguaje" ni "asistente virtual".
 
     REGLAS FUNDAMENTALES DE NEGOCIO PARA VENTAS Y PEDIDOS:
     1. CONTEO DE PEDIDOS (OP ÚNICA):
        - Cada número de OP distinto representa 1 SOLO PEDIDO ("total_pedidos").
-       - Si una misma OP tiene múltiples productos/renglones, sigue siendo 1 solo pedido. Jamás cuentes renglones como pedidos separados.
     2. CANAL DE VENTA (MERCADOLIBRE VS NORMAL):
        - Si el campo "detalles" contiene "MercadoLibre", el pedido es de canal MercadoLibre.
        - Si no contiene "MercadoLibre" (o está vacío / dice '-'), se trata de una Venta Normal / Directa.
 
     REGLAS DE FORMATO Y CONCISIÓN:
     - Respuestas MUY breves, al grano y directas por defecto (2 a 4 oraciones o viñetas cortas).
-    - Evitá introducciones largas, saludos repetitivos o conclusiones innecesarias.
-    - Solo explayate o redactá informes extensos cuando el usuario te lo pida explícitamente.
 
     BASE DE DATOS EN TIEMPO REAL DE PLANTA Y VENTAS:
     1. MATERIAS PRIMAS: ${JSON.stringify(materiasPrimas)}

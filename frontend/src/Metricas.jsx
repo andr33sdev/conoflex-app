@@ -264,7 +264,7 @@ export default function Metricas() {
     return d.toISOString().split("T")[0];
   });
 
-  // ESTADO CHAT IA CON LA BD
+  // ESTADO CHAT IA CON LA BD Y VOZ
   const [mensajes, setMensajes] = useState([
     {
       rol: "assistant",
@@ -274,7 +274,17 @@ export default function Metricas() {
   ]);
   const [inputChat, setInputChat] = useState("");
   const [enviandoChat, setEnviandoChat] = useState(false);
+  const [estadoVoz, setEstadoVoz] = useState("idle"); // 'idle' | 'speaking'
   const chatBottomRef = useRef(null);
+
+  // CARGAR VOCES NATIVAS DEL NAVEGADOR
+  useEffect(() => {
+    if ("speechSynthesis" in window) {
+      window.speechSynthesis.onvoiceschanged = () => {
+        window.speechSynthesis.getVoices();
+      };
+    }
+  }, []);
 
   useEffect(() => {
     fetchAllData();
@@ -283,6 +293,68 @@ export default function Metricas() {
   useEffect(() => {
     chatBottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [mensajes]);
+
+  // FUNCIÓN DE VOZ FEMENINA 100% GRATUITA (WEB SPEECH API)
+  const hablarConnie = (texto) => {
+    if (!("speechSynthesis" in window)) return;
+
+    window.speechSynthesis.cancel(); // Cancelar reproducciones previas
+
+    // Limpieza de formato Markdown y emojis
+    const textoLimpio = texto
+      .replace(/\*+/g, "")
+      .replace(/#/g, "")
+      .replace(/[`_~]/g, "")
+      .replace(
+        /([\u2700-\u27BF]|[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDD10-\uDDFF])/g,
+        ""
+      );
+
+    const utterance = new SpeechSynthesisUtterance(textoLimpio);
+    const voces = window.speechSynthesis.getVoices();
+
+    // 1. Filtrar todas las voces en español
+    const vocesEspanol = voces.filter((v) => v.lang.startsWith("es"));
+
+    // 2. Lista de identificadores de voces femeninas comunes según el S.O. (Windows, Mac, Android, iOS)
+    const palabrasFemeninas = [
+      "elena", "sabina", "laura", "monica", "paulina", 
+      "luciana", "francisca", "victoria", "paloma", 
+      "mia", "dalia", "alva", "female", "mujer"
+    ];
+
+    // 3. Buscar prioritariamente una voz femenina en español
+    let vozFemenina = vocesEspanol.find((v) =>
+      palabrasFemeninas.some((nombre) => v.name.toLowerCase().includes(nombre))
+    );
+
+    // 4. Si el sistema no indica el nombre explícito, descartar masculinos conocidos (Pablo, Raul, Jorge, Male)
+    if (!vozFemenina) {
+      vozFemenina = vocesEspanol.find(
+        (v) =>
+          !v.name.toLowerCase().includes("male") &&
+          !v.name.toLowerCase().includes("pablo") &&
+          !v.name.toLowerCase().includes("raul") &&
+          !v.name.toLowerCase().includes("jorge")
+      ) || vocesEspanol[0];
+    }
+
+    if (vozFemenina) {
+      utterance.voice = vozFemenina;
+      utterance.lang = vozFemenina.lang;
+    } else {
+      utterance.lang = "es-AR";
+    }
+
+    utterance.rate = 1.0;  // Velocidad natural
+    utterance.pitch = 1.15; // Tono ajustado para acentuar voz femenina
+
+    utterance.onstart = () => setEstadoVoz("speaking");
+    utterance.onend = () => setEstadoVoz("idle");
+    utterance.onerror = () => setEstadoVoz("idle");
+
+    window.speechSynthesis.speak(utterance);
+  };
 
   // SINCRONIZACIÓN DE LA TABLA ESTADO_PEDIDOS DESDE GOOGLE SHEETS
   const handleSyncEstadoPedidos = async () => {
@@ -377,6 +449,7 @@ export default function Metricas() {
           ...nuevosMensajes,
           { rol: "assistant", texto: data.respuesta },
         ]);
+        hablarConnie(data.respuesta); // REPRODUCIR VOZ Y ANIMAR AVATAR
       } else {
         setMensajes([
           ...nuevosMensajes,
@@ -960,7 +1033,7 @@ export default function Metricas() {
               estado={
                 enviandoChat
                   ? "thinking"
-                  : mensajes[mensajes.length - 1]?.rol === "assistant"
+                  : estadoVoz === "speaking"
                     ? "speaking"
                     : "idle"
               }
