@@ -18,7 +18,6 @@ import {
   TrendingDown,
   Plus,
   Layers,
-  Box,
   Cpu,
   Package,
 } from "lucide-react";
@@ -74,7 +73,7 @@ export default function Inventory() {
     return () => observer.disconnect();
   }, [itemsPerPage]);
 
-  // CARGAR CATÁLOGO LOCAL Y RECETAS (OPTIMIZADO EN 2 SOLICITUDES UNIFICADAS)
+  // CARGAR CATÁLOGO LOCAL Y RECETAS
   const fetchItems = async () => {
     setLoading(true);
     try {
@@ -100,13 +99,10 @@ export default function Inventory() {
   const handleStartSync = async () => {
     setIsSyncing(true);
     try {
-      const res = await fetch(
-        "/api/materias-primas/previsualizar-sheets",
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-        },
-      );
+      const res = await fetch("/api/materias-primas/previsualizar-sheets", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
 
       if (res.ok) {
         const data = await res.json();
@@ -138,17 +134,14 @@ export default function Inventory() {
 
     setIsSyncing(true);
     try {
-      const res = await fetch(
-        "/api/materias-primas/aplicar-sincronizacion",
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            nuevos: finalNuevos,
-            modificados: finalModificados,
-          }),
-        },
-      );
+      const res = await fetch("/api/materias-primas/aplicar-sincronizacion", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          nuevos: finalNuevos,
+          modificados: finalModificados,
+        }),
+      });
 
       if (res.ok) {
         setPreviewData(null);
@@ -248,14 +241,11 @@ export default function Inventory() {
     if (isNaN(val)) return alert("Ingresá un número válido");
 
     try {
-      const res = await fetch(
-        `/api/materias-primas/${editingItem.id}/stock`,
-        {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ stock: val }),
-        },
-      );
+      const res = await fetch(`/api/materias-primas/${editingItem.id}/stock`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ stock: val }),
+      });
 
       if (res.ok) {
         setEditingItem(null);
@@ -267,41 +257,53 @@ export default function Inventory() {
   };
 
   return (
-    <div className="h-full flex flex-col font-mono text-[#e1d7f5] select-none space-y-2 sm:space-y-3 min-h-0 bg-[#1a0f2e] p-1 overflow-hidden">
-      {/* 1. HEADER */}
-      <div className="flex flex-row items-center justify-between pb-2 sm:pb-3 border-b-2 border-[#432874] gap-2 shrink-0">
-        <div>
-          <h2 className="font-pixel text-sm sm:text-lg text-[#ffbe00] font-bold flex items-center gap-1.5 sm:gap-2 tracking-wide drop-shadow-[1px_1px_0px_#000]">
-            <Shield size={16} className="text-[#24cc8f] shrink-0" /> INVENTARIO
-            DE MATERIAS PRIMAS
-          </h2>
-          <p className="text-[10px] sm:text-xs text-[#a594c9] mt-0.5 font-mono hidden sm:block">
-            Gremio de Insumos y Materiales de Producción.
-          </p>
+    <div className="flex-1 flex flex-col h-full min-h-0 bg-[#070a12] border border-slate-800/80 rounded-2xl font-sans text-slate-200 shadow-2xl overflow-hidden backdrop-blur-2xl p-5 space-y-4">
+      {/* 1. HEADER DE MÓDULO */}
+      <div className="bg-[#0f172a]/70 border-b border-slate-800/80 p-4 flex flex-wrap items-center justify-between gap-4 shrink-0 backdrop-blur-xl rounded-2xl">
+        <div className="flex items-center gap-3.5">
+          <div className="p-2.5 bg-emerald-500/10 border border-emerald-500/20 rounded-xl shadow-[0_0_15px_rgba(16,185,129,0.15)]">
+            <Shield size={20} className="text-emerald-400" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2.5">
+              <h2 className="text-xs font-bold text-white tracking-widest uppercase font-mono">
+                INVENTARIO DE MATERIAS PRIMAS
+              </h2>
+              <span className="text-[10px] bg-emerald-500/10 text-emerald-300 border border-emerald-500/20 px-2.5 py-0.5 rounded-full font-mono flex items-center gap-1.5 shadow-[0_0_10px_rgba(16,185,129,0.1)]">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_8px_#10b981]" />{" "}
+                LIVE DATA
+              </span>
+            </div>
+            <p className="text-[11px] text-slate-400 mt-0.5">
+              Gremio de Insumos y Materiales de Producción
+            </p>
+          </div>
         </div>
 
         <button
           onClick={handleStartSync}
           disabled={isSyncing}
-          className="px-2.5 sm:px-3.5 py-1.5 bg-[#2c1a4d] border-2 border-[#432874] text-[#a594c9] hover:text-[#ffbe00] hover:border-[#ffbe00]/60 shadow-[2px_2px_0px_#000] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none transition-all rounded-xs flex items-center gap-1.5 font-pixel text-[11px] sm:text-xs shrink-0"
+          className="px-3.5 py-2 bg-slate-900 border border-slate-700 hover:border-amber-400 text-slate-300 hover:text-amber-400 rounded-xl transition-all shadow-md flex items-center gap-2 cursor-pointer font-mono text-xs font-bold shrink-0 disabled:opacity-50"
           title="Sincronizar con Google Sheets"
         >
           <RefreshCw
-            size={13}
-            className={`transition-transform duration-500 ${isSyncing ? "animate-spin text-[#ffbe00]" : ""}`}
+            size={14}
+            className={`transition-transform duration-500 ${
+              isSyncing ? "animate-spin text-amber-400" : ""
+            }`}
           />
-          <span>SINCRONIZAR</span>
+          <span>SINCRONIZAR SHEETS</span>
         </button>
       </div>
 
       {/* 2. PANEL PRINCIPAL */}
-      <div className="flex-1 bg-[#24173e] border-2 border-[#432874] p-2 sm:p-3 flex flex-col min-h-0 shadow-[4px_4px_0px_#000] relative rounded-xs overflow-hidden">
-        {/* BUSCADOR */}
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 mb-2 sm:mb-3 shrink-0">
-          <div className="relative w-full sm:max-w-sm">
+      <div className="flex-1 min-h-0 bg-[#0e1422] border border-slate-800/80 rounded-2xl p-4 flex flex-col space-y-3 shadow-xl">
+        {/* BUSCADOR Y CONTADOR */}
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 shrink-0">
+          <div className="relative flex-1 w-full max-w-md">
             <Search
-              size={13}
-              className="absolute left-3 top-1/2 -translate-y-1/2 text-[#a594c9]"
+              size={15}
+              className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500"
             />
             <input
               type="text"
@@ -311,46 +313,46 @@ export default function Inventory() {
                 setSearch(e.target.value);
                 setCurrentPage(1);
               }}
-              className="w-full bg-[#160c2b] border-2 border-[#432874] text-xs text-white pl-8 pr-3 py-1.5 focus:outline-none focus:border-[#ffbe00] transition-colors placeholder:text-[#6e588a] rounded-xs"
+              className="w-full bg-[#070a12] border border-slate-800 text-xs text-slate-100 pl-10 pr-4 py-2 focus:border-amber-500/50 outline-none rounded-xl font-sans"
             />
           </div>
 
-          <div className="bg-[#160c2b] border border-[#432874] px-2.5 py-1 text-[10px] sm:text-[11px] font-pixel text-[#a594c9] shrink-0 rounded-xs flex items-center justify-between sm:justify-start gap-1.5">
-            <span className="flex items-center gap-1">
+          <div className="bg-[#070a12] border border-slate-800 px-3.5 py-1.5 text-xs font-mono text-slate-400 shrink-0 rounded-xl flex items-center justify-between sm:justify-start gap-2">
+            <span className="flex items-center gap-1.5">
               {isSyncing && (
-                <Sparkles size={11} className="text-[#ffbe00] animate-pulse" />
+                <Sparkles size={12} className="text-amber-400 animate-pulse" />
               )}
               INSUMOS TOTALES:
             </span>
-            <strong className="text-[#24cc8f]">
+            <strong className="text-emerald-400 font-bold">
               {processedItems.length} / {items.length}
             </strong>
           </div>
         </div>
 
-        {/* 3. VISTA ESCRITORIO CON RANURAS PERFECTAS */}
+        {/* 3. VISTA ESCRITORIO CON TABLA CYBER-INDUSTRIAL */}
         <div
           ref={tableContainerRef}
-          className="hidden md:flex flex-1 border-2 border-[#432874] bg-[#160c2b] min-h-0 flex-col overflow-hidden rounded-xs"
+          className="hidden md:flex flex-1 border border-slate-800 bg-[#070a12] min-h-0 flex-col overflow-hidden rounded-xl"
         >
           <table className="w-full text-left text-xs border-collapse table-fixed">
             <thead>
-              <tr className="text-[#a594c9] border-b-2 border-[#432874] font-pixel text-[11px] bg-[#2c1a4d] sticky top-0 z-10 h-[40px]">
+              <tr className="text-slate-400 border-b border-slate-800 font-mono text-[10px] uppercase tracking-wider bg-[#0e1422] sticky top-0 z-10 h-[40px]">
                 <th
                   onClick={() => handleSort("codigo")}
-                  className="w-2/12 px-3 font-normal cursor-pointer hover:bg-[#39215e] hover:text-[#ffbe00] transition-colors select-none"
+                  className="w-2/12 px-3 font-semibold cursor-pointer hover:bg-slate-800/80 hover:text-amber-400 transition-colors select-none"
                 >
                   <div className="flex items-center justify-between pr-2">
                     <span>CÓDIGO</span>
                     <span className="w-4 flex justify-center shrink-0">
                       {sortColumn === "codigo" ? (
                         sortDirection === "asc" ? (
-                          <ArrowUp size={12} className="text-[#ffbe00]" />
+                          <ArrowUp size={12} className="text-amber-400" />
                         ) : (
-                          <ArrowDown size={12} className="text-[#ffbe00]" />
+                          <ArrowDown size={12} className="text-amber-400" />
                         )
                       ) : (
-                        <ArrowUpDown size={11} className="text-[#6e588a]" />
+                        <ArrowUpDown size={11} className="text-slate-600" />
                       )}
                     </span>
                   </div>
@@ -358,19 +360,19 @@ export default function Inventory() {
 
                 <th
                   onClick={() => handleSort("nombre")}
-                  className="w-5/12 px-3 font-normal cursor-pointer hover:bg-[#39215e] hover:text-[#ffbe00] transition-colors select-none"
+                  className="w-5/12 px-3 font-semibold cursor-pointer hover:bg-slate-800/80 hover:text-amber-400 transition-colors select-none"
                 >
                   <div className="flex items-center justify-between pr-2">
                     <span>MATERIA PRIMA</span>
                     <span className="w-4 flex justify-center shrink-0">
                       {sortColumn === "nombre" ? (
                         sortDirection === "asc" ? (
-                          <ArrowUp size={12} className="text-[#ffbe00]" />
+                          <ArrowUp size={12} className="text-amber-400" />
                         ) : (
-                          <ArrowDown size={12} className="text-[#ffbe00]" />
+                          <ArrowDown size={12} className="text-amber-400" />
                         )
                       ) : (
-                        <ArrowUpDown size={11} className="text-[#6e588a]" />
+                        <ArrowUpDown size={11} className="text-slate-600" />
                       )}
                     </span>
                   </div>
@@ -378,19 +380,19 @@ export default function Inventory() {
 
                 <th
                   onClick={() => handleSort("unidad_medida")}
-                  className="w-2/12 px-3 font-normal text-center cursor-pointer hover:bg-[#39215e] hover:text-[#ffbe00] transition-colors select-none"
+                  className="w-2/12 px-3 font-semibold text-center cursor-pointer hover:bg-slate-800/80 hover:text-amber-400 transition-colors select-none"
                 >
                   <div className="flex items-center justify-center gap-1">
                     <span>UNIDAD</span>
                     <span className="w-4 flex justify-center shrink-0">
                       {sortColumn === "unidad_medida" ? (
                         sortDirection === "asc" ? (
-                          <ArrowUp size={12} className="text-[#ffbe00]" />
+                          <ArrowUp size={12} className="text-amber-400" />
                         ) : (
-                          <ArrowDown size={12} className="text-[#ffbe00]" />
+                          <ArrowDown size={12} className="text-amber-400" />
                         )
                       ) : (
-                        <ArrowUpDown size={11} className="text-[#6e588a]" />
+                        <ArrowUpDown size={11} className="text-slate-600" />
                       )}
                     </span>
                   </div>
@@ -398,34 +400,36 @@ export default function Inventory() {
 
                 <th
                   onClick={() => handleSort("stock_actual")}
-                  className="w-2/12 px-3 font-normal text-right cursor-pointer hover:bg-[#39215e] hover:text-[#ffbe00] transition-colors select-none"
+                  className="w-2/12 px-3 font-semibold text-right cursor-pointer hover:bg-slate-800/80 hover:text-amber-400 transition-colors select-none"
                 >
                   <div className="flex items-center justify-end gap-1">
                     <span>STOCK</span>
                     <span className="w-4 flex justify-center shrink-0">
                       {sortColumn === "stock_actual" ? (
                         sortDirection === "asc" ? (
-                          <ArrowUp size={12} className="text-[#ffbe00]" />
+                          <ArrowUp size={12} className="text-amber-400" />
                         ) : (
-                          <ArrowDown size={12} className="text-[#ffbe00]" />
+                          <ArrowDown size={12} className="text-amber-400" />
                         )
                       ) : (
-                        <ArrowUpDown size={11} className="text-[#6e588a]" />
+                        <ArrowUpDown size={11} className="text-slate-600" />
                       )}
                     </span>
                   </div>
                 </th>
 
-                <th className="w-1/12 px-3 font-normal text-center">EDITAR</th>
+                <th className="w-1/12 px-3 font-semibold text-center">
+                  EDITAR
+                </th>
               </tr>
             </thead>
 
-            <tbody className="divide-y divide-[#432874]/30 bg-[#160c2b]">
+            <tbody className="divide-y divide-slate-800/50 bg-[#070a12]">
               {loading ? (
                 <tr>
                   <td
                     colSpan="5"
-                    className="py-16 text-center font-pixel text-xs text-[#ffbe00] animate-pulse"
+                    className="py-16 text-center font-mono text-xs text-amber-400 animate-pulse"
                   >
                     Consultando inventario de insumos...
                   </td>
@@ -434,7 +438,7 @@ export default function Inventory() {
                 <tr>
                   <td
                     colSpan="5"
-                    className="py-16 text-center font-pixel text-xs text-[#6e588a]"
+                    className="py-16 text-center font-mono text-xs text-slate-500"
                   >
                     No hay insumos registrados.
                   </td>
@@ -445,23 +449,27 @@ export default function Inventory() {
                     <tr
                       key={item.id}
                       onClick={() => setDetailItem(item)}
-                      className="h-[40px] hover:bg-[#281747] transition-colors group align-middle cursor-pointer"
+                      className="h-[40px] hover:bg-[#121824]/80 transition-colors group align-middle cursor-pointer"
                     >
-                      <td className="px-3 font-pixel text-[#ffbe00] font-bold tracking-wider truncate align-middle group-hover:underline">
+                      <td className="px-3 font-mono font-bold text-amber-400 truncate align-middle group-hover:underline">
                         {item.codigo}
                       </td>
 
-                      <td className="px-3 text-white font-bold truncate align-middle">
+                      <td className="px-3 text-slate-100 font-bold truncate align-middle">
                         {item.nombre}
                       </td>
 
-                      <td className="px-3 text-center text-[#a594c9] text-[11px] font-pixel uppercase truncate align-middle">
+                      <td className="px-3 text-center text-slate-400 text-[11px] font-mono uppercase truncate align-middle">
                         {item.unidad_medida || "Kg"}
                       </td>
 
-                      <td className="px-3 text-right font-pixel truncate align-middle">
+                      <td className="px-3 text-right font-mono truncate align-middle">
                         <span
-                          className={`font-bold ${item.stock_actual <= 0 ? "text-[#f87171] bg-[#450a0a]/50 px-2 py-0.5 border border-[#7f1d1d]" : "text-[#24cc8f]"}`}
+                          className={`font-bold ${
+                            item.stock_actual <= 0
+                              ? "text-rose-400 bg-rose-500/10 px-2 py-0.5 border border-rose-500/30 rounded-md"
+                              : "text-emerald-400"
+                          }`}
                         >
                           {item.stock_actual.toLocaleString(undefined, {
                             maximumFractionDigits: 2,
@@ -476,10 +484,10 @@ export default function Inventory() {
                             setEditingItem(item);
                             setNewStockValue(item.stock_actual);
                           }}
-                          className="p-1 bg-[#2c1a4d] border border-[#432874] text-[#a594c9] hover:text-[#ffbe00] hover:border-[#ffbe00] transition-all shadow-[1px_1px_0px_#000] inline-flex items-center justify-center active:translate-x-[1px] active:translate-y-[1px] rounded-xs"
+                          className="p-1.5 bg-slate-900 border border-slate-700 text-slate-300 hover:text-amber-400 hover:border-amber-400/60 transition-all rounded-lg cursor-pointer inline-flex items-center justify-center"
                           title="Editar Stock"
                         >
-                          <Edit2 size={12} />
+                          <Edit2 size={13} />
                         </button>
                       </td>
                     </tr>
@@ -488,21 +496,21 @@ export default function Inventory() {
                   {Array.from({ length: emptySlotsCount }).map((_, idx) => (
                     <tr
                       key={`empty-${idx}`}
-                      className="h-[40px] opacity-15 pointer-events-none"
+                      className="h-[40px] opacity-20 pointer-events-none"
                     >
-                      <td className="px-3 text-[#432874] font-pixel text-[10px]">
+                      <td className="px-3 text-slate-700 font-mono text-[10px]">
                         --
                       </td>
-                      <td className="px-3 text-[#432874] font-pixel text-[10px]">
+                      <td className="px-3 text-slate-700 font-mono text-[10px]">
                         -- RANURA VACÍA --
                       </td>
-                      <td className="px-3 text-center text-[#432874] text-[10px]">
+                      <td className="px-3 text-center text-slate-700 text-[10px]">
                         --
                       </td>
-                      <td className="px-3 text-right text-[#432874] text-[10px]">
+                      <td className="px-3 text-right text-slate-700 text-[10px]">
                         --
                       </td>
-                      <td className="px-3 text-center text-[#432874] text-[10px]">
+                      <td className="px-3 text-center text-slate-700 text-[10px]">
                         --
                       </td>
                     </tr>
@@ -513,14 +521,14 @@ export default function Inventory() {
           </table>
         </div>
 
-        {/* 4. VISTA MOBILE CORREGIDA */}
+        {/* 4. VISTA MOBILE */}
         <div className="flex md:hidden flex-1 flex-col overflow-y-auto min-h-0 space-y-2 pr-0.5">
           {loading ? (
-            <div className="py-12 text-center font-pixel text-xs text-[#ffbe00] animate-pulse">
+            <div className="py-12 text-center font-mono text-xs text-amber-400 animate-pulse">
               Consultando insumos...
             </div>
           ) : paginatedItems.length === 0 ? (
-            <div className="py-12 text-center font-pixel text-xs text-[#6e588a]">
+            <div className="py-12 text-center font-mono text-xs text-slate-500">
               Sin materias primas.
             </div>
           ) : (
@@ -528,13 +536,13 @@ export default function Inventory() {
               <div
                 key={item.id}
                 onClick={() => setDetailItem(item)}
-                className="bg-[#160c2b] border border-[#432874] p-3 rounded-xs space-y-2 shadow-[2px_2px_0px_#000] shrink-0 cursor-pointer active:scale-[0.99] transition-transform"
+                className="bg-[#070a12] border border-slate-800 p-3.5 rounded-xl space-y-2.5 shrink-0 cursor-pointer active:scale-[0.99] transition-transform shadow-md"
               >
                 <div className="flex justify-between items-center">
-                  <span className="font-pixel text-[#ffbe00] font-bold text-xs">
+                  <span className="font-mono text-amber-400 font-bold text-xs">
                     [{item.codigo}]
                   </span>
-                  <span className="text-[10px] font-pixel text-[#a594c9] uppercase bg-[#24173e] px-2 py-0.5 border border-[#432874]">
+                  <span className="text-[10px] font-mono text-slate-400 uppercase bg-[#0e1422] px-2 py-0.5 border border-slate-800 rounded-md">
                     {item.unidad_medida || "Kg"}
                   </span>
                 </div>
@@ -543,14 +551,14 @@ export default function Inventory() {
                   {item.nombre}
                 </div>
 
-                <div className="flex justify-between items-center pt-2 border-t border-[#432874]/40">
-                  <span className="text-[11px] font-pixel text-[#a594c9]">
+                <div className="flex justify-between items-center pt-2 border-t border-slate-800/80">
+                  <span className="text-[11px] font-mono text-slate-400">
                     Stock:{" "}
                     <strong
                       className={
                         item.stock_actual <= 0
-                          ? "text-[#f87171]"
-                          : "text-[#24cc8f]"
+                          ? "text-rose-400"
+                          : "text-emerald-400"
                       }
                     >
                       {item.stock_actual.toLocaleString(undefined, {
@@ -565,7 +573,7 @@ export default function Inventory() {
                       setEditingItem(item);
                       setNewStockValue(item.stock_actual);
                     }}
-                    className="px-2.5 py-1 bg-[#2c1a4d] border border-[#432874] text-[#ffbe00] font-pixel text-[10px] font-bold flex items-center gap-1 active:translate-y-0.5 rounded-xs"
+                    className="px-2.5 py-1 bg-slate-900 border border-slate-700 text-amber-400 font-mono text-[10px] font-bold flex items-center gap-1 rounded-lg"
                   >
                     <Edit2 size={11} /> EDITAR
                   </button>
@@ -575,109 +583,113 @@ export default function Inventory() {
           )}
         </div>
 
-        {/* PAGINACIÓN */}
-        <div className="flex flex-col sm:flex-row items-center justify-between pt-2.5 mt-2 border-t-2 border-[#432874] shrink-0 text-xs font-pixel gap-2">
-          <span className="text-[#a594c9] text-[10px] sm:text-[11px]">
+        {/* 5. PAGINACIÓN */}
+        <div className="flex flex-col sm:flex-row items-center justify-between pt-2.5 border-t border-slate-800 shrink-0 text-xs font-mono text-slate-400 gap-2">
+          <span>
             Página <strong className="text-white">{currentPage}</strong> de{" "}
             <strong className="text-white">{totalPages}</strong>
           </span>
 
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-1.5">
             <button
               onClick={() => setCurrentPage(1)}
               disabled={currentPage === 1}
-              className="p-1 sm:p-1.5 bg-[#2c1a4d] border border-[#432874] text-[#a594c9] hover:text-[#ffbe00] disabled:opacity-30 shadow-[1px_1px_0px_#000] rounded-xs"
+              className="p-1.5 bg-slate-900 border border-slate-800 text-slate-400 hover:text-white disabled:opacity-30 rounded-lg cursor-pointer transition"
             >
-              <ChevronsLeft size={13} />
+              <ChevronsLeft size={14} />
             </button>
             <button
               onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
               disabled={currentPage === 1}
-              className="px-2 py-1 bg-[#2c1a4d] border border-[#432874] text-[#a594c9] hover:text-[#ffbe00] disabled:opacity-30 shadow-[1px_1px_0px_#000] flex items-center gap-0.5 text-[10px] sm:text-xs rounded-xs"
+              className="px-3 py-1.5 bg-slate-900 border border-slate-800 text-slate-400 hover:text-white disabled:opacity-30 flex items-center gap-1 text-xs rounded-lg cursor-pointer transition"
             >
-              <ChevronLeft size={13} /> ANT
+              <ChevronLeft size={14} /> ANT
             </button>
 
-            <span className="px-2.5 py-0.5 bg-[#160c2b] border border-[#432874] text-[#ffbe00] font-bold text-[11px] rounded-xs">
+            <span className="px-3 py-1 bg-[#070a12] border border-slate-800 text-amber-400 font-bold text-xs rounded-lg">
               {currentPage} / {totalPages}
             </span>
 
             <button
               onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
               disabled={currentPage === totalPages}
-              className="px-2 py-1 bg-[#2c1a4d] border border-[#432874] text-[#a594c9] hover:text-[#ffbe00] disabled:opacity-30 shadow-[1px_1px_0px_#000] flex items-center gap-0.5 text-[10px] sm:text-xs rounded-xs"
+              className="px-3 py-1.5 bg-slate-900 border border-slate-800 text-slate-400 hover:text-white disabled:opacity-30 flex items-center gap-1 text-xs rounded-lg cursor-pointer transition"
             >
-              SIG <ChevronRight size={13} />
+              SIG <ChevronRight size={14} />
             </button>
             <button
               onClick={() => setCurrentPage(totalPages)}
               disabled={currentPage === totalPages}
-              className="p-1 sm:p-1.5 bg-[#2c1a4d] border border-[#432874] text-[#a594c9] hover:text-[#ffbe00] disabled:opacity-30 shadow-[1px_1px_0px_#000] rounded-xs"
+              className="p-1.5 bg-slate-900 border border-slate-800 text-slate-400 hover:text-white disabled:opacity-30 rounded-lg cursor-pointer transition"
             >
-              <ChevronsRight size={13} />
+              <ChevronsRight size={14} />
             </button>
           </div>
         </div>
       </div>
 
       {/* =========================================================
-          MODAL 1: FICHA PRINCIPAL DE MATERIA PRIMA (COMPACTA)
+          MODAL 1: FICHA PRINCIPAL DE MATERIA PRIMA
       ========================================================= */}
       {detailItem && (
-        <div className="fixed inset-0 bg-black/85 backdrop-blur-xs z-[100] flex items-center justify-center p-3 animate-in fade-in duration-200 font-mono">
-          <div className="bg-[#24173e] border-2 border-[#ffbe00] w-full max-w-md p-5 shadow-[0_0_35px_rgba(255,190,0,0.3)] space-y-4 relative rounded-xs">
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-xs z-[100] flex items-center justify-center p-4 animate-in fade-in duration-200 font-sans">
+          <div className="bg-[#0e1422] border border-slate-800 w-full max-w-md p-6 rounded-2xl shadow-2xl space-y-5 relative text-xs">
             <button
               onClick={() => setDetailItem(null)}
-              className="absolute top-4 right-4 text-[#a594c9] hover:text-white"
+              className="absolute top-4 right-4 text-slate-400 hover:text-white cursor-pointer"
             >
-              <X size={16} />
+              <X size={18} />
             </button>
 
             {/* HEADER DE LA FICHA */}
-            <div className="border-b-2 border-[#432874] pb-3">
-              <span className="text-[10px] font-pixel text-[#ffbe00] bg-[#ffbe00]/10 px-2 py-0.5 border border-[#ffbe00]/30 rounded-xs font-bold">
+            <div className="border-b border-slate-800 pb-3">
+              <span className="text-[10px] font-mono font-bold text-amber-400 bg-amber-500/10 px-2.5 py-0.5 border border-amber-500/20 rounded-full">
                 FICHA DE MATERIA PRIMA
               </span>
-              <h3 className="font-pixel text-base text-white font-bold mt-2 flex items-center gap-2">
-                <Package size={18} className="text-[#24cc8f]" /> [
+              <h3 className="text-base text-white font-bold mt-2 flex items-center gap-2 font-mono">
+                <Package size={18} className="text-emerald-400" /> [
                 {detailItem.codigo}]
               </h3>
-              <p className="text-xs text-[#a594c9] font-bold mt-0.5">
+              <p className="text-xs text-slate-300 font-bold mt-0.5">
                 {detailItem.nombre}
               </p>
             </div>
 
             {/* ESTADÍSTICAS DEL INSUMO */}
-            <div className="grid grid-cols-2 gap-2 font-pixel text-xs">
-              <div className="bg-[#160c2b] p-2.5 border border-[#432874] rounded-xs shadow-[1px_1px_0px_#000]">
-                <span className="text-[10px] text-[#a594c9] block mb-1">
+            <div className="grid grid-cols-2 gap-3 font-mono text-xs">
+              <div className="bg-[#070a12] p-3 border border-slate-800 rounded-xl space-y-1">
+                <span className="text-[10px] text-slate-400 block">
                   STOCK ACTUAL:
                 </span>
                 <strong
-                  className={`text-sm ${detailItem.stock_actual <= 0 ? "text-[#f87171]" : "text-[#24cc8f]"}`}
+                  className={`text-sm block ${
+                    detailItem.stock_actual <= 0
+                      ? "text-rose-400"
+                      : "text-emerald-400"
+                  }`}
                 >
                   {detailItem.stock_actual.toLocaleString()}{" "}
                   {detailItem.unidad_medida || "Kg"}
                 </strong>
               </div>
 
-              <div className="bg-[#160c2b] p-2.5 border border-[#432874] rounded-xs shadow-[1px_1px_0px_#000]">
-                <span className="text-[10px] text-[#a594c9] block mb-1">
+              <div className="bg-[#070a12] p-3 border border-slate-800 rounded-xl space-y-1">
+                <span className="text-[10px] text-slate-400 block">
                   PRESENTE EN:
                 </span>
-                <strong className="text-[#38bdf8] text-sm font-bold flex items-center gap-1">
+                <strong className="text-cyan-400 text-sm font-bold flex items-center gap-1.5">
                   <Cpu size={14} /> {detailItemUsage.length} Recetas
                 </strong>
               </div>
             </div>
 
             {/* BOTÓN ACCIONABLE DE CONSULTA DE PRODUCTOS */}
-            <div className="bg-[#160c2b] border border-[#432874] p-3 rounded-xs shadow-[1px_1px_0px_#000] space-y-2">
-              <div className="flex justify-between items-center font-pixel">
-                <span className="text-[11px] text-[#a594c9] flex items-center gap-1.5">
-                  <Layers size={14} className="text-[#38bdf8]" /> USO EN PLANTA:
+            <div className="bg-[#070a12] border border-slate-800 p-3.5 rounded-xl space-y-2.5">
+              <div className="flex justify-between items-center font-mono">
+                <span className="text-[11px] text-slate-400 flex items-center gap-1.5">
+                  <Layers size={14} className="text-cyan-400" /> USO EN PLANTA:
                 </span>
-                <span className="text-xs text-[#ffbe00] font-bold">
+                <span className="text-xs text-amber-400 font-bold">
                   {detailItemUsage.length} Productos
                 </span>
               </div>
@@ -688,17 +700,17 @@ export default function Inventory() {
                   setUsageModalOpen(true);
                 }}
                 disabled={detailItemUsage.length === 0}
-                className="w-full py-2 bg-[#2c1a4d] border-2 border-[#432874] text-[#38bdf8] hover:text-[#ffbe00] hover:border-[#ffbe00] font-pixel text-xs font-bold transition-all shadow-[2px_2px_0px_#000] active:translate-y-0.5 rounded-xs flex items-center justify-center gap-2 disabled:opacity-40 disabled:pointer-events-none"
+                className="w-full py-2.5 bg-[#0e1422] hover:bg-slate-900 border border-slate-700 text-cyan-400 hover:border-cyan-400 font-mono text-xs font-bold transition-all rounded-xl flex items-center justify-center gap-2 cursor-pointer disabled:opacity-40 disabled:pointer-events-none shadow"
               >
-                <Search size={13} />
+                <Search size={14} />
                 <span>VER LISTADO Y FILTRAR PRODUCTOS</span>
               </button>
             </div>
 
-            <div className="pt-2 border-t border-[#432874] flex justify-end font-pixel">
+            <div className="pt-3 border-t border-slate-800 flex justify-end font-mono">
               <button
                 onClick={() => setDetailItem(null)}
-                className="px-4 py-1.5 bg-[#ffbe00] text-[#2c1a4d] font-bold text-xs hover:bg-[#ffe066] shadow-[2px_2px_0px_#000] rounded-xs"
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs rounded-xl transition cursor-pointer"
               >
                 CERRAR FICHA
               </button>
@@ -708,65 +720,65 @@ export default function Inventory() {
       )}
 
       {/* =========================================================
-          MODAL 2: SUB-MODAL DEDICADO DE BÚSQUEDA (ALTURA RÍGIDA INAMOVIBLE h-[80vh])
+          MODAL 2: SUB-MODAL DEDICADO DE BÚSQUEDA
       ========================================================= */}
       {usageModalOpen && detailItem && (
-        <div className="fixed inset-0 bg-black/90 backdrop-blur-xs z-[110] flex items-center justify-center p-3 animate-in fade-in duration-200 font-mono">
-          <div className="bg-[#24173e] border-2 border-[#38bdf8] w-full max-w-lg h-[80vh] min-h-[480px] p-5 shadow-[0_0_40px_rgba(56,189,248,0.25)] space-y-3 relative rounded-xs flex flex-col">
+        <div className="fixed inset-0 bg-slate-950/85 backdrop-blur-xs z-[110] flex items-center justify-center p-4 animate-in fade-in duration-200 font-sans">
+          <div className="bg-[#0e1422] border border-slate-800 w-full max-w-lg h-[80vh] min-h-[480px] p-6 shadow-2xl space-y-4 relative rounded-2xl flex flex-col">
             <button
               onClick={() => setUsageModalOpen(false)}
-              className="absolute top-4 right-4 text-[#a594c9] hover:text-white"
+              className="absolute top-4 right-4 text-slate-400 hover:text-white cursor-pointer"
             >
-              <X size={16} />
+              <X size={18} />
             </button>
 
-            <div className="border-b-2 border-[#432874] pb-2 shrink-0">
-              <span className="text-[10px] font-pixel text-[#38bdf8] bg-[#38bdf8]/10 px-2 py-0.5 border border-[#38bdf8]/30 rounded-xs font-bold">
+            <div className="border-b border-slate-800 pb-3 shrink-0">
+              <span className="text-[10px] font-mono font-bold text-cyan-400 bg-cyan-500/10 px-2.5 py-0.5 border border-cyan-500/20 rounded-full">
                 PRODUCTOS Y SEMIELABORADOS VINCULADOS
               </span>
-              <h3 className="font-pixel text-sm text-white font-bold mt-1.5 flex items-center gap-2">
-                <Package size={16} className="text-[#24cc8f]" /> [
+              <h3 className="font-mono text-sm text-white font-bold mt-2 flex items-center gap-2">
+                <Package size={16} className="text-emerald-400" /> [
                 {detailItem.codigo}]
               </h3>
             </div>
 
             {/* BUSCADOR EN TIEMPO REAL */}
-            <div className="relative shrink-0 font-pixel">
+            <div className="relative shrink-0 font-sans">
               <Search
-                size={13}
-                className="absolute left-3 top-1/2 -translate-y-1/2 text-[#a594c9]"
+                size={14}
+                className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500"
               />
               <input
                 type="text"
                 placeholder="Filtrar por código o nombre de producto..."
                 value={usageSearch}
                 onChange={(e) => setUsageSearch(e.target.value)}
-                className="w-full bg-[#160c2b] border-2 border-[#432874] text-xs text-white pl-8 pr-3 py-1.5 focus:outline-none focus:border-[#38bdf8] transition-colors rounded-xs"
+                className="w-full bg-[#070a12] border border-slate-800 text-xs text-white pl-10 pr-4 py-2 focus:border-cyan-500/50 outline-none rounded-xl"
                 autoFocus
               />
             </div>
 
-            {/* LISTA CON SCROLL INTERNO Y ALTURA COMPLETA QUE NUNCA SE ACHICA */}
-            <div className="flex-1 overflow-y-auto space-y-1.5 pr-1 min-h-0 font-pixel text-xs">
+            {/* LISTA CON SCROLL INTERNO */}
+            <div className="flex-1 overflow-y-auto space-y-2 pr-1 min-h-0 text-xs font-sans">
               {filteredUsageList.length === 0 ? (
-                <div className="h-full flex flex-col items-center justify-center text-[#6e588a] font-pixel text-xs">
+                <div className="h-full flex flex-col items-center justify-center text-slate-500 font-mono text-xs">
                   No se encontraron productos coincidentes.
                 </div>
               ) : (
                 filteredUsageList.map((u, idx) => (
                   <div
                     key={idx}
-                    className="p-2.5 bg-[#160c2b] border border-[#432874] flex justify-between items-center rounded-2xs hover:border-[#38bdf8]/60 transition-colors shadow-[1px_1px_0px_#000]"
+                    className="p-3 bg-[#070a12] border border-slate-800 flex justify-between items-center rounded-xl hover:border-cyan-500/50 transition-colors shadow-sm"
                   >
-                    <div className="truncate pr-2">
-                      <span className="text-[#ffbe00] font-bold block truncate text-[11px]">
+                    <div className="truncate pr-2 space-y-0.5">
+                      <span className="text-amber-400 font-mono font-bold block truncate text-[11px]">
                         [{u.productCode}]
                       </span>
-                      <span className="text-white font-bold truncate block text-xs">
+                      <span className="text-slate-100 font-bold truncate block text-xs">
                         {u.productName}
                       </span>
                     </div>
-                    <span className="text-[9px] text-[#24cc8f] bg-[#24cc8f]/10 border border-[#24cc8f]/30 px-2 py-0.5 shrink-0 font-bold">
+                    <span className="text-[10px] font-mono text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-md shrink-0 font-bold">
                       {u.version}
                     </span>
                   </div>
@@ -775,8 +787,8 @@ export default function Inventory() {
             </div>
 
             {/* FOOTER DEL SUB-MODAL */}
-            <div className="pt-2 border-t border-[#432874] flex justify-between items-center shrink-0 font-pixel text-xs">
-              <span className="text-[#a594c9] text-[10px]">
+            <div className="pt-3 border-t border-slate-800 flex justify-between items-center shrink-0 font-mono text-xs">
+              <span className="text-slate-400 text-[11px]">
                 Mostrando{" "}
                 <strong className="text-white">
                   {filteredUsageList.length}
@@ -786,7 +798,7 @@ export default function Inventory() {
               </span>
               <button
                 onClick={() => setUsageModalOpen(false)}
-                className="px-4 py-1.5 bg-[#38bdf8] text-[#2c1a4d] font-bold text-xs hover:bg-[#7dd3fc] shadow-[2px_2px_0px_#000] rounded-xs"
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs rounded-xl transition cursor-pointer"
               >
                 VOLVER
               </button>
@@ -797,29 +809,29 @@ export default function Inventory() {
 
       {/* MODAL EDICIÓN MANUAL DE STOCK */}
       {editingItem && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-xs z-[100] flex items-center justify-center p-3 animate-in fade-in duration-150 font-mono">
-          <div className="bg-[#24173e] border-2 border-[#ffbe00] w-full max-w-sm p-5 shadow-[0_0_25px_rgba(255,190,0,0.2)] space-y-4 relative rounded-xs">
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-xs z-[100] flex items-center justify-center p-4 animate-in fade-in duration-150 font-sans">
+          <div className="bg-[#0e1422] border border-slate-800 w-full max-w-sm p-6 rounded-2xl shadow-2xl space-y-4 relative text-xs">
             <button
               onClick={() => setEditingItem(null)}
-              className="absolute top-3 right-3 text-[#a594c9] hover:text-white"
+              className="absolute top-4 right-4 text-slate-400 hover:text-white cursor-pointer"
             >
-              <X size={16} />
+              <X size={18} />
             </button>
 
-            <div className="border-b border-[#432874] pb-2">
-              <span className="text-[10px] font-pixel text-[#ffbe00] bg-[#ffbe00]/10 px-2 py-0.5 border border-[#ffbe00]/30 rounded-xs">
+            <div className="border-b border-slate-800 pb-3">
+              <span className="text-[10px] font-mono font-bold text-amber-400 bg-amber-500/10 px-2.5 py-0.5 border border-amber-500/20 rounded-full">
                 AJUSTE DE CANTIDAD
               </span>
-              <h3 className="font-pixel text-sm text-white font-bold mt-2">
+              <h3 className="font-mono text-sm text-white font-bold mt-2">
                 [{editingItem.codigo}]
               </h3>
-              <p className="text-xs text-[#a594c9] font-bold truncate">
+              <p className="text-xs text-slate-300 font-bold truncate">
                 {editingItem.nombre}
               </p>
             </div>
 
-            <div className="space-y-2 text-xs font-pixel">
-              <label className="text-[#a594c9] block">
+            <div className="space-y-2 font-mono">
+              <label className="text-slate-400 block text-[11px]">
                 VALOR EN STOCK ({editingItem.unidad_medida || "Kg"}):
               </label>
               <input
@@ -827,21 +839,21 @@ export default function Inventory() {
                 step="0.01"
                 value={newStockValue}
                 onChange={(e) => setNewStockValue(e.target.value)}
-                className="w-full bg-[#160c2b] border-2 border-[#432874] p-2 text-white font-bold text-right focus:outline-none focus:border-[#ffbe00] text-sm rounded-xs"
+                className="w-full bg-[#070a12] border border-slate-800 p-2.5 text-emerald-400 font-bold text-right focus:outline-none focus:border-amber-500/50 text-sm rounded-xl font-mono"
                 autoFocus
               />
             </div>
 
-            <div className="pt-2 border-t border-[#432874] flex justify-end gap-2 font-pixel">
+            <div className="pt-3 border-t border-slate-800 flex justify-end gap-2 font-mono">
               <button
                 onClick={() => setEditingItem(null)}
-                className="px-3 py-1.5 border border-[#432874] text-[#a594c9] hover:text-white text-xs rounded-xs"
+                className="px-3.5 py-2 border border-slate-800 text-slate-400 hover:text-white text-xs rounded-xl transition cursor-pointer"
               >
                 CANCELAR
               </button>
               <button
                 onClick={handleSaveStock}
-                className="px-4 py-1.5 bg-[#ffbe00] text-[#2c1a4d] font-bold text-xs hover:bg-[#ffe066] shadow-[2px_2px_0px_#000] active:translate-x-[1px] active:translate-y-[1px] rounded-xs"
+                className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs rounded-xl shadow-md transition cursor-pointer"
               >
                 CONFIRMAR
               </button>
@@ -852,41 +864,42 @@ export default function Inventory() {
 
       {/* MODAL AUDITORÍA SHEETS */}
       {previewData && (
-        <div className="fixed inset-0 bg-black/85 backdrop-blur-xs z-[100] flex items-center justify-center p-2 sm:p-3 animate-in fade-in duration-200 font-mono">
-          <div className="bg-[#24173e] border-2 border-[#ffbe00] w-full max-w-2xl p-4 sm:p-5 shadow-[0_0_35px_rgba(255,190,0,0.25)] space-y-3 sm:space-y-4 relative rounded-xs max-h-[90vh] flex flex-col">
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-xs z-[100] flex items-center justify-center p-4 animate-in fade-in duration-200 font-sans">
+          <div className="bg-[#0e1422] border border-slate-800 w-full max-w-2xl p-6 rounded-2xl shadow-2xl space-y-4 relative max-h-[90vh] flex flex-col text-xs">
             <button
               onClick={() => setPreviewData(null)}
-              className="absolute top-3 right-3 sm:top-4 sm:right-4 text-[#a594c9] hover:text-white"
+              className="absolute top-4 right-4 text-slate-400 hover:text-white cursor-pointer"
             >
-              <X size={16} />
+              <X size={18} />
             </button>
 
-            <div className="border-b border-[#432874] pb-2 shrink-0">
-              <span className="text-[9px] sm:text-[10px] font-pixel text-[#24cc8f] bg-[#24cc8f]/10 px-2 py-0.5 border border-[#24cc8f]/30 rounded-xs font-bold">
+            <div className="border-b border-slate-800 pb-3 shrink-0">
+              <span className="text-[10px] font-mono font-bold text-emerald-400 bg-emerald-500/10 px-2.5 py-0.5 border border-emerald-500/20 rounded-full">
                 AUDITORÍA Y SINCRONIZACIÓN
               </span>
-              <h3 className="font-pixel text-xs sm:text-sm text-white font-bold mt-1.5 flex items-center gap-1.5 sm:gap-2">
-                <Sparkles size={15} className="text-[#ffbe00] shrink-0" />{" "}
+              <h3 className="font-mono text-sm text-white font-bold mt-2 flex items-center gap-2">
+                <Sparkles size={16} className="text-amber-400 shrink-0" />{" "}
                 INSPECCIÓN DE CAMBIOS GOOGLE SHEETS
               </h3>
             </div>
 
             {previewData.nuevos.length === 0 &&
             previewData.modificados.length === 0 ? (
-              <div className="py-8 text-center space-y-2 font-pixel my-auto">
-                <CheckCircle2 size={32} className="mx-auto text-[#24cc8f]" />
+              <div className="py-12 text-center space-y-2 font-mono my-auto">
+                <CheckCircle2 size={36} className="mx-auto text-emerald-400" />
                 <p className="text-white text-xs font-bold">
                   ¡NO SE ENCONTRARON DIFERENCIAS!
                 </p>
-                <p className="text-[11px] text-[#a594c9]">
+                <p className="text-[11px] text-slate-400">
                   Tu base de datos coincide perfectamente con el archivo de
                   Google Sheets.
                 </p>
               </div>
             ) : (
-              <div className="space-y-3 font-pixel flex-1 overflow-y-auto pr-1">
-                <div className="bg-[#160c2b] border border-[#432874] p-2.5 sm:p-3 space-y-2 rounded-xs shadow-[2px_2px_0px_#000]">
-                  <div className="flex items-center justify-between border-b border-[#432874] pb-2">
+              <div className="space-y-4 font-mono flex-1 overflow-y-auto pr-1">
+                {/* 1. SECCIÓN NUEVOS INSUMOS */}
+                <div className="bg-[#070a12] border border-slate-800 p-3.5 space-y-3 rounded-xl shadow-sm">
+                  <div className="flex items-center justify-between border-b border-slate-800 pb-2">
                     <label className="flex items-center gap-2 cursor-pointer">
                       <input
                         type="checkbox"
@@ -899,9 +912,9 @@ export default function Inventory() {
                             );
                           else setSelectedNuevos([]);
                         }}
-                        className="w-4 h-4 rounded-2xs border border-[#432874] bg-[#24173e] accent-[#ffbe00] cursor-pointer"
+                        className="w-4 h-4 rounded border-slate-800 bg-slate-900 accent-amber-500 cursor-pointer"
                       />
-                      <span className="text-[#ffbe00] font-bold text-xs flex items-center gap-1.5">
+                      <span className="text-amber-400 font-bold text-xs flex items-center gap-1.5">
                         <Plus size={14} /> 1. AGREGAR MATERIAS PRIMAS NUEVAS (
                         {previewData.nuevos.length})
                       </span>
@@ -909,11 +922,11 @@ export default function Inventory() {
                   </div>
 
                   {!includeNuevos ? (
-                    <p className="text-[10px] sm:text-[11px] text-[#6e588a] italic p-1">
+                    <p className="text-[11px] text-slate-500 italic p-1">
                       Omite la creación de nuevos insumos.
                     </p>
                   ) : previewData.nuevos.length === 0 ? (
-                    <p className="text-[10px] sm:text-[11px] text-[#a594c9] p-1">
+                    <p className="text-[11px] text-slate-400 p-1">
                       No hay insumos nuevos para agregar.
                     </p>
                   ) : (
@@ -924,21 +937,25 @@ export default function Inventory() {
                           <div
                             key={n.codigo}
                             onClick={() => toggleNuevoItem(n.codigo)}
-                            className={`p-2 border flex items-center justify-between text-xs cursor-pointer transition-colors ${isChecked ? "border-[#ffbe00]/50 bg-[#2c1a4d] text-white" : "border-[#432874]/50 bg-[#160c2b] text-[#6e588a]"}`}
+                            className={`p-2.5 border rounded-lg flex items-center justify-between text-xs cursor-pointer transition-colors ${
+                              isChecked
+                                ? "border-amber-500/50 bg-[#0e1422] text-white"
+                                : "border-slate-800/80 bg-[#070a12] text-slate-500"
+                            }`}
                           >
                             <div className="flex items-center gap-2 truncate pr-2">
                               <input
                                 type="checkbox"
                                 checked={isChecked}
                                 onChange={() => {}}
-                                className="w-3.5 h-3.5 accent-[#ffbe00]"
+                                className="w-3.5 h-3.5 accent-amber-500"
                               />
-                              <strong className="text-[#ffbe00] font-bold">
+                              <strong className="text-amber-400 font-bold">
                                 [{n.codigo}]
                               </strong>
                               <span className="truncate">{n.nombre}</span>
                             </div>
-                            <span className="text-[10px] bg-[#24173e] px-1.5 py-0.5 border border-[#432874] text-[#24cc8f] shrink-0 font-bold">
+                            <span className="text-[10px] bg-emerald-500/10 px-2 py-0.5 border border-emerald-500/20 text-emerald-400 shrink-0 font-bold rounded-md">
                               Stock: {n.stock_nuevo} {n.unidad}
                             </span>
                           </div>
@@ -948,8 +965,9 @@ export default function Inventory() {
                   )}
                 </div>
 
-                <div className="bg-[#160c2b] border border-[#432874] p-2.5 sm:p-3 space-y-2 rounded-xs shadow-[2px_2px_0px_#000]">
-                  <div className="flex items-center justify-between border-b border-[#432874] pb-2">
+                {/* 2. SECCIÓN STOCKS MODIFICADOS */}
+                <div className="bg-[#070a12] border border-slate-800 p-3.5 space-y-3 rounded-xl shadow-sm">
+                  <div className="flex items-center justify-between border-b border-slate-800 pb-2">
                     <label className="flex items-center gap-2 cursor-pointer">
                       <input
                         type="checkbox"
@@ -962,9 +980,9 @@ export default function Inventory() {
                             );
                           else setSelectedModificados([]);
                         }}
-                        className="w-4 h-4 rounded-2xs border border-[#432874] bg-[#24173e] accent-[#ffbe00] cursor-pointer"
+                        className="w-4 h-4 rounded border-slate-800 bg-slate-900 accent-cyan-500 cursor-pointer"
                       />
-                      <span className="text-[#38bdf8] font-bold text-xs flex items-center gap-1.5">
+                      <span className="text-cyan-400 font-bold text-xs flex items-center gap-1.5">
                         <Layers size={14} /> 2. ACTUALIZAR STOCKS EXISTENTES (
                         {previewData.modificados.length})
                       </span>
@@ -972,12 +990,12 @@ export default function Inventory() {
                   </div>
 
                   {!includeModificados ? (
-                    <p className="text-[10px] sm:text-[11px] text-[#6e588a] italic p-1">
+                    <p className="text-[11px] text-slate-500 italic p-1">
                       Mantiene los stocks actuales en la base de datos sin
                       alterar.
                     </p>
                   ) : previewData.modificados.length === 0 ? (
-                    <p className="text-[10px] sm:text-[11px] text-[#a594c9] p-1">
+                    <p className="text-[11px] text-slate-400 p-1">
                       No hay diferencias de stock encontradas.
                     </p>
                   ) : (
@@ -988,35 +1006,39 @@ export default function Inventory() {
                           <div
                             key={m.id}
                             onClick={() => toggleModificadoItem(m.id)}
-                            className={`p-2 border flex items-center justify-between text-xs cursor-pointer transition-colors ${isChecked ? "border-[#38bdf8]/50 bg-[#2c1a4d] text-white" : "border-[#432874]/50 bg-[#160c2b] text-[#6e588a]"}`}
+                            className={`p-2.5 border rounded-lg flex items-center justify-between text-xs cursor-pointer transition-colors ${
+                              isChecked
+                                ? "border-cyan-500/50 bg-[#0e1422] text-white"
+                                : "border-slate-800/80 bg-[#070a12] text-slate-500"
+                            }`}
                           >
                             <div className="flex items-center gap-2 truncate pr-2">
                               <input
                                 type="checkbox"
                                 checked={isChecked}
                                 onChange={() => {}}
-                                className="w-3.5 h-3.5 accent-[#38bdf8]"
+                                className="w-3.5 h-3.5 accent-cyan-500"
                               />
-                              <strong className="text-[#ffbe00] font-bold">
+                              <strong className="text-amber-400 font-bold">
                                 [{m.codigo}]
                               </strong>
                               <span className="truncate">{m.nombre}</span>
                             </div>
 
-                            <div className="text-right shrink-0 flex items-center gap-1.5">
-                              <span className="text-[10px] text-[#a594c9] hidden sm:inline">
+                            <div className="text-right shrink-0 flex items-center gap-2">
+                              <span className="text-[10px] text-slate-400 hidden sm:inline">
                                 {m.stock_actual} →{" "}
                                 <strong className="text-white">
                                   {m.stock_nuevo}
                                 </strong>
                               </span>
                               {m.diferencia > 0 ? (
-                                <span className="text-[#24cc8f] text-[10px] font-bold bg-[#24cc8f]/10 px-1.5 py-0.5 border border-[#24cc8f]/30 flex items-center gap-0.5">
+                                <span className="text-emerald-400 text-[10px] font-bold bg-emerald-500/10 px-1.5 py-0.5 border border-emerald-500/20 rounded-md flex items-center gap-0.5">
                                   <TrendingUp size={10} /> +
                                   {m.diferencia.toFixed(1)}
                                 </span>
                               ) : (
-                                <span className="text-[#f87171] text-[10px] font-bold bg-[#450a0a]/50 px-1.5 py-0.5 border border-[#7f1d1d] flex items-center gap-0.5">
+                                <span className="text-rose-400 text-[10px] font-bold bg-rose-500/10 px-1.5 py-0.5 border border-rose-500/20 rounded-md flex items-center gap-0.5">
                                   <TrendingDown size={10} />{" "}
                                   {m.diferencia.toFixed(1)}
                                 </span>
@@ -1031,10 +1053,10 @@ export default function Inventory() {
               </div>
             )}
 
-            <div className="pt-2.5 border-t border-[#432874] flex justify-between items-center shrink-0 font-pixel">
+            <div className="pt-3 border-t border-slate-800 flex justify-between items-center shrink-0 font-mono">
               <button
                 onClick={() => setPreviewData(null)}
-                className="px-3.5 py-1.5 border border-[#432874] text-[#a594c9] hover:text-white text-xs rounded-xs"
+                className="px-4 py-2 border border-slate-800 text-slate-400 hover:text-white text-xs rounded-xl transition cursor-pointer"
               >
                 CANCELAR
               </button>
@@ -1043,9 +1065,9 @@ export default function Inventory() {
                 previewData.modificados.length > 0) && (
                 <button
                   onClick={handleApplySync}
-                  className="px-4 py-1.5 bg-[#ffbe00] text-[#2c1a4d] font-bold text-xs hover:bg-[#ffe066] shadow-[2px_2px_0px_#000] rounded-xs flex items-center gap-1.5"
+                  className="px-5 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs rounded-xl shadow-md transition cursor-pointer flex items-center gap-1.5"
                 >
-                  <CheckCircle2 size={14} /> APLICAR CAMBIOS
+                  <CheckCircle2 size={15} /> APLICAR CAMBIOS
                 </button>
               )}
             </div>

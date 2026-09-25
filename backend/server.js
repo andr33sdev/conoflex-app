@@ -1165,7 +1165,7 @@ app.post(
       const CATALOGO_PATH = path.join(__dirname, "catalogo.txt");
       fs.writeFileSync(CATALOGO_PATH, catalogoTextoFormateado, "utf-8");
 
-      const totalCargados = poblarDBDesdeCatalogoTXT();
+      const totalCargados = await poblarDBDesdeCatalogoTXT();
 
       if (fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
 
