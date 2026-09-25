@@ -42,6 +42,7 @@ import {
   User,
   Plus,
   MessageSquare,
+  DownloadCloud,
 } from "lucide-react";
 
 // COLORES MÁQUINAS - ESTILO CYBER INDUSTRIAL
@@ -211,6 +212,7 @@ export default function Metricas() {
   const [materiasPrimas, setMateriasPrimas] = useState([]);
   const [loading, setLoading] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [isSyncingPedidos, setIsSyncingPedidos] = useState(false);
 
   // GRUPOS DE ALERTA DE STOCK
   const [gruposAlerta, setGruposAlerta] = useState([]);
@@ -263,14 +265,13 @@ export default function Metricas() {
   });
 
   // ESTADO CHAT IA CON LA BD
-  // En Metricas.jsx:
-const [mensajes, setMensajes] = useState([
-  {
-    rol: "assistant",
-    texto:
-      "¡Hola! Soy Connie. Tengo la info de toda la planta en tiempo real. ¿Qué querés revisar?",
-  },
-]);
+  const [mensajes, setMensajes] = useState([
+    {
+      rol: "assistant",
+      texto:
+        "¡Hola! Soy Connie. Tengo la info de toda la planta en tiempo real. ¿Qué querés revisar?",
+    },
+  ]);
   const [inputChat, setInputChat] = useState("");
   const [enviandoChat, setEnviandoChat] = useState(false);
   const chatBottomRef = useRef(null);
@@ -282,6 +283,27 @@ const [mensajes, setMensajes] = useState([
   useEffect(() => {
     chatBottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [mensajes]);
+
+  // SINCRONIZACIÓN DE LA TABLA ESTADO_PEDIDOS DESDE GOOGLE SHEETS
+  const handleSyncEstadoPedidos = async () => {
+    setIsSyncingPedidos(true);
+    try {
+      const res = await fetch("/api/estado-pedidos/sincronizar", {
+        method: "POST",
+      });
+      const data = await res.json();
+
+      if (res.ok && data.success) {
+        alert(`🎉 ¡Éxito! ${data.mensaje}`);
+      } else {
+        alert("❌ Error: " + (data.error || "No se pudo sincronizar pedidos."));
+      }
+    } catch (err) {
+      alert("❌ Error de conexión al sincronizar el estado de pedidos.");
+    } finally {
+      setIsSyncingPedidos(false);
+    }
+  };
 
   const fetchGrupos = async () => {
     try {
@@ -671,6 +693,22 @@ const [mensajes, setMensajes] = useState([
 
         {/* CONTROLES NAVEGACIÓN PESTAÑAS */}
         <div className="flex items-center gap-2">
+          {/* BOTÓN SINCRONIZAR PEDIDOS DESDE GOOGLE SHEETS */}
+          <button
+            onClick={handleSyncEstadoPedidos}
+            disabled={isSyncingPedidos}
+            className="px-3 py-1.5 bg-slate-900 border border-slate-700 hover:border-cyan-400 text-cyan-400 hover:text-cyan-300 font-mono font-bold text-xs rounded-xl transition shadow-md flex items-center gap-2 cursor-pointer shrink-0 disabled:opacity-50"
+            title="Sincronizar estado de pedidos desde Google Sheets"
+          >
+            <DownloadCloud
+              size={14}
+              className={isSyncingPedidos ? "animate-bounce text-cyan-300" : ""}
+            />
+            <span>
+              {isSyncingPedidos ? "Sincronizando..." : "Sincronizar Pedidos"}
+            </span>
+          </button>
+
           {/* FILTRO DE FECHAS COMPACTO */}
           <div className="hidden sm:flex items-center gap-1.5 bg-[#090d16] border border-slate-800 px-2.5 py-1 rounded-xl text-xs font-mono text-slate-300">
             <Calendar size={13} className="text-emerald-400" />

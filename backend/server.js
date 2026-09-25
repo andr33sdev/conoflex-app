@@ -3119,16 +3119,17 @@ app.get("/api/estado-pedidos", async (req, res) => {
 
 // 2. Sincronizar tabla completa desde el Google Sheets de Ventas
 app.post("/api/estado-pedidos/sincronizar", async (req, res) => {
-  const csvUrl = req.body?.csvUrl || process.env.GOOGLE_SHEETS_VENTAS_CSV_URL;
+  // CORRECCIÓN: Usar VENTAS_CSV_URL como fallback si no viene en req.body ni en process.env
+  const csvUrl = req.body?.csvUrl || process.env.GOOGLE_SHEETS_VENTAS_CSV_URL || VENTAS_CSV_URL;
 
   if (!csvUrl) {
     return res.status(400).json({
-      error: "No se configuró la variable GOOGLE_SHEETS_VENTAS_CSV_URL en la aplicación.",
+      error: "No se configuró la URL de Ventas (VENTAS_CSV_URL) en server.js",
     });
   }
 
   try {
-    // Limpieza por si contiene corchetes o markdown
+    // Limpieza por si contiene corchetes o espacios extra
     const cleanUrl = csvUrl.replace(/\[\vert{}\]/g, "").split("(")[0].trim();
     const response = await fetch(cleanUrl);
 
@@ -3137,13 +3138,13 @@ app.post("/api/estado-pedidos/sincronizar", async (req, res) => {
     }
 
     const csvText = await response.text();
-    const lines = parseCSVFull(csvText); // Función auxiliar para parsear CSV
+    const lines = parseCSVFull(csvText);
 
     if (lines.length < 2) {
       return res.status(400).json({ error: "El archivo CSV no contiene registros." });
     }
 
-    // Identificar posiciones de columnas por encabezado
+    // Encabezados en mayúsculas
     const headers = lines[0].map((h) => h.toUpperCase().trim());
     const idxFecha = headers.indexOf("FECHA");
     const idxPeriodo = headers.indexOf("PERIODO");
@@ -3167,7 +3168,7 @@ app.post("/api/estado-pedidos/sincronizar", async (req, res) => {
     try {
       await conn.beginTransaction();
 
-      // Vaciar la tabla para refrescar con la versión exacta del Sheets
+      // Refrescar la tabla con la información vendedora
       await conn.query("TRUNCATE TABLE estado_pedidos");
 
       let insertados = 0;
@@ -3203,7 +3204,6 @@ app.post("/api/estado-pedidos/sincronizar", async (req, res) => {
         const comentarios = idxComentarios !== -1 ? cols[idxComentarios].trim() : "";
         const despachado = idxDespachado !== -1 ? cols[idxDespachado].trim() : "";
 
-        // Insertar si al menos hay cliente o modelo o número de OP
         if (cliente || modelo || op) {
           await conn.query(
             `INSERT INTO estado_pedidos 
@@ -3233,7 +3233,11 @@ app.post("/api/estado-pedidos/sincronizar", async (req, res) => {
       }
 
       await conn.commit();
-      res.json({ success: true, count: insertados, mensaje: `¡Se sincronizaron ${insertados} pedidos con éxito!` });
+      res.json({
+        success: true,
+        count: insertados,
+        mensaje: `¡Se sincronizaron ${insertados} pedidos en la base de datos!`,
+      });
     } catch (err) {
       await conn.rollback();
       throw err;
