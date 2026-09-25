@@ -3103,220 +3103,33 @@ app.delete("/api/ordenes-trabajo/:id", async (req, res) => {
 });
 
 // ==========================================
-// HELPER PARA CONVERTIR FECHAS DE SHEETS A MYSQL
+// HELPER: OBTENER DÓLAR OFICIAL EN TIEMPO REAL (BANCO NACIÓN)
 // ==========================================
-const parseFecha = (val) => {
-  if (!val) return null;
-  const str = String(val).trim();
-  if (!str) return null;
-
-  // Si ya está en formato YYYY-MM-DD
-  if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return str;
-
-  // Parsea formatos como "24/9/26", "24/09/2026", "30/8/26"
-  const parts = str.split(/[\/\.-]/);
-  if (parts.length === 3) {
-    let day = parts[0].padStart(2, "0");
-    let month = parts[1].padStart(2, "0");
-    let year = parts[2];
-
-    // Convertir año de 2 dígitos (ej: "26" -> "2026")
-    if (year.length === 2) {
-      year = "20" + year;
-    }
-
-    // Si por alguna razón vino como YYYY/MM/DD
-    if (parts[0].length === 4) {
-      year = parts[0];
-      month = parts[1].padStart(2, "0");
-      day = parts[2].padStart(2, "0");
-    }
-
-    if (year && month && day) {
-      return `${year}-${month}-${day}`;
-    }
+const obtenerDolarOficial = async () => {
+  try {
+    const response = await fetch("https://dolarapi.com/v1/dolares/oficial");
+    if (!response.ok) return null;
+    const data = await response.json();
+    return {
+      compra: data.compra,
+      venta: data.venta,
+      fecha: data.fechaActualizacion,
+    };
+  } catch (err) {
+    console.error("Error consultando cotización del dólar:", err);
+    return null;
   }
-  return null;
 };
 
 // ==========================================
-// MÓDULO 9: ESTADO DE PEDIDOS (VENTAS SHEETS)
-// ==========================================
-
-// 1. Obtener listado de pedidos
-app.get("/api/estado-pedidos", async (req, res) => {
-  try {
-    const [rows] = await db.query(
-      "SELECT * FROM estado_pedidos ORDER BY fecha DESC, id DESC LIMIT 500",
-    );
-    res.json(rows);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// 2. Sincronizar tabla completa desde el Google Sheets de Ventas
-app.post("/api/estado-pedidos/sincronizar", async (req, res) => {
-  try {
-    const csvUrl = process.env.GOOGLE_SHEETS_PEDIDOS_URL || VENTAS_CSV_URL;
-
-    if (!csvUrl) {
-      return res
-        .status(400)
-        .json({ error: "No se configuró GOOGLE_SHEETS_PEDIDOS_URL en .env" });
-    }
-
-    const response = await fetch(csvUrl);
-    const csvText = await response.text();
-
-    // Helper para limpiar montos en pesos o USD (ej: "$ 14.876,03" o "7,47")
-    const parseMonto = (val) => {
-      if (!val) return 0;
-      let str = String(val).replace(/\$/g, "").replace(/\s/g, "").trim();
-      if (str.includes(".") && str.includes(",")) {
-        str = str.replace(/\./g, "").replace(",", ".");
-      } else if (str.includes(",")) {
-        str = str.replace(",", ".");
-      }
-      return parseFloat(str) || 0;
-    };
-
-    // Parser CSV que respeta comillas en campos con comas
-    const parseCSVLine = (text) => {
-      const result = [];
-      let cell = "";
-      let inQuotes = false;
-      for (let i = 0; i < text.length; i++) {
-        const c = text[i];
-        if (c === '"') {
-          inQuotes = !inQuotes;
-        } else if (c === "," && !inQuotes) {
-          result.push(cell.trim().replace(/^"|"$/g, ""));
-          cell = "";
-        } else {
-          cell += c;
-        }
-      }
-      result.push(cell.trim().replace(/^"|"$/g, ""));
-      return result;
-    };
-
-    const lines = csvText.split(/\r?\n/).filter((l) => l.trim().length > 0);
-    if (lines.length < 2) {
-      return res
-        .status(400)
-        .json({ error: "El archivo Sheets no contiene filas de datos." });
-    }
-
-    // Cabecera limpia
-    const headers = parseCSVLine(lines[0]).map((h) => h.toUpperCase().trim());
-
-    // Mapeo dinámico de columnas por nombre
-    const idxFecha = headers.indexOf("FECHA");
-    const idxPeriodo = headers.indexOf("PERIODO");
-    const idxOp = headers.indexOf("OP");
-    const idxCliente = headers.indexOf("CLIENTE");
-    const idxModelo = headers.indexOf("MODELO");
-    const idxDetalles = headers.indexOf("DETALLES");
-    const idxOc = headers.indexOf("OC");
-    const idxCantidad = headers.indexOf("CANTIDAD");
-    const idxEstado = headers.indexOf("ESTADO");
-    const idxProgramado = headers.indexOf("PROGRAMADO");
-    const idxPreparado = headers.indexOf("PREPARADO");
-    const idxDespacho = headers.indexOf("DESPACHO");
-    const idxDemoraEntrega = headers.findIndex((h) =>
-      h.includes("DEMORA ENTREGA"),
-    );
-    const idxDemoraPrep = headers.findIndex((h) =>
-      h.includes("DEMORA PREPARACION"),
-    );
-    const idxComentarios = headers.indexOf("COMENTARIOS");
-    const idxDespachado = headers.indexOf("DESPACHADO");
-    const idxPunisiva = headers.indexOf("PUNISIVA");
-    const idxCosusd = headers.indexOf("COSUSD");
-
-    const conn = await db.getConnection();
-    try {
-      await conn.beginTransaction();
-
-      // Limpiar tabla antes de recargar
-      await conn.query("TRUNCATE TABLE estado_pedidos");
-
-      const insertQuery = `
-        INSERT INTO estado_pedidos 
-        (fecha, periodo, op, cliente, modelo, detalles, oc, cantidad, estado, programado, preparado, despacho, demora_entrega_dias, demora_preparacion, comentarios, despachado, punisiva, cosusd) 
-        VALUES ?
-      `;
-
-      const valuesToInsert = [];
-
-      for (let i = 1; i < lines.length; i++) {
-        const cols = parseCSVLine(lines[i]);
-        if (!cols[idxOp] && !cols[idxModelo]) continue;
-
-        const fechaFormateada = parseFecha(cols[idxFecha]);
-        const punisivaVal =
-          idxPunisiva !== -1 ? parseMonto(cols[idxPunisiva]) : 0;
-        const cosusdVal = idxCosusd !== -1 ? parseMonto(cols[idxCosusd]) : 0;
-        const cantVal =
-          idxCantidad !== -1 ? parseInt(cols[idxCantidad]) || 1 : 1;
-
-        valuesToInsert.push([
-          fechaFormateada,
-          cols[idxPeriodo] || null,
-          cols[idxOp] || "",
-          cols[idxCliente] || "",
-          cols[idxModelo] || "",
-          cols[idxDetalles] || "",
-          cols[idxOc] || "",
-          cantVal,
-          cols[idxEstado] || "En stock",
-          cols[idxProgramado] || "-",
-          cols[idxPreparado] || "-",
-          cols[idxDespacho] || "-",
-          parseInt(cols[idxDemoraEntrega]) || 0,
-          parseInt(cols[idxDemoraPrep]) || 0,
-          cols[idxComentarios] || "",
-          cols[idxDespachado] || "no",
-          punisivaVal,
-          cosusdVal,
-        ]);
-      }
-
-      if (valuesToInsert.length > 0) {
-        const chunkSize = 1000;
-        for (let i = 0; i < valuesToInsert.length; i += chunkSize) {
-          const chunk = valuesToInsert.slice(i, i + chunkSize);
-          await conn.query(insertQuery, [chunk]);
-        }
-      }
-
-      await conn.commit();
-      res.json({
-        success: true,
-        mensaje: `Se sincronizaron ${valuesToInsert.length} pedidos con fechas corregidas a formato MySQL.`,
-      });
-    } catch (err) {
-      await conn.rollback();
-      throw err;
-    } finally {
-      conn.release();
-    }
-  } catch (error) {
-    console.error("Error al sincronizar estado_pedidos:", error);
-    res.status(500).json({ error: "Error procesando la sincronización." });
-  }
-});
-
-// ==========================================
-// CHAT CONNI - ULTRA OPTIMIZADO
+// CHAT CONNI - CON TIPO DE CAMBIO Y DESGLOSE POR CANAL
 // ==========================================
 app.post("/api/chat-ia", async (req, res) => {
   try {
     const { mensaje, historial } = req.body;
     const msgUpper = String(mensaje || "").toUpperCase();
 
-    // 1. FECHAS EN TIEMPO REAL DEL SERVIDOR
+    // 1. FECHAS Y COTIZACIÓN DEL DÓLAR EN TIEMPO REAL
     const ahora = new Date();
     const hoyFormateado = ahora.toLocaleDateString("es-AR", {
       timeZone: "America/Argentina/Buenos_Aires",
@@ -3330,18 +3143,19 @@ app.post("/api/chat-ia", async (req, res) => {
     const hoyISO = ahora.toISOString().split("T")[0];
     const ayerISO = ayerObj.toISOString().split("T")[0];
 
-    // 2. BÚSQUEDA DINÁMICA POR INTENCIÓN
+    // 2. BÚSQUEDA DINÁMICA POR CÓDIGO DE MODELO
     let datosFiltroEspecifico = [];
     const matchModelo = msgUpper.match(/([A-Z0-9]{3,12})/g);
     if (matchModelo) {
       const modelosPosibles = matchModelo.filter(
         (m) =>
-          m.length >= 3 && !["QUE", "HOY", "AYER", "POR", "VER"].includes(m),
+          m.length >= 3 &&
+          !["QUE", "HOY", "AYER", "POR", "VER", "MERCADOLIBRE"].includes(m),
       );
       if (modelosPosibles.length > 0) {
         const [filasModelo] = await db.query(
           `SELECT fecha, op, cliente, modelo, cantidad, 
-                  IF(LOWER(detalles) LIKE '%mercadolibre%', 'MercadoLibre', 'Normal') AS canal, estado 
+                  IF(LOWER(detalles) LIKE '%mercadolibre%', 'MercadoLibre', 'Venta Directa') AS canal, estado 
            FROM estado_pedidos 
            WHERE (${modelosPosibles.map(() => "modelo LIKE ?").join(" OR ")}) 
              AND estado != 'CANCELADO' 
@@ -3352,26 +3166,26 @@ app.post("/api/chat-ia", async (req, res) => {
       }
     }
 
-    // 3. RESUMEN EJECUTIVO GENERAL
+    // 3. CONSULTAS A LA BASE DE DATOS Y API EN PARALELO
     const [
+      dolarOficial,
       [[kpiHoy]],
       [[kpiAyer]],
       [ventasMesActual],
       [alertasStockMP],
-      [rentabilidadMes],
+      [rentabilidadMesCanal],
     ] = await Promise.all([
+      obtenerDolarOficial(),
       db.query(
-        `
-        SELECT COUNT(DISTINCT op) as pedidos_ml, SUM(cantidad) as unidades 
-        FROM estado_pedidos 
-        WHERE fecha = ? AND LOWER(detalles) LIKE '%mercadolibre%' AND estado != 'CANCELADO'`,
+        `SELECT COUNT(DISTINCT op) as pedidos_ml, SUM(cantidad) as unidades 
+         FROM estado_pedidos 
+         WHERE fecha = ? AND LOWER(detalles) LIKE '%mercadolibre%' AND estado != 'CANCELADO'`,
         [hoyISO],
       ),
       db.query(
-        `
-        SELECT COUNT(DISTINCT op) as pedidos_ml, SUM(cantidad) as unidades 
-        FROM estado_pedidos 
-        WHERE fecha = ? AND LOWER(detalles) LIKE '%mercadolibre%' AND estado != 'CANCELADO'`,
+        `SELECT COUNT(DISTINCT op) as pedidos_ml, SUM(cantidad) as unidades 
+         FROM estado_pedidos 
+         WHERE fecha = ? AND LOWER(detalles) LIKE '%mercadolibre%' AND estado != 'CANCELADO'`,
         [ayerISO],
       ),
       db.query(`
@@ -3383,49 +3197,56 @@ app.post("/api/chat-ia", async (req, res) => {
         SELECT codigo, nombre, stock_actual 
         FROM materias_primas 
         ORDER BY stock_actual ASC LIMIT 5`),
+      // Historial mensual desglosado por canal (MercadoLibre vs Venta Directa)
       db.query(`
         SELECT 
           DATE_FORMAT(fecha, '%Y-%m') AS mes,
+          IF(LOWER(detalles) LIKE '%mercadolibre%', 'MercadoLibre', 'Venta Directa') AS canal,
           COUNT(DISTINCT op) AS total_pedidos,
           SUM(cantidad) AS unidades_vendidas,
-          SUM(cantidad * punisiva) AS facturacion_total_ars_sin_iva,
+          SUM(cantidad * punisiva) AS facturacion_ars_sin_iva,
           SUM(cosusd) AS costo_total_usd
         FROM estado_pedidos
         WHERE fecha IS NOT NULL AND estado != 'CANCELADO'
-        GROUP BY DATE_FORMAT(fecha, '%Y-%m')
-        ORDER BY mes DESC
-        LIMIT 12
+        GROUP BY DATE_FORMAT(fecha, '%Y-%m'), canal
+        ORDER BY mes DESC, canal ASC
+        LIMIT 24
       `),
     ]);
 
-    // 4. CONSTRUCCIÓN DEL PROMPT COMPACTO
+    // Format del dólar para el prompt
+    const textoDolar = dolarOficial
+      ? `Dólar Oficial Banco Nación hoy: Venta = $${dolarOficial.venta} ARS | Compra = $${dolarOficial.compra} ARS.`
+      : "Cotización dólar oficial hoy: No disponible momentáneamente.";
+
+    // 4. CONSTRUCCIÓN DEL PROMPT CON TODAS LAS CAPACIDADES
     const promptContexto = `
-    Sos Connie, encargada de Inteligencia Operativa en Conoflex Argentina.
+    Sos Connie, encargada de Inteligencia Operativa y Analista Financiera en Conoflex Argentina.
     
     FECHA HOY: ${hoyFormateado} (${hoyISO}). AYER FUE: ${ayerISO}.
+    INFORMACIÓN CAMBIARIA: ${textoDolar}
 
-    REGLAS ESTRICTAS:
-    - Usá únicamente la información provista en las consultas. Ignorá campos de fecha creados del sistema.
-    - Respuestas breves, profesionales y amables en español argentino (2 a 4 oraciones).
+    REGLAS DE RESPUESTA:
+    - Respuestas breves, precisas, profesionales y amables en español argentino (2 a 4 oraciones).
     - 1 Pedido = 1 número de OP distinto (COUNT DISTINCT op).
-    - Si el campo "detalles" dice MercadoLibre es venta ML; de lo contrario es Venta Normal.
 
-    MÉTRICAS FINANCIERAS Y RENTABILIDAD CONSOLIDADAS POR MES:
-    - Facturación ($ ARS sin IVA) = SUM(cantidad * punisiva).
-    - Costo Total ($ USD) = SUM(cosusd).
-  
-    HISTORIAL FINANCIERO MENSUAL DE VENTAS:
-    ${JSON.stringify(rentabilidadMes)}
+    Manejo de Conversiones y Financiero:
+    - Si te piden la facturación o costos convertidos a dólares o pesos al dólar oficial hoy, usá el precio de venta ($${dolarOficial?.venta || "N/D"} ARS/USD).
+    - Para calcular la rentabilidad estimada en ARS: Facturación ARS sin IVA - (Costo USD * Cotización Dólar Venta).
 
-    REGLA FINANCIERA:
-    Si te preguntan por la rentabilidad o facturación de Septiembre 2026 (o cualquier mes), consultá la tabla de arriba. Explicá la facturación en ARS sin IVA y el costo total acumulado en USD correspondientes a ese mes. Si el mes actual aún no terminó, aclaralo como reporte parcial al día de hoy.
+    HISTORIAL FINANCIERO MENSUAL Y POR CANAL:
+    ${JSON.stringify(rentabilidadMesCanal)}
 
-    RESUMEN DE DATOS CLAVE:
+    REGLA DE DESGLOSE POR CANAL:
+    - Si te piden datos generales del mes, sumá los registros de MercadoLibre y Venta Directa de ese mes.
+    - Si te piden únicamente datos de "MercadoLibre" o "Venta Directa/Normal", usá los valores filtrados por la propiedad "canal" en el historial.
+
+    RESUMEN OPERATIVO:
     - VENTAS HOY (${hoyISO}) MERCADOLIBRE: ${kpiHoy?.pedidos_ml || 0} pedidos (${kpiHoy?.unidades || 0} u.)
     - VENTAS AYER (${ayerISO}) MERCADOLIBRE: ${kpiAyer?.pedidos_ml || 0} pedidos (${kpiAyer?.unidades || 0} u.)
-    - TOP 10 MÁS VENDIDOS ÚLTIMOS 30 DÍAS: ${JSON.stringify(ventasMesActual)}
+    - TOP 10 MÁS VENDIDOS (30 DÍAS): ${JSON.stringify(ventasMesActual)}
     - CRÍTICOS STOCK MATERIAS PRIMAS: ${JSON.stringify(alertasStockMP)}
-    ${datosFiltroEspecifico.length > 0 ? `- BÚSQUEDA ESPECÍFICA DETALLADA PARA ESTA CONSULTA: ${JSON.stringify(datosFiltroEspecifico)}` : ""}
+    ${datosFiltroEspecifico.length > 0 ? `- BÚSQUEDA ESPECÍFICA DETALLADA: ${JSON.stringify(datosFiltroEspecifico)}` : ""}
     `;
 
     const historialAcotado = (historial || []).slice(-3);
