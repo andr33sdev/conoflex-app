@@ -3271,13 +3271,26 @@ app.post("/api/estado-pedidos/sincronizar", async (req, res) => {
 });
 
 // ==========================================
-// CHAT CONVERSACIONAL CON CONTROL TEMPORAL EXACTO Y CANALES
+// CHAT CONVERSACIONAL OPTIMIZADO PARA BAJO CONSUMO DE TOKENS
 // ==========================================
+
+// Función auxiliar para comprimir datos a formato CSV compacto (Ahorra ~65% de tokens)
+function toCSV(rows, columns) {
+  if (!rows || rows.length === 0) return "Sin datos";
+  const header = columns.join(",");
+  const body = rows
+    .map((r) =>
+      columns.map((col) => String(r[col] ?? "").replace(/,/g, " ")).join(","),
+    )
+    .join("\n");
+  return `${header}\n${body}`;
+}
+
 app.post("/api/chat-ia", async (req, res) => {
   try {
     const { mensaje, historial } = req.body;
 
-    // 1. CÁLCULO DE FECHAS EN TIEMPO REAL DEL SERVIDOR
+    // 1. CÁLCULO DE FECHAS EN TIEMPO REAL
     const ahora = new Date();
     const hoyFormateado = ahora.toLocaleDateString("es-AR", {
       timeZone: "America/Argentina/Buenos_Aires",
@@ -3292,7 +3305,7 @@ app.post("/api/chat-ia", async (req, res) => {
     const hoyISO = ahora.toISOString().split("T")[0];
     const ayerISO = ayerObj.toISOString().split("T")[0];
 
-    // Consultas optimizadas en paralelo
+    // 2. CONSULTAS OPTIMIZADAS A MYSQL EN PARALELO
     const [
       [materiasPrimas],
       [semielaborados],
@@ -3313,93 +3326,154 @@ app.post("/api/chat-ia", async (req, res) => {
         "SELECT codigo, nombre, promedio_ventas_mensual FROM productos_terminados",
       ),
       db.query(
-        "SELECT codigo_ot, semielaborado_codigo, cant_objetivo, cant_producida, estado, maquina FROM ordenes_trabajo ORDER BY id DESC LIMIT 20",
+        "SELECT codigo_ot, semielaborado_codigo, cant_objetivo, cant_producida, estado, maquina FROM ordenes_trabajo ORDER BY id DESC LIMIT 15",
       ),
       db.query(
-        "SELECT fecha, categoria_maq, codigo, cant_buenos, cant_fallas FROM registro_produccion ORDER BY id DESC LIMIT 30",
+        "SELECT fecha, categoria_maq, codigo, cant_buenos, cant_fallas FROM registro_produccion ORDER BY id DESC LIMIT 20",
       ),
+
+      // Ventas diarias limitadas a los últimos 60 días para acotar volumen
       db.query(`
         SELECT 
           DATE_FORMAT(fecha, '%Y-%m-%d') AS fecha,
-          IF(LOWER(detalles) LIKE '%mercadolibre%', 'MercadoLibre', 'Normal/Directa') AS canal,
+          IF(LOWER(detalles) LIKE '%mercadolibre%', 'MercadoLibre', 'Normal') AS canal,
           COUNT(DISTINCT op) AS total_pedidos,
           SUM(cantidad) AS total_unidades
         FROM estado_pedidos
-        WHERE fecha IS NOT NULL AND estado != 'CANCELADO'
+        WHERE fecha >= DATE_SUB(CURDATE(), INTERVAL 60 DAY) AND estado != 'CANCELADO'
         GROUP BY DATE_FORMAT(fecha, '%Y-%m-%d'), canal
         ORDER BY fecha DESC
-        LIMIT 300
       `),
+
+      // Ventas mensuales agrupadas (últimos 6 meses)
       db.query(`
         SELECT 
           DATE_FORMAT(fecha, '%Y-%m') AS mes,
-          IF(LOWER(detalles) LIKE '%mercadolibre%', 'MercadoLibre', 'Normal/Directa') AS canal,
+          IF(LOWER(detalles) LIKE '%mercadolibre%', 'MercadoLibre', 'Normal') AS canal,
           modelo,
           COUNT(DISTINCT op) AS total_pedidos,
           SUM(cantidad) AS total_unidades
         FROM estado_pedidos
-        WHERE fecha IS NOT NULL AND estado != 'CANCELADO'
+        WHERE fecha >= DATE_SUB(CURDATE(), INTERVAL 6 MONTH) AND estado != 'CANCELADO'
         GROUP BY DATE_FORMAT(fecha, '%Y-%m'), canal, modelo
         ORDER BY mes DESC, total_unidades DESC
-        LIMIT 500
       `),
+
+      // Muestra de tracking para las últimas 40 OPs
       db.query(`
         SELECT 
-          op, 
-          cliente, 
-          modelo, 
-          cantidad, 
-          IF(LOWER(detalles) LIKE '%mercadolibre%', 'MercadoLibre', 'Normal/Directa') AS canal,
-          estado, 
-          despacho, 
-          demora_entrega_dias 
+          op, cliente, modelo, cantidad, 
+          IF(LOWER(detalles) LIKE '%mercadolibre%', 'MercadoLibre', 'Normal') AS canal,
+          estado, despacho, demora_entrega_dias 
         FROM estado_pedidos 
         ORDER BY id DESC 
-        LIMIT 100
+        LIMIT 40
       `),
     ]);
 
+    // 3. CONVERSIÓN COMPACTA A CSV
+    const csvMP = toCSV(materiasPrimas, [
+      "codigo",
+      "nombre",
+      "stock_actual",
+      "unidad_medida",
+    ]);
+    const csvSE = toCSV(semielaborados, [
+      "codigo",
+      "nombre",
+      "stock_33",
+      "stock_26",
+      "stock_ayolas",
+      "stock_37",
+    ]);
+    const csvPT = toCSV(productosTerminados, [
+      "codigo",
+      "nombre",
+      "promedio_ventas_mensual",
+    ]);
+    const csvOT = toCSV(ordenesTrabajo, [
+      "codigo_ot",
+      "semielaborado_codigo",
+      "cant_objetivo",
+      "cant_producida",
+      "estado",
+      "maquina",
+    ]);
+    const csvProd = toCSV(registrosProduccion, [
+      "fecha",
+      "categoria_maq",
+      "codigo",
+      "cant_buenos",
+      "cant_fallas",
+    ]);
+    const csvVentasDia = toCSV(ventasPorDiaCanal, [
+      "fecha",
+      "canal",
+      "total_pedidos",
+      "total_unidades",
+    ]);
+    const csvVentasMes = toCSV(ventasPorMesModelo, [
+      "mes",
+      "canal",
+      "modelo",
+      "total_pedidos",
+      "total_unidades",
+    ]);
+    const csvTracking = toCSV(pedidosRecientes, [
+      "op",
+      "cliente",
+      "modelo",
+      "cantidad",
+      "canal",
+      "estado",
+      "despacho",
+      "demora_entrega_dias",
+    ]);
+
+    // 4. PROMPT COMPACTO Y EFICIENTE
     const promptContexto = `
-    Sos Connie, la encargada de Inteligencia Operativa y datos en Conoflex Argentina.
+    Sos Connie, encargada de Inteligencia Operativa en Conoflex Argentina.
 
-    FECHA Y HORA EN TIEMPO REAL DEL SISTEMA:
-    - HOY ES: ${hoyFormateado} (${hoyISO}).
-    - AYER FUE: ${ayerISO}.
+    FECHA REAL SISTEMA: HOY ES ${hoyFormateado} (${hoyISO}). AYER FUE ${ayerISO}.
 
-    REGLAS DE MANEJO TEMPORAL Y FECHAS:
-    - Cuando el usuario pregunte por "hoy", la fecha exacta es ${hoyISO}.
-    - Cuando el usuario pregunte por "ayer", la fecha exacta es ${ayerISO}.
-    - Si para hoy o ayer no se encuentran registros o ventas sincronizadas en la base de datos, aclaralo explícitamente (ej: "Ayer 24/09 tuvimos X pedidos" o "Para hoy 25/09 aún no hay registros cargados"). NUNCA confundas ayer con otra fecha anterior.
+    REGLAS CLAVE:
+    - Respuestas muy breves (2 a 4 oraciones/puntos).
+    - 1 PEDIDO = 1 número de OP distinto (COUNT DISTINCT op). Múltiples renglones de la misma OP son 1 solo pedido.
+    - Canal MercadoLibre se indica en la columna "canal". Si dice Normal es venta directa.
 
-    PERSONALIDAD Y TONO:
-    - Sos súper amable, cálida, copada y cercana, manteniendo siempre el profesionalismo ejecutivo.
-    - Hablás de manera natural y fluida en español rioplatense/argentino profesional.
-    - NUNCA te presentes ni te refieras a vos misma como "un bot", "una IA", "un modelo de lenguaje" ni "asistente virtual".
+    DATOS EN FORMATO CSV COMPACTO:
 
-    REGLAS FUNDAMENTALES DE NEGOCIO PARA VENTAS Y PEDIDOS:
-    1. CONTEO DE PEDIDOS (OP ÚNICA):
-       - Cada número de OP distinto representa 1 SOLO PEDIDO ("total_pedidos").
-    2. CANAL DE VENTA (MERCADOLIBRE VS NORMAL):
-       - Si el campo "detalles" contiene "MercadoLibre", el pedido es de canal MercadoLibre.
-       - Si no contiene "MercadoLibre" (o está vacío / dice '-'), se trata de una Venta Normal / Directa.
+    [MATERIAS PRIMAS]
+    ${csvMP}
 
-    REGLAS DE FORMATO Y CONCISIÓN:
-    - Respuestas MUY breves, al grano y directas por defecto (2 a 4 oraciones o viñetas cortas).
+    [SEMIELABORADOS STOCK]
+    ${csvSE}
 
-    BASE DE DATOS EN TIEMPO REAL DE PLANTA Y VENTAS:
-    1. MATERIAS PRIMAS: ${JSON.stringify(materiasPrimas)}
-    2. SEMIELABORADOS Y STOCK POR DEPÓSITO: ${JSON.stringify(semielaborados)}
-    3. PRODUCTOS TERMINADOS Y VENTAS: ${JSON.stringify(productosTerminados)}
-    4. ÓRDENES DE TRABAJO (OT): ${JSON.stringify(ordenesTrabajo)}
-    5. REGISTROS DE PRODUCCIÓN Y FALLAS: ${JSON.stringify(registrosProduccion)}
-    6. VENTAS DIARIAS POR CANAL Y PEDIDOS ÚNICOS (OPs): ${JSON.stringify(ventasPorDiaCanal)}
-    7. VENTAS MENSUALES POR CANAL, MODELO Y OPs ÚNICAS: ${JSON.stringify(ventasPorMesModelo)}
-    8. SEGUIMIENTO DE OPs RECIENTES: ${JSON.stringify(pedidosRecientes)}
+    [PRODUCTOS TERMINADOS]
+    ${csvPT}
+
+    [ORDENES TRABAJO]
+    ${csvOT}
+
+    [PRODUCCION RECIENTE]
+    ${csvProd}
+
+    [VENTAS DIARIAS 60 DIAS]
+    ${csvVentasDia}
+
+    [VENTAS MENSUALES 6 MESES]
+    ${csvVentasMes}
+
+    [TRACKING OPS RECIENTES]
+    ${csvTracking}
     `;
+
+    // Limitar el historial de chat a las últimas 4 interacciones para no acumular costo
+    const historialAcotado = (historial || []).slice(-4);
 
     const contents = [
       promptContexto,
-      ...(historial || []).map(
+      ...historialAcotado.map(
         (h) => `${h.rol === "user" ? "Usuario" : "Connie"}: ${h.texto}`,
       ),
       `Usuario: ${mensaje}`,
