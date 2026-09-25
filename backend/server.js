@@ -3103,6 +3103,43 @@ app.delete("/api/ordenes-trabajo/:id", async (req, res) => {
 });
 
 // ==========================================
+// HELPER PARA CONVERTIR FECHAS DE SHEETS A MYSQL
+// ==========================================
+const parseFecha = (val) => {
+  if (!val) return null;
+  const str = String(val).trim();
+  if (!str) return null;
+
+  // Si ya está en formato YYYY-MM-DD
+  if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return str;
+
+  // Parsea formatos como "24/9/26", "24/09/2026", "30/8/26"
+  const parts = str.split(/[\/\.-]/);
+  if (parts.length === 3) {
+    let day = parts[0].padStart(2, "0");
+    let month = parts[1].padStart(2, "0");
+    let year = parts[2];
+
+    // Convertir año de 2 dígitos (ej: "26" -> "2026")
+    if (year.length === 2) {
+      year = "20" + year;
+    }
+
+    // Si por alguna razón vino como YYYY/MM/DD
+    if (parts[0].length === 4) {
+      year = parts[0];
+      month = parts[1].padStart(2, "0");
+      day = parts[2].padStart(2, "0");
+    }
+
+    if (year && month && day) {
+      return `${year}-${month}-${day}`;
+    }
+  }
+  return null;
+};
+
+// ==========================================
 // MÓDULO 9: ESTADO DE PEDIDOS (VENTAS SHEETS)
 // ==========================================
 
@@ -3119,9 +3156,6 @@ app.get("/api/estado-pedidos", async (req, res) => {
 });
 
 // 2. Sincronizar tabla completa desde el Google Sheets de Ventas
-// ==========================================
-// SINCRONIZADOR DE ESTADO DE PEDIDOS (CON PUNISIVA Y COSUSD)
-// ==========================================
 app.post("/api/estado-pedidos/sincronizar", async (req, res) => {
   try {
     const csvUrl = process.env.GOOGLE_SHEETS_PEDIDOS_URL || VENTAS_CSV_URL;
@@ -3220,6 +3254,7 @@ app.post("/api/estado-pedidos/sincronizar", async (req, res) => {
         const cols = parseCSVLine(lines[i]);
         if (!cols[idxOp] && !cols[idxModelo]) continue;
 
+        const fechaFormateada = parseFecha(cols[idxFecha]);
         const punisivaVal =
           idxPunisiva !== -1 ? parseMonto(cols[idxPunisiva]) : 0;
         const cosusdVal = idxCosusd !== -1 ? parseMonto(cols[idxCosusd]) : 0;
@@ -3227,7 +3262,7 @@ app.post("/api/estado-pedidos/sincronizar", async (req, res) => {
           idxCantidad !== -1 ? parseInt(cols[idxCantidad]) || 1 : 1;
 
         valuesToInsert.push([
-          cols[idxFecha] || null,
+          fechaFormateada,
           cols[idxPeriodo] || null,
           cols[idxOp] || "",
           cols[idxCliente] || "",
@@ -3249,7 +3284,6 @@ app.post("/api/estado-pedidos/sincronizar", async (req, res) => {
       }
 
       if (valuesToInsert.length > 0) {
-        // Inserción en bloques de 1000 filas para alto rendimiento
         const chunkSize = 1000;
         for (let i = 0; i < valuesToInsert.length; i += chunkSize) {
           const chunk = valuesToInsert.slice(i, i + chunkSize);
@@ -3260,7 +3294,7 @@ app.post("/api/estado-pedidos/sincronizar", async (req, res) => {
       await conn.commit();
       res.json({
         success: true,
-        mensaje: `Se sincronizaron ${valuesToInsert.length} pedidos. Valores PUNISIVA y COSUSD actualizados correctamente.`,
+        mensaje: `Se sincronizaron ${valuesToInsert.length} pedidos con fechas corregidas a formato MySQL.`,
       });
     } catch (err) {
       await conn.rollback();
@@ -3275,7 +3309,7 @@ app.post("/api/estado-pedidos/sincronizar", async (req, res) => {
 });
 
 // ==========================================
-// CHAT CONNI - ULTRA OPTIMIZADO (BAJO CONSUMO DE TOKENS)
+// CHAT CONNI - ULTRA OPTIMIZADO
 // ==========================================
 app.post("/api/chat-ia", async (req, res) => {
   try {
@@ -3296,10 +3330,8 @@ app.post("/api/chat-ia", async (req, res) => {
     const hoyISO = ahora.toISOString().split("T")[0];
     const ayerISO = ayerObj.toISOString().split("T")[0];
 
-    // 2. BÚSQUEDA DINÁMICA POR INTENCIÓN (Filtra solo lo que pide el usuario)
+    // 2. BÚSQUEDA DINÁMICA POR INTENCIÓN
     let datosFiltroEspecifico = [];
-
-    // Si el mensaje menciona un código o patrón de producto
     const matchModelo = msgUpper.match(/([A-Z0-9]{3,12})/g);
     if (matchModelo) {
       const modelosPosibles = matchModelo.filter(
@@ -3320,7 +3352,7 @@ app.post("/api/chat-ia", async (req, res) => {
       }
     }
 
-    // 3. RESUMEN EJECUTIVO GENERAL (Súper comprimido, ~400 tokens)
+    // 3. RESUMEN EJECUTIVO GENERAL
     const [
       [[kpiHoy]],
       [[kpiAyer]],
@@ -3352,18 +3384,18 @@ app.post("/api/chat-ia", async (req, res) => {
         FROM materias_primas 
         ORDER BY stock_actual ASC LIMIT 5`),
       db.query(`
-    SELECT 
-      DATE_FORMAT(fecha, '%Y-%m') AS mes,
-      COUNT(DISTINCT op) AS total_pedidos,
-      SUM(cantidad) AS unidades_vendidas,
-      SUM(cantidad * punisiva) AS facturacion_total_ars_sin_iva,
-      SUM(cosusd) AS costo_total_usd
-    FROM estado_pedidos
-    WHERE fecha IS NOT NULL AND estado != 'CANCELADO'
-    GROUP BY DATE_FORMAT(fecha, '%Y-%m')
-    ORDER BY mes DESC
-    LIMIT 12
-  `),
+        SELECT 
+          DATE_FORMAT(fecha, '%Y-%m') AS mes,
+          COUNT(DISTINCT op) AS total_pedidos,
+          SUM(cantidad) AS unidades_vendidas,
+          SUM(cantidad * punisiva) AS facturacion_total_ars_sin_iva,
+          SUM(cosusd) AS costo_total_usd
+        FROM estado_pedidos
+        WHERE fecha IS NOT NULL AND estado != 'CANCELADO'
+        GROUP BY DATE_FORMAT(fecha, '%Y-%m')
+        ORDER BY mes DESC
+        LIMIT 12
+      `),
     ]);
 
     // 4. CONSTRUCCIÓN DEL PROMPT COMPACTO
@@ -3372,20 +3404,21 @@ app.post("/api/chat-ia", async (req, res) => {
     
     FECHA HOY: ${hoyFormateado} (${hoyISO}). AYER FUE: ${ayerISO}.
 
-    REGLAS:
+    REGLAS ESTRICTAS:
+    - Usá únicamente la información provista en las consultas. Ignorá campos de fecha creados del sistema.
     - Respuestas breves, profesionales y amables en español argentino (2 a 4 oraciones).
     - 1 Pedido = 1 número de OP distinto (COUNT DISTINCT op).
     - Si el campo "detalles" dice MercadoLibre es venta ML; de lo contrario es Venta Normal.
 
     MÉTRICAS FINANCIERAS Y RENTABILIDAD CONSOLIDADAS POR MES:
-  - Facturación ($ ARS sin IVA) = SUM(cantidad * punisiva).
-  - Costo Total ($ USD) = SUM(cosusd).
+    - Facturación ($ ARS sin IVA) = SUM(cantidad * punisiva).
+    - Costo Total ($ USD) = SUM(cosusd).
   
-  HISTORIAL FINANCIERO MENSUAL DE VENTAS:
-  ${JSON.stringify(rentabilidadMes)}
+    HISTORIAL FINANCIERO MENSUAL DE VENTAS:
+    ${JSON.stringify(rentabilidadMes)}
 
-  REGLA FINANCIERA:
-  Si te preguntan por la rentabilidad o facturación de Septiembre (o cualquier mes), consulta la tabla de arriba. Explicá la facturación en ARS sin IVA y el costo total acumulado en USD.
+    REGLA FINANCIERA:
+    Si te preguntan por la rentabilidad o facturación de Septiembre 2026 (o cualquier mes), consultá la tabla de arriba. Explicá la facturación en ARS sin IVA y el costo total acumulado en USD correspondientes a ese mes. Si el mes actual aún no terminó, aclaralo como reporte parcial al día de hoy.
 
     RESUMEN DE DATOS CLAVE:
     - VENTAS HOY (${hoyISO}) MERCADOLIBRE: ${kpiHoy?.pedidos_ml || 0} pedidos (${kpiHoy?.unidades || 0} u.)
@@ -3395,7 +3428,6 @@ app.post("/api/chat-ia", async (req, res) => {
     ${datosFiltroEspecifico.length > 0 ? `- BÚSQUEDA ESPECÍFICA DETALLADA PARA ESTA CONSULTA: ${JSON.stringify(datosFiltroEspecifico)}` : ""}
     `;
 
-    // Mantener solo los últimos 3 mensajes de historial para no acumular tokens
     const historialAcotado = (historial || []).slice(-3);
 
     const contents = [
