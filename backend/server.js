@@ -3109,7 +3109,7 @@ app.delete("/api/ordenes-trabajo/:id", async (req, res) => {
 app.get("/api/estado-pedidos", async (req, res) => {
   try {
     const [rows] = await db.query(
-      "SELECT * FROM estado_pedidos ORDER BY fecha DESC, id DESC LIMIT 500"
+      "SELECT * FROM estado_pedidos ORDER BY fecha DESC, id DESC LIMIT 500",
     );
     res.json(rows);
   } catch (error) {
@@ -3120,7 +3120,10 @@ app.get("/api/estado-pedidos", async (req, res) => {
 // 2. Sincronizar tabla completa desde el Google Sheets de Ventas
 app.post("/api/estado-pedidos/sincronizar", async (req, res) => {
   // CORRECCIÓN: Usar VENTAS_CSV_URL como fallback si no viene en req.body ni en process.env
-  const csvUrl = req.body?.csvUrl || process.env.GOOGLE_SHEETS_VENTAS_CSV_URL || VENTAS_CSV_URL;
+  const csvUrl =
+    req.body?.csvUrl ||
+    process.env.GOOGLE_SHEETS_VENTAS_CSV_URL ||
+    VENTAS_CSV_URL;
 
   if (!csvUrl) {
     return res.status(400).json({
@@ -3130,18 +3133,25 @@ app.post("/api/estado-pedidos/sincronizar", async (req, res) => {
 
   try {
     // Limpieza por si contiene corchetes o espacios extra
-    const cleanUrl = csvUrl.replace(/\[\vert{}\]/g, "").split("(")[0].trim();
+    const cleanUrl = csvUrl
+      .replace(/\[\vert{}\]/g, "")
+      .split("(")[0]
+      .trim();
     const response = await fetch(cleanUrl);
 
     if (!response.ok) {
-      return res.status(400).json({ error: "No se pudo acceder a la URL del CSV de Ventas." });
+      return res
+        .status(400)
+        .json({ error: "No se pudo acceder a la URL del CSV de Ventas." });
     }
 
     const csvText = await response.text();
     const lines = parseCSVFull(csvText);
 
     if (lines.length < 2) {
-      return res.status(400).json({ error: "El archivo CSV no contiene registros." });
+      return res
+        .status(400)
+        .json({ error: "El archivo CSV no contiene registros." });
     }
 
     // Encabezados en mayúsculas
@@ -3158,8 +3168,12 @@ app.post("/api/estado-pedidos/sincronizar", async (req, res) => {
     const idxProgramado = headers.indexOf("PROGRAMADO");
     const idxPreparado = headers.indexOf("PREPARADO");
     const idxDespacho = headers.indexOf("DESPACHO");
-    const idxDemoraEntrega = headers.findIndex((h) => h.includes("DEMORA ENTREGA"));
-    const idxDemoraPrep = headers.findIndex((h) => h.includes("DEMORA PREPARACION"));
+    const idxDemoraEntrega = headers.findIndex((h) =>
+      h.includes("DEMORA ENTREGA"),
+    );
+    const idxDemoraPrep = headers.findIndex((h) =>
+      h.includes("DEMORA PREPARACION"),
+    );
     const idxComentarios = headers.indexOf("COMENTARIOS");
     const idxDespachado = headers.indexOf("DESPACHADO");
 
@@ -3177,8 +3191,10 @@ app.post("/api/estado-pedidos/sincronizar", async (req, res) => {
         const cols = lines[i];
         if (cols.length < 3) continue;
 
-        const fechaRaw = idxFecha !== -1 ? parseFechaDeterminista(cols[idxFecha]) : null;
-        const periodoRaw = idxPeriodo !== -1 ? parseFechaDeterminista(cols[idxPeriodo]) : null;
+        const fechaRaw =
+          idxFecha !== -1 ? parseFechaDeterminista(cols[idxFecha]) : null;
+        const periodoRaw =
+          idxPeriodo !== -1 ? parseFechaDeterminista(cols[idxPeriodo]) : null;
         const op = idxOP !== -1 ? cols[idxOP].trim() : "";
         const cliente = idxCliente !== -1 ? cols[idxCliente].trim() : "";
         const modelo = idxModelo !== -1 ? cols[idxModelo].trim() : "";
@@ -3191,7 +3207,8 @@ app.post("/api/estado-pedidos/sincronizar", async (req, res) => {
         }
 
         const estado = idxEstado !== -1 ? cols[idxEstado].trim() : "";
-        const programado = idxProgramado !== -1 ? cols[idxProgramado].trim() : "";
+        const programado =
+          idxProgramado !== -1 ? cols[idxProgramado].trim() : "";
         const preparado = idxPreparado !== -1 ? cols[idxPreparado].trim() : "";
         const despacho = idxDespacho !== -1 ? cols[idxDespacho].trim() : "";
 
@@ -3200,9 +3217,12 @@ app.post("/api/estado-pedidos/sincronizar", async (req, res) => {
           demoraEntrega = parseInt(cols[idxDemoraEntrega], 10) || 0;
         }
 
-        const demoraPrep = idxDemoraPrep !== -1 ? cols[idxDemoraPrep].trim() : "";
-        const comentarios = idxComentarios !== -1 ? cols[idxComentarios].trim() : "";
-        const despachado = idxDespachado !== -1 ? cols[idxDespachado].trim() : "";
+        const demoraPrep =
+          idxDemoraPrep !== -1 ? cols[idxDemoraPrep].trim() : "";
+        const comentarios =
+          idxComentarios !== -1 ? cols[idxComentarios].trim() : "";
+        const despachado =
+          idxDespachado !== -1 ? cols[idxDespachado].trim() : "";
 
         if (cliente || modelo || op) {
           await conn.query(
@@ -3226,7 +3246,7 @@ app.post("/api/estado-pedidos/sincronizar", async (req, res) => {
               demoraPrep,
               comentarios,
               despachado,
-            ]
+            ],
           );
           insertados++;
         }
@@ -3257,22 +3277,34 @@ app.post("/api/chat-ia", async (req, res) => {
   try {
     const { mensaje, historial } = req.body;
 
-    // Snapshot de la base de datos
-    const [materiasPrimas] = await db.query(
-      "SELECT codigo, nombre, stock_actual, unidad_medida FROM materias_primas",
-    );
-    const [semielaborados] = await db.query(
-      "SELECT codigo, nombre, stock_33, stock_26, stock_ayolas, stock_37 FROM semielaborados",
-    );
-    const [productosTerminados] = await db.query(
-      "SELECT codigo, nombre, promedio_ventas_mensual FROM productos_terminados",
-    );
-    const [ordenesTrabajo] = await db.query(
-      "SELECT codigo_ot, semielaborado_codigo, cant_objetivo, cant_producida, estado, maquina FROM ordenes_trabajo ORDER BY id DESC LIMIT 20",
-    );
-    const [registrosProduccion] = await db.query(
-      "SELECT fecha, categoria_maq, codigo, cant_buenos, cant_fallas FROM registro_produccion ORDER BY id DESC LIMIT 30",
-    );
+    // Snapshot en tiempo real de la base de datos (Ejecución paralela para máxima velocidad)
+    const [
+      [materiasPrimas],
+      [semielaborados],
+      [productosTerminados],
+      [ordenesTrabajo],
+      [registrosProduccion],
+      [estadoPedidos],
+    ] = await Promise.all([
+      db.query(
+        "SELECT codigo, nombre, stock_actual, unidad_medida FROM materias_primas",
+      ),
+      db.query(
+        "SELECT codigo, nombre, stock_33, stock_26, stock_ayolas, stock_37 FROM semielaborados",
+      ),
+      db.query(
+        "SELECT codigo, nombre, promedio_ventas_mensual FROM productos_terminados",
+      ),
+      db.query(
+        "SELECT codigo_ot, semielaborado_codigo, cant_objetivo, cant_producida, estado, maquina FROM ordenes_trabajo ORDER BY id DESC LIMIT 20",
+      ),
+      db.query(
+        "SELECT fecha, categoria_maq, codigo, cant_buenos, cant_fallas FROM registro_produccion ORDER BY id DESC LIMIT 30",
+      ),
+      db.query(
+        "SELECT op, cliente, modelo, cantidad, estado, despacho, demora_entrega_dias, comentarios FROM estado_pedidos ORDER BY id DESC LIMIT 100",
+      ),
+    ]);
 
     const promptContexto = `
     Sos Connie, la encargada de Inteligencia Operativa y datos en Conoflex Argentina.
@@ -3287,12 +3319,13 @@ app.post("/api/chat-ia", async (req, res) => {
     - Evitá introducciones largas, saludos repetitivos o conclusiones innecesarias.
     - Solo explayate o redactá informes extensos cuando el usuario te lo pida explícitamente (ej: "explayate", "dame un reporte detallado", "analizá a fondo").
 
-    BASE DE DATOS EN TIEMPO REAL DE PLANTA:
+    BASE DE DATOS EN TIEMPO REAL DE PLANTA Y VENTAS:
     1. MATERIAS PRIMAS: ${JSON.stringify(materiasPrimas)}
     2. SEMIELABORADOS Y STOCK POR DEPÓSITO: ${JSON.stringify(semielaborados)}
     3. PRODUCTOS TERMINADOS Y VENTAS: ${JSON.stringify(productosTerminados)}
     4. ÓRDENES DE TRABAJO (OT): ${JSON.stringify(ordenesTrabajo)}
     5. REGISTROS DE PRODUCCIÓN Y FALLAS: ${JSON.stringify(registrosProduccion)}
+    6. ESTADO DE PEDIDOS, CLIENTES Y TRACKING DE OPS: ${JSON.stringify(estadoPedidos)}
     `;
 
     const contents = [
