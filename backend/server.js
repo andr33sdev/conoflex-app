@@ -144,6 +144,274 @@ function crearRawEmail(to, subject, htmlBody, threadId) {
   return requestBody;
 }
 
+// EXTRAER NÚMEROS DE PRECIO (FORMATO Y LIMPIEZA)
+function extractNumberFromVal(vVal) {
+  if (vVal === null || vVal === undefined) return null;
+  if (typeof vVal === "number") return vVal;
+  if (typeof vVal === "string") {
+    let s = vVal
+      .replace(/\$/g, "")
+      .replace(/ /g, "")
+      .replace(/\xa0/g, "")
+      .replace(/\t/g, "")
+      .trim();
+    if (/^\d{1,3}(?:\.\d{3})*(?:,\d{1,2})?$/.test(s)) {
+      let sClean = s.replace(/\./g, "").replace(",", ".");
+      let n = parseFloat(sClean);
+      if (!isNaN(n)) return n;
+    } else if (/^\d+(?:\.\d{1,2})?$/.test(s)) {
+      let n = parseFloat(s);
+      if (!isNaN(n)) return n;
+    } else if (/^\d+(?:,\d{1,2})?$/.test(s)) {
+      let n = parseFloat(s.replace(",", "."));
+      if (!isNaN(n)) return n;
+    }
+  }
+  return null;
+}
+
+// ALGORITMO DE EXTRACCIÓN DE TARJETAS EXCEL EN NODE.JS
+function procesarExcelTarjetas(filePath) {
+  const workbook = xlsx.readFile(filePath);
+  let totalProductos = 0;
+  let lineasResultado = [];
+
+  for (const sheetName of workbook.SheetNames) {
+    const sheet = workbook.Sheets[sheetName];
+    if (!sheet || !sheet["!ref"]) continue;
+
+    const range = xlsx.utils.decode_range(sheet["!ref"]);
+    const maxR = range.e.r + 1;
+    const maxC = range.e.c + 1;
+
+    const getVal = (r, c) => {
+      if (r < 1 || r > maxR || c < 1 || c > maxC) return null;
+      const addr = xlsx.utils.encode_cell({ r: r - 1, c: c - 1 });
+      const cell = sheet[addr];
+      if (!cell || cell.v === undefined || cell.v === null) return null;
+      return cell.v;
+    };
+
+    for (let r = 1; r <= maxR; r++) {
+      for (let c = 1; c <= maxC; c++) {
+        const val = getVal(r, c);
+        if (!val) continue;
+
+        const valStr = String(val).trim();
+        const match = valStr.match(/Cód(?:igo|\.)?:?\s*(.+)/i);
+
+        if (match) {
+          let codigo = match[1].trim();
+
+          if (!codigo || ["none", "nan"].includes(codigo.toLowerCase()))
+            continue;
+          if (
+            codigo.length > 25 ||
+            [
+              "tipo de",
+              "fijación",
+              "ejemplo",
+              "envío",
+              "gratis",
+              "página",
+              "pág",
+            ].some((gb) => codigo.toLowerCase().includes(gb))
+          ) {
+            continue;
+          }
+
+          // TÍTULO DEL PRODUCTO
+          const tVal = getVal(r + 1, c);
+          let titleParts = tVal
+            ? [String(tVal).replace(/\n/g, " ").trim()]
+            : [];
+
+          const tVal2 = getVal(r + 2, c);
+          if (tVal2 && typeof tVal2 === "string") {
+            const tV2Str = String(tVal2).replace(/\n/g, " ").trim();
+            if (
+              [
+                "PREMIUM",
+                "ESTANDAR",
+                "LINEA",
+                "LOMO",
+                "MACIZO",
+                "PUNTERA",
+              ].some((kw) => tV2Str.toUpperCase().includes(kw))
+            ) {
+              if (!extractNumberFromVal(tVal2)) {
+                titleParts.push(tV2Str);
+              }
+            }
+          }
+
+          const titleStr = titleParts.join(" ").trim();
+
+          // LÍMITE STRICTO DE TARJETA: 5 COLUMNAS Y 12 FILAS
+          const maxColCard = Math.min(c + 4, maxC);
+          let specs = [];
+          let pricePairs = [];
+          const maxRowCard = Math.min(r + 13, maxR);
+
+          for (let pr = r + 2; pr <= maxRowCard; pr++) {
+            let rowCells = [];
+            let stopCard = false;
+
+            for (let cc = c; cc <= maxColCard; cc++) {
+              const cellV = getVal(pr, cc);
+              if (cellV !== null && String(cellV).trim() !== "") {
+                const vClean = String(cellV).trim();
+                if (pr > r + 1 && /Cód(?:igo|\.)?:/i.test(vClean)) {
+                  stopCard = true;
+                  break;
+                }
+                rowCells.push({ col: cc, strV: vClean, rawV: cellV });
+              }
+            }
+
+            if (stopCard) break;
+            if (rowCells.length === 0) continue;
+
+            let rowPrices = [];
+            let labelsInRow = [];
+
+            for (const item of rowCells) {
+              const { strV, rawV } = item;
+              if (
+                [
+                  "envío gratis",
+                  "filtro uv",
+                  "fabricados con",
+                  "agregar al código",
+                  "pág",
+                  "página",
+                ].some((gb) => strV.toLowerCase().includes(gb))
+              ) {
+                continue;
+              }
+
+              const num = extractNumberFromVal(rawV);
+              if (num !== null && num >= 500) {
+                rowPrices.push(num);
+              } else {
+                if (
+                  !strV.startsWith("$") &&
+                  strV.length > 1 &&
+                  !strV.toLowerCase().startsWith("cód")
+                ) {
+                  if (
+                    [
+                      "SIN",
+                      "CON",
+                      "HORMIGÓN",
+                      "ASFALTO",
+                      "FIJACIÓN",
+                      "LE",
+                      "P",
+                      "H",
+                      "A",
+                    ].some((k) => strV.toUpperCase().includes(k))
+                  ) {
+                    if (
+                      ![
+                        "Conformado:",
+                        "Base:",
+                        "Reflectivo:",
+                        "Peso",
+                        "Altura:",
+                        "Pisada:",
+                        "Ancho:",
+                        "Pasacables",
+                        "MEDIDAS:",
+                      ].some((k) => strV.includes(k))
+                    ) {
+                      labelsInRow.push(strV.replace(/\n/g, " "));
+                    }
+                  }
+                }
+              }
+            }
+
+            if (rowPrices.length > 0) {
+              const maxPrice = Math.max(...rowPrices);
+              const parts = maxPrice.toFixed(2).split(".");
+              const integerPart = parts[0].replace(
+                /\B(?=(\d{3})+(?!\d))/g,
+                ".",
+              );
+              const formattedPrice = `$${integerPart},${parts[1]}`;
+
+              const labelStr = labelsInRow.length > 0 ? labelsInRow[0] : "";
+              const pair = labelStr
+                ? `${labelStr}: ${formattedPrice}`
+                : formattedPrice;
+
+              if (!pricePairs.includes(pair)) {
+                pricePairs.push(pair);
+              }
+            } else {
+              for (const item of rowCells) {
+                const { strV, rawV } = item;
+                if (typeof rawV === "number") continue;
+                if (
+                  strV.startsWith("$") ||
+                  strV.toLowerCase().startsWith("cód")
+                )
+                  continue;
+                if (
+                  titleParts.includes(strV) ||
+                  ["PREMIUM", "ESTANDAR", "PRECIO"].some((kw) =>
+                    strV.toUpperCase().includes(kw),
+                  )
+                ) {
+                  continue;
+                }
+                if (
+                  [
+                    "envío gratis",
+                    "filtro uv",
+                    "fabricados con",
+                    "agregar al código",
+                    "pág",
+                    "página",
+                  ].some((gb) => strV.toLowerCase().includes(gb))
+                ) {
+                  continue;
+                }
+                if (
+                  ["SIN FIJACIÓN", "HORMIGÓN", "ASFALTO"].some((k) =>
+                    strV.toUpperCase().includes(k),
+                  )
+                ) {
+                  continue;
+                }
+                if (!specs.includes(strV)) {
+                  specs.push(strV.replace(/\n/g, " "));
+                }
+              }
+            }
+          }
+
+          const specText = specs.length > 0 ? specs.join(" | ") : "-";
+          const priceText =
+            pricePairs.length > 0 ? pricePairs.join(" | ") : "-";
+
+          lineasResultado.push(`Cód: ${codigo}`);
+          lineasResultado.push(`Nombre: ${titleStr}`);
+          lineasResultado.push(`Medidas: ${specText}`);
+          lineasResultado.push(`Precio Lista: ${priceText}`);
+          lineasResultado.push(`Especificación: ${specText}`);
+          lineasResultado.push(`----------------------------------------`);
+
+          totalProductos++;
+        }
+      }
+    }
+  }
+
+  return { totalProductos, textoFormateado: lineasResultado.join("\n") + "\n" };
+}
+
 // ==========================================
 // INICIALIZACIÓN Y TABLAS MYSQL
 // ==========================================
@@ -838,87 +1106,72 @@ app.post(
 
       console.log(`📤 Procesando lista de precios: ${req.file.originalname}`);
       const ext = path.extname(req.file.originalname).toLowerCase();
+      let catalogoTextoFormateado = "";
 
-      // PROMPT REFORZADO PARA EVITAR CORTES PARCIALES
-      const promptText = `
-      Actúa como un procesador de datos experto.
-      Necesito que extraigas y conviertas ABSOLUTAMENTE TODOS Y CADA UNO de los productos de este documento a un formato de texto plano estructurado.
-      
-      ADVERTENCIA CRÍTICA: Debes recorrer el documento completo (todas las hojas o páginas). NO cortes el procesamiento, NO resumas, NO hagas una muestra. Tienes que devolver todos los ítems hasta llegar al final del archivo.
-
-      Debes mantener exactamente estas etiquetas y el separador de guiones entre cada producto:
-
-      Cód: [Código del producto]
-      Nombre: [Nombre del producto]
-      Medidas: [Medidas o especificaciones clave]
-      Precio Lista: [Precio de lista o desglose de variantes de precio]
-      Especificación: [Detalles técnicos adicionales o las mismas medidas]
-      ----------------------------------------
-
-      Reglas estrictamente obligatorias:
-      - Respetá todos los precios en Pesos Argentinos ($) tal cual figuran.
-      - Si el producto tiene un código, debe ser extraído.
-      - Devuelve ÚNICAMENTE el texto formateado, sin explicaciones previas, sin saludos, ni bloques de código markdown (\`\`\`).
-      `;
-
-      let contentsPayload = [];
-
+      // SI ES EXCEL (.xlsx / .xls) -> PROCESAMIENTO MATRICIAL 100% LOCAL
       if (ext === ".xlsx" || ext === ".xls") {
-        const workbook = xlsx.readFile(req.file.path);
-        let textoExcel = "";
-        workbook.SheetNames.forEach((sheetName) => {
-          textoExcel +=
-            `\n--- HOJA: ${sheetName} ---\n` +
-            xlsx.utils.sheet_to_csv(workbook.Sheets[sheetName]);
-        });
-        contentsPayload = [`DATOS EXCEL:\n${textoExcel}`, promptText];
-      } else if (ext === ".pdf") {
-        const uploadResult = await ai.files.upload({
-          file: req.file.path,
-          mimeType: "application/pdf",
-        });
-        const fileUri =
-          uploadResult.uri || (uploadResult.file && uploadResult.file.uri);
-        contentsPayload = [
-          { fileData: { fileUri, mimeType: "application/pdf" } },
-          promptText,
-        ];
+        const resultado = procesarExcelTarjetas(req.file.path);
+        catalogoTextoFormateado = resultado.textoFormateado;
+        console.log(
+          `✅ Se extrajeron ${resultado.totalProductos} productos del Excel.`,
+        );
       } else {
-        contentsPayload = [
-          `TEXTO:\n${fs.readFileSync(req.file.path, "utf-8")}`,
-          promptText,
-        ];
+        // SI ES PDF / TXT -> SE USA EL MÉTODOS TRADICIONAL
+        const promptText = `
+        Analizá este documento de lista de precios/catálogo y convertí TODOS sus productos al siguiente formato de texto plano estructurado.
+        Debes mantener exactamente estas etiquetas y el separador de guiones entre cada producto:
+
+        Cód: [Código del producto]
+        Nombre: [Nombre del producto]
+        Medidas: [Medidas o especificaciones clave]
+        Precio Lista: [Precio de lista o desglose de variantes de precio]
+        Especificación: [Detalles técnicos adicionales o las mismas medidas]
+        ----------------------------------------
+
+        Reglas estrictamente obligatorias:
+        - Respetá todos los precios en Pesos Argentinos ($) tal cual figuran.
+        - No omitas ningún producto.
+        - Devuelve ÚNICAMENTE el texto formateado, sin explicaciones, ni introducciones, ni bloques de código markdown.
+        `;
+
+        let contentsPayload = [];
+        if (ext === ".pdf") {
+          const uploadResult = await ai.files.upload({
+            file: req.file.path,
+            mimeType: "application/pdf",
+          });
+          const fileUri =
+            uploadResult.uri || (uploadResult.file && uploadResult.file.uri);
+          contentsPayload = [
+            { fileData: { fileUri, mimeType: "application/pdf" } },
+            promptText,
+          ];
+        } else {
+          contentsPayload = [
+            `TEXTO:\n${fs.readFileSync(req.file.path, "utf-8")}`,
+            promptText,
+          ];
+        }
+
+        const response = await ai.models.generateContent({
+          model: "gemini-2.5-flash",
+          contents: contentsPayload,
+        });
+
+        catalogoTextoFormateado = response.text.replace(/```/g, "").trim();
       }
 
-      // LLAMADA A GEMINI CON MAXIMUM TOKENS
-      const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash",
-        contents: contentsPayload,
-        config: {
-          maxOutputTokens: 8192, // Garantiza que no se corte por límite de longitud en catálogos largos
-          temperature: 0.1, // Baja temperatura para que sea extremadamente preciso y no invente ni resuma
-        },
-      });
-
-      // Limpieza adicional de bloques markdown que a veces Gemini incluye de todas formas
-      let catalogoTextoFormateado = response.text.trim();
-      if (catalogoTextoFormateado.startsWith("```")) {
-        catalogoTextoFormateado = catalogoTextoFormateado
-          .replace(/^```[a-z]*\n/, "")
-          .replace(/\n```$/, "");
-      }
-
+      // GUARDAR RESULTADO EN catalogo.txt Y APLICAR TRANSACCIÓN EN BD
       const CATALOGO_PATH = path.join(__dirname, "catalogo.txt");
       fs.writeFileSync(CATALOGO_PATH, catalogoTextoFormateado, "utf-8");
 
-      // Llamada a la función de guardado
       const totalCargados = poblarDBDesdeCatalogoTXT();
 
       if (fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
 
       res.json({
         success: true,
-        mensaje: `¡Se procesó el documento y se actualizaron ${totalCargados} productos en la base de datos!`,
+        mensaje: `¡Se actualizó el catálogo y se sincronizaron ${totalCargados} productos!`,
         totalProductos: totalCargados,
         contenidoPreview: catalogoTextoFormateado,
       });
