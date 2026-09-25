@@ -3122,6 +3122,212 @@ const obtenerDolarOficial = async () => {
 };
 
 // ==========================================
+// HELPER PARA CONVERTIR FECHAS DE SHEETS A MYSQL
+// ==========================================
+const parseFecha = (val) => {
+  if (!val) return null;
+  const str = String(val).trim();
+  if (!str) return null;
+
+  // Si ya está en formato YYYY-MM-DD
+  if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return str;
+
+  // Parsea formatos como "24/9/26", "24/09/2026", "30/8/26"
+  const parts = str.split(/[\/\.-]/);
+  if (parts.length === 3) {
+    let day = parts[0].padStart(2, "0");
+    let month = parts[1].padStart(2, "0");
+    let year = parts[2];
+
+    // Convertir año de 2 dígitos (ej: "26" -> "2026")
+    if (year.length === 2) {
+      year = "20" + year;
+    }
+
+    // Si por alguna razón vino como YYYY/MM/DD
+    if (parts[0].length === 4) {
+      year = parts[0];
+      month = parts[1].padStart(2, "0");
+      day = parts[2].padStart(2, "0");
+    }
+
+    if (year && month && day) {
+      return `${year}-${month}-${day}`;
+    }
+  }
+  return null;
+};
+
+// ==========================================
+// MÓDULO 9: ESTADO DE PEDIDOS (VENTAS SHEETS)
+// ==========================================
+
+// 1. Obtener listado de pedidos
+app.get("/api/estado-pedidos", async (req, res) => {
+  try {
+    const [rows] = await db.query(
+      "SELECT * FROM estado_pedidos ORDER BY fecha DESC, id DESC LIMIT 500",
+    );
+    res.json(rows);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// 2. Sincronizar tabla completa desde el Google Sheets de Ventas
+app.post("/api/estado-pedidos/sincronizar", async (req, res) => {
+  try {
+    const csvUrl = process.env.GOOGLE_SHEETS_PEDIDOS_URL || VENTAS_CSV_URL;
+
+    if (!csvUrl) {
+      return res
+        .status(400)
+        .json({ error: "No se configuró GOOGLE_SHEETS_PEDIDOS_URL en .env" });
+    }
+
+    const response = await fetch(csvUrl);
+    const csvText = await response.text();
+
+    // Helper para limpiar montos en pesos o USD (ej: "$ 14.876,03" o "7,47")
+    const parseMonto = (val) => {
+      if (!val) return 0;
+      let str = String(val).replace(/\$/g, "").replace(/\s/g, "").trim();
+      if (str.includes(".") && str.includes(",")) {
+        str = str.replace(/\./g, "").replace(",", ".");
+      } else if (str.includes(",")) {
+        str = str.replace(",", ".");
+      }
+      return parseFloat(str) || 0;
+    };
+
+    // Parser CSV que respeta comillas en campos con comas
+    const parseCSVLine = (text) => {
+      const result = [];
+      let cell = "";
+      let inQuotes = false;
+      for (let i = 0; i < text.length; i++) {
+        const c = text[i];
+        if (c === '"') {
+          inQuotes = !inQuotes;
+        } else if (c === "," && !inQuotes) {
+          result.push(cell.trim().replace(/^"|"$/g, ""));
+          cell = "";
+        } else {
+          cell += c;
+        }
+      }
+      result.push(cell.trim().replace(/^"|"$/g, ""));
+      return result;
+    };
+
+    const lines = csvText.split(/\r?\n/).filter((l) => l.trim().length > 0);
+    if (lines.length < 2) {
+      return res
+        .status(400)
+        .json({ error: "El archivo Sheets no contiene filas de datos." });
+    }
+
+    // Cabecera limpia
+    const headers = parseCSVLine(lines[0]).map((h) => h.toUpperCase().trim());
+
+    // Mapeo dinámico de columnas por nombre
+    const idxFecha = headers.indexOf("FECHA");
+    const idxPeriodo = headers.indexOf("PERIODO");
+    const idxOp = headers.indexOf("OP");
+    const idxCliente = headers.indexOf("CLIENTE");
+    const idxModelo = headers.indexOf("MODELO");
+    const idxDetalles = headers.indexOf("DETALLES");
+    const idxOc = headers.indexOf("OC");
+    const idxCantidad = headers.indexOf("CANTIDAD");
+    const idxEstado = headers.indexOf("ESTADO");
+    const idxProgramado = headers.indexOf("PROGRAMADO");
+    const idxPreparado = headers.indexOf("PREPARADO");
+    const idxDespacho = headers.indexOf("DESPACHO");
+    const idxDemoraEntrega = headers.findIndex((h) =>
+      h.includes("DEMORA ENTREGA"),
+    );
+    const idxDemoraPrep = headers.findIndex((h) =>
+      h.includes("DEMORA PREPARACION"),
+    );
+    const idxComentarios = headers.indexOf("COMENTARIOS");
+    const idxDespachado = headers.indexOf("DESPACHADO");
+    const idxPunisiva = headers.indexOf("PUNISIVA");
+    const idxCosusd = headers.indexOf("COSUSD");
+
+    const conn = await db.getConnection();
+    try {
+      await conn.beginTransaction();
+
+      // Limpiar tabla antes de recargar
+      await conn.query("TRUNCATE TABLE estado_pedidos");
+
+      const insertQuery = `
+        INSERT INTO estado_pedidos 
+        (fecha, periodo, op, cliente, modelo, detalles, oc, cantidad, estado, programado, preparado, despacho, demora_entrega_dias, demora_preparacion, comentarios, despachado, punisiva, cosusd) 
+        VALUES ?
+      `;
+
+      const valuesToInsert = [];
+
+      for (let i = 1; i < lines.length; i++) {
+        const cols = parseCSVLine(lines[i]);
+        if (!cols[idxOp] && !cols[idxModelo]) continue;
+
+        const fechaFormateada = parseFecha(cols[idxFecha]);
+        const punisivaVal =
+          idxPunisiva !== -1 ? parseMonto(cols[idxPunisiva]) : 0;
+        const cosusdVal = idxCosusd !== -1 ? parseMonto(cols[idxCosusd]) : 0;
+        const cantVal =
+          idxCantidad !== -1 ? parseInt(cols[idxCantidad]) || 1 : 1;
+
+        valuesToInsert.push([
+          fechaFormateada,
+          cols[idxPeriodo] || null,
+          cols[idxOp] || "",
+          cols[idxCliente] || "",
+          cols[idxModelo] || "",
+          cols[idxDetalles] || "",
+          cols[idxOc] || "",
+          cantVal,
+          cols[idxEstado] || "En stock",
+          cols[idxProgramado] || "-",
+          cols[idxPreparado] || "-",
+          cols[idxDespacho] || "-",
+          parseInt(cols[idxDemoraEntrega]) || 0,
+          parseInt(cols[idxDemoraPrep]) || 0,
+          cols[idxComentarios] || "",
+          cols[idxDespachado] || "no",
+          punisivaVal,
+          cosusdVal,
+        ]);
+      }
+
+      if (valuesToInsert.length > 0) {
+        const chunkSize = 1000;
+        for (let i = 0; i < valuesToInsert.length; i += chunkSize) {
+          const chunk = valuesToInsert.slice(i, i + chunkSize);
+          await conn.query(insertQuery, [chunk]);
+        }
+      }
+
+      await conn.commit();
+      res.json({
+        success: true,
+        mensaje: `Se sincronizaron ${valuesToInsert.length} pedidos con fechas corregidas a formato MySQL.`,
+      });
+    } catch (err) {
+      await conn.rollback();
+      throw err;
+    } finally {
+      conn.release();
+    }
+  } catch (error) {
+    console.error("Error al sincronizar estado_pedidos:", error);
+    res.status(500).json({ error: "Error procesando la sincronización." });
+  }
+});
+
+// ==========================================
 // CHAT CONNI - CON TIPO DE CAMBIO Y DESGLOSE POR CANAL
 // ==========================================
 app.post("/api/chat-ia", async (req, res) => {
