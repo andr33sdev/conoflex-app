@@ -3271,20 +3271,21 @@ app.post("/api/estado-pedidos/sincronizar", async (req, res) => {
 });
 
 // ==========================================
-// CHAT CONVERSACIONAL CON CONTEXTO COMPLETO Y PERSONALIDAD CONNIE
+// CHAT CONVERSACIONAL CON CONTEXTO COMPLETO Y MÉTRICAS AGRUPADAS
 // ==========================================
 app.post("/api/chat-ia", async (req, res) => {
   try {
     const { mensaje, historial } = req.body;
 
-    // Snapshot en tiempo real de la base de datos (Ejecución paralela para máxima velocidad)
+    // Consultas en paralelo para máxima velocidad
     const [
       [materiasPrimas],
       [semielaborados],
       [productosTerminados],
       [ordenesTrabajo],
       [registrosProduccion],
-      [estadoPedidos],
+      [ventasAgrupadas],
+      [pedidosRecientes],
     ] = await Promise.all([
       db.query(
         "SELECT codigo, nombre, stock_actual, unidad_medida FROM materias_primas",
@@ -3301,8 +3302,21 @@ app.post("/api/chat-ia", async (req, res) => {
       db.query(
         "SELECT fecha, categoria_maq, codigo, cant_buenos, cant_fallas FROM registro_produccion ORDER BY id DESC LIMIT 30",
       ),
+      // AGRUPACIÓN REAL DE VENTAS POR MES Y MODELO (Cero distorsión por LIMIT)
+      db.query(`
+        SELECT 
+          DATE_FORMAT(fecha, '%Y-%m') AS mes,
+          modelo,
+          SUM(cantidad) AS total_unidades,
+          COUNT(*) AS total_pedidos
+        FROM estado_pedidos
+        WHERE fecha IS NOT NULL AND estado != 'CANCELADO'
+        GROUP BY DATE_FORMAT(fecha, '%Y-%m'), modelo
+        ORDER BY mes DESC, total_unidades DESC
+      `),
+      // Muestra reciente para tracking individual de OPs
       db.query(
-        "SELECT op, cliente, modelo, cantidad, estado, despacho, demora_entrega_dias, comentarios FROM estado_pedidos ORDER BY id DESC LIMIT 100",
+        "SELECT op, cliente, modelo, cantidad, estado, despacho, demora_entrega_dias FROM estado_pedidos ORDER BY id DESC LIMIT 50",
       ),
     ]);
 
@@ -3317,7 +3331,7 @@ app.post("/api/chat-ia", async (req, res) => {
     REGLAS DE FORMATO Y CONCISIÓN:
     - Respuestas MUY breves, al grano y directas por defecto (2 a 4 oraciones o viñetas cortas).
     - Evitá introducciones largas, saludos repetitivos o conclusiones innecesarias.
-    - Solo explayate o redactá informes extensos cuando el usuario te lo pida explícitamente (ej: "explayate", "dame un reporte detallado", "analizá a fondo").
+    - Solo explayate o redactá informes extensos cuando el usuario te lo pida explícitamente.
 
     BASE DE DATOS EN TIEMPO REAL DE PLANTA Y VENTAS:
     1. MATERIAS PRIMAS: ${JSON.stringify(materiasPrimas)}
@@ -3325,7 +3339,8 @@ app.post("/api/chat-ia", async (req, res) => {
     3. PRODUCTOS TERMINADOS Y VENTAS: ${JSON.stringify(productosTerminados)}
     4. ÓRDENES DE TRABAJO (OT): ${JSON.stringify(ordenesTrabajo)}
     5. REGISTROS DE PRODUCCIÓN Y FALLAS: ${JSON.stringify(registrosProduccion)}
-    6. ESTADO DE PEDIDOS, CLIENTES Y TRACKING DE OPS: ${JSON.stringify(estadoPedidos)}
+    6. MÉTRICAS REALES DE VENTAS POR MES Y MODELO (USAR ESTO PARA CONSULTAS DE VENTAS MENSUALES): ${JSON.stringify(ventasAgrupadas)}
+    7. TRACKING DE OPs RECIENTES: ${JSON.stringify(pedidosRecientes)}
     `;
 
     const contents = [
