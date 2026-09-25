@@ -1579,7 +1579,7 @@ app.put("/api/materias-primas/:id/stock", async (req, res) => {
 
 app.post("/api/materias-primas/previsualizar-sheets", async (req, res) => {
   const MATERIAS_PRIMAS_CSV_URL =
-    "[https://docs.google.com/spreadsheets/d/e/2PACX-1vTt66qDCe0E3GUbp7BLqGj4IHYK8nrXF1gvfmf45vY2kkP3-gL3fpPcxjltnFBX8EP7kBzEhnIvHw0L/pub?output=csv](https://docs.google.com/spreadsheets/d/e/2PACX-1vTt66qDCe0E3GUbp7BLqGj4IHYK8nrXF1gvfmf45vY2kkP3-gL3fpPcxjltnFBX8EP7kBzEhnIvHw0L/pub?output=csv)";
+    "https://docs.google.com/spreadsheets/d/e/2PACX-1vTt66qDCe0E3GUbp7BLqGj4IHYK8nrXF1gvfmf45vY2kkP3-gL3fpPcxjltnFBX8EP7kBzEhnIvHw0L/pub?output=csv";
 
   try {
     const response = await fetch(MATERIAS_PRIMAS_CSV_URL);
