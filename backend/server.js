@@ -3124,7 +3124,7 @@ app.get("/api/estado-pedidos", async (req, res) => {
 // ==========================================
 app.post("/api/estado-pedidos/sincronizar", async (req, res) => {
   try {
-    const csvUrl = process.env.GOOGLE_SHEETS_PEDIDOS_URL;
+    const csvUrl = process.env.GOOGLE_SHEETS_PEDIDOS_URL || VENTAS_CSV_URL;
 
     if (!csvUrl) {
       return res
