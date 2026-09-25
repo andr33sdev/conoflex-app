@@ -3119,57 +3119,77 @@ app.get("/api/estado-pedidos", async (req, res) => {
 });
 
 // 2. Sincronizar tabla completa desde el Google Sheets de Ventas
+// ==========================================
+// SINCRONIZADOR DE ESTADO DE PEDIDOS (CON PUNISIVA Y COSUSD)
+// ==========================================
 app.post("/api/estado-pedidos/sincronizar", async (req, res) => {
-  // CORRECCIÓN: Usar VENTAS_CSV_URL como fallback si no viene en req.body ni en process.env
-  const csvUrl =
-    req.body?.csvUrl ||
-    process.env.GOOGLE_SHEETS_VENTAS_CSV_URL ||
-    VENTAS_CSV_URL;
-
-  if (!csvUrl) {
-    return res.status(400).json({
-      error: "No se configuró la URL de Ventas (VENTAS_CSV_URL) en server.js",
-    });
-  }
-
   try {
-    // Limpieza por si contiene corchetes o espacios extra
-    const cleanUrl = csvUrl
-      .replace(/\[\vert{}\]/g, "")
-      .split("(")[0]
-      .trim();
-    const response = await fetch(cleanUrl);
+    const csvUrl = process.env.GOOGLE_SHEETS_PEDIDOS_URL;
 
-    if (!response.ok) {
+    if (!csvUrl) {
       return res
         .status(400)
-        .json({ error: "No se pudo acceder a la URL del CSV de Ventas." });
+        .json({ error: "No se configuró GOOGLE_SHEETS_PEDIDOS_URL en .env" });
     }
 
+    const response = await fetch(csvUrl);
     const csvText = await response.text();
-    const lines = parseCSVFull(csvText);
 
+    // Helper para limpiar montos en pesos o USD (ej: "$ 14.876,03" o "7,47")
+    const parseMonto = (val) => {
+      if (!val) return 0;
+      let str = String(val).replace(/\$/g, "").replace(/\s/g, "").trim();
+      if (str.includes(".") && str.includes(",")) {
+        str = str.replace(/\./g, "").replace(",", ".");
+      } else if (str.includes(",")) {
+        str = str.replace(",", ".");
+      }
+      return parseFloat(str) || 0;
+    };
+
+    // Parser CSV que respeta comillas en campos con comas
+    const parseCSVLine = (text) => {
+      const result = [];
+      let cell = "";
+      let inQuotes = false;
+      for (let i = 0; i < text.length; i++) {
+        const c = text[i];
+        if (c === '"') {
+          inQuotes = !inQuotes;
+        } else if (c === "," && !inQuotes) {
+          result.push(cell.trim().replace(/^"|"$/g, ""));
+          cell = "";
+        } else {
+          cell += c;
+        }
+      }
+      result.push(cell.trim().replace(/^"|"$/g, ""));
+      return result;
+    };
+
+    const lines = csvText.split(/\r?\n/).filter((l) => l.trim().length > 0);
     if (lines.length < 2) {
       return res
         .status(400)
-        .json({ error: "El archivo CSV no contiene registros." });
+        .json({ error: "El archivo Sheets no contiene filas de datos." });
     }
 
-    // Encabezados en mayúsculas
-    const headers = lines[0].map((h) => h.toUpperCase().trim());
+    // Cabecera limpia
+    const headers = parseCSVLine(lines[0]).map((h) => h.toUpperCase().trim());
+
+    // Mapeo dinámico de columnas por nombre
     const idxFecha = headers.indexOf("FECHA");
     const idxPeriodo = headers.indexOf("PERIODO");
-    const idxOP = headers.indexOf("OP");
+    const idxOp = headers.indexOf("OP");
     const idxCliente = headers.indexOf("CLIENTE");
     const idxModelo = headers.indexOf("MODELO");
     const idxDetalles = headers.indexOf("DETALLES");
-    const idxOC = headers.indexOf("OC");
+    const idxOc = headers.indexOf("OC");
     const idxCantidad = headers.indexOf("CANTIDAD");
     const idxEstado = headers.indexOf("ESTADO");
     const idxProgramado = headers.indexOf("PROGRAMADO");
     const idxPreparado = headers.indexOf("PREPARADO");
     const idxDespacho = headers.indexOf("DESPACHO");
-
     const idxDemoraEntrega = headers.findIndex((h) =>
       h.includes("DEMORA ENTREGA"),
     );
@@ -3182,103 +3202,65 @@ app.post("/api/estado-pedidos/sincronizar", async (req, res) => {
     const idxCosusd = headers.indexOf("COSUSD");
 
     const conn = await db.getConnection();
-
     try {
       await conn.beginTransaction();
 
-      // Refrescar la tabla con la información vendedora
+      // Limpiar tabla antes de recargar
       await conn.query("TRUNCATE TABLE estado_pedidos");
 
-      let insertados = 0;
+      const insertQuery = `
+        INSERT INTO estado_pedidos 
+        (fecha, periodo, op, cliente, modelo, detalles, oc, cantidad, estado, programado, preparado, despacho, demora_entrega_dias, demora_preparacion, comentarios, despachado, punisiva, cosusd) 
+        VALUES ?
+      `;
+
+      const valuesToInsert = [];
 
       for (let i = 1; i < lines.length; i++) {
-        const cols = lines[i];
-        if (cols.length < 3) continue;
+        const cols = parseCSVLine(lines[i]);
+        if (!cols[idxOp] && !cols[idxModelo]) continue;
 
-        const fechaRaw =
-          idxFecha !== -1 ? parseFechaDeterminista(cols[idxFecha]) : null;
-        const periodoRaw =
-          idxPeriodo !== -1 ? parseFechaDeterminista(cols[idxPeriodo]) : null;
-        const op = idxOP !== -1 ? cols[idxOP].trim() : "";
-        const cliente = idxCliente !== -1 ? cols[idxCliente].trim() : "";
-        const modelo = idxModelo !== -1 ? cols[idxModelo].trim() : "";
-        const detalles = idxDetalles !== -1 ? cols[idxDetalles].trim() : "";
-        const oc = idxOC !== -1 ? cols[idxOC].trim() : "";
+        const punisivaVal =
+          idxPunisiva !== -1 ? parseMonto(cols[idxPunisiva]) : 0;
+        const cosusdVal = idxCosusd !== -1 ? parseMonto(cols[idxCosusd]) : 0;
+        const cantVal =
+          idxCantidad !== -1 ? parseInt(cols[idxCantidad]) || 1 : 1;
 
-        let cantidad = 0;
-        if (idxCantidad !== -1 && cols[idxCantidad]) {
-          cantidad = parseFloat(cols[idxCantidad].replace(",", ".")) || 0;
-        }
+        valuesToInsert.push([
+          cols[idxFecha] || null,
+          cols[idxPeriodo] || null,
+          cols[idxOp] || "",
+          cols[idxCliente] || "",
+          cols[idxModelo] || "",
+          cols[idxDetalles] || "",
+          cols[idxOc] || "",
+          cantVal,
+          cols[idxEstado] || "En stock",
+          cols[idxProgramado] || "-",
+          cols[idxPreparado] || "-",
+          cols[idxDespacho] || "-",
+          parseInt(cols[idxDemoraEntrega]) || 0,
+          parseInt(cols[idxDemoraPrep]) || 0,
+          cols[idxComentarios] || "",
+          cols[idxDespachado] || "no",
+          punisivaVal,
+          cosusdVal,
+        ]);
+      }
 
-        const estado = idxEstado !== -1 ? cols[idxEstado].trim() : "";
-        const programado =
-          idxProgramado !== -1 ? cols[idxProgramado].trim() : "";
-        const preparado = idxPreparado !== -1 ? cols[idxPreparado].trim() : "";
-        const despacho = idxDespacho !== -1 ? cols[idxDespacho].trim() : "";
-
-        let demoraEntrega = 0;
-        if (idxDemoraEntrega !== -1 && cols[idxDemoraEntrega]) {
-          demoraEntrega = parseInt(cols[idxDemoraEntrega], 10) || 0;
-        }
-
-        const demoraPrep =
-          idxDemoraPrep !== -1 ? cols[idxDemoraPrep].trim() : "";
-        const comentarios =
-          idxComentarios !== -1 ? cols[idxComentarios].trim() : "";
-        const despachado =
-          idxDespachado !== -1 ? cols[idxDespachado].trim() : "";
-
-        let punisiva = 0;
-        if (idxPunisiva !== -1 && cols[idxPunisiva]) {
-          punisiva =
-            parseFloat(
-              cols[idxPunisiva].replace(/\$|\s/g, "").replace(",", "."),
-            ) || 0;
-        }
-
-        let cosusd = 0;
-        if (idxCosusd !== -1 && cols[idxCosusd]) {
-          cosusd =
-            parseFloat(
-              cols[idxCosusd].replace(/\$|\s/g, "").replace(",", "."),
-            ) || 0;
-        }
-
-        if (cliente || modelo || op) {
-          await conn.query(
-            `INSERT INTO estado_pedidos 
-            (fecha, periodo, op, cliente, modelo, detalles, oc, cantidad, estado, programado, preparado, despacho, demora_entrega_dias, demora_preparacion, comentarios, despachado) 
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [
-              fechaRaw,
-              periodoRaw,
-              op,
-              cliente,
-              modelo,
-              detalles,
-              oc,
-              cantidad,
-              estado,
-              programado,
-              preparado,
-              despacho,
-              demoraEntrega,
-              demoraPrep,
-              comentarios,
-              despachado,
-              punisiva,
-              cosusd,
-            ],
-          );
-          insertados++;
+      if (valuesToInsert.length > 0) {
+        // Inserción en bloques de 1000 filas para alto rendimiento
+        const chunkSize = 1000;
+        for (let i = 0; i < valuesToInsert.length; i += chunkSize) {
+          const chunk = valuesToInsert.slice(i, i + chunkSize);
+          await conn.query(insertQuery, [chunk]);
         }
       }
 
       await conn.commit();
       res.json({
         success: true,
-        count: insertados,
-        mensaje: `¡Se sincronizaron ${insertados} pedidos en la base de datos!`,
+        mensaje: `Se sincronizaron ${valuesToInsert.length} pedidos. Valores PUNISIVA y COSUSD actualizados correctamente.`,
       });
     } catch (err) {
       await conn.rollback();
@@ -3287,8 +3269,8 @@ app.post("/api/estado-pedidos/sincronizar", async (req, res) => {
       conn.release();
     }
   } catch (error) {
-    console.error("Error al sincronizar estado de pedidos:", error);
-    res.status(500).json({ error: error.message });
+    console.error("Error al sincronizar estado_pedidos:", error);
+    res.status(500).json({ error: "Error procesando la sincronización." });
   }
 });
 
