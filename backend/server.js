@@ -3271,20 +3271,21 @@ app.post("/api/estado-pedidos/sincronizar", async (req, res) => {
 });
 
 // ==========================================
-// CHAT CONVERSACIONAL CON CONTEXTO COMPLETO Y MÉTRICAS AGRUPADAS
+// CHAT CONVERSACIONAL CON CONTEXTO COMPLETO, CANALES (MERCADOLIBRE) Y OPs ÚNICAS
 // ==========================================
 app.post("/api/chat-ia", async (req, res) => {
   try {
     const { mensaje, historial } = req.body;
 
-    // Consultas en paralelo para máxima velocidad
+    // Consultas optimizadas en paralelo
     const [
       [materiasPrimas],
       [semielaborados],
       [productosTerminados],
       [ordenesTrabajo],
       [registrosProduccion],
-      [ventasAgrupadas],
+      [ventasPorDiaCanal],
+      [ventasPorMesModelo],
       [pedidosRecientes],
     ] = await Promise.all([
       db.query(
@@ -3302,22 +3303,48 @@ app.post("/api/chat-ia", async (req, res) => {
       db.query(
         "SELECT fecha, categoria_maq, codigo, cant_buenos, cant_fallas FROM registro_produccion ORDER BY id DESC LIMIT 30",
       ),
-      // AGRUPACIÓN REAL DE VENTAS POR MES Y MODELO (Cero distorsión por LIMIT)
+      // 1. MÉTRICAS DIARIAS POR CANAL (MERCADOLIBRE VS NORMAL) Y OPs ÚNICAS
+      db.query(`
+        SELECT 
+          DATE_FORMAT(fecha, '%Y-%m-%d') AS fecha,
+          IF(LOWER(detalles) LIKE '%mercadolibre%', 'MercadoLibre', 'Normal/Directa') AS canal,
+          COUNT(DISTINCT op) AS total_pedidos,
+          SUM(cantidad) AS total_unidades
+        FROM estado_pedidos
+        WHERE fecha IS NOT NULL AND estado != 'CANCELADO'
+        GROUP BY DATE_FORMAT(fecha, '%Y-%m-%d'), canal
+        ORDER BY fecha DESC
+        LIMIT 300
+      `),
+      // 2. MÉTRICAS MENSUALES POR MODELO Y CANAL
       db.query(`
         SELECT 
           DATE_FORMAT(fecha, '%Y-%m') AS mes,
+          IF(LOWER(detalles) LIKE '%mercadolibre%', 'MercadoLibre', 'Normal/Directa') AS canal,
           modelo,
-          SUM(cantidad) AS total_unidades,
-          COUNT(*) AS total_pedidos
+          COUNT(DISTINCT op) AS total_pedidos,
+          SUM(cantidad) AS total_unidades
         FROM estado_pedidos
         WHERE fecha IS NOT NULL AND estado != 'CANCELADO'
-        GROUP BY DATE_FORMAT(fecha, '%Y-%m'), modelo
+        GROUP BY DATE_FORMAT(fecha, '%Y-%m'), canal, modelo
         ORDER BY mes DESC, total_unidades DESC
+        LIMIT 500
       `),
-      // Muestra reciente para tracking individual de OPs
-      db.query(
-        "SELECT op, cliente, modelo, cantidad, estado, despacho, demora_entrega_dias FROM estado_pedidos ORDER BY id DESC LIMIT 50",
-      ),
+      // 3. MUESTRA RECIENTE DE OPs PARA SEGUIMIENTO INDIVIDUAL
+      db.query(`
+        SELECT 
+          op, 
+          cliente, 
+          modelo, 
+          cantidad, 
+          IF(LOWER(detalles) LIKE '%mercadolibre%', 'MercadoLibre', 'Normal/Directa') AS canal,
+          estado, 
+          despacho, 
+          demora_entrega_dias 
+        FROM estado_pedidos 
+        ORDER BY id DESC 
+        LIMIT 100
+      `),
     ]);
 
     const promptContexto = `
@@ -3327,6 +3354,14 @@ app.post("/api/chat-ia", async (req, res) => {
     - Sos súper amable, cálida, copada y cercana, manteniendo siempre el profesionalismo ejecutivo.
     - Hablás de manera natural y fluida en español rioplatense/argentino profesional.
     - NUNCA te presentes ni te refieras a vos misma como "un bot", "una IA", "un modelo de lenguaje" ni "asistente virtual". Si te preguntan quién sos, sos Connie, parte del equipo de gestión de Conoflex.
+
+    REGLAS FUNDAMENTALES DE NEGOCIO PARA VENTAS Y PEDIDOS:
+    1. CONTEO DE PEDIDOS (OP ÚNICA):
+       - Cada número de OP distinto representa 1 SOLO PEDIDO ("total_pedidos").
+       - Si una misma OP tiene múltiples productos/renglones, sigue siendo 1 solo pedido. Jamás cuentes renglones como pedidos separados.
+    2. CANAL DE VENTA (MERCADOLIBRE VS NORMAL):
+       - Si el campo "detalles" contiene "MercadoLibre", el pedido es de canal MercadoLibre.
+       - Si no contiene "MercadoLibre" (o está vacío / dice '-'), se trata de una Venta Normal / Directa.
 
     REGLAS DE FORMATO Y CONCISIÓN:
     - Respuestas MUY breves, al grano y directas por defecto (2 a 4 oraciones o viñetas cortas).
@@ -3339,8 +3374,9 @@ app.post("/api/chat-ia", async (req, res) => {
     3. PRODUCTOS TERMINADOS Y VENTAS: ${JSON.stringify(productosTerminados)}
     4. ÓRDENES DE TRABAJO (OT): ${JSON.stringify(ordenesTrabajo)}
     5. REGISTROS DE PRODUCCIÓN Y FALLAS: ${JSON.stringify(registrosProduccion)}
-    6. MÉTRICAS REALES DE VENTAS POR MES Y MODELO (USAR ESTO PARA CONSULTAS DE VENTAS MENSUALES): ${JSON.stringify(ventasAgrupadas)}
-    7. TRACKING DE OPs RECIENTES: ${JSON.stringify(pedidosRecientes)}
+    6. VENTAS DIARIAS POR CANAL Y PEDIDOS ÚNICOS (OPs): ${JSON.stringify(ventasPorDiaCanal)}
+    7. VENTAS MENSUALES POR CANAL, MODELO Y OPs ÚNICAS: ${JSON.stringify(ventasPorMesModelo)}
+    8. SEGUIMIENTO DE OPs RECIENTES: ${JSON.stringify(pedidosRecientes)}
     `;
 
     const contents = [
