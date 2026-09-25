@@ -45,6 +45,7 @@ if (!fs.existsSync(IMAGENES_DIR))
 if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 
 app.use("/imagenes", express.static(IMAGENES_DIR));
+app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
 // Multer Config
 const uploadTemp = multer({ dest: UPLOADS_DIR });
@@ -3168,6 +3169,7 @@ app.post("/api/estado-pedidos/sincronizar", async (req, res) => {
     const idxProgramado = headers.indexOf("PROGRAMADO");
     const idxPreparado = headers.indexOf("PREPARADO");
     const idxDespacho = headers.indexOf("DESPACHO");
+
     const idxDemoraEntrega = headers.findIndex((h) =>
       h.includes("DEMORA ENTREGA"),
     );
@@ -3176,6 +3178,8 @@ app.post("/api/estado-pedidos/sincronizar", async (req, res) => {
     );
     const idxComentarios = headers.indexOf("COMENTARIOS");
     const idxDespachado = headers.indexOf("DESPACHADO");
+    const idxPunisiva = headers.indexOf("PUNISIVA");
+    const idxCosusd = headers.indexOf("COSUSD");
 
     const conn = await db.getConnection();
 
@@ -3224,6 +3228,22 @@ app.post("/api/estado-pedidos/sincronizar", async (req, res) => {
         const despachado =
           idxDespachado !== -1 ? cols[idxDespachado].trim() : "";
 
+        let punisiva = 0;
+        if (idxPunisiva !== -1 && cols[idxPunisiva]) {
+          punisiva =
+            parseFloat(
+              cols[idxPunisiva].replace(/\$|\s/g, "").replace(",", "."),
+            ) || 0;
+        }
+
+        let cosusd = 0;
+        if (idxCosusd !== -1 && cols[idxCosusd]) {
+          cosusd =
+            parseFloat(
+              cols[idxCosusd].replace(/\$|\s/g, "").replace(",", "."),
+            ) || 0;
+        }
+
         if (cliente || modelo || op) {
           await conn.query(
             `INSERT INTO estado_pedidos 
@@ -3246,6 +3266,8 @@ app.post("/api/estado-pedidos/sincronizar", async (req, res) => {
               demoraPrep,
               comentarios,
               despachado,
+              punisiva,
+              cosusd,
             ],
           );
           insertados++;
@@ -3317,32 +3339,50 @@ app.post("/api/chat-ia", async (req, res) => {
     }
 
     // 3. RESUMEN EJECUTIVO GENERAL (Súper comprimido, ~400 tokens)
-    const [[[kpiHoy]], [[kpiAyer]], [ventasMesActual], [alertasStockMP]] =
-      await Promise.all([
-        db.query(
-          `
+    const [
+      [[kpiHoy]],
+      [[kpiAyer]],
+      [ventasMesActual],
+      [alertasStockMP],
+      [rentabilidadMes],
+    ] = await Promise.all([
+      db.query(
+        `
         SELECT COUNT(DISTINCT op) as pedidos_ml, SUM(cantidad) as unidades 
         FROM estado_pedidos 
         WHERE fecha = ? AND LOWER(detalles) LIKE '%mercadolibre%' AND estado != 'CANCELADO'`,
-          [hoyISO],
-        ),
-        db.query(
-          `
+        [hoyISO],
+      ),
+      db.query(
+        `
         SELECT COUNT(DISTINCT op) as pedidos_ml, SUM(cantidad) as unidades 
         FROM estado_pedidos 
         WHERE fecha = ? AND LOWER(detalles) LIKE '%mercadolibre%' AND estado != 'CANCELADO'`,
-          [ayerISO],
-        ),
-        db.query(`
+        [ayerISO],
+      ),
+      db.query(`
         SELECT modelo, SUM(cantidad) as unidades, COUNT(DISTINCT op) as pedidos 
         FROM estado_pedidos 
         WHERE fecha >= DATE_SUB(CURDATE(), INTERVAL 30 DAY) AND estado != 'CANCELADO'
         GROUP BY modelo ORDER BY unidades DESC LIMIT 10`),
-        db.query(`
+      db.query(`
         SELECT codigo, nombre, stock_actual 
         FROM materias_primas 
         ORDER BY stock_actual ASC LIMIT 5`),
-      ]);
+      db.query(`
+    SELECT 
+      DATE_FORMAT(fecha, '%Y-%m') AS mes,
+      COUNT(DISTINCT op) AS total_pedidos,
+      SUM(cantidad) AS unidades_vendidas,
+      SUM(cantidad * punisiva) AS facturacion_total_ars_sin_iva,
+      SUM(cosusd) AS costo_total_usd
+    FROM estado_pedidos
+    WHERE fecha IS NOT NULL AND estado != 'CANCELADO'
+    GROUP BY DATE_FORMAT(fecha, '%Y-%m')
+    ORDER BY mes DESC
+    LIMIT 12
+  `),
+    ]);
 
     // 4. CONSTRUCCIÓN DEL PROMPT COMPACTO
     const promptContexto = `
@@ -3354,6 +3394,16 @@ app.post("/api/chat-ia", async (req, res) => {
     - Respuestas breves, profesionales y amables en español argentino (2 a 4 oraciones).
     - 1 Pedido = 1 número de OP distinto (COUNT DISTINCT op).
     - Si el campo "detalles" dice MercadoLibre es venta ML; de lo contrario es Venta Normal.
+
+    MÉTRICAS FINANCIERAS Y RENTABILIDAD CONSOLIDADAS POR MES:
+  - Facturación ($ ARS sin IVA) = SUM(cantidad * punisiva).
+  - Costo Total ($ USD) = SUM(cosusd).
+  
+  HISTORIAL FINANCIERO MENSUAL DE VENTAS:
+  ${JSON.stringify(rentabilidadMes)}
+
+  REGLA FINANCIERA:
+  Si te preguntan por la rentabilidad o facturación de Septiembre (o cualquier mes), consulta la tabla de arriba. Explicá la facturación en ARS sin IVA y el costo total acumulado en USD.
 
     RESUMEN DE DATOS CLAVE:
     - VENTAS HOY (${hoyISO}) MERCADOLIBRE: ${kpiHoy?.pedidos_ml || 0} pedidos (${kpiHoy?.unidades || 0} u.)

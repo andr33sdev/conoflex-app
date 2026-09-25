@@ -26,6 +26,27 @@ import {
   Edit3,
 } from "lucide-react";
 
+// HELPER PARA RESOLVER RUTAS DE IMÁGENES ESTÁTICAS (BACKEND VS VITE DEV)
+const getImageUrl = (url) => {
+  if (!url) return "";
+  if (url.startsWith("http://") || url.startsWith("https://")) return url;
+
+  let path = url.replace(/\\/g, "/");
+  if (path.startsWith("public/")) {
+    path = path.substring(6);
+  }
+  if (!path.startsWith("/")) {
+    path = "/" + path;
+  }
+
+  // Si se ejecuta en Vite local (puerto 5173), redirige las imágenes al backend Express (puerto 3000)
+  if (typeof window !== "undefined" && window.location.port === "5173") {
+    return `http://localhost:3000${path}`;
+  }
+
+  return path;
+};
+
 export default function ComercialIA() {
   const [activeTab, setActiveTab] = useState("bandeja"); // 'bandeja' | 'catalogo' | 'prompt'
   const [mails, setMails] = useState([]);
@@ -359,7 +380,6 @@ export default function ComercialIA() {
     <div className="flex-1 flex flex-col h-full min-h-0 bg-[#070a12] border border-slate-800/80 rounded-2xl font-sans text-slate-200 shadow-2xl overflow-hidden backdrop-blur-2xl relative">
       {/* SISTEMA DE TOASTS & INDICADOR DE PROCESAMIENTO ANIMADO */}
       <div className="fixed top-6 right-6 z-[300] flex flex-col gap-3 max-w-md w-full pointer-events-none">
-        {/* 1. TOAST PERSISTENTE MIENTRAS PROCESA EL EXCEL / PDF */}
         {procesandoArchivo && (
           <div className="pointer-events-auto flex flex-col p-4 bg-[#0f172a]/95 border border-amber-500/50 rounded-2xl shadow-[0_0_30px_rgba(245,158,11,0.25)] backdrop-blur-2xl transition-all duration-300 animate-in slide-in-from-top-5">
             <div className="flex items-center gap-3.5">
@@ -379,14 +399,12 @@ export default function ComercialIA() {
               </div>
             </div>
 
-            {/* BARRA DE CÓMPUTO ANIMADA */}
             <div className="w-full bg-slate-900 rounded-full h-1.5 mt-3 overflow-hidden border border-slate-800/80 relative">
               <div className="absolute inset-0 bg-gradient-to-r from-amber-500 via-amber-300 to-amber-500 rounded-full animate-pulse shadow-[0_0_10px_#f59e0b]" />
             </div>
           </div>
         )}
 
-        {/* 2. TOAST DE NOTIFICACIONES (ÉXITO / ERROR) */}
         {toast && (
           <div
             className={`pointer-events-auto relative overflow-hidden p-4 bg-[#0f172a]/95 border rounded-2xl shadow-[0_0_35px_rgba(0,0,0,0.8)] backdrop-blur-2xl transition-all duration-300 animate-in slide-in-from-top-5 text-xs ${
@@ -435,7 +453,6 @@ export default function ComercialIA() {
               </button>
             </div>
 
-            {/* LÍNEA TEMPORIZADORA REGRESIVA EN LA BASE */}
             <div className="absolute bottom-0 left-0 right-0 h-1 bg-slate-900">
               <div
                 className={`h-full transition-all duration-[3800ms] ease-linear ${
@@ -817,9 +834,14 @@ export default function ComercialIA() {
                               >
                                 {p.foto_tecnica ? (
                                   <img
-                                    src={p.foto_tecnica}
+                                    src={getImageUrl(p.foto_tecnica)}
                                     alt="Técnica"
                                     className="w-full h-full object-contain p-0.5"
+                                    onError={(e) => {
+                                      e.currentTarget.onerror = null;
+                                      e.currentTarget.src =
+                                        "https://via.placeholder.com/150?text=Sin+Foto";
+                                    }}
                                   />
                                 ) : (
                                   <span className="text-[9px] font-mono text-slate-600">
@@ -850,9 +872,14 @@ export default function ComercialIA() {
                               >
                                 {p.foto_catalogo ? (
                                   <img
-                                    src={p.foto_catalogo}
+                                    src={getImageUrl(p.foto_catalogo)}
                                     alt="Catálogo"
                                     className="w-full h-full object-contain p-0.5"
+                                    onError={(e) => {
+                                      e.currentTarget.onerror = null;
+                                      e.currentTarget.src =
+                                        "https://via.placeholder.com/150?text=Sin+Foto";
+                                    }}
                                   />
                                 ) : (
                                   <span className="text-[9px] font-mono text-slate-600">
@@ -958,9 +985,14 @@ export default function ComercialIA() {
                             </span>
                             {p.foto_tecnica ? (
                               <img
-                                src={p.foto_tecnica}
+                                src={getImageUrl(p.foto_tecnica)}
                                 alt="Técnica"
                                 className="w-full h-full object-contain p-1"
+                                onError={(e) => {
+                                  e.currentTarget.onerror = null;
+                                  e.currentTarget.src =
+                                    "https://via.placeholder.com/150?text=Sin+Foto";
+                                }}
                               />
                             ) : (
                               <ImageIcon size={22} className="text-slate-800" />
@@ -987,9 +1019,14 @@ export default function ComercialIA() {
                             </span>
                             {p.foto_catalogo ? (
                               <img
-                                src={p.foto_catalogo}
+                                src={getImageUrl(p.foto_catalogo)}
                                 alt="Catálogo"
                                 className="w-full h-full object-contain p-1"
+                                onError={(e) => {
+                                  e.currentTarget.onerror = null;
+                                  e.currentTarget.src =
+                                    "https://via.placeholder.com/150?text=Sin+Foto";
+                                }}
                               />
                             ) : (
                               <ImageIcon size={22} className="text-slate-800" />
@@ -1118,9 +1155,14 @@ export default function ComercialIA() {
 
             <div className="w-full max-h-[75vh] flex items-center justify-center bg-[#070a12] rounded-xl overflow-hidden p-3 border border-slate-800">
               <img
-                src={fotoLightbox.url}
+                src={getImageUrl(fotoLightbox.url)}
                 alt="Foto ampliada"
                 className="max-w-full max-h-[70vh] object-contain rounded-lg"
+                onError={(e) => {
+                  e.currentTarget.onerror = null;
+                  e.currentTarget.src =
+                    "https://via.placeholder.com/600x400?text=Error+al+cargar+imagen";
+                }}
               />
             </div>
           </div>
@@ -1148,7 +1190,7 @@ export default function ComercialIA() {
             </div>
 
             <div className="space-y-4">
-              {/* Fotos Preview (Con object-contain para no cortar detalles) */}
+              {/* Fotos Preview */}
               <div className="grid grid-cols-2 gap-3 font-mono">
                 <div className="bg-[#070a12] p-3 rounded-xl border border-slate-800 text-center space-y-2">
                   <span className="text-[10px] text-slate-400 block font-bold">
@@ -1157,9 +1199,14 @@ export default function ComercialIA() {
                   <div className="w-full h-32 rounded-lg bg-slate-950 overflow-hidden flex items-center justify-center border border-slate-800 relative p-1">
                     {productoEditar.foto_tecnica ? (
                       <img
-                        src={productoEditar.foto_tecnica}
+                        src={getImageUrl(productoEditar.foto_tecnica)}
                         className="w-full h-full object-contain"
                         alt="Técnica"
+                        onError={(e) => {
+                          e.currentTarget.onerror = null;
+                          e.currentTarget.src =
+                            "https://via.placeholder.com/150?text=Sin+Foto";
+                        }}
                       />
                     ) : (
                       <ImageIcon size={24} className="text-slate-800" />
@@ -1189,9 +1236,14 @@ export default function ComercialIA() {
                   <div className="w-full h-32 rounded-lg bg-slate-950 overflow-hidden flex items-center justify-center border border-slate-800 relative p-1">
                     {productoEditar.foto_catalogo ? (
                       <img
-                        src={productoEditar.foto_catalogo}
+                        src={getImageUrl(productoEditar.foto_catalogo)}
                         className="w-full h-full object-contain"
                         alt="Catálogo"
+                        onError={(e) => {
+                          e.currentTarget.onerror = null;
+                          e.currentTarget.src =
+                            "https://via.placeholder.com/150?text=Sin+Foto";
+                        }}
                       />
                     ) : (
                       <ImageIcon size={24} className="text-slate-800" />

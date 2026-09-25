@@ -24,6 +24,8 @@ import {
   Zap,
   ArrowRight,
   GitBranch,
+  AlertTriangle,
+  Layers,
 } from "lucide-react";
 
 export default function PlanificacionProduccion() {
@@ -58,7 +60,7 @@ export default function PlanificacionProduccion() {
   const [calMonth, setCalMonth] = useState(new Date().getMonth());
   const [calYear, setCalYear] = useState(new Date().getFullYear());
 
-  // ESTADOS DE HOVER E INSPECCIÓN FIJA (INMEDIATO + TIMER 2s)
+  // ESTADOS DE HOVER E INSPECCIÓN FIJA
   const [hoveredDateKey, setHoveredDateKey] = useState(null);
   const [pinnedDateKey, setPinnedDateKey] = useState(null);
   const hoverTimerRef = useRef(null);
@@ -101,7 +103,7 @@ export default function PlanificacionProduccion() {
       if (!tableContainerRef.current) return;
       const containerHeight = tableContainerRef.current.clientHeight;
       const headerHeight = 36;
-      const rowHeight = 38;
+      const rowHeight = 40;
       const availableHeight = containerHeight - headerHeight;
       const calculatedCount = Math.floor(availableHeight / rowHeight);
 
@@ -417,7 +419,7 @@ export default function PlanificacionProduccion() {
     });
   }, [currentPlan, currentPlanGroupedItems, recipesMap, materiasPrimasDB]);
 
-  // CREAR PLAN VACÍO
+  // HANDLERS
   const handleCreateEmptyPlan = () => {
     if (!newPlanForm.codigo_ot.trim()) {
       return alert("Ingresá un nombre para el plan.");
@@ -441,7 +443,6 @@ export default function PlanificacionProduccion() {
     setIsNewPlanModalOpen(false);
   };
 
-  // INCORPORAR PRODUCTO AL PLAN
   const handleAddItemToCurrentPlan = async () => {
     if (!currentPlan || currentPlan.estado === "CERRADO") return;
     if (!addItemForm.semielaborado_codigo)
@@ -473,7 +474,6 @@ export default function PlanificacionProduccion() {
     }
   };
 
-  // EDITAR RITMO U/H
   const handleSaveRitmo = async () => {
     if (!editingRitmoItem) return;
     const ritmoNum = parseInt(newRitmoVal, 10);
@@ -481,17 +481,14 @@ export default function PlanificacionProduccion() {
       return alert("Ingresá un ritmo válido.");
 
     try {
-      const res = await fetch(
-        `/api/ordenes-trabajo/${editingRitmoItem.id}`,
-        {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            ...editingRitmoItem,
-            velocidad_u_hora: ritmoNum,
-          }),
-        },
-      );
+      const res = await fetch(`/api/ordenes-trabajo/${editingRitmoItem.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...editingRitmoItem,
+          velocidad_u_hora: ritmoNum,
+        }),
+      });
 
       if (res.ok) {
         setEditingRitmoItem(null);
@@ -502,7 +499,6 @@ export default function PlanificacionProduccion() {
     }
   };
 
-  // MANEJO DE DROP EN CALENDARIO
   const handleDropOnDay = (targetDateKey) => {
     if (!currentPlan || currentPlan.estado === "CERRADO") return;
 
@@ -537,7 +533,6 @@ export default function PlanificacionProduccion() {
     }
   };
 
-  // VALIDACIÓN Y CONFIRMACIÓN DE CANTIDAD
   const handleConfirmDropQty = async () => {
     if (!dropModalData || !currentPlan) return;
     const cantIngresada = Number(dropModalData.cantidad);
@@ -596,18 +591,15 @@ export default function PlanificacionProduccion() {
           fetchData();
         }
       } else if (dropModalData.type === "REPROGRAMAR") {
-        const res = await fetch(
-          `/api/ordenes-trabajo/${dropModalData.ot.id}`,
-          {
-            method: "PUT",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              ...dropModalData.ot,
-              fecha_inicio: dropModalData.targetDate,
-              cant_objetivo: cantIngresada,
-            }),
-          },
-        );
+        const res = await fetch(`/api/ordenes-trabajo/${dropModalData.ot.id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            ...dropModalData.ot,
+            fecha_inicio: dropModalData.targetDate,
+            cant_objetivo: cantIngresada,
+          }),
+        });
 
         if (res.ok) {
           setDropModalData(null);
@@ -620,7 +612,6 @@ export default function PlanificacionProduccion() {
     }
   };
 
-  // DESASIGNAR / ELIMINAR FECHA DESDE EL CALENDARIO
   const handleUnassignDateFromOT = async (otItem, e) => {
     if (e) e.stopPropagation();
     if (currentPlan?.estado === "CERRADO") return;
@@ -633,22 +624,16 @@ export default function PlanificacionProduccion() {
       );
 
       if (instancias.length > 1) {
-        const res = await fetch(
-          `/api/ordenes-trabajo/${otItem.id}`,
-          {
-            method: "DELETE",
-          },
-        );
+        const res = await fetch(`/api/ordenes-trabajo/${otItem.id}`, {
+          method: "DELETE",
+        });
         if (res.ok) fetchData();
       } else {
-        const res = await fetch(
-          `/api/ordenes-trabajo/${otItem.id}`,
-          {
-            method: "PUT",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ ...otItem, fecha_inicio: "" }),
-          },
-        );
+        const res = await fetch(`/api/ordenes-trabajo/${otItem.id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ...otItem, fecha_inicio: "" }),
+        });
         if (res.ok) fetchData();
       }
     } catch (err) {
@@ -656,7 +641,6 @@ export default function PlanificacionProduccion() {
     }
   };
 
-  // ESTADO PLAN (CERRAR / REABRIR)
   const handleTogglePlanEstado = async () => {
     if (!currentPlan) return;
     const nuevoEstado =
@@ -684,7 +668,6 @@ export default function PlanificacionProduccion() {
     }
   };
 
-  // ELIMINAR TODO EL GRUPO DE UN SEMIELABORADO DEL PLAN
   const handleDeleteGroupFromPlan = async (group) => {
     if (
       !confirm(
@@ -769,7 +752,7 @@ export default function PlanificacionProduccion() {
     return nombres[calMonth];
   }, [calMonth]);
 
-  // PAGINACIÓN DE ÍTEMS AGRUPADOS
+  // PAGINACIÓN
   const totalPages =
     Math.ceil(filteredPlanGroupedItems.length / itemsPerPage) || 1;
   const paginatedPlanGroupedItems = useMemo(() => {
@@ -783,51 +766,61 @@ export default function PlanificacionProduccion() {
   );
 
   return (
-    <div className="h-full flex flex-col font-mono text-[#e1d7f5] select-none space-y-2 sm:space-y-2.5 min-h-0 bg-[#1a0f2e] p-1 overflow-hidden relative">
-      {/* 1. HEADER */}
-      <div className="flex flex-row items-center justify-between pb-2 border-b-2 border-[#432874] gap-2 shrink-0">
-        <div>
-          <h2 className="font-pixel text-sm sm:text-base text-[#ffbe00] font-bold flex items-center gap-2 tracking-wide drop-shadow-[1px_1px_0px_#000]">
-            <ClipboardEdit size={16} className="text-[#38bdf8] shrink-0" />{" "}
-            PLANIFICACIÓN DE PLANTA
-          </h2>
-          <p className="text-[10px] text-[#a594c9] font-mono hidden sm:block">
-            Control simplificado de planes de producción y asignación de ritmo
-            de fabricación.
-          </p>
+    <div className="h-full flex flex-col font-sans text-slate-200 select-none space-y-3 min-h-0 bg-[#070a12] p-2.5 sm:p-4 overflow-hidden relative rounded-2xl border border-slate-800/80 shadow-2xl backdrop-blur-2xl">
+      {/* 1. BARRA SUPERIOR UNIFICADA DE ACCIONES Y FECHAS */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-2.5 pb-3 border-b border-slate-800/80 shrink-0">
+        <div className="flex items-center gap-3">
+          <div className="p-2.5 bg-amber-500/10 border border-amber-500/20 rounded-xl text-amber-400 shadow-[0_0_15px_rgba(245,158,11,0.15)] shrink-0">
+            <ClipboardEdit size={20} />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <h2 className="font-bold text-xs sm:text-sm text-white tracking-widest uppercase font-mono">
+                PLANIFICACIÓN DE PLANTA
+              </h2>
+              <span className="text-[10px] bg-emerald-500/10 text-emerald-300 border border-emerald-500/20 px-2 py-0.5 rounded-full font-mono flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_8px_#10b981]" />{" "}
+                PROGRAMACIÓN
+              </span>
+            </div>
+            <p className="text-[11px] text-slate-400 mt-0.5 hidden sm:block">
+              Gestión simplificada de lotes, ritmo de producción y asignación en
+              calendario.
+            </p>
+          </div>
         </div>
 
-        <div className="flex items-center gap-1.5 font-pixel text-xs">
+        {/* ACCIONES GLOBALES */}
+        <div className="flex items-center gap-2 overflow-x-auto pb-1 md:pb-0 shrink-0">
           <button
             onClick={() => setIsHistorialMode(!isHistorialMode)}
-            className={`px-3 py-1.5 border-2 font-bold transition-all shadow-[2px_2px_0px_#000] rounded-xs flex items-center gap-1.5 ${
+            className={`px-3 py-1.5 border text-xs font-bold font-mono transition-all rounded-xl flex items-center gap-1.5 cursor-pointer whitespace-nowrap ${
               isHistorialMode
-                ? "bg-[#8a72a8] border-[#432874] text-white"
-                : "bg-[#2c1a4d] border-[#432874] text-[#a594c9] hover:text-white"
+                ? "bg-purple-500/20 border-purple-500/50 text-purple-300"
+                : "bg-slate-900 border-slate-700 text-slate-300 hover:text-white hover:border-slate-600"
             }`}
           >
             <History size={14} />
             <span>
-              {isHistorialMode ? "VER ABIERTOS" : "HISTORIAL CERRADOS"}
+              {isHistorialMode ? "VER PLANES ABIERTOS" : "HISTORIAL CERRADOS"}
             </span>
           </button>
 
-          {/* BOTÓN MRP INSUMOS: FUERZA CAMBIO A TABLA Y MUESTRA LA EXPLOSIÓN */}
           <button
             onClick={() => {
               setActiveTab("TABLA");
               setTableMode(tableMode === "ITEMS" ? "MRP" : "ITEMS");
             }}
-            className={`px-3 py-1.5 border-2 font-bold transition-all shadow-[2px_2px_0px_#000] rounded-xs flex items-center gap-1.5 ${
+            className={`px-3 py-1.5 border text-xs font-bold font-mono transition-all rounded-xl flex items-center gap-1.5 cursor-pointer whitespace-nowrap ${
               tableMode === "MRP" && activeMainTab === "TABLA"
-                ? "bg-[#38bdf8] border-[#0284c7] text-[#2c1a4d]"
-                : "bg-[#2c1a4d] border-[#38bdf8] text-[#38bdf8] hover:bg-[#38bdf8] hover:text-[#2c1a4d]"
+                ? "bg-cyan-500/20 border-cyan-500/50 text-cyan-300"
+                : "bg-slate-900 border-slate-700 text-cyan-400 hover:border-cyan-500/50"
             }`}
           >
             <Scale size={14} />
             <span>
               {tableMode === "MRP" && activeMainTab === "TABLA"
-                ? "VOLVER A PRODUCTOS"
+                ? "VER PRODUCTOS"
                 : "MRP INSUMOS"}
             </span>
           </button>
@@ -840,42 +833,46 @@ export default function PlanificacionProduccion() {
               });
               setIsNewPlanModalOpen(true);
             }}
-            className="px-3 py-1.5 bg-[#ffbe00] border-2 border-[#b38600] text-[#2c1a4d] font-bold hover:bg-[#ffe066] shadow-[2px_2px_0px_#000] active:translate-y-0.5 transition-all rounded-xs flex items-center gap-1.5"
+            className="px-3.5 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs rounded-xl transition-all shadow-md flex items-center gap-1.5 cursor-pointer shrink-0 font-mono"
           >
-            <Plus size={14} /> NUEVO PLAN OT
+            <Plus size={15} /> NUEVO PLAN
           </button>
         </div>
       </div>
 
-      {/* 2. BARRA DE NAVEGACIÓN DE PLAN Y VISTAS */}
-      <div className="bg-[#24173e] border-2 border-[#432874] p-2.5 space-y-2 shrink-0 rounded-xs shadow-[3px_3px_0px_#000]">
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2">
-          <div className="flex items-center gap-2 font-pixel text-xs flex-1">
-            <span className="text-[#a594c9] font-bold shrink-0 flex items-center gap-1">
+      {/* 2. PANEL COMPACTO DE CONTROL DE PLAN ACTIVO */}
+      <div className="bg-[#0e1422] border border-slate-800/80 p-2.5 rounded-2xl space-y-2 shrink-0 shadow-inner">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5">
+          {/* SELECTOR DE PLAN */}
+          <div className="flex items-center gap-2 flex-1 min-w-0">
+            <span className="text-xs font-bold text-slate-400 shrink-0 flex items-center gap-1 font-mono">
               {isHistorialMode ? (
-                <Lock size={13} className="text-[#f87171]" />
+                <Lock size={14} className="text-rose-400" />
               ) : (
-                <Unlock size={13} className="text-[#24cc8f]" />
+                <Unlock size={14} className="text-emerald-400" />
               )}
-              {isHistorialMode ? "PLAN CERRADO:" : "ELEGIR PLAN:"}
+              PLAN:
             </span>
 
-            {/* SELECCIÓN DE PLAN (MUESTRA CANTIDAD DE PRODUCTOS PADRE) */}
             <select
               value={selectedPlanCode}
               onChange={(e) => setSelectedPlanCode(e.target.value)}
-              className="bg-[#160c2b] border-2 border-[#432874] text-white font-bold px-3 py-1 focus:outline-none focus:border-[#ffbe00] text-xs rounded-xs flex-1 max-w-xs font-mono"
+              className="bg-[#070a12] border border-slate-800 text-white font-bold px-3 py-1.5 focus:outline-none focus:border-amber-500/50 text-xs rounded-xl flex-1 font-mono truncate cursor-pointer"
             >
               {availablePlansList.length === 0 ? (
-                <option value="">-- NO HAY PLANES EN ESTA SECCIÓN --</option>
+                <option value="">-- NO HAY PLANES DISPONIBLES --</option>
               ) : (
                 availablePlansList.map((p) => {
                   const uniqueProducts = new Set(
                     p.items.map((i) => i.semielaborado_codigo),
                   ).size;
                   return (
-                    <option key={p.codigo_ot} value={p.codigo_ot}>
-                      [{p.codigo_ot}] ({uniqueProducts} productos)
+                    <option
+                      key={p.codigo_ot}
+                      value={p.codigo_ot}
+                      className="bg-slate-900 text-white"
+                    >
+                      [{p.codigo_ot}] ({uniqueProducts} productos) - {p.destino}
                     </option>
                   );
                 })
@@ -883,34 +880,36 @@ export default function PlanificacionProduccion() {
             </select>
           </div>
 
-          <div className="flex items-center gap-1 bg-[#160c2b] border border-[#432874] p-1 rounded-xs shrink-0 font-pixel text-xs">
+          {/* TOGGLE TABLA / CALENDARIO */}
+          <div className="flex items-center gap-1 bg-[#070a12] p-1 border border-slate-800 rounded-xl shrink-0 font-mono">
             <button
               onClick={() => {
                 setActiveTab("TABLA");
                 setIsDrawerOpen(false);
               }}
-              className={`px-3 py-1 flex items-center gap-1 rounded-2xs font-bold ${
+              className={`px-3 py-1 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 cursor-pointer ${
                 activeMainTab === "TABLA"
-                  ? "bg-[#ffbe00] text-[#2c1a4d]"
-                  : "text-[#a594c9] hover:text-white"
+                  ? "bg-[#131c2d] text-emerald-300 border border-emerald-500/30 shadow-[0_0_12px_rgba(16,185,129,0.15)]"
+                  : "text-slate-400 hover:text-slate-200"
               }`}
             >
               <List size={13} /> TABLA
             </button>
             <button
               onClick={() => setActiveTab("CALENDARIO")}
-              className={`px-3 py-1 flex items-center gap-1 rounded-2xs font-bold ${
+              className={`px-3 py-1 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 cursor-pointer ${
                 activeMainTab === "CALENDARIO"
-                  ? "bg-[#ffbe00] text-[#2c1a4d]"
-                  : "text-[#a594c9] hover:text-white"
+                  ? "bg-[#131c2d] text-emerald-300 border border-emerald-500/30 shadow-[0_0_12px_rgba(16,185,129,0.15)]"
+                  : "text-slate-400 hover:text-slate-200"
               }`}
             >
               <CalendarIcon size={13} /> CALENDARIO
             </button>
           </div>
 
+          {/* ACCIONES DEL PLAN SELECCIONADO */}
           {currentPlan && (
-            <div className="flex items-center gap-1.5 font-pixel text-xs shrink-0">
+            <div className="flex items-center gap-2 shrink-0 font-mono">
               {currentPlan.estado === "ABIERTO" && (
                 <button
                   onClick={() => {
@@ -922,18 +921,18 @@ export default function PlanificacionProduccion() {
                     });
                     setIsAddItemModalOpen(true);
                   }}
-                  className="px-3 py-1 bg-[#38bdf8] text-[#2c1a4d] font-bold hover:bg-[#7dd3fc] shadow-[1px_1px_0px_#000] rounded-2xs flex items-center gap-1"
+                  className="px-3 py-1.5 bg-[#131c2d] hover:bg-[#1a263c] border border-cyan-500/30 text-cyan-400 font-bold text-xs rounded-xl transition-all flex items-center gap-1.5 cursor-pointer"
                 >
-                  <Plus size={13} /> AGREGAR PRODUCTO
+                  <Plus size={14} /> AGREGAR PRODUCTO
                 </button>
               )}
 
               <button
                 onClick={handleTogglePlanEstado}
-                className={`px-3 py-1 border font-bold shadow-[1px_1px_0px_#000] rounded-2xs flex items-center gap-1 ${
+                className={`px-3 py-1.5 border text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 cursor-pointer ${
                   currentPlan.estado === "CERRADO"
-                    ? "bg-[#24cc8f] text-[#2c1a4d] border-[#1b9a67]"
-                    : "bg-[#f87171] text-[#2c1a4d] border-[#b91c1c]"
+                    ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/20"
+                    : "bg-rose-500/10 border-rose-500/30 text-rose-400 hover:bg-rose-500/20"
                 }`}
               >
                 {currentPlan.estado === "CERRADO" ? (
@@ -948,303 +947,258 @@ export default function PlanificacionProduccion() {
             </div>
           )}
         </div>
-      </div>
 
-      {/* 3. CONTENIDO PRINCIPAL */}
-      <div className="flex-1 bg-[#24173e] border-2 border-[#432874] p-2.5 flex flex-col min-h-0 shadow-[4px_4px_0px_#000] relative rounded-xs">
-        {currentPlan ? (
-          <div className="bg-[#160c2b] border border-[#432874] p-2 mb-2 flex flex-wrap items-center justify-between text-xs font-pixel shrink-0 rounded-2xs">
-            <div className="flex items-center gap-2">
-              <span className="text-[#ffbe00] font-bold text-sm">
-                [{currentPlan.codigo_ot}]
-              </span>
-              <span className="text-[#a594c9]">
+        {/* MÉTRICAS DEL PLAN SELECCIONADO */}
+        {currentPlan && (
+          <div className="pt-2 border-t border-slate-800/60 flex flex-wrap items-center justify-between text-xs gap-2 font-mono">
+            <div className="flex items-center gap-3 text-[11px]">
+              <span className="text-slate-400">
                 DESTINO:{" "}
-                <strong className="text-white">{currentPlan.destino}</strong>
+                <strong className="text-white font-bold">
+                  {currentPlan.destino}
+                </strong>
               </span>
-            </div>
-
-            <div className="flex items-center gap-3">
-              <span className="text-[#a594c9]">
-                AVANCE PLAN:{" "}
-                <strong className="text-[#24cc8f]">
+              <span className="text-slate-400">
+                AVANCE:{" "}
+                <strong className="text-emerald-400 font-bold">
                   {currentPlanStats.totalProd} / {currentPlanStats.totalObj} u.
                   ({currentPlanStats.avance}%)
                 </strong>
               </span>
-              <span
-                className={`px-2 py-0.5 border text-[10px] font-bold rounded-2xs ${
-                  currentPlan.estado === "CERRADO"
-                    ? "bg-[#f87171]/20 border-[#f87171] text-[#f87171]"
-                    : "bg-[#24cc8f]/20 border-[#24cc8f] text-[#24cc8f]"
-                }`}
-              >
-                {currentPlan.estado === "CERRADO"
-                  ? "🔒 CERRADO / HISTORIAL"
-                  : "⚡ PLAN ABIERTO"}
-              </span>
+            </div>
+
+            <div className="w-full sm:w-48 bg-[#070a12] h-2 rounded-full overflow-hidden border border-slate-800">
+              <div
+                className="bg-gradient-to-r from-amber-500 to-emerald-400 h-full transition-all duration-300"
+                style={{ width: `${Math.min(100, currentPlanStats.avance)}%` }}
+              />
             </div>
           </div>
-        ) : (
-          <div className="bg-[#160c2b] border border-[#432874] p-3 text-center text-xs font-pixel text-[#a594c9] mb-2 shrink-0">
-            Seleccioná un plan para gestionar sus productos.
-          </div>
         )}
+      </div>
 
-        {/* VISTA 1: TABLA (ITEMS UNIFICADOS POR SEMIELABORADO vs MRP) */}
+      {/* 3. VISTA PRINCIPAL (TABLA / CALENDARIO) */}
+      <div className="flex-1 bg-[#0e1422] border border-slate-800/80 p-2.5 flex flex-col min-h-0 shadow-lg relative rounded-2xl">
         {activeMainTab === "TABLA" ? (
           <div
             ref={tableContainerRef}
-            className="hidden md:flex flex-1 border-2 border-[#432874] bg-[#160c2b] min-h-0 flex-col overflow-hidden rounded-xs"
+            className="flex-1 bg-[#070a12] border border-slate-800 min-h-0 flex flex-col overflow-hidden rounded-xl"
           >
             {tableMode === "ITEMS" ? (
-              <table className="w-full text-left text-xs border-collapse table-fixed">
-                <thead>
-                  <tr className="text-[#a594c9] border-b-2 border-[#432874] font-pixel text-[11px] bg-[#2c1a4d] sticky top-0 z-10 h-[36px]">
-                    <th className="w-[16%] px-2.5 font-normal">CÓDIGO SE</th>
-                    <th className="w-[32%] px-2.5 font-normal">
-                      SEMIELABORADO / ARTÍCULO
-                    </th>
-                    <th className="w-[16%] px-2.5 font-normal text-center">
-                      FECHA PROGRAMADA
-                    </th>
-                    <th className="w-[16%] px-2.5 font-normal text-right">
-                      PRODUCCIÓN
-                    </th>
-                    <th className="w-[10%] px-2.5 font-normal text-right">
-                      RITMO (U/H)
-                    </th>
-                    <th className="w-[10%] px-2.5 font-normal text-center">
-                      ACCIONES
-                    </th>
-                  </tr>
-                </thead>
-
-                <tbody
-                  key={currentPage}
-                  className="divide-y divide-[#432874]/30 bg-[#160c2b] animate-in fade-in duration-200"
-                >
-                  {loading ? (
-                    <tr>
-                      <td
-                        colSpan="6"
-                        className="py-16 text-center font-pixel text-xs text-[#ffbe00] animate-pulse"
-                      >
-                        Cargando productos del plan...
-                      </td>
+              <div className="overflow-x-auto h-full">
+                <table className="w-full text-left text-xs border-collapse min-w-[700px]">
+                  <thead>
+                    <tr className="text-slate-400 border-b border-slate-800 text-[10px] uppercase font-mono bg-[#0f172a] sticky top-0 z-10 h-[36px]">
+                      <th className="p-2.5 font-bold">CÓDIGO</th>
+                      <th className="p-2.5 font-bold">
+                        SEMIELABORADO / ARTÍCULO
+                      </th>
+                      <th className="p-2.5 font-bold text-center">
+                        PROGRAMACIÓN
+                      </th>
+                      <th className="p-2.5 font-bold text-right">PRODUCCIÓN</th>
+                      <th className="p-2.5 font-bold text-right">
+                        RITMO (U/H)
+                      </th>
+                      <th className="p-2.5 font-bold text-center">ACCIONES</th>
                     </tr>
-                  ) : !currentPlan || filteredPlanGroupedItems.length === 0 ? (
-                    <tr>
-                      <td
-                        colSpan="6"
-                        className="py-16 text-center font-pixel text-xs text-[#6e588a]"
-                      >
-                        {currentPlan
-                          ? "Este plan está vacío. Hacé clic en 'AGREGAR PRODUCTO' para comenzar."
-                          : "Seleccioná un plan para ver sus productos."}
-                      </td>
-                    </tr>
-                  ) : (
-                    <>
-                      {paginatedPlanGroupedItems.map((groupItem) => {
-                        const avance =
-                          groupItem.cant_objetivo_plan > 0
-                            ? Math.round(
-                                (groupItem.cant_producida_total /
-                                  groupItem.cant_objetivo_plan) *
-                                  100,
-                              )
-                            : 0;
+                  </thead>
 
-                        return (
-                          <tr
-                            key={groupItem.semielaborado_codigo}
-                            className="h-[38px] hover:bg-[#281747] transition-colors align-middle group"
-                          >
-                            <td className="px-2.5 font-pixel text-[#ffbe00] font-bold tracking-wider truncate align-middle">
-                              [{groupItem.semielaborado_codigo}]
-                            </td>
-
-                            <td className="px-2.5 text-white font-bold truncate align-middle">
-                              {groupItem.articulo}
-                            </td>
-
-                            <td className="px-2.5 text-center font-pixel align-middle">
-                              <span
-                                className={`px-2 py-0.5 rounded-2xs text-[10px] font-bold border ${
-                                  groupItem.diasCount > 0
-                                    ? "text-[#38bdf8] bg-[#38bdf8]/10 border-[#38bdf8]/30"
-                                    : "text-[#a594c9] bg-[#24173e] border-[#432874]"
-                                }`}
-                              >
-                                {groupItem.fechaTexto}
-                              </span>
-                            </td>
-
-                            <td className="px-2.5 text-right font-pixel truncate align-middle">
-                              <span className="font-bold text-[#24cc8f]">
-                                {groupItem.cant_producida_total} /{" "}
-                                {groupItem.cant_objetivo_plan} u. ({avance}%)
-                              </span>
-                            </td>
-
-                            <td
-                              onClick={() => {
-                                if (
-                                  currentPlan.estado === "ABIERTO" &&
-                                  groupItem.rawItems[0]
-                                ) {
-                                  setEditingRitmoItem(groupItem.rawItems[0]);
-                                  setNewRitmoVal(
-                                    groupItem.velocidad_u_hora || 50,
-                                  );
-                                }
-                              }}
-                              className="px-2.5 text-right font-pixel text-[#38bdf8] font-bold align-middle cursor-pointer hover:underline"
-                              title="Hacé clic para cambiar ritmo u/h"
-                            >
-                              <span className="inline-flex items-center gap-1">
-                                <Zap size={11} />{" "}
-                                {groupItem.velocidad_u_hora || 50} u/h{" "}
-                                <Edit2
-                                  size={10}
-                                  className="opacity-0 group-hover:opacity-100"
-                                />
-                              </span>
-                            </td>
-
-                            <td className="px-2.5 text-center align-middle">
-                              {currentPlan.estado === "ABIERTO" ? (
-                                <button
-                                  onClick={() =>
-                                    handleDeleteGroupFromPlan(groupItem)
-                                  }
-                                  className="p-1 bg-[#2c1a4d] border border-[#432874] text-[#a594c9] hover:text-[#f87171] hover:border-[#f87171] transition-all shadow-[1px_1px_0px_#000] rounded-2xs"
-                                  title="Eliminar este semielaborado del plan"
-                                >
-                                  <Trash2 size={12} />
-                                </button>
-                              ) : (
-                                <span className="text-[#6e588a] text-[10px] font-pixel">
-                                  🔒 CERRADO
-                                </span>
-                              )}
-                            </td>
-                          </tr>
-                        );
-                      })}
-
-                      {Array.from({ length: emptySlotsCount }).map((_, idx) => (
-                        <tr
-                          key={`empty-${idx}`}
-                          className="h-[38px] opacity-15 pointer-events-none"
+                  <tbody className="divide-y divide-slate-800/50 bg-[#070a12] font-sans">
+                    {loading ? (
+                      <tr>
+                        <td
+                          colSpan="6"
+                          className="py-12 text-center text-xs font-mono text-amber-400 animate-pulse"
                         >
-                          <td className="px-2.5 text-[#432874] font-pixel text-[10px]">
-                            --
-                          </td>
-                          <td className="px-2.5 text-[#432874] font-pixel text-[10px]">
-                            -- RANURA VACÍA --
-                          </td>
-                          <td className="px-2.5 text-center text-[#432874] text-[10px]">
-                            --
-                          </td>
-                          <td className="px-2.5 text-right text-[#432874] text-[10px]">
-                            --
-                          </td>
-                          <td className="px-2.5 text-right text-[#432874] text-[10px]">
-                            --
-                          </td>
-                          <td className="px-2.5 text-center text-[#432874] text-[10px]">
-                            --
-                          </td>
-                        </tr>
-                      ))}
-                    </>
-                  )}
-                </tbody>
-              </table>
-            ) : (
-              <table className="w-full text-left text-xs border-collapse table-fixed">
-                <thead>
-                  <tr className="text-[#a594c9] border-b-2 border-[#432874] font-pixel text-[11px] bg-[#2c1a4d] sticky top-0 z-10 h-[36px]">
-                    <th className="w-[35%] px-2.5 font-normal">
-                      MATERIA PRIMA / INSUMO
-                    </th>
-                    <th className="w-[20%] px-2.5 font-normal text-right">
-                      REQUERIDO
-                    </th>
-                    <th className="w-[20%] px-2.5 font-normal text-right">
-                      STOCK DISPONIBLE
-                    </th>
-                    <th className="w-[25%] px-2.5 font-normal text-center">
-                      FALTANTE / SOBRANTE
-                    </th>
-                  </tr>
-                </thead>
-
-                <tbody className="divide-y divide-[#432874]/30 bg-[#160c2b] animate-in fade-in duration-200 font-pixel">
-                  {mrpCalculatedData.length === 0 ? (
-                    <tr>
-                      <td
-                        colSpan="4"
-                        className="py-16 text-center font-pixel text-xs text-[#6e588a]"
-                      >
-                        No se encontraron materias primas en las recetas de los
-                        productos de este plan.
-                      </td>
-                    </tr>
-                  ) : (
-                    mrpCalculatedData.map((item, idx) => (
-                      <tr
-                        key={idx}
-                        className="h-[38px] hover:bg-[#281747] transition-colors align-middle"
-                      >
-                        <td className="px-2.5 font-bold text-white truncate">
-                          [{item.codigo}] {item.nombre}
-                        </td>
-                        <td className="px-2.5 text-right font-bold text-[#ffbe00]">
-                          {item.requeridoKg.toLocaleString(undefined, {
-                            maximumFractionDigits: 2,
-                          })}{" "}
-                          {item.unidad}
-                        </td>
-                        <td className="px-2.5 text-right font-bold text-[#24cc8f]">
-                          {item.stockActual.toLocaleString(undefined, {
-                            maximumFractionDigits: 2,
-                          })}{" "}
-                          {item.unidad}
-                        </td>
-                        <td className="px-2.5 text-center whitespace-nowrap">
-                          {item.esDeficit ? (
-                            <span className="inline-block px-2 py-0.5 border border-[#7f1d1d] bg-[#450a0a]/70 text-[#f87171] font-bold rounded-2xs text-[10px] shadow-[1px_1px_0px_#000]">
-                              FALTANTE (
-                              {Math.abs(item.diferencia).toLocaleString(
-                                undefined,
-                                { maximumFractionDigits: 2 },
-                              )}{" "}
-                              {item.unidad})
-                            </span>
-                          ) : (
-                            <span className="inline-block px-2 py-0.5 border border-[#065f46] bg-[#064e3b]/70 text-[#24cc8f] font-bold rounded-2xs text-[10px] shadow-[1px_1px_0px_#000]">
-                              SOBRANTE (+
-                              {item.diferencia.toLocaleString(undefined, {
-                                maximumFractionDigits: 2,
-                              })}{" "}
-                              {item.unidad})
-                            </span>
-                          )}
+                          Cargando datos de producción...
                         </td>
                       </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
+                    ) : !currentPlan ||
+                      filteredPlanGroupedItems.length === 0 ? (
+                      <tr>
+                        <td
+                          colSpan="6"
+                          className="py-12 text-center text-xs font-mono text-slate-500"
+                        >
+                          {currentPlan
+                            ? "No hay productos en este plan. Hacé clic en 'AGREGAR PRODUCTO'."
+                            : "Seleccioná un plan para ver sus productos."}
+                        </td>
+                      </tr>
+                    ) : (
+                      <>
+                        {paginatedPlanGroupedItems.map((groupItem) => {
+                          const avance =
+                            groupItem.cant_objetivo_plan > 0
+                              ? Math.round(
+                                  (groupItem.cant_producida_total /
+                                    groupItem.cant_objetivo_plan) *
+                                    100,
+                                )
+                              : 0;
+
+                          return (
+                            <tr
+                              key={groupItem.semielaborado_codigo}
+                              className="h-[40px] hover:bg-[#121824] transition-colors align-middle"
+                            >
+                              <td className="p-2.5 font-mono font-bold text-amber-400 whitespace-nowrap">
+                                [{groupItem.semielaborado_codigo}]
+                              </td>
+
+                              <td className="p-2.5 text-white font-medium truncate">
+                                {groupItem.articulo}
+                              </td>
+
+                              <td className="p-2.5 text-center whitespace-nowrap font-mono">
+                                <span
+                                  className={`inline-block px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${
+                                    groupItem.diasCount > 0
+                                      ? "text-cyan-400 bg-cyan-500/10 border-cyan-500/30"
+                                      : "text-slate-400 bg-slate-900 border-slate-800"
+                                  }`}
+                                >
+                                  {groupItem.fechaTexto}
+                                </span>
+                              </td>
+
+                              <td className="p-2.5 text-right whitespace-nowrap font-mono">
+                                <span className="font-bold text-emerald-400">
+                                  {groupItem.cant_producida_total} /{" "}
+                                  {groupItem.cant_objetivo_plan} u. ({avance}%)
+                                </span>
+                              </td>
+
+                              <td
+                                onClick={() => {
+                                  if (
+                                    currentPlan.estado === "ABIERTO" &&
+                                    groupItem.rawItems[0]
+                                  ) {
+                                    setEditingRitmoItem(groupItem.rawItems[0]);
+                                    setNewRitmoVal(
+                                      groupItem.velocidad_u_hora || 50,
+                                    );
+                                  }
+                                }}
+                                className="p-2.5 text-right font-bold text-cyan-400 whitespace-nowrap cursor-pointer hover:underline font-mono"
+                                title="Cambiar ritmo u/h"
+                              >
+                                <span className="inline-flex items-center gap-1">
+                                  <Zap size={11} />{" "}
+                                  {groupItem.velocidad_u_hora || 50} u/h
+                                </span>
+                              </td>
+
+                              <td className="p-2.5 text-center whitespace-nowrap">
+                                {currentPlan.estado === "ABIERTO" ? (
+                                  <button
+                                    onClick={() =>
+                                      handleDeleteGroupFromPlan(groupItem)
+                                    }
+                                    className="p-1.5 bg-[#090d16] border border-slate-800 text-slate-400 hover:text-rose-400 hover:border-rose-500/40 transition-colors rounded-lg cursor-pointer"
+                                    title="Eliminar producto del plan"
+                                  >
+                                    <Trash2 size={13} />
+                                  </button>
+                                ) : (
+                                  <span className="text-slate-500 text-[10px] font-mono">
+                                    🔒 CERRADO
+                                  </span>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              /* TABLA VISTA MRP INSUMOS */
+              <div className="overflow-x-auto h-full">
+                <table className="w-full text-left text-xs border-collapse min-w-[650px]">
+                  <thead>
+                    <tr className="text-slate-400 border-b border-slate-800 text-[10px] uppercase font-mono bg-[#0f172a] sticky top-0 z-10 h-[36px]">
+                      <th className="p-2.5 font-bold">
+                        MATERIA PRIMA / INSUMO
+                      </th>
+                      <th className="p-2.5 font-bold text-right">REQUERIDO</th>
+                      <th className="p-2.5 font-bold text-right">
+                        STOCK DISPONIBLE
+                      </th>
+                      <th className="p-2.5 font-bold text-center">
+                        ESTADO / BALANCE
+                      </th>
+                    </tr>
+                  </thead>
+
+                  <tbody className="divide-y divide-slate-800/50 bg-[#070a12] font-mono">
+                    {mrpCalculatedData.length === 0 ? (
+                      <tr>
+                        <td
+                          colSpan="4"
+                          className="py-12 text-center text-xs text-slate-500"
+                        >
+                          No hay fórmulas ni recetas asociadas a los productos
+                          de este plan.
+                        </td>
+                      </tr>
+                    ) : (
+                      mrpCalculatedData.map((item, idx) => (
+                        <tr
+                          key={idx}
+                          className="h-[40px] hover:bg-[#121824] transition-colors align-middle"
+                        >
+                          <td className="p-2.5 font-bold text-white truncate">
+                            [{item.codigo}] {item.nombre}
+                          </td>
+                          <td className="p-2.5 text-right font-bold text-amber-400 whitespace-nowrap">
+                            {item.requeridoKg.toLocaleString(undefined, {
+                              maximumFractionDigits: 2,
+                            })}{" "}
+                            {item.unidad}
+                          </td>
+                          <td className="p-2.5 text-right font-bold text-emerald-400 whitespace-nowrap">
+                            {item.stockActual.toLocaleString(undefined, {
+                              maximumFractionDigits: 2,
+                            })}{" "}
+                            {item.unidad}
+                          </td>
+                          <td className="p-2.5 text-center whitespace-nowrap font-mono">
+                            {item.esDeficit ? (
+                              <span className="inline-block px-2.5 py-0.5 border border-rose-500/40 bg-rose-500/10 text-rose-400 font-bold rounded-full text-[10px]">
+                                FALTANTE (
+                                {Math.abs(item.diferencia).toLocaleString(
+                                  undefined,
+                                  { maximumFractionDigits: 2 },
+                                )}{" "}
+                                {item.unidad})
+                              </span>
+                            ) : (
+                              <span className="inline-block px-2.5 py-0.5 border border-emerald-500/40 bg-emerald-500/10 text-emerald-400 font-bold rounded-full text-[10px]">
+                                OK (+
+                                {item.diferencia.toLocaleString(undefined, {
+                                  maximumFractionDigits: 2,
+                                })}{" "}
+                                {item.unidad})
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
             )}
           </div>
         ) : (
-          /* VISTA 2: CALENDARIO DE PROYECCIÓN E INSPECCIÓN CON TIMER HOVER Y ELIMINACIÓN FIJA */
-          <div className="flex-1 bg-[#160c2b] border-2 border-[#432874] p-2.5 rounded-xs flex flex-col min-h-0 shadow-[inset_0_0_15px_rgba(0,0,0,0.5)] font-pixel text-xs">
-            <div className="flex justify-between items-center bg-[#24173e] border border-[#432874] p-1.5 rounded-2xs mb-2 shrink-0">
+          /* VISTA CALENDARIO CON PANEL LATERAL FLOTANTE DE PRODUCTOS PADRE */
+          <div className="flex-1 bg-[#070a12] border border-slate-800 p-2.5 rounded-xl flex flex-col min-h-0 relative">
+            <div className="flex justify-between items-center bg-[#0f172a] border border-slate-800 p-1.5 rounded-xl mb-2 shrink-0">
               <button
                 onClick={() => {
                   if (calMonth === 0) {
@@ -1252,12 +1206,12 @@ export default function PlanificacionProduccion() {
                     setCalYear(calYear - 1);
                   } else setCalMonth(calMonth - 1);
                 }}
-                className="p-1 bg-[#160c2b] border border-[#432874] text-[#38bdf8] hover:text-white rounded-2xs"
+                className="p-1 bg-[#070a12] border border-slate-800 text-cyan-400 hover:text-white rounded-lg cursor-pointer"
               >
-                <ChevronLeft size={14} />
+                <ChevronLeft size={16} />
               </button>
 
-              <span className="text-white font-bold tracking-widest text-xs">
+              <span className="text-white font-bold tracking-wider text-xs font-mono">
                 {nombreMes} {calYear}
               </span>
 
@@ -1268,22 +1222,20 @@ export default function PlanificacionProduccion() {
                     setCalYear(calYear + 1);
                   } else setCalMonth(calMonth + 1);
                 }}
-                className="p-1 bg-[#160c2b] border border-[#432874] text-[#38bdf8] hover:text-white rounded-2xs"
+                className="p-1 bg-[#070a12] border border-slate-800 text-cyan-400 hover:text-white rounded-lg cursor-pointer"
               >
-                <ChevronRight size={14} />
+                <ChevronRight size={16} />
               </button>
             </div>
 
-            <div className="grid grid-cols-7 gap-1 text-center font-pixel text-[10px] text-[#a594c9] mb-1 shrink-0">
+            <div className="grid grid-cols-7 gap-1 text-center font-mono text-[10px] text-slate-400 mb-1 shrink-0 font-bold">
               {["LUN", "MAR", "MIÉ", "JUE", "VIE", "SÁB", "DOM"].map((d) => (
-                <div key={d} className="font-bold">
-                  {d}
-                </div>
+                <div key={d}>{d}</div>
               ))}
             </div>
 
             <div
-              className="flex-1 grid grid-cols-7 gap-1 min-h-0"
+              className="flex-1 grid grid-cols-7 gap-1 min-h-0 overflow-y-auto"
               style={{
                 gridTemplateRows: `repeat(${calendarGrid.rowCount}, minmax(0, 1fr))`,
               }}
@@ -1308,32 +1260,32 @@ export default function PlanificacionProduccion() {
                     onDrop={() => handleDropOnDay(cell.dateKey)}
                     onMouseEnter={() => handleCellMouseEnter(cell.dateKey)}
                     onMouseLeave={() => handleCellMouseLeave(cell.dateKey)}
-                    className={`p-1 border flex flex-col justify-between relative rounded-2xs transition-all duration-300 ease-out cursor-pointer ${
+                    className={`p-1 border flex flex-col justify-between relative rounded-xl transition-all cursor-pointer ${
                       cell.isToday
-                        ? "border-[#ffbe00] bg-[#ffbe00]/10 hover:bg-[#ffbe00]/25 hover:border-[#ffe066] hover:shadow-[0_0_12px_rgba(255,190,0,0.4)]"
+                        ? "border-amber-400 bg-amber-500/10 hover:bg-amber-500/20"
                         : hasProjected
-                          ? "border-[#38bdf8] bg-[#38bdf8]/10 hover:bg-[#38bdf8]/25 hover:border-[#7dd3fc] hover:shadow-[0_0_12px_rgba(56,189,248,0.4)]"
-                          : "border-[#432874]/60 bg-[#24173e]/50 hover:bg-[#39215e] hover:border-[#ffbe00]/60 hover:shadow-[0_0_10px_rgba(255,190,0,0.2)]"
+                          ? "border-cyan-400 bg-cyan-500/10 hover:bg-cyan-500/20"
+                          : "border-slate-800/80 bg-[#0e1422]/50 hover:bg-[#121824]"
                     }`}
                   >
-                    <div className="flex justify-between items-center text-[9px] border-b border-[#432874]/40 pb-0.5">
+                    <div className="flex justify-between items-center text-[9px] border-b border-slate-800/40 pb-0.5 font-mono">
                       <span
                         className={
                           cell.isToday
-                            ? "text-[#ffbe00] font-bold"
-                            : "text-[#a594c9]"
+                            ? "text-amber-400 font-bold"
+                            : "text-slate-400"
                         }
                       >
                         {cell.dayNumber}
                       </span>
                       {cell.isToday && (
-                        <span className="text-[8px] bg-[#ffbe00] text-[#2c1a4d] px-1 font-bold rounded-2xs">
+                        <span className="text-[8px] bg-amber-400 text-slate-950 px-1 font-bold rounded">
                           HOY
                         </span>
                       )}
                     </div>
 
-                    <div className="space-y-0.5 overflow-hidden flex-1 mt-1">
+                    <div className="space-y-0.5 overflow-hidden flex-1 mt-1 font-mono">
                       {hasProjected &&
                         cell.projectedOTs.map((otItem) => (
                           <div
@@ -1344,76 +1296,64 @@ export default function PlanificacionProduccion() {
                               setDraggedOTItem(otItem);
                               setDraggedParentSE(null);
                             }}
-                            className="text-[8px] bg-[#38bdf8]/20 border border-[#38bdf8]/40 text-[#38bdf8] px-1 py-0.5 truncate font-bold rounded-2xs cursor-grab active:cursor-grabbing flex justify-between items-center group/badge hover:bg-[#38bdf8]/30 transition-colors"
+                            className="text-[9px] bg-cyan-500/20 border border-cyan-500/40 text-cyan-300 px-1 py-0.5 truncate font-bold rounded cursor-grab active:cursor-grabbing flex justify-between items-center"
                           >
                             <span className="truncate">
                               [{otItem.semielaborado_codigo}]
                             </span>
-                            <span className="text-[#ffbe00] font-bold shrink-0 ml-1">
+                            <span className="text-amber-400 shrink-0 ml-1">
                               {otItem.cant_objetivo}u
                             </span>
                           </div>
                         ))}
 
                       {hasRealLogs && (
-                        <div className="text-[8px] bg-[#24cc8f]/20 border border-[#24cc8f]/40 text-[#24cc8f] px-1 truncate font-bold rounded-2xs">
-                          {cell.realLogs.length} Cargas Reales
+                        <div className="text-[9px] bg-emerald-500/20 border border-emerald-500/40 text-emerald-400 px-1 truncate font-bold rounded">
+                          {cell.realLogs.length} Reales
                         </div>
                       )}
                     </div>
 
-                    {/* VENTANA DE INSPECCIÓN (MUESTRA SIEMPRE PROGRAMADOS Y REALIZADOS SI EXISTEN) */}
+                    {/* INSPECCIÓN AL PASAR O HACER HOVER/PIN */}
                     {showInspectionBox && (
                       <div
                         onClick={(e) => e.stopPropagation()}
-                        className={`absolute top-0 left-0 z-50 w-64 bg-[#24173e] border-2 border-[#ffbe00] p-2.5 shadow-[0_0_25px_rgba(255,190,0,0.5)] space-y-2 font-pixel text-[10px] rounded-xs transition-opacity duration-200 ${
-                          isPinned
-                            ? "pointer-events-auto"
-                            : "pointer-events-none"
-                        }`}
+                        className="absolute top-0 left-0 z-50 w-60 bg-[#0e1422] border-2 border-amber-400 p-2.5 shadow-2xl space-y-2 font-mono text-[10px] rounded-xl"
                       >
-                        <div className="flex justify-between items-center border-b border-[#432874] pb-1 font-bold text-[#ffbe00]">
-                          <span className="flex items-center gap-1">
-                            INSPECCIÓN {cell.dateKey}
-                            {isPinned && (
-                              <span className="text-[8px] bg-[#ffbe00] text-[#2c1a4d] px-1 rounded-2xs font-bold">
-                                📌 FIJO
-                              </span>
-                            )}
-                          </span>
+                        <div className="flex justify-between items-center border-b border-slate-800 pb-1 font-bold text-amber-400">
+                          <span>INSPECCIÓN {cell.dateKey}</span>
                           {isPinned && (
                             <button
                               onClick={() => {
                                 setPinnedDateKey(null);
                                 setHoveredDateKey(null);
                               }}
-                              className="text-[#a594c9] hover:text-white p-0.5"
+                              className="text-slate-400 hover:text-white p-0.5"
                             >
                               <X size={12} />
                             </button>
                           )}
                         </div>
 
-                        {/* SECCIÓN 1: PROGRAMADO / PROYECTADO */}
                         {cell.projectedOTs.length > 0 && (
                           <div className="space-y-1">
-                            <span className="text-[#38bdf8] font-bold block">
-                              PROGRAMADO EN PLAN:
+                            <span className="text-cyan-400 font-bold block">
+                              PROGRAMADO:
                             </span>
                             {cell.projectedOTs.map((ot) => (
                               <div
                                 key={ot.id}
-                                className="bg-[#160c2b] p-1.5 border border-[#432874] text-white flex justify-between items-center rounded-2xs"
+                                className="bg-[#070a12] p-1.5 border border-slate-800 text-white flex justify-between items-center rounded-lg"
                               >
                                 <div className="truncate pr-1">
-                                  <span className="text-[#ffbe00] font-bold">
+                                  <span className="text-amber-400 font-bold">
                                     [{ot.semielaborado_codigo}]
                                   </span>{" "}
                                   <span className="truncate">
                                     {ot.articulo}
                                   </span>
-                                  <div className="text-[9px] text-[#a594c9]">
-                                    Objetivo: {ot.cant_objetivo} u.
+                                  <div className="text-[9px] text-slate-400">
+                                    Obj: {ot.cant_objetivo} u.
                                   </div>
                                 </div>
                                 {isPinned &&
@@ -1422,7 +1362,7 @@ export default function PlanificacionProduccion() {
                                       onClick={(e) =>
                                         handleUnassignDateFromOT(ot, e)
                                       }
-                                      className="p-1 bg-[#2c1a4d] border border-[#f87171]/50 text-[#f87171] hover:bg-[#f87171] hover:text-white transition-colors rounded-2xs shrink-0 cursor-pointer"
+                                      className="p-1 bg-[#0e1422] text-rose-400 hover:bg-rose-500 hover:text-white transition-colors rounded shrink-0"
                                     >
                                       <Trash2 size={11} />
                                     </button>
@@ -1430,40 +1370,6 @@ export default function PlanificacionProduccion() {
                               </div>
                             ))}
                           </div>
-                        )}
-
-                        {/* SECCIÓN 2: PRODUCCIÓN REALIZADA Y APROBADA */}
-                        {cell.realLogs.length > 0 ? (
-                          <div className="space-y-1 pt-1 border-t border-[#432874]">
-                            <span className="text-[#24cc8f] font-bold block">
-                              PRODUCCIÓN APROBADA:
-                            </span>
-                            {cell.realLogs.map((log, idx) => (
-                              <div
-                                key={idx}
-                                className="bg-[#160c2b] p-1.5 border border-[#432874] text-white rounded-2xs"
-                              >
-                                <span className="text-[#ffbe00] font-bold">
-                                  [{log.codigo}]
-                                </span>{" "}
-                                {log.articulo}
-                                <div className="text-[9px] text-[#24cc8f]">
-                                  Buenas: +{log.cant_buenos} u.{" "}
-                                  {log.cant_fallas > 0 && (
-                                    <span className="text-[#f87171]">
-                                      (Fallas: {log.cant_fallas}u)
-                                    </span>
-                                  )}
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        ) : (
-                          cell.projectedOTs.length === 0 && (
-                            <div className="text-[#6e588a] text-[10px] text-center py-2">
-                              Sin actividad ni registros este día.
-                            </div>
-                          )
                         )}
                       </div>
                     )}
@@ -1474,10 +1380,10 @@ export default function PlanificacionProduccion() {
           </div>
         )}
 
-        {/* PAGINACIÓN */}
+        {/* PAGINACIÓN DE TABLA */}
         {activeMainTab === "TABLA" && tableMode === "ITEMS" && (
-          <div className="flex flex-col sm:flex-row items-center justify-between pt-2 mt-2 border-t-2 border-[#432874] shrink-0 text-xs font-pixel gap-2">
-            <span className="text-[#a594c9] text-[10px] sm:text-[11px]">
+          <div className="flex flex-col sm:flex-row items-center justify-between pt-2 mt-2 border-t border-slate-800 shrink-0 text-xs font-mono text-slate-400 gap-2">
+            <span>
               Página <strong className="text-white">{currentPage}</strong> de{" "}
               <strong className="text-white">{totalPages}</strong>
             </span>
@@ -1486,35 +1392,33 @@ export default function PlanificacionProduccion() {
               <button
                 onClick={() => setCurrentPage(1)}
                 disabled={currentPage === 1}
-                className="p-1 sm:p-1.5 bg-[#2c1a4d] border border-[#432874] text-[#a594c9] hover:text-[#ffbe00] disabled:opacity-30 shadow-[1px_1px_0px_#000] rounded-xs"
+                className="p-1 bg-[#090d16] border border-slate-800 text-white disabled:opacity-30 rounded-lg cursor-pointer"
               >
                 <ChevronsLeft size={13} />
               </button>
               <button
                 onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
                 disabled={currentPage === 1}
-                className="px-2 py-1 bg-[#2c1a4d] border border-[#432874] text-[#a594c9] hover:text-[#ffbe00] disabled:opacity-30 shadow-[1px_1px_0px_#000] flex items-center gap-0.5 text-[10px] sm:text-xs rounded-xs"
+                className="px-2.5 py-1 bg-[#090d16] border border-slate-800 text-white disabled:opacity-30 rounded-lg cursor-pointer text-xs"
               >
-                <ChevronLeft size={13} /> ANT
+                ANT
               </button>
-
-              <span className="px-2.5 py-0.5 bg-[#160c2b] border border-[#432874] text-[#ffbe00] font-bold text-[11px] rounded-xs">
+              <span className="px-2.5 py-0.5 bg-[#070a12] border border-slate-800 text-amber-400 font-bold text-xs rounded-lg">
                 {currentPage} / {totalPages}
               </span>
-
               <button
                 onClick={() =>
                   setCurrentPage((p) => Math.min(totalPages, p + 1))
                 }
                 disabled={currentPage === totalPages}
-                className="px-2 py-1 bg-[#2c1a4d] border border-[#432874] text-[#a594c9] hover:text-[#ffbe00] disabled:opacity-30 shadow-[1px_1px_0px_#000] flex items-center gap-0.5 text-[10px] sm:text-xs rounded-xs"
+                className="px-2.5 py-1 bg-[#090d16] border border-slate-800 text-white disabled:opacity-30 rounded-lg cursor-pointer text-xs"
               >
-                SIG <ChevronRight size={13} />
+                SIG
               </button>
               <button
                 onClick={() => setCurrentPage(totalPages)}
                 disabled={currentPage === totalPages}
-                className="p-1 sm:p-1.5 bg-[#2c1a4d] border border-[#432874] text-[#a594c9] hover:text-[#ffbe00] disabled:opacity-30 shadow-[1px_1px_0px_#000] rounded-xs"
+                className="p-1 bg-[#090d16] border border-slate-800 text-white disabled:opacity-30 rounded-lg cursor-pointer"
               >
                 <ChevronsRight size={13} />
               </button>
@@ -1523,23 +1427,17 @@ export default function PlanificacionProduccion() {
         )}
       </div>
 
-      {/* =========================================================
-          DRAWER FIXED POR ENCIMA DEL LAYOUT (PADRES UNIFICADOS)
-      ========================================================= */}
+      {/* DRAWER FLOTANTE DE PRODUCTOS PADRE (EN MODO CALENDARIO) */}
       {activeMainTab === "CALENDARIO" && currentPlan && (
         <div
-          className={`fixed top-0 right-0 h-screen w-72 bg-[#24173e] border-l-2 border-[#ffbe00] shadow-[-10px_0_30px_rgba(0,0,0,0.8)] z-[9999] p-3 flex flex-col space-y-2.5 font-pixel text-xs transition-transform duration-300 ease-in-out ${
+          className={`fixed top-0 right-0 h-screen w-80 bg-[#0e1422] border-l-2 border-amber-400 shadow-2xl z-[9999] p-4 flex flex-col space-y-3 font-mono text-xs transition-transform duration-300 ease-in-out ${
             isDrawerOpen ? "translate-x-0" : "translate-x-full"
           }`}
         >
           <button
             onClick={() => setIsDrawerOpen(!isDrawerOpen)}
-            className="absolute top-1/2 -translate-y-1/2 -left-7 bg-[#ffbe00] text-[#2c1a4d] font-pixel text-xs font-bold py-3 px-1 border-l-2 border-y-2 border-[#b38600] shadow-[-3px_0px_0px_#000] rounded-l-xs flex flex-col items-center gap-2 hover:bg-[#ffe066] transition-all cursor-pointer pointer-events-auto"
-            title={
-              isDrawerOpen
-                ? "Cerrar productos"
-                : "Desplegar productos de la plantilla padre"
-            }
+            className="absolute top-1/2 -translate-y-1/2 -left-8 bg-amber-400 text-slate-950 font-bold py-3 px-1 border-l-2 border-y-2 border-amber-400 rounded-l-lg flex flex-col items-center gap-2 cursor-pointer shadow-lg"
+            title="Desplegar catálogo de productos"
           >
             {isDrawerOpen ? (
               <ChevronRight size={16} />
@@ -1549,126 +1447,104 @@ export default function PlanificacionProduccion() {
             <Package size={14} />
           </button>
 
-          <div className="flex justify-between items-center border-b border-[#432874] pb-2 shrink-0">
-            <span className="text-[#ffbe00] font-bold flex items-center gap-1.5 text-[11px]">
-              <Package size={14} className="text-[#38bdf8]" /> PRODUCTOS PADRE
+          <div className="flex justify-between items-center border-b border-slate-800 pb-2.5 shrink-0">
+            <span className="text-amber-400 font-bold flex items-center gap-1.5 text-xs">
+              <Package size={15} className="text-cyan-400" /> PRODUCTOS DEL PLAN
             </span>
             <button
               onClick={() => setIsDrawerOpen(false)}
-              className="text-[#a594c9] hover:text-white p-0.5"
+              className="text-slate-400 hover:text-white p-1 cursor-pointer"
             >
-              <X size={14} />
+              <X size={15} />
             </button>
           </div>
 
-          <div className="relative shrink-0 font-pixel">
+          <div className="relative shrink-0">
             <Search
-              size={12}
-              className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[#a594c9]"
+              size={13}
+              className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400"
             />
             <input
               type="text"
-              placeholder="Filtrar productos..."
+              placeholder="Filtrar por código..."
               value={drawerSearchText}
               onChange={(e) => setDrawerSearchText(e.target.value)}
-              className="w-full bg-[#160c2b] border border-[#432874] text-xs text-white pl-7 pr-2 py-1 focus:outline-none focus:border-[#ffbe00] rounded-xs font-mono"
+              className="w-full bg-[#070a12] border border-slate-800 text-xs text-white pl-8 pr-3 py-1.5 focus:outline-none focus:border-amber-500/50 rounded-lg"
             />
           </div>
 
-          <p className="text-[9px] text-[#a594c9] leading-tight font-mono">
-            💡 Podés arrastrar cualquiera de estos semielaborados a días
-            distintos en el calendario para dosificar la producción.
-          </p>
-
-          <div className="flex-1 overflow-y-auto space-y-1.5 pr-1 min-h-0">
-            {drawerParentItems.length === 0 ? (
-              <div className="py-12 text-center text-[#6e588a] text-[10px]">
-                {currentPlan.items.length === 0
-                  ? "Este plan está vacío. Agregá productos primero."
-                  : "Sin coincidencias de búsqueda."}
-              </div>
-            ) : (
-              drawerParentItems.map((parentItem, idx) => (
-                <div
-                  key={idx}
-                  draggable={
-                    currentPlan.estado === "ABIERTO" &&
-                    parentItem.cant_disponible > 0
-                  }
-                  onDragStart={() => {
-                    setDraggedParentSE(parentItem);
-                    setDraggedOTItem(null);
-                  }}
-                  className={`p-2 bg-[#160c2b] border transition-all rounded-2xs shadow-[1px_1px_0px_#000] flex flex-col space-y-1 group ${
-                    parentItem.cant_disponible > 0
-                      ? "border-[#432874] hover:border-[#ffbe00] cursor-grab active:cursor-grabbing"
-                      : "border-[#432874]/40 opacity-50 cursor-not-allowed"
-                  }`}
-                >
-                  <div className="flex justify-between items-center">
-                    <div className="flex items-center gap-1">
-                      <GripVertical
-                        size={12}
-                        className="text-[#6e588a] group-hover:text-[#ffbe00]"
-                      />
-                      <strong className="text-[#ffbe00]">
-                        [{parentItem.semielaborado_codigo}]
-                      </strong>
-                    </div>
-                    <span className="text-[9px] text-[#38bdf8] font-bold">
-                      ⚡ {parentItem.velocidad_u_hora || 50} u/h
-                    </span>
-                  </div>
-
-                  <span className="text-white font-bold block truncate text-[10px]">
-                    {parentItem.articulo}
+          <div className="flex-1 overflow-y-auto space-y-2 pr-1 min-h-0">
+            {drawerParentItems.map((parentItem, idx) => (
+              <div
+                key={idx}
+                draggable={
+                  currentPlan.estado === "ABIERTO" &&
+                  parentItem.cant_disponible > 0
+                }
+                onDragStart={() => {
+                  setDraggedParentSE(parentItem);
+                  setDraggedOTItem(null);
+                }}
+                className={`p-2.5 bg-[#070a12] border rounded-xl transition-all flex flex-col space-y-1 ${
+                  parentItem.cant_disponible > 0
+                    ? "border-slate-800 hover:border-amber-400 cursor-grab active:cursor-grabbing"
+                    : "border-slate-800/40 opacity-50 cursor-not-allowed"
+                }`}
+              >
+                <div className="flex justify-between items-center">
+                  <span className="text-amber-400 font-bold">
+                    [{parentItem.semielaborado_codigo}]
                   </span>
-
-                  <div className="flex justify-between items-center text-[9px] pt-1 border-t border-[#432874]/50">
-                    <span className="text-[#a594c9]">DISPONIBLE:</span>
-                    <strong
-                      className={
-                        parentItem.cant_disponible > 0
-                          ? "text-[#24cc8f]"
-                          : "text-[#f87171]"
-                      }
-                    >
-                      {parentItem.cant_disponible} /{" "}
-                      {parentItem.cant_objetivo_plan} u.
-                    </strong>
-                  </div>
+                  <span className="text-[10px] text-cyan-400 font-bold">
+                    ⚡ {parentItem.velocidad_u_hora || 50} u/h
+                  </span>
                 </div>
-              ))
-            )}
+                <span className="text-white font-medium text-xs truncate">
+                  {parentItem.articulo}
+                </span>
+                <div className="flex justify-between items-center text-[10px] pt-1 border-t border-slate-800/50">
+                  <span className="text-slate-400">DISPONIBLE:</span>
+                  <strong
+                    className={
+                      parentItem.cant_disponible > 0
+                        ? "text-emerald-400"
+                        : "text-rose-400"
+                    }
+                  >
+                    {parentItem.cant_disponible} /{" "}
+                    {parentItem.cant_objetivo_plan} u.
+                  </strong>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       )}
 
-      {/* =========================================================
-          MODAL 1: CREAR PLAN VACÍO
-      ========================================================= */}
+      {/* MODAL 1: CREAR PLAN VACÍO */}
       {isNewPlanModalOpen && (
-        <div className="fixed inset-0 bg-black/85 backdrop-blur-xs z-[100] flex items-center justify-center p-3 animate-in fade-in duration-200 font-mono">
-          <div className="bg-[#24173e] border-2 border-[#ffbe00] w-full max-w-md p-5 shadow-[0_0_35px_rgba(255,190,0,0.3)] space-y-4 relative rounded-xs">
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-xs z-[100] flex items-center justify-center p-3 font-mono">
+          <div className="bg-[#0e1422] border-2 border-amber-400 w-full max-w-md p-5 rounded-2xl shadow-2xl space-y-4 relative">
             <button
               onClick={() => setIsNewPlanModalOpen(false)}
-              className="absolute top-4 right-4 text-[#a594c9] hover:text-white"
+              className="absolute top-4 right-4 text-slate-400 hover:text-white"
             >
               <X size={16} />
             </button>
 
-            <div className="border-b-2 border-[#432874] pb-3">
-              <span className="text-[10px] font-pixel text-[#ffbe00] bg-[#ffbe00]/10 px-2 py-0.5 border border-[#ffbe00]/30 rounded-xs font-bold">
-                GENERAR PLAN DE PRODUCCIÓN
+            <div className="border-b border-slate-800 pb-3">
+              <span className="text-[10px] font-bold text-amber-400 bg-amber-500/10 px-2 py-0.5 border border-amber-500/30 rounded-full">
+                PROGRAMACIÓN
               </span>
-              <h3 className="font-pixel text-base text-white font-bold mt-2 flex items-center gap-2">
-                <Anvil size={18} className="text-[#38bdf8]" /> CREAR PLAN VACÍO
+              <h3 className="text-base text-white font-bold mt-1.5 flex items-center gap-2">
+                <Anvil size={18} className="text-cyan-400" /> CREAR PLAN DE
+                TRABAJO
               </h3>
             </div>
 
-            <div className="space-y-3 font-pixel text-xs">
+            <div className="space-y-3 text-xs">
               <div>
-                <label className="text-[#a594c9] block mb-1">
+                <label className="text-slate-400 block mb-1">
                   CÓDIGO / NOMBRE DEL PLAN (OT):
                 </label>
                 <input
@@ -1681,14 +1557,14 @@ export default function PlanificacionProduccion() {
                       codigo_ot: e.target.value,
                     })
                   }
-                  className="w-full bg-[#160c2b] border-2 border-[#432874] p-2 text-white font-bold focus:outline-none focus:border-[#ffbe00] text-sm rounded-xs uppercase font-mono"
+                  className="w-full bg-[#070a12] border border-slate-800 p-2 text-white font-bold focus:outline-none focus:border-amber-500/50 rounded-xl uppercase"
                   autoFocus
                 />
               </div>
 
               <div>
-                <label className="text-[#a594c9] block mb-1">
-                  DESTINO / CLIENTE (OPCIONAL):
+                <label className="text-slate-400 block mb-1">
+                  DESTINO / CLIENTE:
                 </label>
                 <input
                   type="text"
@@ -1697,21 +1573,21 @@ export default function PlanificacionProduccion() {
                   onChange={(e) =>
                     setNewPlanForm({ ...newPlanForm, destino: e.target.value })
                   }
-                  className="w-full bg-[#160c2b] border border-[#432874] p-2 text-white font-bold focus:outline-none focus:border-[#ffbe00] rounded-xs"
+                  className="w-full bg-[#070a12] border border-slate-800 p-2 text-white font-bold focus:outline-none focus:border-amber-500/50 rounded-xl"
                 />
               </div>
             </div>
 
-            <div className="pt-2 border-t border-[#432874] flex justify-end gap-2 font-pixel">
+            <div className="pt-3 border-t border-slate-800 flex justify-end gap-2">
               <button
                 onClick={() => setIsNewPlanModalOpen(false)}
-                className="px-4 py-1.5 border border-[#432874] text-[#a594c9] hover:text-white text-xs rounded-xs"
+                className="px-4 py-1.5 border border-slate-800 text-slate-400 hover:text-white text-xs rounded-xl cursor-pointer"
               >
                 CANCELAR
               </button>
               <button
                 onClick={handleCreateEmptyPlan}
-                className="px-4 py-1.5 bg-[#ffbe00] text-[#2c1a4d] font-bold text-xs hover:bg-[#ffe066] shadow-[2px_2px_0px_#000] rounded-xs flex items-center gap-1.5"
+                className="px-4 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs rounded-xl transition-all shadow-md flex items-center gap-1.5 cursor-pointer"
               >
                 <CheckCircle2 size={14} /> GENERAR PLAN
               </button>
@@ -1720,32 +1596,29 @@ export default function PlanificacionProduccion() {
         </div>
       )}
 
-      {/* =========================================================
-          MODAL 2: AGREGAR PRODUCTO AL PLAN
-      ========================================================= */}
+      {/* MODAL 2: AGREGAR PRODUCTO AL PLAN */}
       {isAddItemModalOpen && currentPlan && (
-        <div className="fixed inset-0 bg-black/85 backdrop-blur-xs z-[100] flex items-center justify-center p-3 animate-in fade-in duration-200 font-mono">
-          <div className="bg-[#24173e] border-2 border-[#38bdf8] w-full max-w-lg p-5 shadow-[0_0_35px_rgba(56,189,248,0.3)] space-y-4 relative rounded-xs">
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-xs z-[100] flex items-center justify-center p-3 font-mono">
+          <div className="bg-[#0e1422] border-2 border-cyan-400 w-full max-w-lg p-5 rounded-2xl shadow-2xl space-y-4 relative">
             <button
               onClick={() => setIsAddItemModalOpen(false)}
-              className="absolute top-4 right-4 text-[#a594c9] hover:text-white"
+              className="absolute top-4 right-4 text-slate-400 hover:text-white"
             >
               <X size={16} />
             </button>
 
-            <div className="border-b-2 border-[#432874] pb-3">
-              <span className="text-[10px] font-pixel text-[#38bdf8] bg-[#38bdf8]/10 px-2 py-0.5 border border-[#38bdf8]/30 rounded-xs font-bold">
-                AGREGAR A PLAN: [{currentPlan.codigo_ot}]
+            <div className="border-b border-slate-800 pb-3">
+              <span className="text-[10px] font-bold text-cyan-400 bg-cyan-500/10 px-2 py-0.5 border border-cyan-500/30 rounded-full">
+                PLAN: [{currentPlan.codigo_ot}]
               </span>
-              <h3 className="font-pixel text-base text-white font-bold mt-2 flex items-center gap-2">
-                <Plus size={18} className="text-[#38bdf8]" /> INCORPORAR
-                PRODUCTO
+              <h3 className="text-base text-white font-bold mt-1.5 flex items-center gap-2">
+                <Plus size={18} className="text-cyan-400" /> INCORPORAR PRODUCTO
               </h3>
             </div>
 
-            <div className="space-y-3 font-pixel text-xs">
+            <div className="space-y-3 text-xs">
               <div>
-                <label className="text-[#a594c9] block mb-1">
+                <label className="text-slate-400 block mb-1">
                   SELECCIONAR PRODUCTO:
                 </label>
                 <select
@@ -1763,21 +1636,27 @@ export default function PlanificacionProduccion() {
                       });
                     }
                   }}
-                  className="w-full bg-[#160c2b] border border-[#432874] p-2 text-white font-bold focus:outline-none focus:border-[#38bdf8] rounded-xs"
+                  className="w-full bg-[#070a12] border border-slate-800 p-2 text-white font-bold focus:outline-none focus:border-cyan-500/50 rounded-xl cursor-pointer"
                 >
-                  <option value="">-- SELECCIONAR SEMIELABORADO --</option>
+                  <option value="" className="bg-slate-900 text-white">
+                    -- SELECCIONAR SEMIELABORADO --
+                  </option>
                   {semielaboradosDB.map((s) => (
-                    <option key={s.id} value={s.codigo}>
+                    <option
+                      key={s.id}
+                      value={s.codigo}
+                      className="bg-slate-900 text-white"
+                    >
                       [{s.codigo}] {s.nombre}
                     </option>
                   ))}
                 </select>
               </div>
 
-              <div className="grid grid-cols-2 gap-2 bg-[#160c2b] p-2.5 border border-[#432874] rounded-xs">
+              <div className="grid grid-cols-2 gap-2 bg-[#070a12] p-3 border border-slate-800 rounded-xl">
                 <div>
-                  <label className="text-[#a594c9] text-[10px] block mb-1">
-                    CANTIDAD OBJETIVO TOTAL:
+                  <label className="text-slate-400 text-[10px] block mb-1">
+                    CANTIDAD OBJETIVO:
                   </label>
                   <input
                     type="number"
@@ -1791,12 +1670,12 @@ export default function PlanificacionProduccion() {
                         ),
                       })
                     }
-                    className="w-full bg-[#24173e] border border-[#432874] p-1.5 text-[#24cc8f] font-bold text-right focus:outline-none focus:border-[#24cc8f] rounded-xs text-sm"
+                    className="w-full bg-[#0e1422] border border-slate-800 p-2 text-emerald-400 font-bold text-right focus:outline-none rounded-xl text-sm"
                   />
                 </div>
 
                 <div>
-                  <label className="text-[#a594c9] text-[10px] block mb-1">
+                  <label className="text-slate-400 text-[10px] block mb-1">
                     RITMO (U/HORA):
                   </label>
                   <input
@@ -1811,75 +1690,73 @@ export default function PlanificacionProduccion() {
                         ),
                       })
                     }
-                    className="w-full bg-[#24173e] border border-[#432874] p-1.5 text-[#38bdf8] font-bold text-right focus:outline-none focus:border-[#38bdf8] rounded-xs text-sm"
+                    className="w-full bg-[#0e1422] border border-slate-800 p-2 text-cyan-400 font-bold text-right focus:outline-none rounded-xl text-sm"
                   />
                 </div>
               </div>
             </div>
 
-            <div className="pt-2 border-t border-[#432874] flex justify-end gap-2 font-pixel">
+            <div className="pt-3 border-t border-slate-800 flex justify-end gap-2">
               <button
                 onClick={() => setIsAddItemModalOpen(false)}
-                className="px-4 py-1.5 border border-[#432874] text-[#a594c9] hover:text-white text-xs rounded-xs"
+                className="px-4 py-1.5 border border-slate-800 text-slate-400 hover:text-white text-xs rounded-xl cursor-pointer"
               >
                 CANCELAR
               </button>
               <button
                 onClick={handleAddItemToCurrentPlan}
-                className="px-4 py-1.5 bg-[#38bdf8] text-[#2c1a4d] font-bold text-xs hover:bg-[#7dd3fc] shadow-[2px_2px_0px_#000] rounded-xs flex items-center gap-1.5"
+                className="px-4 py-1.5 bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-xs rounded-xl transition-all shadow-md flex items-center gap-1.5 cursor-pointer"
               >
-                <CheckCircle2 size={14} /> AGREGAR A TABLA
+                <CheckCircle2 size={14} /> AGREGAR A PLAN
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* =========================================================
-          MODAL 3: EDITAR RITMO U/H DIRECTAMENTE
-      ========================================================= */}
+      {/* MODAL 3: EDITAR RITMO U/H */}
       {editingRitmoItem && (
-        <div className="fixed inset-0 bg-black/85 backdrop-blur-xs z-[100] flex items-center justify-center p-3 animate-in fade-in duration-200 font-mono">
-          <div className="bg-[#24173e] border-2 border-[#38bdf8] w-full max-w-xs p-4 shadow-[0_0_35px_rgba(56,189,248,0.3)] space-y-3 relative rounded-xs">
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-xs z-[100] flex items-center justify-center p-3 font-mono">
+          <div className="bg-[#0e1422] border-2 border-cyan-400 w-full max-w-xs p-4 rounded-2xl shadow-2xl space-y-3 relative">
             <button
               onClick={() => setEditingRitmoItem(null)}
-              className="absolute top-3 right-3 text-[#a594c9] hover:text-white"
+              className="absolute top-3 right-3 text-slate-400 hover:text-white"
             >
               <X size={16} />
             </button>
 
-            <div className="border-b border-[#432874] pb-2 font-pixel">
-              <span className="text-[10px] text-[#38bdf8] font-bold">
-                RECALIBRACIÓN DE VELOCIDAD
+            <div className="border-b border-slate-800 pb-2">
+              <span className="text-[10px] text-cyan-400 font-bold">
+                AJUSTAR VELOCIDAD
               </span>
-              <h3 className="text-white font-bold text-xs mt-1">
+              <h3 className="text-white font-bold text-xs mt-0.5">
                 [{editingRitmoItem.semielaborado_codigo}]
               </h3>
             </div>
 
-            <div className="space-y-1 font-pixel text-xs">
-              <label className="text-[#a594c9] text-[10px] block">
-                NUEVO RITMO (UNIDADES / HORA):
+            <div className="space-y-1 text-xs">
+              <label className="text-slate-400 text-[10px] block">
+                RITMO (UNIDADES / HORA):
               </label>
               <input
                 type="number"
                 value={newRitmoVal}
                 onChange={(e) => setNewRitmoVal(e.target.value)}
-                className="w-full bg-[#160c2b] border-2 border-[#38bdf8] p-2 text-[#38bdf8] font-bold text-right focus:outline-none text-base rounded-xs"
+                className="w-full bg-[#070a12] border border-cyan-400 p-2 text-cyan-400 font-bold text-right focus:outline-none text-base rounded-xl"
                 autoFocus
               />
             </div>
 
-            <div className="pt-2 border-t border-[#432874] flex justify-end gap-2 font-pixel">
+            <div className="pt-2 border-t border-slate-800 flex justify-end gap-2">
               <button
                 onClick={() => setEditingRitmoItem(null)}
-                className="px-3 py-1 border border-[#432874] text-[#a594c9] text-xs"
+                className="px-3 py-1 border border-slate-800 text-slate-400 text-xs rounded-xl cursor-pointer"
               >
                 CANCELAR
               </button>
               <button
                 onClick={handleSaveRitmo}
-                className="px-3 py-1 bg-[#38bdf8] text-[#2c1a4d] font-bold text-xs hover:bg-[#7dd3fc] shadow-[1px_1px_0px_#000]"
+                className="px-3 py-1 bg-cyan-500 text-slate-950 font-bold text-xs hover:bg-cyan-400 rounded-xl cursor-pointer"
               >
                 GUARDAR
               </button>
@@ -1888,21 +1765,19 @@ export default function PlanificacionProduccion() {
         </div>
       )}
 
-      {/* =========================================================
-          MODAL 4: CONFIRMACIÓN DE DOSIFICACIÓN AL SOLTAR EN CALENDARIO
-      ========================================================= */}
+      {/* MODAL 4: CONFIRMACIÓN DE DOSIFICACIÓN EN CALENDARIO */}
       {dropModalData && (
-        <div className="fixed inset-0 bg-black/85 backdrop-blur-xs z-[120] flex items-center justify-center p-3 animate-in fade-in duration-200 font-mono">
-          <div className="bg-[#24173e] border-2 border-[#ffbe00] w-full max-w-sm p-4 shadow-[0_0_35px_rgba(255,190,0,0.3)] space-y-3 relative rounded-xs">
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-xs z-[120] flex items-center justify-center p-3 font-mono">
+          <div className="bg-[#0e1422] border-2 border-amber-400 w-full max-w-sm p-4 rounded-2xl shadow-2xl space-y-3 relative">
             <button
               onClick={() => setDropModalData(null)}
-              className="absolute top-3 right-3 text-[#a594c9] hover:text-white"
+              className="absolute top-3 right-3 text-slate-400 hover:text-white"
             >
               <X size={16} />
             </button>
 
-            <div className="border-b border-[#432874] pb-2 font-pixel">
-              <span className="text-[10px] text-[#ffbe00] font-bold">
+            <div className="border-b border-slate-800 pb-2">
+              <span className="text-[10px] text-amber-400 font-bold">
                 ASIGNACIÓN A FECHA: {dropModalData.targetDate}
               </span>
               <h3 className="text-white font-bold text-xs mt-1">
@@ -1914,9 +1789,9 @@ export default function PlanificacionProduccion() {
               </h3>
             </div>
 
-            <div className="space-y-2 font-pixel text-xs">
-              <label className="text-[#a594c9] text-[10px] block">
-                CANTIDAD OBJETIVO PARA ESTA FECHA:
+            <div className="space-y-1.5 text-xs">
+              <label className="text-slate-400 text-[10px] block">
+                CANTIDAD PARA ESTA FECHA:
               </label>
               <input
                 type="number"
@@ -1927,21 +1802,21 @@ export default function PlanificacionProduccion() {
                     cantidad: e.target.value,
                   })
                 }
-                className="w-full bg-[#160c2b] border-2 border-[#ffbe00] p-2 text-[#24cc8f] font-bold text-right focus:outline-none text-base rounded-xs font-mono"
+                className="w-full bg-[#070a12] border-2 border-amber-400 p-2 text-emerald-400 font-bold text-right focus:outline-none text-base rounded-xl"
                 autoFocus
               />
             </div>
 
-            <div className="pt-2 border-t border-[#432874] flex justify-end gap-2 font-pixel">
+            <div className="pt-2 border-t border-slate-800 flex justify-end gap-2">
               <button
                 onClick={() => setDropModalData(null)}
-                className="px-3 py-1 border border-[#432874] text-[#a594c9] text-xs"
+                className="px-3 py-1 border border-slate-800 text-slate-400 text-xs rounded-xl cursor-pointer"
               >
                 CANCELAR
               </button>
               <button
                 onClick={handleConfirmDropQty}
-                className="px-3 py-1 bg-[#ffbe00] text-[#2c1a4d] font-bold text-xs hover:bg-[#ffe066] shadow-[1px_1px_0px_#000]"
+                className="px-3 py-1 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs rounded-xl cursor-pointer"
               >
                 GUARDAR Y ASIGNAR
               </button>
