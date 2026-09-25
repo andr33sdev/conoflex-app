@@ -269,13 +269,9 @@ export default function Inventory() {
               <h2 className="text-xs font-bold text-white tracking-widest uppercase font-mono">
                 INVENTARIO DE MATERIAS PRIMAS
               </h2>
-              <span className="text-[10px] bg-emerald-500/10 text-emerald-300 border border-emerald-500/20 px-2.5 py-0.5 rounded-full font-mono flex items-center gap-1.5 shadow-[0_0_10px_rgba(16,185,129,0.1)]">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_8px_#10b981]" />{" "}
-                LIVE DATA
-              </span>
             </div>
             <p className="text-[11px] text-slate-400 mt-0.5">
-              Gremio de Insumos y Materiales de Producción
+             Insumos y Materiales de Producción
             </p>
           </div>
         </div>

@@ -3102,6 +3102,151 @@ app.delete("/api/ordenes-trabajo/:id", async (req, res) => {
 });
 
 // ==========================================
+// MÓDULO 9: ESTADO DE PEDIDOS (VENTAS SHEETS)
+// ==========================================
+
+// 1. Obtener listado de pedidos
+app.get("/api/estado-pedidos", async (req, res) => {
+  try {
+    const [rows] = await db.query(
+      "SELECT * FROM estado_pedidos ORDER BY fecha DESC, id DESC LIMIT 500"
+    );
+    res.json(rows);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// 2. Sincronizar tabla completa desde el Google Sheets de Ventas
+app.post("/api/estado-pedidos/sincronizar", async (req, res) => {
+  const csvUrl = req.body?.csvUrl || process.env.GOOGLE_SHEETS_VENTAS_CSV_URL;
+
+  if (!csvUrl) {
+    return res.status(400).json({
+      error: "No se configuró la variable GOOGLE_SHEETS_VENTAS_CSV_URL en la aplicación.",
+    });
+  }
+
+  try {
+    // Limpieza por si contiene corchetes o markdown
+    const cleanUrl = csvUrl.replace(/\[\vert{}\]/g, "").split("(")[0].trim();
+    const response = await fetch(cleanUrl);
+
+    if (!response.ok) {
+      return res.status(400).json({ error: "No se pudo acceder a la URL del CSV de Ventas." });
+    }
+
+    const csvText = await response.text();
+    const lines = parseCSVFull(csvText); // Función auxiliar para parsear CSV
+
+    if (lines.length < 2) {
+      return res.status(400).json({ error: "El archivo CSV no contiene registros." });
+    }
+
+    // Identificar posiciones de columnas por encabezado
+    const headers = lines[0].map((h) => h.toUpperCase().trim());
+    const idxFecha = headers.indexOf("FECHA");
+    const idxPeriodo = headers.indexOf("PERIODO");
+    const idxOP = headers.indexOf("OP");
+    const idxCliente = headers.indexOf("CLIENTE");
+    const idxModelo = headers.indexOf("MODELO");
+    const idxDetalles = headers.indexOf("DETALLES");
+    const idxOC = headers.indexOf("OC");
+    const idxCantidad = headers.indexOf("CANTIDAD");
+    const idxEstado = headers.indexOf("ESTADO");
+    const idxProgramado = headers.indexOf("PROGRAMADO");
+    const idxPreparado = headers.indexOf("PREPARADO");
+    const idxDespacho = headers.indexOf("DESPACHO");
+    const idxDemoraEntrega = headers.findIndex((h) => h.includes("DEMORA ENTREGA"));
+    const idxDemoraPrep = headers.findIndex((h) => h.includes("DEMORA PREPARACION"));
+    const idxComentarios = headers.indexOf("COMENTARIOS");
+    const idxDespachado = headers.indexOf("DESPACHADO");
+
+    const conn = await db.getConnection();
+
+    try {
+      await conn.beginTransaction();
+
+      // Vaciar la tabla para refrescar con la versión exacta del Sheets
+      await conn.query("TRUNCATE TABLE estado_pedidos");
+
+      let insertados = 0;
+
+      for (let i = 1; i < lines.length; i++) {
+        const cols = lines[i];
+        if (cols.length < 3) continue;
+
+        const fechaRaw = idxFecha !== -1 ? parseFechaDeterminista(cols[idxFecha]) : null;
+        const periodoRaw = idxPeriodo !== -1 ? parseFechaDeterminista(cols[idxPeriodo]) : null;
+        const op = idxOP !== -1 ? cols[idxOP].trim() : "";
+        const cliente = idxCliente !== -1 ? cols[idxCliente].trim() : "";
+        const modelo = idxModelo !== -1 ? cols[idxModelo].trim() : "";
+        const detalles = idxDetalles !== -1 ? cols[idxDetalles].trim() : "";
+        const oc = idxOC !== -1 ? cols[idxOC].trim() : "";
+
+        let cantidad = 0;
+        if (idxCantidad !== -1 && cols[idxCantidad]) {
+          cantidad = parseFloat(cols[idxCantidad].replace(",", ".")) || 0;
+        }
+
+        const estado = idxEstado !== -1 ? cols[idxEstado].trim() : "";
+        const programado = idxProgramado !== -1 ? cols[idxProgramado].trim() : "";
+        const preparado = idxPreparado !== -1 ? cols[idxPreparado].trim() : "";
+        const despacho = idxDespacho !== -1 ? cols[idxDespacho].trim() : "";
+
+        let demoraEntrega = 0;
+        if (idxDemoraEntrega !== -1 && cols[idxDemoraEntrega]) {
+          demoraEntrega = parseInt(cols[idxDemoraEntrega], 10) || 0;
+        }
+
+        const demoraPrep = idxDemoraPrep !== -1 ? cols[idxDemoraPrep].trim() : "";
+        const comentarios = idxComentarios !== -1 ? cols[idxComentarios].trim() : "";
+        const despachado = idxDespachado !== -1 ? cols[idxDespachado].trim() : "";
+
+        // Insertar si al menos hay cliente o modelo o número de OP
+        if (cliente || modelo || op) {
+          await conn.query(
+            `INSERT INTO estado_pedidos 
+            (fecha, periodo, op, cliente, modelo, detalles, oc, cantidad, estado, programado, preparado, despacho, demora_entrega_dias, demora_preparacion, comentarios, despachado) 
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [
+              fechaRaw,
+              periodoRaw,
+              op,
+              cliente,
+              modelo,
+              detalles,
+              oc,
+              cantidad,
+              estado,
+              programado,
+              preparado,
+              despacho,
+              demoraEntrega,
+              demoraPrep,
+              comentarios,
+              despachado,
+            ]
+          );
+          insertados++;
+        }
+      }
+
+      await conn.commit();
+      res.json({ success: true, count: insertados, mensaje: `¡Se sincronizaron ${insertados} pedidos con éxito!` });
+    } catch (err) {
+      await conn.rollback();
+      throw err;
+    } finally {
+      conn.release();
+    }
+  } catch (error) {
+    console.error("Error al sincronizar estado de pedidos:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ==========================================
 // CHAT CONVERSACIONAL CON CONTEXTO COMPLETO Y PERSONALIDAD CONNIE
 // ==========================================
 app.post("/api/chat-ia", async (req, res) => {
