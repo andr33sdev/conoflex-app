@@ -3271,26 +3271,14 @@ app.post("/api/estado-pedidos/sincronizar", async (req, res) => {
 });
 
 // ==========================================
-// CHAT CONVERSACIONAL OPTIMIZADO PARA BAJO CONSUMO DE TOKENS
+// CHAT CONNI - ULTRA OPTIMIZADO (BAJO CONSUMO DE TOKENS)
 // ==========================================
-
-// Función auxiliar para comprimir datos a formato CSV compacto (Ahorra ~65% de tokens)
-function toCSV(rows, columns) {
-  if (!rows || rows.length === 0) return "Sin datos";
-  const header = columns.join(",");
-  const body = rows
-    .map((r) =>
-      columns.map((col) => String(r[col] ?? "").replace(/,/g, " ")).join(","),
-    )
-    .join("\n");
-  return `${header}\n${body}`;
-}
-
 app.post("/api/chat-ia", async (req, res) => {
   try {
     const { mensaje, historial } = req.body;
+    const msgUpper = String(mensaje || "").toUpperCase();
 
-    // 1. CÁLCULO DE FECHAS EN TIEMPO REAL
+    // 1. FECHAS EN TIEMPO REAL DEL SERVIDOR
     const ahora = new Date();
     const hoyFormateado = ahora.toLocaleDateString("es-AR", {
       timeZone: "America/Argentina/Buenos_Aires",
@@ -3299,177 +3287,84 @@ app.post("/api/chat-ia", async (req, res) => {
       month: "long",
       day: "numeric",
     });
-
     const ayerObj = new Date(ahora);
     ayerObj.setDate(ahora.getDate() - 1);
     const hoyISO = ahora.toISOString().split("T")[0];
     const ayerISO = ayerObj.toISOString().split("T")[0];
 
-    // 2. CONSULTAS OPTIMIZADAS A MYSQL EN PARALELO
-    const [
-      [materiasPrimas],
-      [semielaborados],
-      [productosTerminados],
-      [ordenesTrabajo],
-      [registrosProduccion],
-      [ventasPorDiaCanal],
-      [ventasPorMesModelo],
-      [pedidosRecientes],
-    ] = await Promise.all([
-      db.query(
-        "SELECT codigo, nombre, stock_actual, unidad_medida FROM materias_primas",
-      ),
-      db.query(
-        "SELECT codigo, nombre, stock_33, stock_26, stock_ayolas, stock_37 FROM semielaborados",
-      ),
-      db.query(
-        "SELECT codigo, nombre, promedio_ventas_mensual FROM productos_terminados",
-      ),
-      db.query(
-        "SELECT codigo_ot, semielaborado_codigo, cant_objetivo, cant_producida, estado, maquina FROM ordenes_trabajo ORDER BY id DESC LIMIT 15",
-      ),
-      db.query(
-        "SELECT fecha, categoria_maq, codigo, cant_buenos, cant_fallas FROM registro_produccion ORDER BY id DESC LIMIT 20",
-      ),
+    // 2. BÚSQUEDA DINÁMICA POR INTENCIÓN (Filtra solo lo que pide el usuario)
+    let datosFiltroEspecifico = [];
 
-      // Ventas diarias limitadas a los últimos 60 días para acotar volumen
-      db.query(`
-        SELECT 
-          DATE_FORMAT(fecha, '%Y-%m-%d') AS fecha,
-          IF(LOWER(detalles) LIKE '%mercadolibre%', 'MercadoLibre', 'Normal') AS canal,
-          COUNT(DISTINCT op) AS total_pedidos,
-          SUM(cantidad) AS total_unidades
-        FROM estado_pedidos
-        WHERE fecha >= DATE_SUB(CURDATE(), INTERVAL 60 DAY) AND estado != 'CANCELADO'
-        GROUP BY DATE_FORMAT(fecha, '%Y-%m-%d'), canal
-        ORDER BY fecha DESC
-      `),
+    // Si el mensaje menciona un código o patrón de producto
+    const matchModelo = msgUpper.match(/([A-Z0-9]{3,12})/g);
+    if (matchModelo) {
+      const modelosPosibles = matchModelo.filter(
+        (m) =>
+          m.length >= 3 && !["QUE", "HOY", "AYER", "POR", "VER"].includes(m),
+      );
+      if (modelosPosibles.length > 0) {
+        const [filasModelo] = await db.query(
+          `SELECT fecha, op, cliente, modelo, cantidad, 
+                  IF(LOWER(detalles) LIKE '%mercadolibre%', 'MercadoLibre', 'Normal') AS canal, estado 
+           FROM estado_pedidos 
+           WHERE (${modelosPosibles.map(() => "modelo LIKE ?").join(" OR ")}) 
+             AND estado != 'CANCELADO' 
+           ORDER BY fecha DESC LIMIT 50`,
+          modelosPosibles.map((m) => `%${m}%`),
+        );
+        datosFiltroEspecifico = filasModelo;
+      }
+    }
 
-      // Ventas mensuales agrupadas (últimos 6 meses)
-      db.query(`
-        SELECT 
-          DATE_FORMAT(fecha, '%Y-%m') AS mes,
-          IF(LOWER(detalles) LIKE '%mercadolibre%', 'MercadoLibre', 'Normal') AS canal,
-          modelo,
-          COUNT(DISTINCT op) AS total_pedidos,
-          SUM(cantidad) AS total_unidades
-        FROM estado_pedidos
-        WHERE fecha >= DATE_SUB(CURDATE(), INTERVAL 6 MONTH) AND estado != 'CANCELADO'
-        GROUP BY DATE_FORMAT(fecha, '%Y-%m'), canal, modelo
-        ORDER BY mes DESC, total_unidades DESC
-      `),
-
-      // Muestra de tracking para las últimas 40 OPs
-      db.query(`
-        SELECT 
-          op, cliente, modelo, cantidad, 
-          IF(LOWER(detalles) LIKE '%mercadolibre%', 'MercadoLibre', 'Normal') AS canal,
-          estado, despacho, demora_entrega_dias 
+    // 3. RESUMEN EJECUTIVO GENERAL (Súper comprimido, ~400 tokens)
+    const [[[kpiHoy]], [[kpiAyer]], [ventasMesActual], [alertasStockMP]] =
+      await Promise.all([
+        db.query(
+          `
+        SELECT COUNT(DISTINCT op) as pedidos_ml, SUM(cantidad) as unidades 
         FROM estado_pedidos 
-        ORDER BY id DESC 
-        LIMIT 40
-      `),
-    ]);
+        WHERE fecha = ? AND LOWER(detalles) LIKE '%mercadolibre%' AND estado != 'CANCELADO'`,
+          [hoyISO],
+        ),
+        db.query(
+          `
+        SELECT COUNT(DISTINCT op) as pedidos_ml, SUM(cantidad) as unidades 
+        FROM estado_pedidos 
+        WHERE fecha = ? AND LOWER(detalles) LIKE '%mercadolibre%' AND estado != 'CANCELADO'`,
+          [ayerISO],
+        ),
+        db.query(`
+        SELECT modelo, SUM(cantidad) as unidades, COUNT(DISTINCT op) as pedidos 
+        FROM estado_pedidos 
+        WHERE fecha >= DATE_SUB(CURDATE(), INTERVAL 30 DAY) AND estado != 'CANCELADO'
+        GROUP BY modelo ORDER BY unidades DESC LIMIT 10`),
+        db.query(`
+        SELECT codigo, nombre, stock_actual 
+        FROM materias_primas 
+        ORDER BY stock_actual ASC LIMIT 5`),
+      ]);
 
-    // 3. CONVERSIÓN COMPACTA A CSV
-    const csvMP = toCSV(materiasPrimas, [
-      "codigo",
-      "nombre",
-      "stock_actual",
-      "unidad_medida",
-    ]);
-    const csvSE = toCSV(semielaborados, [
-      "codigo",
-      "nombre",
-      "stock_33",
-      "stock_26",
-      "stock_ayolas",
-      "stock_37",
-    ]);
-    const csvPT = toCSV(productosTerminados, [
-      "codigo",
-      "nombre",
-      "promedio_ventas_mensual",
-    ]);
-    const csvOT = toCSV(ordenesTrabajo, [
-      "codigo_ot",
-      "semielaborado_codigo",
-      "cant_objetivo",
-      "cant_producida",
-      "estado",
-      "maquina",
-    ]);
-    const csvProd = toCSV(registrosProduccion, [
-      "fecha",
-      "categoria_maq",
-      "codigo",
-      "cant_buenos",
-      "cant_fallas",
-    ]);
-    const csvVentasDia = toCSV(ventasPorDiaCanal, [
-      "fecha",
-      "canal",
-      "total_pedidos",
-      "total_unidades",
-    ]);
-    const csvVentasMes = toCSV(ventasPorMesModelo, [
-      "mes",
-      "canal",
-      "modelo",
-      "total_pedidos",
-      "total_unidades",
-    ]);
-    const csvTracking = toCSV(pedidosRecientes, [
-      "op",
-      "cliente",
-      "modelo",
-      "cantidad",
-      "canal",
-      "estado",
-      "despacho",
-      "demora_entrega_dias",
-    ]);
-
-    // 4. PROMPT COMPACTO Y EFICIENTE
+    // 4. CONSTRUCCIÓN DEL PROMPT COMPACTO
     const promptContexto = `
     Sos Connie, encargada de Inteligencia Operativa en Conoflex Argentina.
+    
+    FECHA HOY: ${hoyFormateado} (${hoyISO}). AYER FUE: ${ayerISO}.
 
-    FECHA REAL SISTEMA: HOY ES ${hoyFormateado} (${hoyISO}). AYER FUE ${ayerISO}.
+    REGLAS:
+    - Respuestas breves, profesionales y amables en español argentino (2 a 4 oraciones).
+    - 1 Pedido = 1 número de OP distinto (COUNT DISTINCT op).
+    - Si el campo "detalles" dice MercadoLibre es venta ML; de lo contrario es Venta Normal.
 
-    REGLAS CLAVE:
-    - Respuestas muy breves (2 a 4 oraciones/puntos).
-    - 1 PEDIDO = 1 número de OP distinto (COUNT DISTINCT op). Múltiples renglones de la misma OP son 1 solo pedido.
-    - Canal MercadoLibre se indica en la columna "canal". Si dice Normal es venta directa.
-
-    DATOS EN FORMATO CSV COMPACTO:
-
-    [MATERIAS PRIMAS]
-    ${csvMP}
-
-    [SEMIELABORADOS STOCK]
-    ${csvSE}
-
-    [PRODUCTOS TERMINADOS]
-    ${csvPT}
-
-    [ORDENES TRABAJO]
-    ${csvOT}
-
-    [PRODUCCION RECIENTE]
-    ${csvProd}
-
-    [VENTAS DIARIAS 60 DIAS]
-    ${csvVentasDia}
-
-    [VENTAS MENSUALES 6 MESES]
-    ${csvVentasMes}
-
-    [TRACKING OPS RECIENTES]
-    ${csvTracking}
+    RESUMEN DE DATOS CLAVE:
+    - VENTAS HOY (${hoyISO}) MERCADOLIBRE: ${kpiHoy?.pedidos_ml || 0} pedidos (${kpiHoy?.unidades || 0} u.)
+    - VENTAS AYER (${ayerISO}) MERCADOLIBRE: ${kpiAyer?.pedidos_ml || 0} pedidos (${kpiAyer?.unidades || 0} u.)
+    - TOP 10 MÁS VENDIDOS ÚLTIMOS 30 DÍAS: ${JSON.stringify(ventasMesActual)}
+    - CRÍTICOS STOCK MATERIAS PRIMAS: ${JSON.stringify(alertasStockMP)}
+    ${datosFiltroEspecifico.length > 0 ? `- BÚSQUEDA ESPECÍFICA DETALLADA PARA ESTA CONSULTA: ${JSON.stringify(datosFiltroEspecifico)}` : ""}
     `;
 
-    // Limitar el historial de chat a las últimas 4 interacciones para no acumular costo
-    const historialAcotado = (historial || []).slice(-4);
+    // Mantener solo los últimos 3 mensajes de historial para no acumular tokens
+    const historialAcotado = (historial || []).slice(-3);
 
     const contents = [
       promptContexto,

@@ -43,35 +43,36 @@ import {
   Plus,
   MessageSquare,
   DownloadCloud,
+  Volume2,
+  VolumeX,
 } from "lucide-react";
 
 // COLORES MÁQUINAS - ESTILO CYBER INDUSTRIAL
 const CATEGORY_COLORS = {
   EXTRUSIÓN: {
-    stroke: "#f59e0b", // Ámbar
+    stroke: "#f59e0b",
     fill: "rgba(245, 158, 11, 0.15)",
     id: "grad-ext",
   },
   INYECCIÓN: {
-    stroke: "#38bdf8", // Cian
+    stroke: "#38bdf8",
     fill: "rgba(56, 189, 248, 0.15)",
     id: "grad-iny",
   },
   ROTOMOLDEO: {
-    stroke: "#10b981", // Esmeralda
+    stroke: "#10b981",
     fill: "rgba(16, 185, 129, 0.15)",
     id: "grad-rot",
   },
   UNIFICADO: {
-    stroke: "#a855f7", // Púrpura mate
+    stroke: "#a855f7",
     fill: "rgba(168, 85, 247, 0.15)",
     id: "grad-uni",
   },
 };
 
-const ROW_HEIGHT = 40; // Altura fija para paginación adaptariva
+const ROW_HEIGHT = 40;
 
-// GENERADOR DE CURVAS BÉZIER SUAVES
 function generateBezierPaths(points, tension = 0.25) {
   if (!points || points.length === 0) return { lineD: "", areaD: "" };
 
@@ -206,7 +207,7 @@ function inferCategoryFrontend(codigo, articulo) {
 }
 
 export default function Metricas() {
-  const [activeTab, setActiveTab] = useState("kpis"); // 'kpis' | 'chat'
+  const [activeTab, setActiveTab] = useState("kpis");
   const [produccion, setProduccion] = useState([]);
   const [semielaborados, setSemielaborados] = useState([]);
   const [materiasPrimas, setMateriasPrimas] = useState([]);
@@ -214,7 +215,8 @@ export default function Metricas() {
   const [isSyncing, setIsSyncing] = useState(false);
   const [isSyncingPedidos, setIsSyncingPedidos] = useState(false);
 
-  // GRUPOS DE ALERTA DE STOCK
+  const [vozHabilitada, setVozHabilitada] = useState(true);
+
   const [gruposAlerta, setGruposAlerta] = useState([]);
   const [grupoActivo, setGrupoActivo] = useState(null);
   const [isGroupModalOpen, setIsGroupModalOpen] = useState(false);
@@ -225,17 +227,14 @@ export default function Metricas() {
     dias_alerta: 15,
   });
 
-  // RANGO FECHAS
   const [fechaDesde, setFechaDesde] = useState("2024-01-01");
   const [fechaHasta, setFechaHasta] = useState("2026-12-31");
 
-  // MODALES
   const [isChartModalOpen, setIsChartModalOpen] = useState(false);
   const [isMatrizModalOpen, setIsMatrizModalOpen] = useState(false);
   const [isUrlModalOpen, setIsUrlModalOpen] = useState(false);
   const [sheetUrl, setSheetUrl] = useState("");
 
-  // ESTADOS COMPARADOR BÉZIER
   const [activeCategories, setActiveCategories] = useState([
     "EXTRUSIÓN",
     "INYECCIÓN",
@@ -247,7 +246,6 @@ export default function Metricas() {
   const [hoveredPoint, setHoveredPoint] = useState(null);
   const [clickToast, setClickToast] = useState(false);
 
-  // MATRIZ PLANIFICACIÓN
   const [searchTermSE, setSearchTermSE] = useState("");
   const [filtroEstadoStock, setFiltroEstadoStock] = useState("TODOS");
   const [currentPageSE, setCurrentPageSE] = useState(1);
@@ -255,7 +253,6 @@ export default function Metricas() {
   const tableHeaderRef = useRef(null);
   const [itemsPerPageSE, setItemsPerPageSE] = useState(10);
 
-  // SIMULADOR TEMPORAL
   const [simulatedItem, setSimulatedItem] = useState(null);
   const [simulatedBatchQty, setSimulatedBatchQty] = useState(500);
   const [simulatedDate, setSimulatedBatchDate] = useState(() => {
@@ -264,7 +261,6 @@ export default function Metricas() {
     return d.toISOString().split("T")[0];
   });
 
-  // ESTADO CHAT IA CON LA BD Y VOZ
   const [mensajes, setMensajes] = useState([
     {
       rol: "assistant",
@@ -274,10 +270,9 @@ export default function Metricas() {
   ]);
   const [inputChat, setInputChat] = useState("");
   const [enviandoChat, setEnviandoChat] = useState(false);
-  const [estadoVoz, setEstadoVoz] = useState("idle"); // 'idle' | 'speaking'
+  const [estadoVoz, setEstadoVoz] = useState("idle");
   const chatBottomRef = useRef(null);
 
-  // CARGAR VOCES NATIVAS DEL NAVEGADOR
   useEffect(() => {
     if ("speechSynthesis" in window) {
       window.speechSynthesis.onvoiceschanged = () => {
@@ -294,49 +289,54 @@ export default function Metricas() {
     chatBottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [mensajes]);
 
-  // FUNCIÓN DE VOZ FEMENINA 100% GRATUITA (WEB SPEECH API)
   const hablarConnie = (texto) => {
-    if (!("speechSynthesis" in window)) return;
+    if (!vozHabilitada || !("speechSynthesis" in window)) return;
 
-    window.speechSynthesis.cancel(); // Cancelar reproducciones previas
+    window.speechSynthesis.cancel();
 
-    // Limpieza de formato Markdown y emojis
     const textoLimpio = texto
       .replace(/\*+/g, "")
       .replace(/#/g, "")
       .replace(/[`_~]/g, "")
       .replace(
         /([\u2700-\u27BF]|[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDD10-\uDDFF])/g,
-        ""
+        "",
       );
 
     const utterance = new SpeechSynthesisUtterance(textoLimpio);
     const voces = window.speechSynthesis.getVoices();
 
-    // 1. Filtrar todas las voces en español
     const vocesEspanol = voces.filter((v) => v.lang.startsWith("es"));
-
-    // 2. Lista de identificadores de voces femeninas comunes según el S.O. (Windows, Mac, Android, iOS)
     const palabrasFemeninas = [
-      "elena", "sabina", "laura", "monica", "paulina", 
-      "luciana", "francisca", "victoria", "paloma", 
-      "mia", "dalia", "alva", "female", "mujer"
+      "elena",
+      "sabina",
+      "laura",
+      "monica",
+      "paulina",
+      "luciana",
+      "francisca",
+      "victoria",
+      "paloma",
+      "mia",
+      "dalia",
+      "alva",
+      "female",
+      "mujer",
     ];
 
-    // 3. Buscar prioritariamente una voz femenina en español
     let vozFemenina = vocesEspanol.find((v) =>
-      palabrasFemeninas.some((nombre) => v.name.toLowerCase().includes(nombre))
+      palabrasFemeninas.some((nombre) => v.name.toLowerCase().includes(nombre)),
     );
 
-    // 4. Si el sistema no indica el nombre explícito, descartar masculinos conocidos (Pablo, Raul, Jorge, Male)
     if (!vozFemenina) {
-      vozFemenina = vocesEspanol.find(
-        (v) =>
-          !v.name.toLowerCase().includes("male") &&
-          !v.name.toLowerCase().includes("pablo") &&
-          !v.name.toLowerCase().includes("raul") &&
-          !v.name.toLowerCase().includes("jorge")
-      ) || vocesEspanol[0];
+      vozFemenina =
+        vocesEspanol.find(
+          (v) =>
+            !v.name.toLowerCase().includes("male") &&
+            !v.name.toLowerCase().includes("pablo") &&
+            !v.name.toLowerCase().includes("raul") &&
+            !v.name.toLowerCase().includes("jorge"),
+        ) || vocesEspanol[0];
     }
 
     if (vozFemenina) {
@@ -346,8 +346,8 @@ export default function Metricas() {
       utterance.lang = "es-AR";
     }
 
-    utterance.rate = 1.0;  // Velocidad natural
-    utterance.pitch = 1.15; // Tono ajustado para acentuar voz femenina
+    utterance.rate = 1.0;
+    utterance.pitch = 1.15;
 
     utterance.onstart = () => setEstadoVoz("speaking");
     utterance.onend = () => setEstadoVoz("idle");
@@ -356,7 +356,16 @@ export default function Metricas() {
     window.speechSynthesis.speak(utterance);
   };
 
-  // SINCRONIZACIÓN DE LA TABLA ESTADO_PEDIDOS DESDE GOOGLE SHEETS
+  const toggleSilenciarVoz = () => {
+    if (vozHabilitada) {
+      if ("speechSynthesis" in window) window.speechSynthesis.cancel();
+      setEstadoVoz("idle");
+      setVozHabilitada(false);
+    } else {
+      setVozHabilitada(true);
+    }
+  };
+
   const handleSyncEstadoPedidos = async () => {
     setIsSyncingPedidos(true);
     try {
@@ -449,7 +458,7 @@ export default function Metricas() {
           ...nuevosMensajes,
           { rol: "assistant", texto: data.respuesta },
         ]);
-        hablarConnie(data.respuesta); // REPRODUCIR VOZ Y ANIMAR AVATAR
+        hablarConnie(data.respuesta);
       } else {
         setMensajes([
           ...nuevosMensajes,
@@ -474,7 +483,6 @@ export default function Metricas() {
     }
   };
 
-  // OBSERVER PARA MATRIZ ADAPTATIVA
   useEffect(() => {
     if (!isMatrizModalOpen || !tableContainerRef.current) return;
 
@@ -718,7 +726,6 @@ export default function Metricas() {
   );
   const emptySlotsSE = Math.max(0, itemsPerPageSE - currentPaginatedSE.length);
 
-  // HANDLERS DRAG & DROP
   const handleDragStart = (e, category) =>
     e.dataTransfer.setData("text/plain", category);
   const handleDragOver = (e) => {
@@ -741,117 +748,110 @@ export default function Metricas() {
     setActiveCategories(activeCategories.filter((c) => c !== cat));
 
   return (
-    <div className="flex-1 flex flex-col h-full min-h-0 bg-[#070a12] border border-slate-800/80 rounded-2xl font-sans text-slate-200 shadow-2xl overflow-hidden backdrop-blur-2xl">
-      {/* HEADER DE MÓDULO CON CONTROL PANEL */}
-      <div className="bg-[#0f172a]/70 border-b border-slate-800/80 p-4 flex flex-wrap items-center justify-between gap-4 shrink-0 backdrop-blur-xl">
-        <div className="flex items-center gap-3.5">
-          <div className="p-2.5 bg-emerald-500/10 border border-emerald-500/20 rounded-xl shadow-[0_0_15px_rgba(16,185,129,0.15)]">
-            <BarChart3 size={20} className="text-emerald-400" />
+    <div className="flex-1 flex flex-col w-full h-full min-h-0 bg-[#070a12] border border-slate-800/80 rounded-2xl font-sans text-slate-200 shadow-2xl overflow-hidden backdrop-blur-2xl">
+      {/* HEADER PRINCIPAL RESPONSIVE */}
+      <div className="bg-[#0f172a]/70 border-b border-slate-800/80 p-3 sm:p-4 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 shrink-0 backdrop-blur-xl">
+        <div className="flex items-center gap-2.5 sm:gap-3">
+          <div className="p-2 sm:p-2.5 bg-emerald-500/10 border border-emerald-500/20 rounded-xl shadow-[0_0_15px_rgba(16,185,129,0.15)] shrink-0">
+            <BarChart3 size={18} className="text-emerald-400 sm:w-5 sm:h-5" />
           </div>
-          <div>
-            <div className="flex items-center gap-2.5">
-              <h2 className="text-xs font-bold text-white tracking-widest uppercase font-mono">
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2 flex-wrap">
+              <h2 className="text-xs font-bold text-white tracking-widest uppercase font-mono truncate">
                 MÉTRICAS & INTELLIGENCE
               </h2>
-              <span className="text-[10px] bg-emerald-500/10 text-emerald-300 border border-emerald-500/20 px-2.5 py-0.5 rounded-full font-mono flex items-center gap-1.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_8px_#10b981]" />{" "}
-                LIVE DATA
-              </span>
             </div>
-            <p className="text-[11px] text-slate-400 mt-0.5">
+            <p className="text-[10px] sm:text-[11px] text-slate-400 mt-0.5 truncate">
               Panel de control operativo e interacción conversacional
             </p>
           </div>
         </div>
 
-        {/* CONTROLES NAVEGACIÓN PESTAÑAS */}
-        <div className="flex items-center gap-2">
-          {/* BOTÓN SINCRONIZAR PEDIDOS DESDE GOOGLE SHEETS */}
+        {/* NAVEGACIÓN Y ACCIONES MOBILES */}
+        <div className="flex items-center justify-between md:justify-end gap-2 overflow-x-auto pb-0.5 md:pb-0 shrink-0">
           <button
             onClick={handleSyncEstadoPedidos}
             disabled={isSyncingPedidos}
-            className="px-3 py-1.5 bg-slate-900 border border-slate-700 hover:border-cyan-400 text-cyan-400 hover:text-cyan-300 font-mono font-bold text-xs rounded-xl transition shadow-md flex items-center gap-2 cursor-pointer shrink-0 disabled:opacity-50"
+            className="px-2.5 sm:px-3 py-1.5 bg-slate-900 border border-slate-700 hover:border-cyan-400 text-cyan-400 hover:text-cyan-300 font-mono font-bold text-[10px] sm:text-xs rounded-xl transition shadow-md flex items-center gap-1.5 cursor-pointer shrink-0 disabled:opacity-50 whitespace-nowrap"
             title="Sincronizar estado de pedidos desde Google Sheets"
           >
             <DownloadCloud
-              size={14}
+              size={13}
               className={isSyncingPedidos ? "animate-bounce text-cyan-300" : ""}
             />
             <span>
-              {isSyncingPedidos ? "Sincronizando..." : "Sincronizar Pedidos"}
+              {isSyncingPedidos ? "Cargando..." : "Sincronizar Pedidos"}
             </span>
           </button>
 
-          {/* FILTRO DE FECHAS COMPACTO */}
-          <div className="hidden sm:flex items-center gap-1.5 bg-[#090d16] border border-slate-800 px-2.5 py-1 rounded-xl text-xs font-mono text-slate-300">
+          <div className="hidden lg:flex items-center gap-1.5 bg-[#090d16] border border-slate-800 px-2.5 py-1 rounded-xl text-xs font-mono text-slate-300 shrink-0">
             <Calendar size={13} className="text-emerald-400" />
             <input
               type="date"
               value={fechaDesde}
               onChange={(e) => setFechaDesde(e.target.value)}
-              className="bg-transparent text-white outline-none"
+              className="bg-transparent text-white outline-none text-[11px]"
             />
             <span className="text-slate-600">-</span>
             <input
               type="date"
               value={fechaHasta}
               onChange={(e) => setFechaHasta(e.target.value)}
-              className="bg-transparent text-white outline-none"
+              className="bg-transparent text-white outline-none text-[11px]"
             />
           </div>
 
-          <div className="flex items-center gap-1 bg-[#090d16]/80 p-1 border border-slate-800/80 rounded-xl shadow-inner">
+          <div className="flex items-center gap-1 bg-[#090d16]/80 p-1 border border-slate-800/80 rounded-xl shadow-inner shrink-0">
             <button
               onClick={() => setActiveTab("kpis")}
-              className={`px-3.5 py-1.5 text-xs font-medium transition-all duration-200 rounded-lg flex items-center gap-2 cursor-pointer ${
+              className={`px-2.5 sm:px-3.5 py-1.5 text-[11px] sm:text-xs font-medium transition-all duration-200 rounded-lg flex items-center gap-1.5 cursor-pointer whitespace-nowrap ${
                 activeTab === "kpis"
                   ? "bg-[#131c2d] text-emerald-300 font-semibold border border-emerald-500/30 shadow-[0_0_12px_rgba(16,185,129,0.15)]"
                   : "text-slate-400 hover:text-slate-200"
               }`}
             >
-              <Activity size={14} /> Tablero General
+              <Activity size={13} /> <span>Tablero</span>
             </button>
 
             <button
               onClick={() => setActiveTab("chat")}
-              className={`px-3.5 py-1.5 text-xs font-medium transition-all duration-200 rounded-lg flex items-center gap-2 cursor-pointer ${
+              className={`px-2.5 sm:px-3.5 py-1.5 text-[11px] sm:text-xs font-medium transition-all duration-200 rounded-lg flex items-center gap-1.5 cursor-pointer whitespace-nowrap ${
                 activeTab === "chat"
                   ? "bg-[#131c2d] text-emerald-300 font-semibold border border-emerald-500/30 shadow-[0_0_12px_rgba(16,185,129,0.15)]"
                   : "text-slate-400 hover:text-slate-200"
               }`}
             >
-              <Bot size={14} /> Asistente IA BD
+              <Bot size={13} /> <span>Asistente</span>
             </button>
           </div>
         </div>
       </div>
 
       {/* ÁREA DE CONTENIDO */}
-      <div className="flex-1 min-h-0 overflow-hidden bg-[#070a12] p-5">
+      <div className="flex-1 min-h-0 overflow-hidden bg-[#070a12] p-2.5 sm:p-5">
         {/* VISTA 1: TABLERO GENERAL DE KPIS */}
         {activeTab === "kpis" && (
-          <div className="h-full overflow-y-auto space-y-5 pr-1 transition-all duration-300 ease-out">
-            {/* KPIS RESTRUCTURADOS */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              <div className="bg-[#0e1422] border border-slate-800/80 p-4 rounded-2xl space-y-2 shadow-sm relative overflow-hidden group hover:border-emerald-500/40 transition-colors">
-                <div className="flex justify-between items-center text-slate-400 text-xs font-mono">
+          <div className="h-full overflow-y-auto space-y-3.5 sm:space-y-5 pr-1 transition-all duration-300 ease-out">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-4">
+              <div className="bg-[#0e1422] border border-slate-800/80 p-3.5 sm:p-4 rounded-2xl space-y-1.5 shadow-sm relative overflow-hidden group hover:border-emerald-500/40 transition-colors">
+                <div className="flex justify-between items-center text-slate-400 text-[10px] sm:text-xs font-mono">
                   <span>PIEZAS PRODUCIDAS</span>
-                  <TrendingUp size={15} className="text-emerald-400" />
+                  <TrendingUp size={14} className="text-emerald-400" />
                 </div>
-                <div className="text-2xl font-bold font-mono text-white">
+                <div className="text-xl sm:text-2xl font-bold font-mono text-white">
                   {loading ? "..." : globalStats.buenas.toLocaleString()}{" "}
                   <span className="text-xs text-slate-500 font-normal">u.</span>
                 </div>
-                <p className="text-[11px] text-slate-400">
+                <p className="text-[10px] sm:text-[11px] text-slate-400">
                   Total acumulado en el rango
                 </p>
               </div>
 
-              <div className="bg-[#0e1422] border border-slate-800/80 p-4 rounded-2xl space-y-2 shadow-sm relative overflow-hidden group hover:border-amber-500/40 transition-colors">
-                <div className="flex justify-between items-center text-slate-400 text-xs font-mono">
+              <div className="bg-[#0e1422] border border-slate-800/80 p-3.5 sm:p-4 rounded-2xl space-y-1.5 shadow-sm relative overflow-hidden group hover:border-amber-500/40 transition-colors">
+                <div className="flex justify-between items-center text-slate-400 text-[10px] sm:text-xs font-mono">
                   <span>TASA DE DEFECTOS</span>
                   <AlertTriangle
-                    size={15}
+                    size={14}
                     className={
                       globalStats.porcDefectuosas > 5
                         ? "text-amber-400"
@@ -859,20 +859,20 @@ export default function Metricas() {
                     }
                   />
                 </div>
-                <div className="text-2xl font-bold font-mono text-amber-400">
+                <div className="text-xl sm:text-2xl font-bold font-mono text-amber-400">
                   {loading ? "..." : `${globalStats.porcDefectuosas}%`}
                 </div>
-                <p className="text-[11px] text-slate-400">
+                <p className="text-[10px] sm:text-[11px] text-slate-400 truncate">
                   {globalStats.fallas.toLocaleString()} piezas descartadas
                 </p>
               </div>
 
-              <div className="bg-[#0e1422] border border-slate-800/80 p-4 rounded-2xl space-y-2 shadow-sm relative overflow-hidden group hover:border-amber-500/40 transition-colors">
-                <div className="flex justify-between items-center text-slate-400 text-xs font-mono">
+              <div className="bg-[#0e1422] border border-slate-800/80 p-3.5 sm:p-4 rounded-2xl space-y-1.5 shadow-sm relative overflow-hidden group hover:border-amber-500/40 transition-colors">
+                <div className="flex justify-between items-center text-slate-400 text-[10px] sm:text-xs font-mono">
                   <span>RIESGO STOCK (&lt;{diasCriticoActivo}D)</span>
-                  <Shield size={15} className="text-amber-400" />
+                  <Shield size={14} className="text-amber-400" />
                 </div>
-                <div className="text-2xl font-bold font-mono text-white">
+                <div className="text-xl sm:text-2xl font-bold font-mono text-white">
                   {loading ? "..." : globalStats.semielaboradosEnRiesgo}{" "}
                   <span className="text-xs text-slate-500 font-normal">
                     items
@@ -880,37 +880,36 @@ export default function Metricas() {
                 </div>
                 <button
                   onClick={() => setIsMatrizModalOpen(true)}
-                  className="text-[11px] text-amber-400 hover:underline cursor-pointer block font-mono"
+                  className="text-[10px] sm:text-[11px] text-amber-400 hover:underline cursor-pointer block font-mono"
                 >
                   Ver matriz de riesgo →
                 </button>
               </div>
 
-              <div className="bg-[#0e1422] border border-slate-800/80 p-4 rounded-2xl space-y-2 shadow-sm relative overflow-hidden group hover:border-emerald-500/40 transition-colors">
-                <div className="flex justify-between items-center text-slate-400 text-xs font-mono">
+              <div className="bg-[#0e1422] border border-slate-800/80 p-3.5 sm:p-4 rounded-2xl space-y-1.5 shadow-sm relative overflow-hidden group hover:border-emerald-500/40 transition-colors">
+                <div className="flex justify-between items-center text-slate-400 text-[10px] sm:text-xs font-mono">
                   <span>EFICIENCIA GLOBAL</span>
-                  <CheckCircle2 size={15} className="text-emerald-400" />
+                  <CheckCircle2 size={14} className="text-emerald-400" />
                 </div>
-                <div className="text-2xl font-bold font-mono text-emerald-400">
+                <div className="text-xl sm:text-2xl font-bold font-mono text-emerald-400">
                   {loading ? "..." : `${globalStats.tasaCalidad}%`}
                 </div>
-                <p className="text-[11px] text-slate-400">
+                <p className="text-[10px] sm:text-[11px] text-slate-400">
                   Tasa de primera calidad
                 </p>
               </div>
             </div>
 
-            {/* COMANDOS DE ACCIÓN / ANÁLISIS */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="bg-[#0e1422] border border-slate-800/80 p-5 rounded-2xl flex flex-col justify-between space-y-4 hover:border-emerald-500/30 transition-colors">
-                <div className="space-y-2">
-                  <div className="p-2.5 bg-emerald-500/10 border border-emerald-500/20 rounded-xl w-fit">
-                    <BarChart3 size={20} className="text-emerald-400" />
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4">
+              <div className="bg-[#0e1422] border border-slate-800/80 p-3.5 sm:p-5 rounded-2xl flex flex-col justify-between space-y-3 sm:space-y-4 hover:border-emerald-500/30 transition-colors">
+                <div className="space-y-1.5 sm:space-y-2">
+                  <div className="p-2 bg-emerald-500/10 border border-emerald-500/20 rounded-xl w-fit">
+                    <BarChart3 size={18} className="text-emerald-400" />
                   </div>
-                  <h3 className="text-sm font-bold text-white font-mono">
+                  <h3 className="text-xs sm:text-sm font-bold text-white font-mono">
                     COMPARADOR EVOLUTIVO DRAG & DROP
                   </h3>
-                  <p className="text-xs text-slate-400 leading-relaxed">
+                  <p className="text-[10px] sm:text-xs text-slate-400 leading-relaxed">
                     Visualizá curvas Bézier suaves de tasa de fallas por
                     tecnología (Extrusión, Inyección y Rotomoldeo). Podés
                     arrastrar cartuchos y fusionar promedios.
@@ -925,15 +924,15 @@ export default function Metricas() {
                 </button>
               </div>
 
-              <div className="bg-[#0e1422] border border-slate-800/80 p-5 rounded-2xl flex flex-col justify-between space-y-4 hover:border-amber-500/30 transition-colors">
-                <div className="space-y-2">
-                  <div className="p-2.5 bg-amber-500/10 border border-amber-500/20 rounded-xl w-fit">
-                    <Calculator size={20} className="text-amber-400" />
+              <div className="bg-[#0e1422] border border-slate-800/80 p-3.5 sm:p-5 rounded-2xl flex flex-col justify-between space-y-3 sm:space-y-4 hover:border-amber-500/30 transition-colors">
+                <div className="space-y-1.5 sm:space-y-2">
+                  <div className="p-2 bg-amber-500/10 border border-amber-500/20 rounded-xl w-fit">
+                    <Calculator size={18} className="text-amber-400" />
                   </div>
-                  <h3 className="text-sm font-bold text-white font-mono">
+                  <h3 className="text-xs sm:text-sm font-bold text-white font-mono">
                     MATRIZ Y PLANIFICACIÓN DE COBERTURA
                   </h3>
-                  <p className="text-xs text-slate-400 leading-relaxed">
+                  <p className="text-[10px] sm:text-xs text-slate-400 leading-relaxed">
                     Cruza stock de semielaborados con promedio mensual de ventas
                     para calcular días de cobertura y simular ingresos de lotes
                     proyectados a futuro.
@@ -952,16 +951,15 @@ export default function Metricas() {
               </div>
             </div>
 
-            {/* TABLA RESUMEN RECIENTE */}
-            <div className="bg-[#0e1422] border border-slate-800/80 rounded-2xl p-4 space-y-3">
-              <div className="flex justify-between items-center border-b border-slate-800/80 pb-3">
-                <h3 className="text-xs font-bold text-emerald-400 font-mono flex items-center gap-2">
-                  <Activity size={14} /> HISTORIAL RECIENTE DE REGISTROS DE
-                  PLANTA
+            <div className="bg-[#0e1422] border border-slate-800/80 rounded-2xl p-3 sm:p-4 space-y-3">
+              <div className="flex justify-between items-center border-b border-slate-800/80 pb-2">
+                <h3 className="text-xs font-bold text-emerald-400 font-mono flex items-center gap-1.5 truncate">
+                  <Activity size={14} className="shrink-0" />{" "}
+                  <span className="truncate">HISTORIAL RECIENTE DE PLANTA</span>
                 </h3>
                 <button
                   onClick={fetchAllData}
-                  className="p-1.5 hover:bg-slate-800 text-slate-400 hover:text-emerald-400 rounded-lg transition cursor-pointer"
+                  className="p-1.5 hover:bg-slate-800 text-slate-400 hover:text-emerald-400 rounded-lg transition cursor-pointer shrink-0 ml-2"
                 >
                   <RefreshCw
                     size={13}
@@ -970,24 +968,22 @@ export default function Metricas() {
                 </button>
               </div>
 
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs border-collapse">
+              <div className="overflow-x-auto -mx-1 px-1">
+                <table className="w-full text-left text-xs border-collapse min-w-[500px]">
                   <thead className="bg-[#070a12] text-slate-400 font-mono text-[10px] uppercase">
                     <tr>
-                      <th className="p-2.5 border-b border-slate-800">Fecha</th>
-                      <th className="p-2.5 border-b border-slate-800">
+                      <th className="p-2 border-b border-slate-800">Fecha</th>
+                      <th className="p-2 border-b border-slate-800">
                         Categoría
                       </th>
-                      <th className="p-2.5 border-b border-slate-800">
-                        Código
-                      </th>
-                      <th className="p-2.5 border-b border-slate-800">
+                      <th className="p-2 border-b border-slate-800">Código</th>
+                      <th className="p-2 border-b border-slate-800">
                         Artículo
                       </th>
-                      <th className="p-2.5 border-b border-slate-800 text-right">
+                      <th className="p-2 border-b border-slate-800 text-right">
                         Buenos
                       </th>
-                      <th className="p-2.5 border-b border-slate-800 text-right">
+                      <th className="p-2 border-b border-slate-800 text-right">
                         Fallas
                       </th>
                     </tr>
@@ -996,24 +992,24 @@ export default function Metricas() {
                     {produccion.slice(0, 10).map((p, idx) => (
                       <tr
                         key={idx}
-                        className="hover:bg-[#121824]/60 transition-colors"
+                        className="hover:bg-[#121824]/60 transition-colors text-[11px]"
                       >
-                        <td className="p-2.5 font-mono text-slate-400">
+                        <td className="p-2 font-mono text-slate-400 whitespace-nowrap">
                           {p.fecha || "-"}
                         </td>
-                        <td className="p-2.5 text-slate-300 font-mono">
+                        <td className="p-2 text-slate-300 font-mono whitespace-nowrap">
                           {p.categoria_maq || "GENERAL"}
                         </td>
-                        <td className="p-2.5 font-mono font-bold text-amber-400">
+                        <td className="p-2 font-mono font-bold text-amber-400 whitespace-nowrap">
                           {p.codigo || "-"}
                         </td>
-                        <td className="p-2.5 text-slate-200">
+                        <td className="p-2 text-slate-200 max-w-[150px] truncate">
                           {p.articulo || "-"}
                         </td>
-                        <td className="p-2.5 text-right font-mono text-emerald-400 font-semibold">
+                        <td className="p-2 text-right font-mono text-emerald-400 font-semibold">
                           {Number(p.cant_buenos || 0).toLocaleString()}
                         </td>
-                        <td className="p-2.5 text-right font-mono text-amber-400 font-semibold">
+                        <td className="p-2 text-right font-mono text-amber-400 font-semibold">
                           {Number(p.cant_fallas || 0).toLocaleString()}
                         </td>
                       </tr>
@@ -1025,40 +1021,68 @@ export default function Metricas() {
           </div>
         )}
 
-        {/* VISTA CHAT INTERACTIVO CON AVATAR EN LA PARTE SUPERIOR */}
+        {/* VISTA CHAT INTERACTIVO CON AVATAR Y SILENCIADOR EN LA FOTO */}
         {activeTab === "chat" && (
           <div className="h-full flex flex-col min-h-0 bg-[#0e1422] border border-slate-800/80 rounded-2xl overflow-hidden shadow-2xl">
-            {/* AVATAR INTERACTIVO EN LA CABECERA DEL CHAT */}
-            <AIAvatar
-              estado={
-                enviandoChat
-                  ? "thinking"
-                  : estadoVoz === "speaking"
-                    ? "speaking"
-                    : "idle"
-              }
-              nombre="Connie — Asistente de Planta"
-            />
+            {/* CABECERA CHAT CON PARLANTE EN EL VÉRTICE SUPERIOR DERECHO DE LA FOTO */}
+            <div className="relative border-b border-slate-800/80 bg-[#070a12]/90 px-3 py-2.5 sm:px-4 sm:py-3">
+              <div className="relative inline-block w-full">
+                <AIAvatar
+                  estado={
+                    enviandoChat
+                      ? "thinking"
+                      : estadoVoz === "speaking"
+                        ? "speaking"
+                        : "idle"
+                  }
+                  nombre="Connie — Asistente de Planta"
+                />
+
+                {/* PARLANTE UBICADO EXACTAMENTE EN EL VÉRTICE SUPERIOR DERECHO DE LA FOTO */}
+                <button
+                  onClick={toggleSilenciarVoz}
+                  className={`absolute top-[10px] sm:top-[12px] left-[84px] sm:left-[108px] -translate-x-1/2 -translate-y-1/2 w-6 h-6 rounded-full border flex items-center justify-center transition-all cursor-pointer shadow-lg z-20 backdrop-blur-md ${
+                    vozHabilitada
+                      ? "bg-[#070a12]/95 border-emerald-500/60 text-emerald-400 hover:scale-110 shadow-[0_0_12px_rgba(16,185,129,0.4)]"
+                      : "bg-[#070a12]/95 border-rose-500/60 text-rose-400 hover:scale-110 shadow-[0_0_12px_rgba(244,63,94,0.4)]"
+                  }`}
+                  title={
+                    vozHabilitada
+                      ? "Silenciar voz de Connie"
+                      : "Activar voz de Connie"
+                  }
+                >
+                  {vozHabilitada ? (
+                    <Volume2
+                      size={12}
+                      className="animate-pulse text-emerald-400"
+                    />
+                  ) : (
+                    <VolumeX size={12} className="text-rose-400" />
+                  )}
+                </button>
+              </div>
+            </div>
 
             {/* ÁREA DE MENSAJES DE CHAT */}
-            <div className="flex-1 overflow-y-auto p-4 space-y-4 min-h-0">
+            <div className="flex-1 overflow-y-auto p-3 sm:p-4 space-y-3 sm:space-y-4 min-h-0">
               {mensajes.map((m, i) => (
                 <div
                   key={i}
-                  className={`flex gap-3 max-w-3xl ${
+                  className={`flex gap-2 sm:gap-3 max-w-[92%] sm:max-w-2xl ${
                     m.rol === "user"
                       ? "ml-auto justify-end"
                       : "mr-auto justify-start"
                   }`}
                 >
                   {m.rol === "assistant" && (
-                    <div className="w-8 h-8 rounded-xl bg-[#070a12] border border-emerald-500/30 flex items-center justify-center text-emerald-400 shrink-0 mt-0.5 shadow-[0_0_10px_rgba(16,185,129,0.15)]">
-                      <Bot size={15} />
+                    <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl bg-[#070a12] border border-emerald-500/30 flex items-center justify-center text-emerald-400 shrink-0 mt-0.5 shadow-[0_0_10px_rgba(16,185,129,0.15)]">
+                      <Bot size={14} className="sm:w-[15px] sm:h-[15px]" />
                     </div>
                   )}
 
                   <div
-                    className={`p-3.5 rounded-2xl text-xs leading-relaxed ${
+                    className={`p-3 sm:p-3.5 rounded-2xl text-xs leading-relaxed ${
                       m.rol === "user"
                         ? "bg-emerald-500/10 border border-emerald-500/30 text-emerald-200 font-medium rounded-br-none"
                         : "bg-[#070a12] border border-slate-800 text-slate-200 rounded-bl-none whitespace-pre-wrap font-sans"
@@ -1068,7 +1092,7 @@ export default function Metricas() {
                   </div>
 
                   {m.rol === "user" && (
-                    <div className="w-8 h-8 rounded-xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-300 font-mono text-xs font-bold shrink-0 mt-0.5">
+                    <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-300 font-mono text-xs font-bold shrink-0 mt-0.5">
                       U
                     </div>
                   )}
@@ -1077,57 +1101,20 @@ export default function Metricas() {
               <div ref={chatBottomRef} />
             </div>
 
-            {/* SUGERENCIAS RÁPIDAS DE PROMPT */}
-            <div className="px-4 py-2 bg-[#070a12]/60 border-t border-slate-800/60 flex items-center gap-2 overflow-x-auto text-[11px]">
-              <span className="text-slate-500 font-mono shrink-0">
-                Sugerencias:
-              </span>
-              <button
-                onClick={() =>
-                  enviarMensajeChat(
-                    "¿Cuáles son las 3 materias primas con stock más crítico?",
-                  )
-                }
-                className="bg-[#121824] hover:bg-[#1a2336] border border-slate-800 text-slate-300 px-2.5 py-1 rounded-lg shrink-0 transition cursor-pointer font-sans"
-              >
-                Insumos Críticos
-              </button>
-              <button
-                onClick={() =>
-                  enviarMensajeChat(
-                    "¿Qué semielaborados están en riesgo en el depósito 33?",
-                  )
-                }
-                className="bg-[#121824] hover:bg-[#1a2336] border border-slate-800 text-slate-300 px-2.5 py-1 rounded-lg shrink-0 transition cursor-pointer font-sans"
-              >
-                Riesgo Depósito 33
-              </button>
-              <button
-                onClick={() =>
-                  enviarMensajeChat(
-                    "Haceme un diagnóstico general de la eficiencia de planta.",
-                  )
-                }
-                className="bg-[#121824] hover:bg-[#1a2336] border border-slate-800 text-slate-300 px-2.5 py-1 rounded-lg shrink-0 transition cursor-pointer font-sans"
-              >
-                Diagnóstico de Eficiencia
-              </button>
-            </div>
-
             {/* BARRA DE ENTRADA CHAT */}
-            <div className="p-3 bg-[#070a12] border-t border-slate-800/80 flex items-center gap-2">
+            <div className="p-2.5 sm:p-3 bg-[#070a12] border-t border-slate-800/80 flex items-center gap-2">
               <input
                 type="text"
                 value={inputChat}
                 onChange={(e) => setInputChat(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && enviarMensajeChat()}
-                placeholder="Preguntale a Elena sobre materias primas, semielaborados, ventas u OT..."
-                className="flex-1 bg-[#0e1422] border border-slate-800 px-3.5 py-2 text-xs text-slate-100 outline-none focus:border-emerald-500/50 rounded-xl"
+                placeholder="Preguntale a Connie sobre insumos, semielaborados, ventas o pedidos..."
+                className="flex-1 bg-[#0e1422] border border-slate-800 px-3 sm:px-3.5 py-2 text-xs text-slate-100 outline-none focus:border-emerald-500/50 rounded-xl"
               />
               <button
                 onClick={() => enviarMensajeChat()}
                 disabled={enviandoChat}
-                className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 p-2 rounded-xl transition cursor-pointer disabled:opacity-50 shadow-[0_0_12px_rgba(16,185,129,0.25)]"
+                className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 p-2 sm:p-2.5 rounded-xl transition cursor-pointer disabled:opacity-50 shadow-[0_0_12px_rgba(16,185,129,0.25)] shrink-0"
               >
                 <Send size={15} />
               </button>
@@ -1136,42 +1123,36 @@ export default function Metricas() {
         )}
       </div>
 
-      {/* =========================================================
-          MODAL 1: COMPARADOR EVOLUTIVO (DRAG & DROP SVG BÉZIER)
-      ========================================================= */}
+      {/* MODAL 1: COMPARADOR BÉZIER */}
       {isChartModalOpen && (
-        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-xs z-[100] flex items-center justify-center p-3 font-sans">
-          <div className="bg-[#0e1422] border border-slate-800 w-full max-w-5xl h-[88vh] p-4 sm:p-5 shadow-2xl flex flex-col relative rounded-2xl overflow-hidden">
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-xs z-[100] flex items-center justify-center p-2 sm:p-4 font-sans">
+          <div className="bg-[#0e1422] border border-slate-800 w-full max-w-5xl h-[92vh] sm:h-[88vh] p-3 sm:p-5 shadow-2xl flex flex-col relative rounded-2xl overflow-hidden">
             <button
               onClick={() => setIsChartModalOpen(false)}
-              className="absolute top-4 right-4 text-slate-400 hover:text-white"
+              className="absolute top-3 right-3 sm:top-4 sm:right-4 text-slate-400 hover:text-white"
             >
-              <X size={16} />
+              <X size={18} />
             </button>
 
-            <div className="border-b border-slate-800 pb-3 shrink-0 pr-6">
-              <span className="text-[10px] font-mono font-bold text-emerald-400 bg-emerald-500/10 px-2.5 py-0.5 border border-emerald-500/20 rounded-full">
+            <div className="border-b border-slate-800 pb-2 shrink-0 pr-6">
+              <span className="text-[9px] font-mono font-bold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 border border-emerald-500/20 rounded-full">
                 ANÁLISIS EVOLUTIVO
               </span>
-              <h3 className="text-sm font-bold text-white mt-1.5 flex items-center gap-2">
-                <BarChart3 size={16} className="text-amber-400" /> HISTORIAL DE
-                PIEZAS DEFECTUOSAS POR MÁQUINA
+              <h3 className="text-xs sm:text-sm font-bold text-white mt-1 flex items-center gap-2 truncate">
+                <BarChart3 size={15} className="text-amber-400 shrink-0" />{" "}
+                <span className="truncate">HISTORIAL DE DEFECTOS</span>
               </h3>
             </div>
 
-            {/* DRAG & DROP TOOLBAR */}
-            <div className="bg-[#070a12] border-b border-slate-800/80 p-3 flex flex-wrap items-center justify-between gap-2 shrink-0 my-2 rounded-xl">
-              <div className="flex items-center gap-2 text-[11px] font-mono text-slate-400">
-                <GripVertical
-                  size={14}
-                  className="text-amber-400 animate-bounce"
-                />
-                <span>
-                  ARRASTRÁ EL CARTUCHO AL LIENZO PARA TRAZAR LA CURVA:
+            <div className="bg-[#070a12] border-b border-slate-800/80 p-2 sm:p-3 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 shrink-0 my-2 rounded-xl">
+              <div className="flex items-center gap-2 text-[10px] font-mono text-slate-400">
+                <GripVertical size={14} className="text-amber-400 shrink-0" />
+                <span className="truncate">
+                  SELECCIONÁ CATEGORÍA PARA TRAZAR:
                 </span>
               </div>
 
-              <div className="flex items-center gap-2 font-mono text-[11px]">
+              <div className="flex items-center gap-1 font-mono text-[10px] flex-wrap">
                 {["EXTRUSIÓN", "INYECCIÓN", "ROTOMOLDEO"].map((cat) => {
                   const isAlreadyActive = activeCategories.includes(cat);
                   const color = CATEGORY_COLORS[cat].stroke;
@@ -1179,20 +1160,28 @@ export default function Metricas() {
                   return (
                     <div
                       key={cat}
-                      draggable={!isMerged}
-                      onDragStart={(e) => handleDragStart(e, cat)}
-                      onClick={handlePillClick}
-                      className={`px-3 py-1 border rounded-lg transition-all font-semibold ${
+                      onClick={() => {
+                        if (isMerged) return;
+                        if (isAlreadyActive) {
+                          removeCategory(cat);
+                        } else {
+                          setActiveCategories((prev) => [...prev, cat]);
+                        }
+                      }}
+                      className={`px-2 py-0.5 border rounded-lg transition-all font-semibold cursor-pointer ${
                         isMerged
                           ? "opacity-30 cursor-not-allowed bg-slate-900 border-slate-800 text-slate-500"
                           : isAlreadyActive
-                            ? "bg-slate-900 text-slate-400 border-slate-800 opacity-40 cursor-not-allowed"
-                            : "bg-slate-800 text-white cursor-grab hover:scale-105"
+                            ? "bg-slate-800 text-white border-emerald-500"
+                            : "bg-slate-900 text-slate-400 border-slate-800 hover:text-white"
                       }`}
-                      style={{ borderColor: !isMerged ? color : undefined }}
+                      style={{
+                        borderColor:
+                          isAlreadyActive && !isMerged ? color : undefined,
+                      }}
                     >
                       <span
-                        className="w-2 h-2 rounded-full inline-block mr-1.5"
+                        className="w-2 h-2 rounded-full inline-block mr-1"
                         style={{ backgroundColor: color }}
                       />
                       <span>{cat}</span>
@@ -1202,38 +1191,25 @@ export default function Metricas() {
 
                 <button
                   onClick={() => setIsMerged(!isMerged)}
-                  className={`flex items-center gap-1.5 px-3 py-1 border text-xs font-bold rounded-lg transition cursor-pointer ${
+                  className={`flex items-center gap-1 px-2 py-0.5 border text-[10px] font-bold rounded-lg transition cursor-pointer ${
                     isMerged
-                      ? "bg-purple-500/20 text-purple-300 border-purple-500/50 shadow-[0_0_12px_rgba(168,85,247,0.3)]"
+                      ? "bg-purple-500/20 text-purple-300 border-purple-500/50"
                       : "bg-slate-900 border-slate-700 text-slate-300 hover:text-white"
                   }`}
                 >
-                  <GitMerge size={13} />
-                  <span>
-                    {isMerged ? "SEPARAR LÍNEAS" : "FUSIONAR PROMEDIO"}
-                  </span>
+                  <GitMerge size={11} />
+                  <span>{isMerged ? "SEPARAR" : "FUSIONAR"}</span>
                 </button>
               </div>
             </div>
 
-            {/* CANVAS SVG */}
             <div
               onDragOver={handleDragOver}
               onDragLeave={handleDragLeave}
               onDrop={handleDrop}
-              className={`flex-1 relative flex flex-col justify-between overflow-hidden rounded-xl border ${
-                isDraggingOverChart
-                  ? "bg-emerald-500/10 border-dashed border-emerald-400"
-                  : "bg-[#070a12] border-slate-800"
-              }`}
+              className="flex-1 relative flex flex-col justify-between overflow-hidden rounded-xl border bg-[#070a12] border-slate-800"
             >
-              {isDraggingOverChart && (
-                <div className="absolute inset-0 z-30 flex items-center justify-center bg-slate-950/70 backdrop-blur-xs font-mono text-xs text-emerald-400 font-bold animate-pulse">
-                  ¡SOLTÁ AQUÍ PARA TRAZAR LA CURVA BÉZIER!
-                </div>
-              )}
-
-              <div className="w-full h-full relative z-10 p-6">
+              <div className="w-full h-full relative z-10 p-2 sm:p-4">
                 <svg
                   viewBox="0 0 1000 500"
                   preserveAspectRatio="none"
@@ -1355,53 +1331,52 @@ export default function Metricas() {
                   </g>
                 </svg>
 
-                <div className="flex justify-between items-center pt-2 text-[10px] font-mono text-slate-500 border-t border-slate-800/80">
+                <div className="flex justify-between items-center pt-2 text-[9px] font-mono text-slate-500 border-t border-slate-800/80 overflow-x-auto">
                   {evolutionaryData.mesesLista.map((mes) => (
-                    <span key={mes}>{mes}</span>
+                    <span key={mes} className="shrink-0 px-1">
+                      {mes}
+                    </span>
                   ))}
                 </div>
               </div>
             </div>
 
-            <div className="pt-3 flex justify-end">
+            <div className="pt-2 flex justify-end">
               <button
                 onClick={() => setIsChartModalOpen(false)}
-                className="bg-slate-800 hover:bg-slate-700 text-slate-200 font-mono text-xs px-4 py-2 rounded-xl transition cursor-pointer"
+                className="bg-slate-800 hover:bg-slate-700 text-slate-200 font-mono text-xs px-4 py-1.5 rounded-xl transition cursor-pointer"
               >
-                Cerrar Comparador
+                Cerrar
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* =========================================================
-          MODAL 2: MATRIZ DE PLANIFICACIÓN (RIESGO STOCK)
-      ========================================================= */}
+      {/* MODAL 2: MATRIZ DE PLANIFICACIÓN */}
       {isMatrizModalOpen && (
-        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-xs z-[100] flex items-center justify-center p-3 font-sans">
-          <div className="bg-[#0e1422] border border-slate-800 w-full max-w-6xl h-[85vh] p-4 sm:p-5 shadow-2xl flex flex-col relative rounded-2xl overflow-hidden">
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-xs z-[100] flex items-center justify-center p-2 sm:p-4 font-sans">
+          <div className="bg-[#0e1422] border border-slate-800 w-full max-w-6xl h-[92vh] sm:h-[85vh] p-3 sm:p-5 shadow-2xl flex flex-col relative rounded-2xl overflow-hidden">
             <button
               onClick={() => setIsMatrizModalOpen(false)}
-              className="absolute top-4 right-4 text-slate-400 hover:text-white z-50"
+              className="absolute top-3 right-3 sm:top-4 sm:right-4 text-slate-400 hover:text-white z-50"
             >
-              <X size={16} />
+              <X size={18} />
             </button>
 
-            <div className="border-b border-slate-800 pb-3 shrink-0 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 pr-8">
+            <div className="border-b border-slate-800 pb-2 shrink-0 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 pr-8">
               <div>
-                <span className="text-[10px] font-mono font-bold text-amber-400 bg-amber-500/10 px-2.5 py-0.5 border border-amber-500/20 rounded-full">
+                <span className="text-[9px] font-mono font-bold text-amber-400 bg-amber-500/10 px-2 py-0.5 border border-amber-500/20 rounded-full">
                   PLANIFICACIÓN DE DEPOSITOS
                 </span>
-                <h3 className="text-sm font-bold text-white mt-1.5 flex items-center gap-2">
-                  <Calculator size={16} className="text-amber-400" /> MATRIZ DE
-                  COBERTURA DE SEMIELABORADOS
+                <h3 className="text-xs sm:text-sm font-bold text-white mt-1 flex items-center gap-1.5 truncate">
+                  <Calculator size={15} className="text-amber-400 shrink-0" />{" "}
+                  <span className="truncate">MATRIZ DE COBERTURA</span>
                 </h3>
               </div>
 
-              {/* GRUPO ACTIVO */}
-              <div className="flex items-center gap-2 font-mono text-xs bg-[#070a12] border border-slate-800 px-3 py-1.5 rounded-xl">
-                <span className="text-slate-400">Grupo:</span>
+              <div className="flex items-center gap-2 font-mono text-xs bg-[#070a12] border border-slate-800 px-2 py-1 rounded-xl">
+                <span className="text-slate-400 text-[10px]">Grupo:</span>
                 <select
                   value={grupoActivo?.id || ""}
                   onChange={(e) => {
@@ -1413,7 +1388,7 @@ export default function Metricas() {
                       setCurrentPageSE(1);
                     }
                   }}
-                  className="bg-transparent text-emerald-400 font-bold outline-none"
+                  className="bg-transparent text-emerald-400 font-bold outline-none text-[11px]"
                 >
                   {gruposAlerta.map((g) => (
                     <option
@@ -1442,34 +1417,30 @@ export default function Metricas() {
               </div>
             </div>
 
-            {/* CONTROLES */}
-            <div className="py-2.5 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 shrink-0">
+            <div className="py-2 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 shrink-0">
               <div className="relative flex-1 w-full max-w-sm">
                 <Search
-                  size={14}
+                  size={13}
                   className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500"
                 />
                 <input
                   type="text"
-                  placeholder="Buscar por código o nombre..."
+                  placeholder="Buscar código o nombre..."
                   value={searchTermSE}
                   onChange={(e) => {
                     setSearchTermSE(e.target.value);
                     setCurrentPageSE(1);
                   }}
-                  className="w-full bg-[#070a12] border border-slate-800 text-xs text-white pl-9 pr-3 py-1.5 focus:border-amber-500/50 outline-none rounded-lg"
+                  className="w-full bg-[#070a12] border border-slate-800 text-xs text-white pl-8 pr-3 py-1.5 focus:border-amber-500/50 outline-none rounded-lg"
                 />
               </div>
 
-              <div className="flex flex-wrap items-center gap-1.5 text-[11px] font-mono">
+              <div className="flex items-center gap-1 overflow-x-auto pb-0.5 text-[10px] font-mono">
                 {[
                   { id: "TODOS", label: "TODOS" },
-                  {
-                    id: "CRITICO",
-                    label: `🚨 CRÍTICO (<${diasCriticoActivo}d)`,
-                  },
-                  { id: "ALERTA", label: `⚠️ ALERTA (<${diasAlertaActivo}d)` },
-                  { id: "OK", label: `✅ ÓPTIMO (>${diasAlertaActivo}d)` },
+                  { id: "CRITICO", label: `🚨 CRÍTICO` },
+                  { id: "ALERTA", label: `⚠️ ALERTA` },
+                  { id: "OK", label: `✅ ÓPTIMO` },
                 ].map((f) => (
                   <button
                     key={f.id}
@@ -1477,7 +1448,7 @@ export default function Metricas() {
                       setFiltroEstadoStock(f.id);
                       setCurrentPageSE(1);
                     }}
-                    className={`px-3 py-1 border rounded-lg transition-colors cursor-pointer ${
+                    className={`px-2 py-0.5 border rounded-lg transition-colors cursor-pointer whitespace-nowrap ${
                       filtroEstadoStock === f.id
                         ? "bg-amber-500/10 text-amber-400 border-amber-500/40 font-bold"
                         : "bg-[#070a12] border-slate-800 text-slate-400 hover:text-white"
@@ -1489,23 +1460,22 @@ export default function Metricas() {
               </div>
             </div>
 
-            {/* TABLA ADAPTATIVA */}
             <div
               ref={tableContainerRef}
-              className="flex-1 bg-[#070a12] border border-slate-800 rounded-xl min-h-0 overflow-hidden flex flex-col text-xs"
+              className="flex-1 bg-[#070a12] border border-slate-800 rounded-xl min-h-0 overflow-x-auto overflow-y-hidden flex flex-col text-xs"
             >
-              <table className="w-full text-left border-collapse table-fixed h-full">
+              <table className="w-full text-left border-collapse table-fixed h-full min-w-[500px]">
                 <thead
                   ref={tableHeaderRef}
                   className="bg-[#0e1422] border-b border-slate-800 text-slate-400 font-mono text-[10px] uppercase sticky top-0 z-10 h-[36px]"
                 >
                   <tr>
-                    <th className="w-[15%] px-3">CÓDIGO</th>
-                    <th className="w-[35%] px-3">SEMIELABORADO</th>
-                    <th className="w-[12%] px-3 text-right">STOCK</th>
-                    <th className="w-[12%] px-3 text-right">DEMANDA/M</th>
-                    <th className="w-[14%] px-3 text-center">DÍAS COB.</th>
-                    <th className="w-[12%] px-3 text-center">SIMULADOR</th>
+                    <th className="w-[18%] px-2">CÓDIGO</th>
+                    <th className="w-[32%] px-2">SEMIELABORADO</th>
+                    <th className="w-[12%] px-2 text-right">STOCK</th>
+                    <th className="w-[13%] px-2 text-right">DEMANDA/M</th>
+                    <th className="w-[13%] px-2 text-center">DÍAS COB.</th>
+                    <th className="w-[12%] px-2 text-center">SIMULADOR</th>
                   </tr>
                 </thead>
 
@@ -1529,43 +1499,43 @@ export default function Metricas() {
                     return (
                       <tr
                         key={item.id}
-                        className="h-[40px] hover:bg-[#121824] transition-colors align-middle font-sans"
+                        className="h-[40px] hover:bg-[#121824] transition-colors align-middle font-sans text-[11px]"
                       >
-                        <td className="px-3 font-mono font-bold text-amber-400 truncate">
+                        <td className="px-2 font-mono font-bold text-amber-400 truncate">
                           {item.codigo}
                         </td>
-                        <td className="px-3 text-slate-200 font-medium truncate">
+                        <td className="px-2 text-slate-200 font-medium truncate">
                           {item.nombre}
                         </td>
-                        <td className="px-3 text-right font-mono font-bold text-emerald-400">
+                        <td className="px-2 text-right font-mono font-bold text-emerald-400">
                           {item.stock_total.toLocaleString()}
                         </td>
-                        <td className="px-3 text-right font-mono text-cyan-400">
+                        <td className="px-2 text-right font-mono text-cyan-400">
                           {item.demanda_mensual > 0
                             ? item.demanda_mensual.toLocaleString()
                             : "--"}
                         </td>
-                        <td className="px-3 text-center font-mono">
+                        <td className="px-2 text-center font-mono">
                           {item.dias_stock !== null ? (
                             <span
-                              className={`inline-block px-2.5 py-0.5 border rounded-full text-[11px] ${badgeStyle}`}
+                              className={`inline-block px-1.5 py-0.5 border rounded-full text-[10px] ${badgeStyle}`}
                             >
-                              {item.dias_stock} días
+                              {item.dias_stock}d
                             </span>
                           ) : (
                             <span className="text-slate-600">--</span>
                           )}
                         </td>
-                        <td className="px-3 text-center">
+                        <td className="px-2 text-center">
                           <button
                             onClick={() => {
                               setSimulatedItem(item);
                               setSimulatedBatchQty(500);
                             }}
-                            className="p-1.5 bg-slate-900 border border-slate-700 text-cyan-400 hover:bg-cyan-500/10 hover:border-cyan-400 transition-colors rounded-lg cursor-pointer inline-flex items-center"
+                            className="p-1 bg-slate-900 border border-slate-700 text-cyan-400 hover:bg-cyan-500/10 hover:border-cyan-400 transition-colors rounded-lg cursor-pointer inline-flex items-center"
                             title="Simular lote proyectado"
                           >
-                            <Zap size={13} />
+                            <Zap size={12} />
                           </button>
                         </td>
                       </tr>
@@ -1575,28 +1545,27 @@ export default function Metricas() {
               </table>
             </div>
 
-            {/* PAGINACIÓN */}
-            <div className="flex justify-between items-center pt-3 border-t border-slate-800 text-xs font-mono text-slate-400 shrink-0">
+            <div className="flex justify-between items-center pt-2 border-t border-slate-800 text-xs font-mono text-slate-400 shrink-0">
               <span>
-                Página <strong className="text-white">{currentPageSE}</strong>{" "}
-                de <strong className="text-white">{totalPagesSE}</strong>
+                Pág. <strong className="text-white">{currentPageSE}</strong> de{" "}
+                <strong className="text-white">{totalPagesSE}</strong>
               </span>
-              <div className="flex gap-1.5">
+              <div className="flex gap-1">
                 <button
                   onClick={() => setCurrentPageSE((p) => Math.max(p - 1, 1))}
                   disabled={currentPageSE === 1}
-                  className="px-3 py-1 bg-slate-900 border border-slate-800 hover:bg-slate-800 disabled:opacity-40 rounded-lg cursor-pointer"
+                  className="px-2 py-0.5 bg-slate-900 border border-slate-800 hover:bg-slate-800 disabled:opacity-40 rounded-lg cursor-pointer text-[10px]"
                 >
-                  Anterior
+                  Ant.
                 </button>
                 <button
                   onClick={() =>
                     setCurrentPageSE((p) => Math.min(p + 1, totalPagesSE))
                   }
                   disabled={currentPageSE === totalPagesSE}
-                  className="px-3 py-1 bg-slate-900 border border-slate-800 hover:bg-slate-800 disabled:opacity-40 rounded-lg cursor-pointer"
+                  className="px-2 py-0.5 bg-slate-900 border border-slate-800 hover:bg-slate-800 disabled:opacity-40 rounded-lg cursor-pointer text-[10px]"
                 >
-                  Siguiente
+                  Sig.
                 </button>
               </div>
             </div>
@@ -1606,62 +1575,62 @@ export default function Metricas() {
 
       {/* MODAL 3: SIMULADOR DE LOTE FUTURO */}
       {simulatedItem && (
-        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-xs z-[110] flex items-center justify-center p-4 font-sans">
-          <div className="bg-[#0e1422] border border-slate-800 w-full max-w-md p-5 rounded-2xl shadow-2xl space-y-4 relative text-xs">
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-xs z-[110] flex items-center justify-center p-3 font-sans">
+          <div className="bg-[#0e1422] border border-slate-800 w-full max-w-md p-4 rounded-2xl shadow-2xl space-y-3 relative text-xs">
             <button
               onClick={() => setSimulatedItem(null)}
-              className="absolute top-4 right-4 text-slate-400 hover:text-white"
+              className="absolute top-3 right-3 text-slate-400 hover:text-white"
             >
               <X size={16} />
             </button>
 
-            <div className="border-b border-slate-800 pb-2">
-              <span className="text-[10px] font-mono font-bold text-amber-400 bg-amber-500/10 px-2 py-0.5 border border-amber-500/20 rounded-full">
+            <div className="border-b border-slate-800 pb-1.5">
+              <span className="text-[9px] font-mono font-bold text-amber-400 bg-amber-500/10 px-2 py-0.5 border border-amber-500/20 rounded-full">
                 SIMULADOR OPERATIVO
               </span>
-              <h3 className="text-sm font-bold text-white mt-1 flex items-center gap-2">
-                <Zap size={15} className="text-amber-400" /> PROYECTAR LOTE DE
-                PRODUCCIÓN
+              <h3 className="text-xs font-bold text-white mt-1 flex items-center gap-1.5 truncate">
+                <Zap size={13} className="text-amber-400 shrink-0" /> PROYECTAR
+                LOTE DE PRODUCCIÓN
               </h3>
-              <p className="text-xs text-slate-400 font-mono mt-0.5">
+              <p className="text-[10px] text-slate-400 font-mono mt-0.5 truncate">
                 [{simulatedItem.codigo}] {simulatedItem.nombre}
               </p>
             </div>
 
-            <div className="space-y-3">
+            <div className="space-y-2.5">
               <div className="grid grid-cols-2 gap-2 font-mono">
-                <div className="bg-[#070a12] p-2.5 rounded-xl border border-slate-800">
-                  <span className="text-[10px] text-slate-500 block">
+                <div className="bg-[#070a12] p-2 rounded-xl border border-slate-800">
+                  <span className="text-[9px] text-slate-500 block">
                     STOCK ACTUAL:
                   </span>
-                  <strong className="text-white text-sm">
+                  <strong className="text-white text-xs">
                     {simulatedItem.stock_total.toLocaleString()} u.
                   </strong>
                 </div>
-                <div className="bg-[#070a12] p-2.5 rounded-xl border border-slate-800">
-                  <span className="text-[10px] text-slate-500 block">
+                <div className="bg-[#070a12] p-2 rounded-xl border border-slate-800">
+                  <span className="text-[9px] text-slate-500 block">
                     DEMANDA MENSUAL:
                   </span>
-                  <strong className="text-cyan-400 text-sm">
+                  <strong className="text-cyan-400 text-xs">
                     {simulatedItem.demanda_mensual.toLocaleString()} u.
                   </strong>
                 </div>
               </div>
 
-              <div className="space-y-2">
+              <div className="space-y-1.5">
                 <div>
-                  <label className="text-[11px] text-slate-400 font-mono">
+                  <label className="text-[10px] text-slate-400 font-mono">
                     Fecha de Arribo Proyectada:
                   </label>
                   <input
                     type="date"
                     value={simulatedDate}
                     onChange={(e) => setSimulatedBatchDate(e.target.value)}
-                    className="w-full bg-[#070a12] border border-slate-800 text-white p-2 rounded-xl outline-none focus:border-amber-500/50 mt-1 font-mono"
+                    className="w-full bg-[#070a12] border border-slate-800 text-white p-1.5 rounded-xl outline-none focus:border-amber-500/50 mt-0.5 font-mono text-[11px]"
                   />
                 </div>
                 <div>
-                  <label className="text-[11px] text-slate-400 font-mono">
+                  <label className="text-[10px] text-slate-400 font-mono">
                     Cantidad del Lote (+):
                   </label>
                   <input
@@ -1672,7 +1641,7 @@ export default function Metricas() {
                         Math.max(0, parseInt(e.target.value) || 0),
                       )
                     }
-                    className="w-full bg-[#070a12] border border-slate-800 text-emerald-400 font-mono font-bold p-2 rounded-xl outline-none focus:border-amber-500/50 mt-1"
+                    className="w-full bg-[#070a12] border border-slate-800 text-emerald-400 font-mono font-bold p-1.5 rounded-xl outline-none focus:border-amber-500/50 mt-0.5 text-xs"
                   />
                 </div>
               </div>
@@ -1681,9 +1650,9 @@ export default function Metricas() {
             <div className="flex justify-end pt-2 border-t border-slate-800">
               <button
                 onClick={() => setSimulatedItem(null)}
-                className="bg-slate-800 hover:bg-slate-700 text-slate-200 font-mono text-xs px-4 py-2 rounded-xl transition cursor-pointer"
+                className="bg-slate-800 hover:bg-slate-700 text-slate-200 font-mono text-[11px] px-3 py-1 rounded-xl transition cursor-pointer"
               >
-                Cerrar Simulador
+                Cerrar
               </button>
             </div>
           </div>
@@ -1692,25 +1661,25 @@ export default function Metricas() {
 
       {/* MODAL 4: CONFIGURAR UMBRALES GRUPO */}
       {isGroupModalOpen && (
-        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-xs z-[110] flex items-center justify-center p-4 font-sans">
-          <div className="bg-[#0e1422] border border-slate-800 w-full max-w-md p-5 rounded-2xl shadow-2xl space-y-4 relative text-xs">
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-xs z-[110] flex items-center justify-center p-3 font-sans">
+          <div className="bg-[#0e1422] border border-slate-800 w-full max-w-md p-4 rounded-2xl shadow-2xl space-y-3 relative text-xs">
             <button
               onClick={() => setIsGroupModalOpen(false)}
-              className="absolute top-4 right-4 text-slate-400 hover:text-white"
+              className="absolute top-3 right-3 text-slate-400 hover:text-white"
             >
               <X size={16} />
             </button>
 
-            <div className="border-b border-slate-800 pb-2">
-              <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                <Settings size={16} className="text-amber-400" /> CONFIGURAR
-                UMBRALES DE RIESGO
+            <div className="border-b border-slate-800 pb-1.5">
+              <h3 className="text-xs font-bold text-white flex items-center gap-1.5">
+                <Settings size={14} className="text-amber-400" /> UMBRALES DE
+                RIESGO
               </h3>
             </div>
 
-            <div className="space-y-3">
+            <div className="space-y-2.5">
               <div>
-                <label className="text-[11px] text-slate-400 font-mono">
+                <label className="text-[10px] text-slate-400 font-mono">
                   Nombre del Grupo / Región:
                 </label>
                 <input
@@ -1720,13 +1689,13 @@ export default function Metricas() {
                   onChange={(e) =>
                     setGroupForm({ ...groupForm, nombre: e.target.value })
                   }
-                  className="w-full bg-[#070a12] border border-slate-800 text-white p-2 rounded-xl outline-none focus:border-amber-500/50 mt-1"
+                  className="w-full bg-[#070a12] border border-slate-800 text-white p-1.5 rounded-xl outline-none focus:border-amber-500/50 mt-0.5 text-xs"
                 />
               </div>
 
               <div className="grid grid-cols-2 gap-2 font-mono">
                 <div>
-                  <label className="text-[11px] text-rose-400">
+                  <label className="text-[10px] text-rose-400">
                     Días Críticos (&lt;):
                   </label>
                   <input
@@ -1738,11 +1707,11 @@ export default function Metricas() {
                         dias_critico: parseInt(e.target.value) || 0,
                       })
                     }
-                    className="w-full bg-[#070a12] border border-slate-800 text-rose-400 font-bold p-2 rounded-xl outline-none focus:border-rose-500/50 mt-1"
+                    className="w-full bg-[#070a12] border border-slate-800 text-rose-400 font-bold p-1.5 rounded-xl outline-none focus:border-rose-500/50 mt-0.5 text-xs"
                   />
                 </div>
                 <div>
-                  <label className="text-[11px] text-amber-400">
+                  <label className="text-[10px] text-amber-400">
                     Días Alerta (&lt;):
                   </label>
                   <input
@@ -1754,7 +1723,7 @@ export default function Metricas() {
                         dias_alerta: parseInt(e.target.value) || 0,
                       })
                     }
-                    className="w-full bg-[#070a12] border border-slate-800 text-amber-400 font-bold p-2 rounded-xl outline-none focus:border-amber-500/50 mt-1"
+                    className="w-full bg-[#070a12] border border-slate-800 text-amber-400 font-bold p-1.5 rounded-xl outline-none focus:border-amber-500/50 mt-0.5 text-xs"
                   />
                 </div>
               </div>
@@ -1777,7 +1746,7 @@ export default function Metricas() {
                     alert("Error al guardar grupo.");
                   }
                 }}
-                className="w-full bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold py-2 text-xs rounded-xl shadow transition cursor-pointer font-mono"
+                className="w-full bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold py-1.5 text-xs rounded-xl shadow transition cursor-pointer font-mono"
               >
                 Guardar Umbrales
               </button>
