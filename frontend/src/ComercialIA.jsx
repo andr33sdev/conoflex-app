@@ -4,7 +4,6 @@ import {
   Sparkles,
   RefreshCw,
   ExternalLink,
-  Upload,
   Search,
   Image as ImageIcon,
   User,
@@ -24,10 +23,13 @@ import {
   UploadCloud,
   Zap,
   X,
-  Edit3,
+  Eye,
+  Box,
+  Layers,
+  ShieldCheck,
 } from "lucide-react";
 
-// HELPER PARA RESOLVER RUTAS DE IMÁGENES ESTÁTICAS (BACKEND VS VITE DEV)
+// HELPER ROBUSTO PARA RESOLVER Y PRESERVAR RUTAS DE IMÁGENES
 const getImageUrl = (url) => {
   if (!url) return "";
   if (url.startsWith("http://") || url.startsWith("https://")) return url;
@@ -40,8 +42,11 @@ const getImageUrl = (url) => {
     path = "/" + path;
   }
 
-  // Si se ejecuta en Vite local (puerto 5173), redirige las imágenes al backend Express (puerto 3000)
-  if (typeof window !== "undefined" && window.location.port === "5173") {
+  // Redirige llamadas desde el servidor de desarrollo de Vite (puerto 5173/5174) al backend Express (puerto 3000)
+  if (
+    typeof window !== "undefined" &&
+    (window.location.port === "5173" || window.location.port === "5174")
+  ) {
     return `http://localhost:3000${path}`;
   }
 
@@ -59,7 +64,7 @@ export default function ComercialIA() {
   const [errorMsg, setErrorMsg] = useState("");
 
   // SISTEMA DE NOTIFICACIONES TOAST CYBER-INDUSTRIAL
-  const [toast, setToast] = useState(null); // { message, type: 'success' | 'error' }
+  const [toast, setToast] = useState(null);
 
   const showToast = (message, type = "success") => {
     setToast({ message, type });
@@ -72,8 +77,7 @@ export default function ComercialIA() {
   const [productos, setProductos] = useState([]);
   const [busqueda, setBusqueda] = useState("");
   const [procesandoArchivo, setProcesandoArchivo] = useState(false);
-  const [catalogoPreview, setCatalogoPreview] = useState("");
-  const [productoEditar, setProductoEditar] = useState(null);
+  const [productoDetalle, setProductoDetalle] = useState(null); // MODAL DE SÓLO LECTURA
 
   // Vista y Paginación del Catálogo
   const [vistaModo, setVistaModo] = useState("tabla"); // 'tabla' | 'tarjetas'
@@ -81,7 +85,7 @@ export default function ComercialIA() {
   const itemsPorPagina = 10;
 
   // ESTADO PARA MODAL LIGHTBOX DE FOTOS AMPLIADAS
-  const [fotoLightbox, setFotoLightbox] = useState(null); // { url, titulo }
+  const [fotoLightbox, setFotoLightbox] = useState(null);
 
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
@@ -162,7 +166,6 @@ export default function ComercialIA() {
 
       const data = await res.json();
       if (data.success) {
-        setCatalogoPreview(data.contenidoPreview || "");
         fetchProductos();
         showToast(`🎉 ${data.mensaje}`, "success");
       } else {
@@ -229,55 +232,6 @@ export default function ComercialIA() {
     }
   };
 
-  const handleUploadFotoProducto = async (productoId, tipo, e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-
-    const formData = new FormData();
-    formData.append("imagen", file);
-    formData.append("tipo", tipo);
-
-    try {
-      const res = await fetch(`/api/productos/${productoId}/imagen`, {
-        method: "POST",
-        body: formData,
-      });
-      if (res.ok) {
-        const data = await res.json();
-        await fetchProductos();
-        if (productoEditar && productoEditar.id === productoId) {
-          setProductoEditar((prev) => ({
-            ...prev,
-            [tipo === "tecnica" ? "foto_tecnica" : "foto_catalogo"]:
-              data.url ||
-              prev[tipo === "tecnica" ? "foto_tecnica" : "foto_catalogo"],
-          }));
-        }
-        showToast("Imagen actualizada con éxito", "success");
-      }
-    } catch (err) {
-      showToast("Error al adjuntar la imagen", "error");
-    }
-  };
-
-  const handleGuardarEdicionProducto = async () => {
-    if (!productoEditar) return;
-    try {
-      const res = await fetch(`/api/productos/${productoEditar.id}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(productoEditar),
-      });
-      if (res.ok) {
-        fetchProductos();
-        setProductoEditar(null);
-        showToast("Ficha comercial actualizada", "success");
-      }
-    } catch (err) {
-      showToast("Error al actualizar la ficha del producto", "error");
-    }
-  };
-
   const generarBorrador = async (mail) => {
     if (!mail) return;
     setGenerandoBorrador(true);
@@ -321,7 +275,7 @@ export default function ComercialIA() {
     }
 
     return (
-      <div className="flex flex-col gap-1.5 justify-center items-end">
+      <div className="flex flex-col gap-1 justify-center items-end">
         {partes.map((p, idx) => {
           const subPartes = p.split(":");
           if (subPartes.length === 2) {
@@ -350,6 +304,15 @@ export default function ComercialIA() {
         })}
       </div>
     );
+  };
+
+  // PARSER DE USOS / APLICACIONES PARA PILDORAS EN MODAL
+  const parseUsosList = (usosStr) => {
+    if (!usosStr) return [];
+    return usosStr
+      .split(/,|\n|\./)
+      .map((u) => u.trim())
+      .filter((u) => u.length > 2);
   };
 
   // FILTRADO Y PAGINACIÓN DEL CATÁLOGO
@@ -431,7 +394,7 @@ export default function ComercialIA() {
                   <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping" />
                 </div>
                 <p className="text-[11px] text-slate-300 font-sans mt-0.5">
-                  Parseando matriz de datos y sincronizando fichas técnicas...
+                  Sincronizando información técnica con base de datos...
                 </p>
               </div>
             </div>
@@ -839,26 +802,25 @@ export default function ComercialIA() {
               </div>
             </div>
 
-            {/* 3. VISTA DE DATOS (TABLA O TARJETAS CON PAGINACIÓN) */}
+            {/* 3. VISTA DE DATOS (TABLA LIMPIA Y RESTRUCTURADA) */}
             <div className="flex-1 min-h-0 overflow-y-auto">
               {productosFiltrados.length === 0 ? (
                 <div className="h-48 flex items-center justify-center text-slate-500 font-mono text-xs">
                   No se encontraron productos coincidentes con la búsqueda.
                 </div>
               ) : vistaModo === "tabla" ? (
-                /* VISTA TABLA EJECUTIVA CON DUAL FOTOS */
+                /* VISTA TABLA EJECUTIVA COMPACTA */
                 <div className="bg-[#0e1422] border border-slate-800/80 rounded-2xl overflow-hidden shadow-xl">
                   <table className="w-full text-left text-xs border-collapse">
                     <thead className="bg-[#070a12] text-slate-400 font-mono text-[10px] uppercase border-b border-slate-800">
                       <tr>
-                        <th className="p-3 w-36 text-center">
+                        <th className="p-3 w-32 text-center">
                           FOTOS (TÉC. / CAT.)
                         </th>
-                        <th className="p-3 w-32">Código</th>
-                        <th className="p-3">Nombre & Especificación</th>
-                        <th className="p-3 w-44">Uso / Aplicación</th>
-                        <th className="p-3 text-right w-56">Precio Lista</th>
-                        <th className="p-3 text-center w-24">Acción</th>
+                        <th className="p-3 w-36">Código</th>
+                        <th className="p-3">Nombre</th>
+                        <th className="p-3 text-right w-48">Precio Lista</th>
+                        <th className="p-3 text-center w-32">Acción</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-800/50 bg-[#070a12]/30">
@@ -867,9 +829,9 @@ export default function ComercialIA() {
                           key={p.id || p.codigo}
                           className="hover:bg-[#121824]/80 transition-colors align-middle"
                         >
-                          {/* Miniaturas de Ambas Fotos */}
-                          <td className="p-2 text-center">
-                            <div className="flex items-center justify-center gap-1.5">
+                          {/* Previsualización Estética de Ambas Fotos */}
+                          <td className="p-2.5 text-center">
+                            <div className="flex items-center justify-center gap-2">
                               {/* Foto Técnica */}
                               <div
                                 onClick={() =>
@@ -879,10 +841,10 @@ export default function ComercialIA() {
                                     titulo: `Plano Técnico — [${p.codigo}] ${p.nombre}`,
                                   })
                                 }
-                                className={`w-11 h-11 rounded-lg bg-slate-950 border overflow-hidden flex items-center justify-center transition-all ${
+                                className={`w-10 h-10 rounded-lg bg-[#070a12] border overflow-hidden flex items-center justify-center transition-all shrink-0 ${
                                   p.foto_tecnica
                                     ? "border-slate-700 cursor-pointer hover:border-emerald-500 hover:scale-105"
-                                    : "border-slate-800 opacity-40"
+                                    : "border-slate-800/80 opacity-40"
                                 }`}
                                 title={
                                   p.foto_tecnica
@@ -897,8 +859,7 @@ export default function ComercialIA() {
                                     className="w-full h-full object-contain p-0.5"
                                     onError={(e) => {
                                       e.currentTarget.onerror = null;
-                                      e.currentTarget.src =
-                                        "https://via.placeholder.com/150?text=Sin+Foto";
+                                      e.currentTarget.style.display = "none";
                                     }}
                                   />
                                 ) : (
@@ -917,10 +878,10 @@ export default function ComercialIA() {
                                     titulo: `Uso / Catálogo — [${p.codigo}] ${p.nombre}`,
                                   })
                                 }
-                                className={`w-11 h-11 rounded-lg bg-slate-950 border overflow-hidden flex items-center justify-center transition-all ${
+                                className={`w-10 h-10 rounded-lg bg-[#070a12] border overflow-hidden flex items-center justify-center transition-all shrink-0 ${
                                   p.foto_catalogo
                                     ? "border-slate-700 cursor-pointer hover:border-emerald-500 hover:scale-105"
-                                    : "border-slate-800 opacity-40"
+                                    : "border-slate-800/80 opacity-40"
                                 }`}
                                 title={
                                   p.foto_catalogo
@@ -935,8 +896,7 @@ export default function ComercialIA() {
                                     className="w-full h-full object-contain p-0.5"
                                     onError={(e) => {
                                       e.currentTarget.onerror = null;
-                                      e.currentTarget.src =
-                                        "https://via.placeholder.com/150?text=Sin+Foto";
+                                      e.currentTarget.style.display = "none";
                                     }}
                                   />
                                 ) : (
@@ -952,27 +912,11 @@ export default function ComercialIA() {
                             {p.codigo}
                           </td>
 
-                          <td className="p-3 space-y-0.5">
+                          {/* NOMBRE ÚNICAMENTE (SIN DESCRIPCIONES O MEDIDAS LARGAS) */}
+                          <td className="p-3">
                             <div className="text-slate-100 font-bold font-sans text-xs">
                               {p.nombre}
                             </div>
-                            {p.medidas && (
-                              <div className="text-[11px] text-slate-400 font-mono">
-                                {p.medidas}
-                              </div>
-                            )}
-                          </td>
-
-                          <td className="p-3">
-                            {p.aplicacion ? (
-                              <span className="inline-flex items-center gap-1 bg-emerald-500/10 text-emerald-300 border border-emerald-500/20 px-2 py-0.5 rounded-md text-[10px] font-mono">
-                                <Tag size={10} /> {p.aplicacion}
-                              </span>
-                            ) : (
-                              <span className="text-[10px] text-slate-600 italic">
-                                Sin definir
-                              </span>
-                            )}
                           </td>
 
                           {/* Precio Lista Estructurado */}
@@ -982,10 +926,10 @@ export default function ComercialIA() {
 
                           <td className="p-3 text-center">
                             <button
-                              onClick={() => setProductoEditar({ ...p })}
-                              className="p-1.5 bg-slate-900 border border-slate-700 hover:border-emerald-500/50 text-slate-300 hover:text-emerald-400 rounded-lg transition shadow cursor-pointer inline-flex items-center gap-1 font-mono text-[11px]"
+                              onClick={() => setProductoDetalle(p)}
+                              className="px-3 py-1.5 bg-[#131c2d] hover:bg-[#1e293b] border border-emerald-500/30 text-emerald-300 hover:text-emerald-200 rounded-lg transition shadow cursor-pointer inline-flex items-center gap-1.5 font-mono text-[11px] font-bold"
                             >
-                              <Edit3 size={13} /> Editar
+                              <Eye size={13} /> Ver Detalles
                             </button>
                           </td>
                         </tr>
@@ -1015,13 +959,8 @@ export default function ComercialIA() {
                         <h4 className="text-xs font-bold text-white font-sans leading-snug">
                           {p.nombre}
                         </h4>
-                        {p.medidas && (
-                          <p className="text-[11px] text-slate-400 font-mono line-clamp-2">
-                            {p.medidas}
-                          </p>
-                        )}
 
-                        {/* Grilla Doble de Fotos (Técnica y Catálogo) */}
+                        {/* Grilla Doble de Fotos */}
                         <div className="grid grid-cols-2 gap-2 my-2">
                           {/* Slot Foto Técnica */}
                           <div
@@ -1032,7 +971,7 @@ export default function ComercialIA() {
                                 titulo: `Plano Técnico — [${p.codigo}] ${p.nombre}`,
                               })
                             }
-                            className={`h-28 rounded-xl bg-slate-950 border overflow-hidden flex flex-col items-center justify-center p-1 relative transition-all ${
+                            className={`h-24 rounded-xl bg-[#070a12] border overflow-hidden flex flex-col items-center justify-center p-1 relative transition-all ${
                               p.foto_tecnica
                                 ? "border-slate-800 cursor-pointer hover:border-emerald-500/60"
                                 : "border-slate-800/60 opacity-50"
@@ -1048,8 +987,7 @@ export default function ComercialIA() {
                                 className="w-full h-full object-contain p-1"
                                 onError={(e) => {
                                   e.currentTarget.onerror = null;
-                                  e.currentTarget.src =
-                                    "https://via.placeholder.com/150?text=Sin+Foto";
+                                  e.currentTarget.style.display = "none";
                                 }}
                               />
                             ) : (
@@ -1066,7 +1004,7 @@ export default function ComercialIA() {
                                 titulo: `Uso / Catálogo — [${p.codigo}] ${p.nombre}`,
                               })
                             }
-                            className={`h-28 rounded-xl bg-slate-950 border overflow-hidden flex flex-col items-center justify-center p-1 relative transition-all ${
+                            className={`h-24 rounded-xl bg-[#070a12] border overflow-hidden flex flex-col items-center justify-center p-1 relative transition-all ${
                               p.foto_catalogo
                                 ? "border-slate-800 cursor-pointer hover:border-emerald-500/60"
                                 : "border-slate-800/60 opacity-50"
@@ -1082,8 +1020,7 @@ export default function ComercialIA() {
                                 className="w-full h-full object-contain p-1"
                                 onError={(e) => {
                                   e.currentTarget.onerror = null;
-                                  e.currentTarget.src =
-                                    "https://via.placeholder.com/150?text=Sin+Foto";
+                                  e.currentTarget.style.display = "none";
                                 }}
                               />
                             ) : (
@@ -1095,21 +1032,15 @@ export default function ComercialIA() {
 
                       {/* Pie de la Tarjeta */}
                       <div className="pt-2 border-t border-slate-800/80 flex items-center justify-between gap-2">
-                        {p.aplicacion ? (
-                          <span className="inline-flex items-center gap-1 bg-emerald-500/10 text-emerald-300 border border-emerald-500/20 px-2 py-0.5 rounded-md text-[10px] font-mono truncate max-w-[160px]">
-                            <Tag size={10} /> {p.aplicacion}
-                          </span>
-                        ) : (
-                          <span className="text-[10px] text-slate-600 italic">
-                            Sin aplicación
-                          </span>
-                        )}
+                        <span className="text-[10px] font-mono text-slate-400">
+                          {p.categoria || "Conos"}
+                        </span>
 
                         <button
-                          onClick={() => setProductoEditar({ ...p })}
-                          className="p-1.5 bg-slate-900 border border-slate-700 hover:border-emerald-500/50 text-slate-300 hover:text-emerald-400 rounded-lg transition text-xs font-mono flex items-center gap-1 cursor-pointer shrink-0"
+                          onClick={() => setProductoDetalle(p)}
+                          className="px-3 py-1.5 bg-[#131c2d] hover:bg-[#1e293b] border border-emerald-500/30 text-emerald-300 font-bold rounded-lg transition text-xs font-mono flex items-center gap-1.5 cursor-pointer shrink-0"
                         >
-                          <Edit3 size={13} /> Editar
+                          <Eye size={13} /> Ver Detalles
                         </button>
                       </div>
                     </div>
@@ -1193,7 +1124,7 @@ export default function ComercialIA() {
       {/* MODAL LIGHTBOX PARA VER FOTOS EN TAMAÑO COMPLETO */}
       {fotoLightbox && (
         <div
-          className="fixed inset-0 bg-slate-950/90 backdrop-blur-md z-[200] flex items-center justify-center p-4 animate-in fade-in transition-all duration-200"
+          className="fixed inset-0 bg-slate-950/90 backdrop-blur-md z-[300] flex items-center justify-center p-4 animate-in fade-in transition-all duration-200"
           onClick={() => setFotoLightbox(null)}
         >
           <div
@@ -1227,191 +1158,199 @@ export default function ComercialIA() {
         </div>
       )}
 
-      {/* MODAL ENHANCED EDITAR FICHA TÉCNICA */}
-      {productoEditar && (
-        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-xs z-[100] flex items-center justify-center p-4 font-sans">
-          <div className="bg-[#0e1422] border border-slate-800 w-full max-w-xl p-6 rounded-2xl shadow-2xl space-y-5 relative text-xs">
-            <button
-              onClick={() => setProductoEditar(null)}
-              className="absolute top-4 right-4 text-slate-400 hover:text-white cursor-pointer"
-            >
-              <X size={18} />
-            </button>
-
-            <div className="border-b border-slate-800 pb-3">
-              <span className="text-[10px] font-mono font-bold text-amber-400 bg-amber-500/10 px-2.5 py-0.5 border border-amber-500/20 rounded-full">
-                FICHA COMERCIAL [{productoEditar.codigo}]
-              </span>
-              <h3 className="text-sm font-bold text-white mt-1.5">
-                {productoEditar.nombre}
-              </h3>
-            </div>
-
-            <div className="space-y-4">
-              {/* Fotos Preview */}
-              <div className="grid grid-cols-2 gap-3 font-mono">
-                <div className="bg-[#070a12] p-3 rounded-xl border border-slate-800 text-center space-y-2">
-                  <span className="text-[10px] text-slate-400 block font-bold">
-                    FOTO TÉCNICA (PLANO)
+      {/* MODAL DE SÓLO LECTURA: FICHA TÉCNICA COMERCIAL COMPLETA */}
+      {productoDetalle && (
+        <div className="fixed inset-0 bg-slate-950/85 backdrop-blur-sm z-[200] flex items-center justify-center p-4 font-sans animate-in fade-in duration-200">
+          <div className="bg-[#0e1422] border border-slate-800 w-full max-w-3xl max-h-[90vh] rounded-3xl shadow-2xl overflow-hidden flex flex-col relative text-xs">
+            {/* Cabecera Modal */}
+            <div className="bg-[#090d16] border-b border-slate-800 p-5 flex items-center justify-between shrink-0">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <span className="font-mono text-xs font-bold text-amber-400 bg-amber-500/10 px-2.5 py-0.5 border border-amber-500/20 rounded-md">
+                    [{productoDetalle.codigo}]
                   </span>
-                  <div className="w-full h-32 rounded-lg bg-slate-950 overflow-hidden flex items-center justify-center border border-slate-800 relative p-1">
-                    {productoEditar.foto_tecnica ? (
-                      <img
-                        src={getImageUrl(productoEditar.foto_tecnica)}
-                        className="w-full h-full object-contain"
-                        alt="Técnica"
-                        onError={(e) => {
-                          e.currentTarget.onerror = null;
-                          e.currentTarget.src =
-                            "https://via.placeholder.com/150?text=Sin+Foto";
-                        }}
-                      />
-                    ) : (
-                      <ImageIcon size={24} className="text-slate-800" />
-                    )}
-                  </div>
-                  <label className="cursor-pointer text-[10px] bg-[#0e1422] border border-slate-800 hover:border-emerald-400 px-2 py-1 text-slate-300 rounded inline-flex items-center gap-1 transition-all">
-                    <Upload size={10} /> Subir Foto Técnica
-                    <input
-                      type="file"
-                      accept="image/*"
-                      className="hidden"
-                      onChange={(e) =>
-                        handleUploadFotoProducto(
-                          productoEditar.id,
-                          "tecnica",
-                          e,
-                        )
-                      }
-                    />
-                  </label>
-                </div>
-
-                <div className="bg-[#070a12] p-3 rounded-xl border border-slate-800 text-center space-y-2">
-                  <span className="text-[10px] text-slate-400 block font-bold">
-                    FOTO CATÁLOGO (USO)
+                  <span className="font-mono text-[10px] text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-md border border-emerald-500/20 uppercase">
+                    {productoDetalle.categoria || "Conos"}
                   </span>
-                  <div className="w-full h-32 rounded-lg bg-slate-950 overflow-hidden flex items-center justify-center border border-slate-800 relative p-1">
-                    {productoEditar.foto_catalogo ? (
-                      <img
-                        src={getImageUrl(productoEditar.foto_catalogo)}
-                        className="w-full h-full object-contain"
-                        alt="Catálogo"
-                        onError={(e) => {
-                          e.currentTarget.onerror = null;
-                          e.currentTarget.src =
-                            "https://via.placeholder.com/150?text=Sin+Foto";
-                        }}
-                      />
-                    ) : (
-                      <ImageIcon size={24} className="text-slate-800" />
-                    )}
-                  </div>
-                  <label className="cursor-pointer text-[10px] bg-[#0e1422] border border-slate-800 hover:border-emerald-400 px-2 py-1 text-slate-300 rounded inline-flex items-center gap-1 transition-all">
-                    <Upload size={10} /> Subir Foto Catálogo
-                    <input
-                      type="file"
-                      accept="image/*"
-                      className="hidden"
-                      onChange={(e) =>
-                        handleUploadFotoProducto(
-                          productoEditar.id,
-                          "catalogo",
-                          e,
-                        )
-                      }
-                    />
-                  </label>
                 </div>
+                <h3 className="text-base font-bold text-white tracking-wide">
+                  {productoDetalle.nombre}
+                </h3>
               </div>
 
-              {/* Formulario Comercial */}
-              <div className="space-y-3 font-mono">
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <label className="text-slate-400 block mb-1">
-                      Nombre Comercial:
-                    </label>
-                    <input
-                      type="text"
-                      value={productoEditar.nombre || ""}
-                      onChange={(e) =>
-                        setProductoEditar({
-                          ...productoEditar,
-                          nombre: e.target.value,
-                        })
-                      }
-                      className="w-full bg-[#070a12] border border-slate-800 text-slate-100 p-2 rounded-xl outline-none focus:border-emerald-500/50 text-xs"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-slate-400 block mb-1">
-                      Precio Lista:
-                    </label>
-                    <input
-                      type="text"
-                      value={productoEditar.precio_lista || ""}
-                      onChange={(e) =>
-                        setProductoEditar({
-                          ...productoEditar,
-                          precio_lista: e.target.value,
-                        })
-                      }
-                      className="w-full bg-[#070a12] border border-slate-800 text-emerald-400 font-bold p-2 rounded-xl outline-none focus:border-emerald-500/50 text-xs"
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="text-slate-400 block mb-1">
-                    Aplicaciones y Usos de Venta:
-                  </label>
-                  <input
-                    type="text"
-                    value={productoEditar.aplicacion || ""}
-                    onChange={(e) =>
-                      setProductoEditar({
-                        ...productoEditar,
-                        aplicacion: e.target.value,
-                      })
-                    }
-                    placeholder="Ej: Autopistas, Obras Viales, Vía Pública, Seguridad Industrial"
-                    className="w-full bg-[#070a12] border border-slate-800 text-slate-100 p-2 rounded-xl outline-none focus:border-emerald-500/50 text-xs"
-                  />
-                </div>
-
-                <div>
-                  <label className="text-slate-400 block mb-1">
-                    Especificación Técnica / Medidas:
-                  </label>
-                  <textarea
-                    rows={2}
-                    value={productoEditar.medidas || ""}
-                    onChange={(e) =>
-                      setProductoEditar({
-                        ...productoEditar,
-                        medidas: e.target.value,
-                      })
-                    }
-                    placeholder="Ej: Conformado: 1 Pieza | Base: 35x35cm. | Reflectivo: 1x7cm."
-                    className="w-full bg-[#070a12] border border-slate-800 text-slate-100 p-2 rounded-xl outline-none focus:border-emerald-500/50 text-xs"
-                  />
-                </div>
-              </div>
-            </div>
-
-            <div className="flex justify-end gap-2 pt-2 border-t border-slate-800 font-mono">
               <button
-                onClick={() => setProductoEditar(null)}
-                className="bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs px-4 py-2 rounded-xl transition cursor-pointer"
+                onClick={() => setProductoDetalle(null)}
+                className="p-2 text-slate-400 hover:text-white bg-slate-900 border border-slate-800 hover:bg-slate-800 rounded-xl transition cursor-pointer"
               >
-                Cancelar
+                <X size={18} />
               </button>
+            </div>
+
+            {/* Cuerpo Modal Desplazable */}
+            <div className="p-6 overflow-y-auto space-y-6 flex-1">
+              {/* Baner de Precio Lista */}
+              <div className="bg-gradient-to-r from-emerald-950/40 via-[#0a1520] to-[#0a1520] border border-emerald-500/30 rounded-2xl p-4 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 bg-emerald-500/10 text-emerald-400 rounded-xl border border-emerald-500/20">
+                    <ShieldCheck size={20} />
+                  </div>
+                  <div>
+                    <span className="text-[10px] font-mono text-slate-400 uppercase block">
+                      PRECIO OFICIAL DE LISTA
+                    </span>
+                    <span className="text-xs text-slate-300 font-sans">
+                      Sincronizado con matriz comercial
+                    </span>
+                  </div>
+                </div>
+                <div>{renderPrecioLimpio(productoDetalle.precio_lista)}</div>
+              </div>
+
+              {/* Muestra de Fotos Grandes con Lightbox */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {/* Foto Técnica */}
+                <div className="bg-[#070a12] border border-slate-800 rounded-2xl p-3 flex flex-col items-center space-y-2">
+                  <span className="text-[10px] font-mono font-bold text-slate-400 uppercase tracking-wider self-start px-1">
+                    PLANO TÉCNICO
+                  </span>
+                  <div
+                    onClick={() =>
+                      productoDetalle.foto_tecnica &&
+                      setFotoLightbox({
+                        url: productoDetalle.foto_tecnica,
+                        titulo: `Plano Técnico — [${productoDetalle.codigo}] ${productoDetalle.nombre}`,
+                      })
+                    }
+                    className={`w-full h-48 rounded-xl bg-slate-950 border border-slate-800/80 overflow-hidden flex items-center justify-center relative ${
+                      productoDetalle.foto_tecnica
+                        ? "cursor-pointer hover:border-emerald-500/60"
+                        : "opacity-40"
+                    }`}
+                  >
+                    {productoDetalle.foto_tecnica ? (
+                      <img
+                        src={getImageUrl(productoDetalle.foto_tecnica)}
+                        alt="Técnica"
+                        className="w-full h-full object-contain p-2"
+                        onError={(e) => {
+                          e.currentTarget.onerror = null;
+                          e.currentTarget.style.display = "none";
+                        }}
+                      />
+                    ) : (
+                      <div className="text-center space-y-1">
+                        <ImageIcon
+                          size={28}
+                          className="mx-auto text-slate-700"
+                        />
+                        <span className="text-[10px] font-mono text-slate-600 block">
+                          Sin Foto Técnica
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Foto Catálogo */}
+                <div className="bg-[#070a12] border border-slate-800 rounded-2xl p-3 flex flex-col items-center space-y-2">
+                  <span className="text-[10px] font-mono font-bold text-emerald-400 uppercase tracking-wider self-start px-1">
+                    USO / CATÁLOGO
+                  </span>
+                  <div
+                    onClick={() =>
+                      productoDetalle.foto_catalogo &&
+                      setFotoLightbox({
+                        url: productoDetalle.foto_catalogo,
+                        titulo: `Uso / Catálogo — [${productoDetalle.codigo}] ${productoDetalle.nombre}`,
+                      })
+                    }
+                    className={`w-full h-48 rounded-xl bg-slate-950 border border-slate-800/80 overflow-hidden flex items-center justify-center relative ${
+                      productoDetalle.foto_catalogo
+                        ? "cursor-pointer hover:border-emerald-500/60"
+                        : "opacity-40"
+                    }`}
+                  >
+                    {productoDetalle.foto_catalogo ? (
+                      <img
+                        src={getImageUrl(productoDetalle.foto_catalogo)}
+                        alt="Catálogo"
+                        className="w-full h-full object-contain p-2"
+                        onError={(e) => {
+                          e.currentTarget.onerror = null;
+                          e.currentTarget.style.display = "none";
+                        }}
+                      />
+                    ) : (
+                      <div className="text-center space-y-1">
+                        <ImageIcon
+                          size={28}
+                          className="mx-auto text-slate-700"
+                        />
+                        <span className="text-[10px] font-mono text-slate-600 block">
+                          Sin Foto Catálogo
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* ESPECIFICACIONES TÉCNICAS */}
+              {productoDetalle.medidas && (
+                <div className="bg-[#070a12] border border-slate-800 rounded-2xl p-4 space-y-2">
+                  <h4 className="text-[11px] font-mono font-bold text-amber-400 uppercase tracking-wider flex items-center gap-2">
+                    <Box size={14} /> ESPECIFICACIÓN Y MEDIDAS TÉCNICAS
+                  </h4>
+                  <p className="text-xs text-slate-200 font-mono leading-relaxed bg-[#0e1422] p-3 rounded-xl border border-slate-800/60">
+                    {productoDetalle.medidas}
+                  </p>
+                </div>
+              )}
+
+              {/* DESCRIPCIÓN TÉCNICO-COMERCIAL COMPLETA */}
+              {productoDetalle.descripcion && (
+                <div className="bg-[#070a12] border border-slate-800 rounded-2xl p-4 space-y-2">
+                  <h4 className="text-[11px] font-mono font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-2">
+                    <Layers size={14} /> DESCRIPCIÓN TÉCNICO-COMERCIAL
+                  </h4>
+                  <p className="text-xs text-slate-300 font-sans leading-relaxed bg-[#0e1422] p-3.5 rounded-xl border border-slate-800/60 whitespace-pre-wrap">
+                    {productoDetalle.descripcion}
+                  </p>
+                </div>
+              )}
+
+              {/* USOS Y APLICACIONES DE VENTA */}
+              {(productoDetalle.aplicacion ||
+                productoDetalle.usos_recomendados) && (
+                <div className="bg-[#070a12] border border-slate-800 rounded-2xl p-4 space-y-3">
+                  <h4 className="text-[11px] font-mono font-bold text-cyan-400 uppercase tracking-wider flex items-center gap-2">
+                    <Tag size={14} /> APLICACIONES Y USOS RECOMENDADOS
+                  </h4>
+                  <div className="flex flex-wrap gap-2">
+                    {parseUsosList(
+                      productoDetalle.usos_recomendados ||
+                        productoDetalle.aplicacion,
+                    ).map((uso, idx) => (
+                      <span
+                        key={idx}
+                        className="bg-cyan-500/10 text-cyan-300 border border-cyan-500/20 px-3 py-1.5 rounded-xl text-xs font-medium flex items-center gap-1.5 shadow-sm"
+                      >
+                        <span className="w-1.5 h-1.5 rounded-full bg-cyan-400" />
+                        {uso}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Pie Modal */}
+            <div className="bg-[#090d16] border-t border-slate-800 p-4 flex justify-end shrink-0">
               <button
-                onClick={handleGuardarEdicionProducto}
-                className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs px-4 py-2 rounded-xl transition cursor-pointer shadow-lg"
+                onClick={() => setProductoDetalle(null)}
+                className="bg-slate-800 hover:bg-slate-700 text-slate-200 font-mono font-bold text-xs px-5 py-2 rounded-xl transition cursor-pointer"
               >
-                Guardar Cambios
+                Cerrar Ficha
               </button>
             </div>
           </div>
