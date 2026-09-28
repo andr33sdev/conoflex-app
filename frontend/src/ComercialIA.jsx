@@ -16,6 +16,7 @@ import {
   Send,
   Sliders,
   FileSpreadsheet,
+  FileText,
   Cpu,
   LayoutGrid,
   List,
@@ -177,6 +178,40 @@ export default function ComercialIA() {
     }
   };
 
+  const handleSubirPdfsFichas = async (e) => {
+    const files = Array.from(e.target.files);
+    if (files.length === 0) return;
+
+    const formData = new FormData();
+    files.forEach((file) => formData.append("pdf_files", file));
+
+    const cat = prompt(
+      "Categoría para estos PDFs de fichas (ej: Conos, Vallas, Espejos):",
+      "Conos",
+    );
+    if (cat) formData.append("categoriaNombre", cat);
+
+    setProcesandoArchivo(true);
+    try {
+      const res = await fetch("/api/catalogo/procesar-pdf", {
+        method: "POST",
+        body: formData,
+      });
+
+      const data = await res.json();
+      if (res.ok && data.success) {
+        fetchProductos();
+        showToast(`🎉 ${data.mensaje}`, "success");
+      } else {
+        showToast(data.error || "Error al procesar PDFs de fichas", "error");
+      }
+    } catch (err) {
+      showToast("Error de conexión al subir PDFs.", "error");
+    } finally {
+      setProcesandoArchivo(false);
+    }
+  };
+
   const guardarReglas = async () => {
     setLoading(true);
     try {
@@ -328,12 +363,14 @@ export default function ComercialIA() {
       const app = (p.aplicacion || "").toLowerCase();
       const esp = (p.especificacion || "").toLowerCase();
       const med = (p.medidas || "").toLowerCase();
+      const cat = (p.categoria || "").toLowerCase();
       return (
         cod.includes(q) ||
         nom.includes(q) ||
         app.includes(q) ||
         esp.includes(q) ||
-        med.includes(q)
+        med.includes(q) ||
+        cat.includes(q)
       );
     });
   }, [productos, busqueda]);
@@ -389,12 +426,12 @@ export default function ComercialIA() {
               <div className="flex-1">
                 <div className="flex items-center gap-2">
                   <h5 className="text-xs font-bold text-amber-300 font-mono uppercase tracking-wider">
-                    PROCESANDO CATÁLOGO
+                    PROCESANDO CATÁLOGO Y FICHAS
                   </h5>
                   <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping" />
                 </div>
                 <p className="text-[11px] text-slate-300 font-sans mt-0.5">
-                  Parseando matriz de tarjetas y sincronizando productos...
+                  Parseando matriz de datos y sincronizando fichas técnicas...
                 </p>
               </div>
             </div>
@@ -691,7 +728,7 @@ export default function ComercialIA() {
         {/* PESTAÑA CATÁLOGO REFORZADA Y PAGINADA */}
         {activeTab === "catalogo" && (
           <div className="p-5 flex flex-col h-full space-y-4 overflow-hidden transition-all duration-300 ease-out">
-            {/* 1. ZONA DE CARGA DE LISTA DE PRECIOS */}
+            {/* 1. ZONA DE CARGA DE LISTA DE PRECIOS & FICHAS PDF */}
             <div className="bg-[#0e1422] border border-slate-800/80 rounded-2xl p-4 flex flex-col sm:flex-row items-center justify-between gap-4 shrink-0 shadow-sm">
               <div className="flex items-center gap-3.5">
                 <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-emerald-400">
@@ -699,30 +736,51 @@ export default function ComercialIA() {
                 </div>
                 <div>
                   <h3 className="text-xs font-bold text-white uppercase tracking-wider font-mono">
-                    SINCRONIZADOR INTELIGENTE DE LISTA DE PRECIOS
+                    SINCRONIZADOR DE PRECIOS & FICHAS TÉCNICAS PDF
                   </h3>
                   <p className="text-[11px] text-slate-400 mt-0.5">
-                    Preserva fotos técnicas, aplicaciones y especificaciones
-                    previas al actualizar precios.
+                    Subí planillas de precios o múltiples PDFs con fichas
+                    descriptivas por categoría.
                   </p>
                 </div>
               </div>
 
-              <label className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-mono font-bold text-xs px-4 py-2.5 rounded-xl transition shadow-lg flex items-center gap-2 cursor-pointer shrink-0">
-                <UploadCloud size={16} />
-                <span>
-                  {procesandoArchivo
-                    ? "Procesando..."
-                    : "Subir PDF / Excel Oficial"}
-                </span>
-                <input
-                  type="file"
-                  accept=".pdf,.xlsx,.xls,.csv"
-                  onChange={handleSubirListaPrecios}
-                  disabled={procesandoArchivo}
-                  className="hidden"
-                />
-              </label>
+              <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
+                {/* BOTÓN PARA SUBIR MÚLTIPLES PDFS DE ESPECIFICACIONES/DESCRIPCIONES */}
+                <label className="bg-[#131c2d] hover:bg-[#1a263c] border border-emerald-500/30 text-emerald-400 font-mono font-bold text-xs px-3.5 py-2.5 rounded-xl transition shadow-md flex items-center gap-2 cursor-pointer shrink-0">
+                  <FileText size={16} />
+                  <span>
+                    {procesandoArchivo
+                      ? "Analizando PDFs..."
+                      : "Adjuntar PDFs de Fichas"}
+                  </span>
+                  <input
+                    type="file"
+                    multiple
+                    accept=".pdf"
+                    onChange={handleSubirPdfsFichas}
+                    disabled={procesandoArchivo}
+                    className="hidden"
+                  />
+                </label>
+
+                {/* BOTÓN OFICIAL DE LISTA DE PRECIOS (EXCEL / CSV / SHEETS) */}
+                <label className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-mono font-bold text-xs px-4 py-2.5 rounded-xl transition shadow-lg flex items-center gap-2 cursor-pointer shrink-0">
+                  <UploadCloud size={16} />
+                  <span>
+                    {procesandoArchivo
+                      ? "Sincronizando..."
+                      : "Subir Excel / CSV Precios"}
+                  </span>
+                  <input
+                    type="file"
+                    accept=".pdf,.xlsx,.xls,.csv"
+                    onChange={handleSubirListaPrecios}
+                    disabled={procesandoArchivo}
+                    className="hidden"
+                  />
+                </label>
+              </div>
             </div>
 
             {/* 2. BARRA DE HERRAMIENTAS DE BÚSQUEDA Y VISTAS */}
@@ -739,7 +797,7 @@ export default function ComercialIA() {
                     setBusqueda(e.target.value);
                     setPaginaCatalogo(1);
                   }}
-                  placeholder="Buscar por código, nombre, uso o aplicación..."
+                  placeholder="Buscar por código, nombre, uso o categoría..."
                   className="w-full bg-[#070a12] border border-slate-800 text-xs text-slate-100 pl-10 pr-4 py-2 focus:border-emerald-500/50 outline-none rounded-xl font-sans"
                 />
               </div>
