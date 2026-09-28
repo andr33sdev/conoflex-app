@@ -3328,15 +3328,16 @@ app.post("/api/estado-pedidos/sincronizar", async (req, res) => {
 });
 
 // ==========================================
-// CHAT CONNI - CON TIPO DE CAMBIO Y DESGLOSE POR CANAL
+// CHAT CONNI - MOTOR DE RAZONAMIENTO LIBRE
 // ==========================================
 app.post("/api/chat-ia", async (req, res) => {
   try {
     const { mensaje, historial } = req.body;
     const msgUpper = String(mensaje || "").toUpperCase();
 
-    // 1. FECHAS Y COTIZACIÓN DEL DÓLAR EN TIEMPO REAL
+    // 1. CONTEXTO TEMPORAL EN TIEMPO REAL
     const ahora = new Date();
+    const hoyISO = ahora.toISOString().split("T")[0];
     const hoyFormateado = ahora.toLocaleDateString("es-AR", {
       timeZone: "America/Argentina/Buenos_Aires",
       weekday: "long",
@@ -3344,119 +3345,71 @@ app.post("/api/chat-ia", async (req, res) => {
       month: "long",
       day: "numeric",
     });
-    const ayerObj = new Date(ahora);
-    ayerObj.setDate(ahora.getDate() - 1);
-    const hoyISO = ahora.toISOString().split("T")[0];
-    const ayerISO = ayerObj.toISOString().split("T")[0];
 
-    // 2. BÚSQUEDA DINÁMICA POR CÓDIGO DE MODELO
-    let datosFiltroEspecifico = [];
-    const matchModelo = msgUpper.match(/([A-Z0-9]{3,12})/g);
-    if (matchModelo) {
-      const modelosPosibles = matchModelo.filter(
-        (m) =>
-          m.length >= 3 &&
-          !["QUE", "HOY", "AYER", "POR", "VER", "MERCADOLIBRE"].includes(m),
-      );
-      if (modelosPosibles.length > 0) {
-        const [filasModelo] = await db.query(
-          `SELECT fecha, op, cliente, modelo, cantidad, 
-                  IF(LOWER(detalles) LIKE '%mercadolibre%', 'MercadoLibre', 'Venta Directa') AS canal, estado 
-           FROM estado_pedidos 
-           WHERE (${modelosPosibles.map(() => "modelo LIKE ?").join(" OR ")}) 
-             AND estado != 'CANCELADO' 
-           ORDER BY fecha DESC LIMIT 50`,
-          modelosPosibles.map((m) => `%${m}%`),
-        );
-        datosFiltroEspecifico = filasModelo;
-      }
-    }
+    // 2. OBTENER DÓLAR OFICIAL EN TIEMPO REAL
+    const dolarOficial = await obtenerDolarOficial();
+    const tcVenta = dolarOficial?.venta || 1500; // Valor por defecto de respaldo
 
-    // 3. CONSULTAS A LA BASE DE DATOS Y API EN PARALELO
-    const [
-      dolarOficial,
-      [[kpiHoy]],
-      [[kpiAyer]],
-      [ventasMesActual],
-      [alertasStockMP],
-      [rentabilidadMesCanal],
-    ] = await Promise.all([
-      obtenerDolarOficial(),
-      db.query(
-        `SELECT COUNT(DISTINCT op) as pedidos_ml, SUM(cantidad) as unidades 
-         FROM estado_pedidos 
-         WHERE fecha = ? AND LOWER(detalles) LIKE '%mercadolibre%' AND estado != 'CANCELADO'`,
-        [hoyISO],
-      ),
-      db.query(
-        `SELECT COUNT(DISTINCT op) as pedidos_ml, SUM(cantidad) as unidades 
-         FROM estado_pedidos 
-         WHERE fecha = ? AND LOWER(detalles) LIKE '%mercadolibre%' AND estado != 'CANCELADO'`,
-        [ayerISO],
-      ),
-      db.query(`
-        SELECT modelo, SUM(cantidad) as unidades, COUNT(DISTINCT op) as pedidos 
-        FROM estado_pedidos 
-        WHERE fecha >= DATE_SUB(CURDATE(), INTERVAL 30 DAY) AND estado != 'CANCELADO'
-        GROUP BY modelo ORDER BY unidades DESC LIMIT 10`),
-      db.query(`
-        SELECT codigo, nombre, stock_actual 
-        FROM materias_primas 
-        ORDER BY stock_actual ASC LIMIT 5`),
-      // Historial mensual desglosado por canal (MercadoLibre vs Venta Directa)
-      db.query(`
-        SELECT 
-          DATE_FORMAT(fecha, '%Y-%m') AS mes,
-          IF(LOWER(detalles) LIKE '%mercadolibre%', 'MercadoLibre', 'Venta Directa') AS canal,
-          COUNT(DISTINCT op) AS total_pedidos,
-          SUM(cantidad) AS unidades_vendidas,
-          SUM(cantidad * punisiva) AS facturacion_ars_sin_iva,
-          SUM(cosusd) AS costo_total_usd
-        FROM estado_pedidos
-        WHERE fecha IS NOT NULL AND estado != 'CANCELADO'
-        GROUP BY DATE_FORMAT(fecha, '%Y-%m'), canal
-        ORDER BY mes DESC, canal ASC
-        LIMIT 24
-      `),
-    ]);
+    // 3. CONSULTA DE DATOS AMPLIADA
+    // Traemos las ventas de los últimos 60 días con todos los campos clave
+    // para que la IA tenga el detalle completo y pueda calcular libremente.
+    const [ventasRecientes] = await db.query(`
+      SELECT 
+        fecha, 
+        periodo, 
+        op, 
+        cliente, 
+        modelo, 
+        cantidad, 
+        punisiva, 
+        cosusd, 
+        detalles
+      FROM estado_pedidos
+      WHERE fecha >= DATE_SUB(CURDATE(), INTERVAL 60 DAY) 
+        AND estado != 'CANCELADO'
+      ORDER BY fecha DESC
+    `);
 
-    // Format del dólar para el prompt
-    const textoDolar = dolarOficial
-      ? `Dólar Oficial Banco Nación hoy: Venta = $${dolarOficial.venta} ARS | Compra = $${dolarOficial.compra} ARS.`
-      : "Cotización dólar oficial hoy: No disponible momentáneamente.";
+    const [alertasStockMP] = await db.query(`
+      SELECT codigo, nombre, stock_actual 
+      FROM materias_primas 
+      ORDER BY stock_actual ASC LIMIT 5
+    `);
 
-    // 4. CONSTRUCCIÓN DEL PROMPT CON TODAS LAS CAPACIDADES
+    // 4. SYSTEM PROMPT: DICCIONARIO DE DATOS Y AUTONOMÍA TOTAL
     const promptContexto = `
-    Sos Connie, encargada de Inteligencia Operativa y Analista Financiera en Conoflex Argentina.
-    
-    FECHA HOY: ${hoyFormateado} (${hoyISO}). AYER FUE: ${ayerISO}.
-    INFORMACIÓN CAMBIARIA: ${textoDolar}
+Sos Connie, la asistente inteligente de Inteligencia Operativa y Financiera de Conoflex Argentina.
 
-    REGLAS DE RESPUESTA:
-    - Respuestas breves, precisas, profesionales y amables en español argentino (2 a 4 oraciones).
-    - 1 Pedido = 1 número de OP distinto (COUNT DISTINCT op).
+INFORMACIÓN DEL SISTEMA Y ENTORNO:
+- FECHA DE HOY: ${hoyFormateado} (${hoyISO}).
+- DÓLAR OFICIAL HOY (Banco Nación Venta): $${tcVenta} ARS.
 
-    Manejo de Conversiones y Financiero:
-    - Si te piden la facturación o costos convertidos a dólares o pesos al dólar oficial hoy, usá el precio de venta ($${dolarOficial?.venta || "N/D"} ARS/USD).
-    - Para calcular la rentabilidad estimada en ARS: Facturación ARS sin IVA - (Costo USD * Cotización Dólar Venta).
+DICCIONARIO DE DATOS (CÓMO ENTENDER LA TABLA DE VENTAS):
+- 'op': Identificador del pedido. Un número de OP representa 1 PEDIDO ÚNICO (si la misma OP aparece en varias filas, sigue siendo 1 solo pedido).
+- 'cantidad': Unidades vendidas en esa línea.
+- 'punisiva': Precio unitario facturado en pesos sin IVA (ARS). Facturación de la línea = cantidad * punisiva.
+- 'cosusd': Costo total de esa línea registrado en dólares (USD).
+- 'detalles': Indica el canal de venta. Si contiene "MercadoLibre", es una venta de MercadoLibre. Si no, es Venta Directa/Normal.
+- 'fecha': Fecha real en que se registró la operación (YYYY-MM-DD).
 
-    HISTORIAL FINANCIERO MENSUAL Y POR CANAL:
-    ${JSON.stringify(rentabilidadMesCanal)}
+REGLAS DE RAZONAMIENTO Y CÁLCULO (LIBERTAD DE ACCIÓN):
+- Tenés total libertad para filtrar, agrupar, sumar y calcular la rentabilidad o pedidos sobre cualquier rango de fechas que te pidan (ayer, la semana pasada, este mes, un día específico, un producto o un canal).
+- Para calcular RENTABILIDAD EN PESOS de cualquier conjunto de datos:
+  1. Sumá la Facturación Total en ARS = SUM(cantidad * punisiva).
+  2. Sumá el Costo Total en USD = SUM(cosusd).
+  3. Convertí el Costo a ARS usando el dólar oficial de hoy ($${tcVenta}): Costo ARS = Costo USD * ${tcVenta}.
+  4. Rentabilidad en ARS = Facturación ARS - Costo ARS.
+- Sé directa, amable y respondé de forma ejecutiva en español argentino, mostrando las cuentas de forma clara y sin dar rodeos teóricos.
 
-    REGLA DE DESGLOSE POR CANAL:
-    - Si te piden datos generales del mes, sumá los registros de MercadoLibre y Venta Directa de ese mes.
-    - Si te piden únicamente datos de "MercadoLibre" o "Venta Directa/Normal", usá los valores filtrados por la propiedad "canal" en el historial.
+REGISTROS DE VENTAS (ÚLTIMOS 60 DÍAS):
+${JSON.stringify(ventasRecientes)}
 
-    RESUMEN OPERATIVO:
-    - VENTAS HOY (${hoyISO}) MERCADOLIBRE: ${kpiHoy?.pedidos_ml || 0} pedidos (${kpiHoy?.unidades || 0} u.)
-    - VENTAS AYER (${ayerISO}) MERCADOLIBRE: ${kpiAyer?.pedidos_ml || 0} pedidos (${kpiAyer?.unidades || 0} u.)
-    - TOP 10 MÁS VENDIDOS (30 DÍAS): ${JSON.stringify(ventasMesActual)}
-    - CRÍTICOS STOCK MATERIAS PRIMAS: ${JSON.stringify(alertasStockMP)}
-    ${datosFiltroEspecifico.length > 0 ? `- BÚSQUEDA ESPECÍFICA DETALLADA: ${JSON.stringify(datosFiltroEspecifico)}` : ""}
-    `;
+MATERIAS PRIMAS CRÍTICAS:
+${JSON.stringify(alertasStockMP)}
+`;
 
-    const historialAcotado = (historial || []).slice(-3);
-
+    // 5. HISTORIAL Y GENERACIÓN DE RESPUESTA
+    const historialAcotado = (historial || []).slice(-4);
     const contents = [
       promptContexto,
       ...historialAcotado.map(
@@ -3473,7 +3426,7 @@ app.post("/api/chat-ia", async (req, res) => {
     res.json({ success: true, respuesta: response.text });
   } catch (error) {
     console.error("Error en chat Connie:", error);
-    res.status(500).json({ error: "Error al procesar consulta." });
+    res.status(500).json({ error: "Error al procesar la consulta." });
   }
 });
 
