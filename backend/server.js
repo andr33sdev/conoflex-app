@@ -3328,12 +3328,11 @@ app.post("/api/estado-pedidos/sincronizar", async (req, res) => {
 });
 
 // ==========================================
-// CARGA Y PROCESAMIENTO DE PDFS DE CATEGORÍAS (GEMINI NATIVO)
+// CARGA Y PROCESAMIENTO DE PDFS DE CATEGORÍAS (CON BUSQUEDA INTELIGENTE)
 // ==========================================
-// Usamos memoryStorage de Multer para no depender de permisos de disco
 const uploadMemory = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 20 * 1024 * 1024 }, // Límite 20MB
+  limits: { fileSize: 25 * 1024 * 1024 }, // Límite 25MB
 });
 
 app.post(
@@ -3353,25 +3352,23 @@ app.post(
       let totalProductosProcesados = 0;
 
       for (const file of files) {
-        // Convertir el buffer del PDF a Base64
         const pdfBase64 = file.buffer.toString("base64");
 
         const promptExtraccion = `
-        Analizá el documento PDF adjunto que contiene fichas técnico-comerciales de productos industriales.
-        Extraé todos los modelos de productos presentes en el documento.
+        Analizá el documento PDF adjunto con fichas técnico-comerciales de productos.
+        Extraé todos los modelos de productos presentes.
 
         Para cada producto, generá un objeto JSON con:
-        - "codigo": Código del modelo (ej: "1025", "2051L-1R", "1570LSF-2R").
+        - "codigo": Código del modelo (ej: "1025", "2051L-1R", "2070-2R").
         - "nombre": Nombre comercial del modelo (ej: "Multiuso Flexible", "Ciudad Light Semiflexible").
-        - "medidas": Medidas de altura, base, peso y material (ej: "Altura: 20 cm | Base: 15 cm | Peso: 0,2 kg | Material: PVC flexible").
-        - "descripcion": Descripción comercial y técnica resumida.
-        - "usos": Lista de usos recomendados separados por coma.
+        - "medidas": Medidas de altura, base, peso y material (ej: "Conformado: 1 Pieza | Base: 35x35cm. | Reflectivo: 1x7cm.").
+        - "descripcion": Resumen descriptivo técnico y comercial del producto.
+        - "usos": Lista detallada de usos recomendados y aplicaciones de venta separados por coma.
         - "categoria": "${categoriaNombre}".
 
         Devolvé ÚNICAMENTE un arreglo JSON válido sin formato markdown adicional.
       `;
 
-        // Se envía el PDF nativamente a Gemini 2.5 Flash
         const response = await ai.models.generateContent({
           model: "gemini-2.5-flash",
           contents: [
@@ -3384,7 +3381,7 @@ app.post(
             promptExtraccion,
           ],
           config: {
-            responseMimeType: "application/json", // Forzar salida JSON estricta
+            responseMimeType: "application/json",
           },
         });
 
@@ -3411,30 +3408,55 @@ app.post(
           for (const p of productosExtraidos) {
             if (!p.codigo) continue;
 
-            await db.query(
-              `INSERT INTO productos 
-             (codigo, nombre, medidas, descripcion, aplicacion, categoria) 
-             VALUES (?, ?, ?, ?, ?, ?)
-             ON DUPLICATE KEY UPDATE 
-               nombre = VALUES(nombre),
-               medidas = VALUES(medidas),
-               descripcion = VALUES(descripcion),
-               aplicacion = VALUES(aplicacion),
-               categoria = VALUES(categoria)`,
-              [
-                p.codigo,
-                p.nombre || "",
-                p.medidas || "",
-                p.descripcion || "",
-                p.usos || "",
-                p.categoria || categoriaNombre,
-              ],
+            // 1. Buscar si el producto ya existe por código exacto o contenido en código compuesto (ej: "2051L-1R / 2051-1R")
+            const [existentes] = await db.query(
+              `SELECT id FROM productos WHERE codigo = ? OR codigo LIKE ?`,
+              [p.codigo, `%${p.codigo}%`],
             );
+
+            if (existentes.length > 0) {
+              // 2. Si existe, actualizamos la ficha técnica, descripción y usos
+              const ids = existentes.map((e) => e.id);
+              await db.query(
+                `UPDATE productos 
+               SET 
+                 medidas = IF(medidas IS NULL OR medidas = '', ?, medidas),
+                 descripcion = ?,
+                 aplicacion = ?,
+                 usos_recomendados = ?,
+                 categoria = ?
+               WHERE id IN (?)`,
+                [
+                  p.medidas || "",
+                  p.descripcion || "",
+                  p.usos || "",
+                  p.usos || "",
+                  p.categoria || categoriaNombre,
+                  ids,
+                ],
+              );
+            } else {
+              // 3. Si no existe en la base de datos, lo insertamos como nuevo
+              await db.query(
+                `INSERT INTO productos 
+               (codigo, nombre, medidas, descripcion, aplicacion, usos_recomendados, categoria) 
+               VALUES (?, ?, ?, ?, ?, ?, ?)`,
+                [
+                  p.codigo,
+                  p.nombre || "",
+                  p.medidas || "",
+                  p.descripcion || "",
+                  p.usos || "",
+                  p.usos || "",
+                  p.categoria || categoriaNombre,
+                ],
+              );
+            }
             totalProductosProcesados++;
           }
         }
 
-        // Guardar el registro de la categoría y archivo PDF
+        // Guardar registro de la categoría
         await db.query(
           `INSERT INTO categorias_pdf (nombre, pdf_filename, total_productos)
          VALUES (?, ?, ?)
@@ -3447,7 +3469,7 @@ app.post(
 
       res.json({
         success: true,
-        mensaje: `¡Procesamiento exitoso! Se analizaron los PDFs y se procesaron ${totalProductosProcesados} fichas de productos.`,
+        mensaje: `¡Fichas procesadas con éxito! Se actualizaron ${totalProductosProcesados} productos en el catálogo.`,
       });
     } catch (error) {
       console.error("Error en procesar-pdf:", error);
