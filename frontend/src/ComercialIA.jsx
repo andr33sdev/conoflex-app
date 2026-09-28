@@ -30,7 +30,7 @@ import {
   ShieldCheck,
 } from "lucide-react";
 
-// HELPER ROBUSTO PARA RESOLVER Y PRESERVAR RUTAS DE IMÁGENES
+// HELPER ROBUSTO PARA RESOLVER RUTAS DE IMÁGENES
 const getImageUrl = (url) => {
   if (!url) return "";
   if (url.startsWith("http://") || url.startsWith("https://")) return url;
@@ -43,7 +43,7 @@ const getImageUrl = (url) => {
     path = "/" + path;
   }
 
-  // Redirige llamadas desde el servidor de desarrollo de Vite (puerto 5173/5174) al backend Express (puerto 3000)
+  // Redirige llamadas desde el servidor local de Vite (5173 / 5174) al backend Express (3000)
   if (
     typeof window !== "undefined" &&
     (window.location.port === "5173" || window.location.port === "5174")
@@ -55,7 +55,7 @@ const getImageUrl = (url) => {
 };
 
 export default function ComercialIA() {
-  const [activeTab, setActiveTab] = useState("bandeja"); // 'bandeja' | 'catalogo' | 'prompt'
+  const [activeTab, setActiveTab] = useState("bandeja");
   const [mails, setMails] = useState([]);
   const [selectedMail, setSelectedMail] = useState(null);
   const [reglas, setReglas] = useState("");
@@ -64,7 +64,6 @@ export default function ComercialIA() {
   const [conectado, setConectado] = useState(true);
   const [errorMsg, setErrorMsg] = useState("");
 
-  // SISTEMA DE NOTIFICACIONES TOAST CYBER-INDUSTRIAL
   const [toast, setToast] = useState(null);
 
   const showToast = (message, type = "success") => {
@@ -74,18 +73,15 @@ export default function ComercialIA() {
     }, 3800);
   };
 
-  // Catálogo, Lista de Precios y Paginación
   const [productos, setProductos] = useState([]);
   const [busqueda, setBusqueda] = useState("");
   const [procesandoArchivo, setProcesandoArchivo] = useState(false);
-  const [productoDetalle, setProductoDetalle] = useState(null); // MODAL FICHA TÉCNICA
+  const [productoDetalle, setProductoDetalle] = useState(null);
 
-  // Vista y Paginación del Catálogo
-  const [vistaModo, setVistaModo] = useState("tabla"); // 'tabla' | 'tarjetas'
+  const [vistaModo, setVistaModo] = useState("tabla");
   const [paginaCatalogo, setPaginaCatalogo] = useState(1);
   const itemsPorPagina = 10;
 
-  // ESTADO PARA MODAL LIGHTBOX DE FOTOS AMPLIADAS
   const [fotoLightbox, setFotoLightbox] = useState(null);
 
   useEffect(() => {
@@ -294,7 +290,6 @@ export default function ComercialIA() {
     }
   };
 
-  // RENDERIZADOR ESTRUCTURADO Y LIMPIO PARA PRECIOS COMPUESTOS
   const renderPrecioLimpio = (precioStr) => {
     if (!precioStr || precioStr === "-")
       return <span className="text-slate-500 font-mono">-</span>;
@@ -340,7 +335,6 @@ export default function ComercialIA() {
     );
   };
 
-  // PARSER DE USOS / APLICACIONES PARA PILDORAS EN MODAL
   const parseUsosList = (usosStr) => {
     if (!usosStr) return [];
     return usosStr
@@ -349,7 +343,6 @@ export default function ComercialIA() {
       .filter((u) => u.length > 2);
   };
 
-  // FILTRADO Y PAGINACIÓN DEL CATÁLOGO
   const productosFiltrados = useMemo(() => {
     const q = busqueda.toLowerCase().trim();
     if (!q) return productos;
@@ -412,7 +405,7 @@ export default function ComercialIA() {
 
   return (
     <div className="flex-1 flex flex-col h-full min-h-0 bg-[#070a12] border border-slate-800/80 rounded-2xl font-sans text-slate-200 shadow-2xl overflow-hidden backdrop-blur-2xl relative">
-      {/* SISTEMA DE TOASTS & INDICADOR DE PROCESAMIENTO ANIMADO */}
+      {/* TOASTS & INDICADORES */}
       <div className="fixed top-6 right-6 z-[300] flex flex-col gap-3 max-w-md w-full pointer-events-none">
         {procesandoArchivo && (
           <div className="pointer-events-auto flex flex-col p-4 bg-[#0f172a]/95 border border-amber-500/50 rounded-2xl shadow-[0_0_30px_rgba(245,158,11,0.25)] backdrop-blur-2xl transition-all duration-300 animate-in slide-in-from-top-5">
@@ -892,7 +885,6 @@ export default function ComercialIA() {
                                     alt="Técnica"
                                     className="w-full h-full object-contain p-0.5"
                                     onError={(e) => {
-                                      e.currentTarget.onerror = null;
                                       e.currentTarget.style.display = "none";
                                     }}
                                   />
@@ -929,7 +921,6 @@ export default function ComercialIA() {
                                     alt="Catálogo"
                                     className="w-full h-full object-contain p-0.5"
                                     onError={(e) => {
-                                      e.currentTarget.onerror = null;
                                       e.currentTarget.style.display = "none";
                                     }}
                                   />
@@ -1020,7 +1011,6 @@ export default function ComercialIA() {
                                 alt="Técnica"
                                 className="w-full h-full object-contain p-1"
                                 onError={(e) => {
-                                  e.currentTarget.onerror = null;
                                   e.currentTarget.style.display = "none";
                                 }}
                               />
@@ -1053,7 +1043,6 @@ export default function ComercialIA() {
                                 alt="Catálogo"
                                 className="w-full h-full object-contain p-1"
                                 onError={(e) => {
-                                  e.currentTarget.onerror = null;
                                   e.currentTarget.style.display = "none";
                                 }}
                               />
@@ -1182,9 +1171,7 @@ export default function ComercialIA() {
                 alt="Foto ampliada"
                 className="max-w-full max-h-[70vh] object-contain rounded-lg"
                 onError={(e) => {
-                  e.currentTarget.onerror = null;
-                  e.currentTarget.src =
-                    "https://via.placeholder.com/600x400?text=Error+al+cargar+imagen";
+                  e.currentTarget.style.display = "none";
                 }}
               />
             </div>
@@ -1290,7 +1277,6 @@ export default function ComercialIA() {
                         alt="Técnica"
                         className="w-full h-full object-contain p-2"
                         onError={(e) => {
-                          e.currentTarget.onerror = null;
                           e.currentTarget.style.display = "none";
                         }}
                       />
@@ -1356,7 +1342,6 @@ export default function ComercialIA() {
                         alt="Catálogo"
                         className="w-full h-full object-contain p-2"
                         onError={(e) => {
-                          e.currentTarget.onerror = null;
                           e.currentTarget.style.display = "none";
                         }}
                       />
