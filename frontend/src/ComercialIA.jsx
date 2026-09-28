@@ -4,6 +4,7 @@ import {
   Sparkles,
   RefreshCw,
   ExternalLink,
+  Upload,
   Search,
   Image as ImageIcon,
   User,
@@ -77,7 +78,7 @@ export default function ComercialIA() {
   const [productos, setProductos] = useState([]);
   const [busqueda, setBusqueda] = useState("");
   const [procesandoArchivo, setProcesandoArchivo] = useState(false);
-  const [productoDetalle, setProductoDetalle] = useState(null); // MODAL DE SÓLO LECTURA
+  const [productoDetalle, setProductoDetalle] = useState(null); // MODAL FICHA TÉCNICA
 
   // Vista y Paginación del Catálogo
   const [vistaModo, setVistaModo] = useState("tabla"); // 'tabla' | 'tarjetas'
@@ -212,6 +213,39 @@ export default function ComercialIA() {
       showToast("Error de conexión al subir PDFs.", "error");
     } finally {
       setProcesandoArchivo(false);
+    }
+  };
+
+  const handleUploadFotoProducto = async (productoId, tipo, e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const formData = new FormData();
+    formData.append("imagen", file);
+    formData.append("tipo", tipo);
+
+    try {
+      const res = await fetch(`/api/productos/${productoId}/imagen`, {
+        method: "POST",
+        body: formData,
+      });
+      if (res.ok) {
+        const data = await res.json();
+        await fetchProductos();
+        if (productoDetalle && productoDetalle.id === productoId) {
+          setProductoDetalle((prev) => ({
+            ...prev,
+            [tipo === "tecnica" ? "foto_tecnica" : "foto_catalogo"]:
+              data.url ||
+              prev[tipo === "tecnica" ? "foto_tecnica" : "foto_catalogo"],
+          }));
+        }
+        showToast("Imagen cargada y guardada con éxito", "success");
+      } else {
+        showToast("Error al guardar la imagen en el servidor", "error");
+      }
+    } catch (err) {
+      showToast("Error de conexión al adjuntar la imagen", "error");
     }
   };
 
@@ -912,7 +946,7 @@ export default function ComercialIA() {
                             {p.codigo}
                           </td>
 
-                          {/* NOMBRE ÚNICAMENTE (SIN DESCRIPCIONES O MEDIDAS LARGAS) */}
+                          {/* NOMBRE ÚNICAMENTE */}
                           <td className="p-3">
                             <div className="text-slate-100 font-bold font-sans text-xs">
                               {p.nombre}
@@ -1158,7 +1192,7 @@ export default function ComercialIA() {
         </div>
       )}
 
-      {/* MODAL DE SÓLO LECTURA: FICHA TÉCNICA COMERCIAL COMPLETA */}
+      {/* MODAL DETALLE: FICHA TÉCNICA COMERCIAL CON SUBIDA INDIVIDUAL DE FOTOS */}
       {productoDetalle && (
         <div className="fixed inset-0 bg-slate-950/85 backdrop-blur-sm z-[200] flex items-center justify-center p-4 font-sans animate-in fade-in duration-200">
           <div className="bg-[#0e1422] border border-slate-800 w-full max-w-3xl max-h-[90vh] rounded-3xl shadow-2xl overflow-hidden flex flex-col relative text-xs">
@@ -1206,13 +1240,36 @@ export default function ComercialIA() {
                 <div>{renderPrecioLimpio(productoDetalle.precio_lista)}</div>
               </div>
 
-              {/* Muestra de Fotos Grandes con Lightbox */}
+              {/* Muestra de Fotos Grandes con Botones de Carga Individual */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 {/* Foto Técnica */}
-                <div className="bg-[#070a12] border border-slate-800 rounded-2xl p-3 flex flex-col items-center space-y-2">
-                  <span className="text-[10px] font-mono font-bold text-slate-400 uppercase tracking-wider self-start px-1">
-                    PLANO TÉCNICO
-                  </span>
+                <div className="bg-[#070a12] border border-slate-800 rounded-2xl p-3 flex flex-col space-y-2">
+                  <div className="flex items-center justify-between w-full">
+                    <span className="text-[10px] font-mono font-bold text-slate-400 uppercase tracking-wider px-1">
+                      PLANO TÉCNICO
+                    </span>
+                    <label className="bg-[#131c2d] hover:bg-[#1e293b] border border-slate-700 hover:border-slate-500 text-slate-300 px-2.5 py-1 rounded-lg text-[10px] font-mono flex items-center gap-1 cursor-pointer transition shadow">
+                      <Upload size={12} />
+                      <span>
+                        {productoDetalle.foto_tecnica
+                          ? "Cambiar"
+                          : "Subir Foto"}
+                      </span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={(e) =>
+                          handleUploadFotoProducto(
+                            productoDetalle.id,
+                            "tecnica",
+                            e,
+                          )
+                        }
+                      />
+                    </label>
+                  </div>
+
                   <div
                     onClick={() =>
                       productoDetalle.foto_tecnica &&
@@ -1252,10 +1309,33 @@ export default function ComercialIA() {
                 </div>
 
                 {/* Foto Catálogo */}
-                <div className="bg-[#070a12] border border-slate-800 rounded-2xl p-3 flex flex-col items-center space-y-2">
-                  <span className="text-[10px] font-mono font-bold text-emerald-400 uppercase tracking-wider self-start px-1">
-                    USO / CATÁLOGO
-                  </span>
+                <div className="bg-[#070a12] border border-slate-800 rounded-2xl p-3 flex flex-col space-y-2">
+                  <div className="flex items-center justify-between w-full">
+                    <span className="text-[10px] font-mono font-bold text-emerald-400 uppercase tracking-wider px-1">
+                      USO / CATÁLOGO
+                    </span>
+                    <label className="bg-[#131c2d] hover:bg-[#1e293b] border border-slate-700 hover:border-emerald-500/50 text-emerald-300 px-2.5 py-1 rounded-lg text-[10px] font-mono flex items-center gap-1 cursor-pointer transition shadow">
+                      <Upload size={12} />
+                      <span>
+                        {productoDetalle.foto_catalogo
+                          ? "Cambiar"
+                          : "Subir Foto"}
+                      </span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={(e) =>
+                          handleUploadFotoProducto(
+                            productoDetalle.id,
+                            "catalogo",
+                            e,
+                          )
+                        }
+                      />
+                    </label>
+                  </div>
+
                   <div
                     onClick={() =>
                       productoDetalle.foto_catalogo &&
