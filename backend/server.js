@@ -3328,73 +3328,89 @@ app.post("/api/estado-pedidos/sincronizar", async (req, res) => {
 });
 
 // ==========================================
-// CARGA Y PROCESAMIENTO DE PDFS DE CATEGORÍAS (IA DESCRIPTIVA)
+// CARGA Y PROCESAMIENTO DE PDFS DE CATEGORÍAS (GEMINI NATIVO)
 // ==========================================
-const pdfParse = require("pdf-parse"); // npm install pdf-parse
+// Usamos memoryStorage de Multer para no depender de permisos de disco
+const uploadMemory = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 20 * 1024 * 1024 }, // Límite 20MB
+});
 
 app.post(
   "/api/catalogo/procesar-pdf",
-  uploadTemp.array("pdf_files", 10),
+  uploadMemory.array("pdf_files", 5),
   async (req, res) => {
     try {
       const files = req.files;
-      const { categoriaNombre } = req.body; // Opcional: si el usuario especifica una categoría
+      const categoriaNombre = req.body.categoriaNombre || "Conos";
 
       if (!files || files.length === 0) {
         return res
           .status(400)
-          .json({ error: "No se adjuntó ningún archivo PDF." });
+          .json({ error: "No se recibió ningún archivo PDF." });
       }
 
       let totalProductosProcesados = 0;
 
       for (const file of files) {
-        const dataBuffer = fs.readFileSync(file.path);
-        const parsedPdf = await pdfParse(dataBuffer);
-        const textoPDF = parsedPdf.text;
+        // Convertir el buffer del PDF a Base64
+        const pdfBase64 = file.buffer.toString("base64");
 
-        // Le pedimos a Gemini Flash que estructure el texto del PDF en un JSON de productos
         const promptExtraccion = `
-        Analizá la siguiente documentación técnica de productos industriales en PDF.
-        Extraé todos los modelos de productos que encuentres.
+        Analizá el documento PDF adjunto que contiene fichas técnico-comerciales de productos industriales.
+        Extraé todos los modelos de productos presentes en el documento.
 
         Para cada producto, generá un objeto JSON con:
-        - "codigo": Código del producto (ej: "1025", "2051L-1R", "1570LSF-2R").
-        - "nombre": Nombre del modelo (ej: "Multiuso Flexible", "Ciudad Light Semiflexible").
-        - "medidas": Medidas de altura, base, peso y material (ej: "Altura: 20cm | Base: 15cm | Peso: 0.2kg | PVC Flexible").
-        - "descripcion": Resumen descriptivo comercial del producto.
-        - "usos": Lista de usos recomendados o aplicaciones clave.
-        - "categoria": "${categoriaNombre || "Conos"}".
+        - "codigo": Código del modelo (ej: "1025", "2051L-1R", "1570LSF-2R").
+        - "nombre": Nombre comercial del modelo (ej: "Multiuso Flexible", "Ciudad Light Semiflexible").
+        - "medidas": Medidas de altura, base, peso y material (ej: "Altura: 20 cm | Base: 15 cm | Peso: 0,2 kg | Material: PVC flexible").
+        - "descripcion": Descripción comercial y técnica resumida.
+        - "usos": Lista de usos recomendados separados por coma.
+        - "categoria": "${categoriaNombre}".
 
-        Responde ÚNICAMENTE en formato JSON con la siguiente estructura:
-        [
-          {
-            "codigo": "1025",
-            "nombre": "Multiuso Flexible",
-            "medidas": "20cm | Base 15cm | 0.2kg",
-            "descripcion": "Cono de señalización de 20cm...",
-            "usos": "Fútbol, zonas de trabajo, identificación de áreas...",
-            "categoria": "Conos"
-          }
-        ]
-
-        TEXTO DEL PDF:
-        ${textoPDF.substring(0, 30000)}
+        Devolvé ÚNICAMENTE un arreglo JSON válido sin formato markdown adicional.
       `;
 
+        // Se envía el PDF nativamente a Gemini 2.5 Flash
         const response = await ai.models.generateContent({
           model: "gemini-2.5-flash",
-          contents: promptExtraccion,
+          contents: [
+            {
+              inlineData: {
+                mimeType: "application/pdf",
+                data: pdfBase64,
+              },
+            },
+            promptExtraccion,
+          ],
+          config: {
+            responseMimeType: "application/json", // Forzar salida JSON estricta
+          },
         });
 
-        const jsonMatch = response.text.match(/\[\s*\{[\s\S]*\}\s*\]/);
-        if (jsonMatch) {
-          const productosExtraidos = JSON.parse(jsonMatch[0]);
+        let productosExtraidos = [];
+        try {
+          productosExtraidos = JSON.parse(response.text);
+        } catch (e) {
+          const match = response.text.match(/\[\s*\{[\s\S]*\}\s*\]/);
+          if (match) {
+            productosExtraidos = JSON.parse(match[0]);
+          } else {
+            console.error(
+              "Error parseando respuesta JSON de Gemini:",
+              response.text,
+            );
+            continue;
+          }
+        }
 
+        if (
+          Array.isArray(productosExtraidos) &&
+          productosExtraidos.length > 0
+        ) {
           for (const p of productosExtraidos) {
             if (!p.codigo) continue;
 
-            // Insertar o actualizar producto en MySQL
             await db.query(
               `INSERT INTO productos 
              (codigo, nombre, medidas, descripcion, aplicacion, categoria) 
@@ -3411,39 +3427,33 @@ app.post(
                 p.medidas || "",
                 p.descripcion || "",
                 p.usos || "",
-                p.categoria || categoriaNombre || "Conos",
+                p.categoria || categoriaNombre,
               ],
             );
             totalProductosProcesados++;
           }
         }
 
-        // Registrar categoría y PDF en la base de datos
-        const catFinal = categoriaNombre || "Conos";
+        // Guardar el registro de la categoría y archivo PDF
         await db.query(
           `INSERT INTO categorias_pdf (nombre, pdf_filename, total_productos)
          VALUES (?, ?, ?)
          ON DUPLICATE KEY UPDATE 
            pdf_filename = VALUES(pdf_filename),
            total_productos = total_productos + VALUES(total_productos)`,
-          [catFinal, file.originalname, totalProductosProcesados],
+          [categoriaNombre, file.originalname, totalProductosProcesados],
         );
-
-        // Limpiar archivo temporal
-        if (fs.existsSync(file.path)) fs.unlinkSync(file.path);
       }
 
       res.json({
         success: true,
-        mensaje: `¡Procesamiento completo! Se procesaron ${files.length} PDF(s) y se actualizaron ${totalProductosProcesados} fichas de productos en la base de datos.`,
+        mensaje: `¡Procesamiento exitoso! Se analizaron los PDFs y se procesaron ${totalProductosProcesados} fichas de productos.`,
       });
     } catch (error) {
-      console.error("Error procesando PDF:", error);
+      console.error("Error en procesar-pdf:", error);
       res
         .status(500)
-        .json({
-          error: "Error al procesar los archivos PDF de especificaciones.",
-        });
+        .json({ error: `Error al procesar el PDF: ${error.message}` });
     }
   },
 );
