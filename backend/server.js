@@ -3328,14 +3328,120 @@ app.post("/api/estado-pedidos/sincronizar", async (req, res) => {
 });
 
 // ==========================================
-// CHAT CONNI - MOTOR DE RAZONAMIENTO LIBRE
+// DEFINICIÓN DE LA HERRAMIENTA (TOOL) PARA GEMINI
+// ==========================================
+const toolObtenerVentas = {
+  functionDeclarations: [
+    {
+      name: "obtenerReporteVentas",
+      description:
+        "Obtiene y agrupa ventas de la base de datos según filtros flexibles de fecha, canal o modelo.",
+      parameters: {
+        type: "OBJECT",
+        properties: {
+          fecha_inicio: {
+            type: "STRING",
+            description:
+              "Fecha de inicio en formato YYYY-MM-DD (ej: '2026-09-01').",
+          },
+          fecha_fin: {
+            type: "STRING",
+            description:
+              "Fecha de fin en formato YYYY-MM-DD (ej: '2026-09-30').",
+          },
+          canal: {
+            type: "STRING",
+            description:
+              "Canal de venta: 'MercadoLibre', 'Venta Directa' o 'Todos'.",
+          },
+          agrupar_por: {
+            type: "STRING",
+            description:
+              "Por qué campo agrupar: 'modelo' (para ranking de productos), 'dia', 'mes', o 'sin_agrupar'.",
+          },
+          limite: {
+            type: "NUMBER",
+            description:
+              "Límite de resultados a devolver (ej: 10 para un Top 10). Por defecto 20.",
+          },
+        },
+        required: ["fecha_inicio", "fecha_fin"],
+      },
+    },
+  ],
+};
+
+// HELPER: EJECUTA LA CONSULTA DINÁMICA PEDIDA POR LA IA
+async function ejecutarConsultaVentasParams(params) {
+  const { fecha_inicio, fecha_fin, canal, agrupar_por, limite = 20 } = params;
+
+  let whereClauses = ["fecha BETWEEN ? AND ?", "estado != 'CANCELADO'"];
+  let queryParams = [fecha_inicio, fecha_fin];
+
+  if (canal === "MercadoLibre") {
+    whereClauses.push("LOWER(detalles) LIKE '%mercadolibre%'");
+  } else if (canal === "Venta Directa") {
+    whereClauses.push("LOWER(detalles) NOT LIKE '%mercadolibre%'");
+  }
+
+  let selectQuery = "";
+
+  if (agrupar_por === "modelo") {
+    selectQuery = `
+      SELECT 
+        modelo,
+        SUM(cantidad) AS unidades_totales,
+        COUNT(DISTINCT op) AS total_pedidos,
+        SUM(cantidad * punisiva) AS facturacion_ars_sin_iva,
+        SUM(cosusd) AS costo_total_usd
+      FROM estado_pedidos
+      WHERE ${whereClauses.join(" AND ")}
+      GROUP BY modelo
+      ORDER BY unidades_totales DESC
+      LIMIT ?
+    `;
+    queryParams.push(limite);
+  } else if (agrupar_por === "dia" || agrupar_por === "mes") {
+    const format = agrupar_por === "dia" ? "%Y-%m-%d" : "%Y-%m";
+    selectQuery = `
+      SELECT 
+        DATE_FORMAT(fecha, '${format}') AS periodo,
+        IF(LOWER(detalles) LIKE '%mercadolibre%', 'MercadoLibre', 'Venta Directa') AS canal,
+        COUNT(DISTINCT op) AS total_pedidos,
+        SUM(cantidad) AS unidades_totales,
+        SUM(cantidad * punisiva) AS facturacion_ars_sin_iva,
+        SUM(cosusd) AS costo_total_usd
+      FROM estado_pedidos
+      WHERE ${whereClauses.join(" AND ")}
+      GROUP BY periodo, canal
+      ORDER BY periodo DESC
+      LIMIT ?
+    `;
+    queryParams.push(limite);
+  } else {
+    // Totales consolidados sin agrupar por modelo
+    selectQuery = `
+      SELECT 
+        COUNT(DISTINCT op) AS total_pedidos,
+        SUM(cantidad) AS unidades_totales,
+        SUM(cantidad * punisiva) AS facturacion_ars_sin_iva,
+        SUM(cosusd) AS costo_total_usd
+      FROM estado_pedidos
+      WHERE ${whereClauses.join(" AND ")}
+    `;
+  }
+
+  const [rows] = await db.query(selectQuery, queryParams);
+  return rows;
+}
+
+// ==========================================
+// CHAT CONNI - AGENTE AUTÓNOMO CON FUNCTION CALLING
 // ==========================================
 app.post("/api/chat-ia", async (req, res) => {
   try {
     const { mensaje, historial } = req.body;
-    const msgUpper = String(mensaje || "").toUpperCase();
 
-    // 1. CONTEXTO TEMPORAL EN TIEMPO REAL
     const ahora = new Date();
     const hoyISO = ahora.toISOString().split("T")[0];
     const hoyFormateado = ahora.toLocaleDateString("es-AR", {
@@ -3346,87 +3452,71 @@ app.post("/api/chat-ia", async (req, res) => {
       day: "numeric",
     });
 
-    // 2. OBTENER DÓLAR OFICIAL EN TIEMPO REAL
     const dolarOficial = await obtenerDolarOficial();
-    const tcVenta = dolarOficial?.venta || 1500; // Valor por defecto de respaldo
+    const tcVenta = dolarOficial?.venta || 1500;
 
-    // 3. CONSULTA DE DATOS AMPLIADA
-    // Traemos las ventas de los últimos 60 días con todos los campos clave
-    // para que la IA tenga el detalle completo y pueda calcular libremente.
-    const [ventasRecientes] = await db.query(`
-      SELECT 
-        fecha, 
-        periodo, 
-        op, 
-        cliente, 
-        modelo, 
-        cantidad, 
-        punisiva, 
-        cosusd, 
-        detalles
-      FROM estado_pedidos
-      WHERE fecha >= DATE_SUB(CURDATE(), INTERVAL 60 DAY) 
-        AND estado != 'CANCELADO'
-      ORDER BY fecha DESC
-    `);
+    const systemInstruction = `
+Sos Connie, encargada de Inteligencia Operativa y Analista Financiera en Conoflex Argentina.
 
-    const [alertasStockMP] = await db.query(`
-      SELECT codigo, nombre, stock_actual 
-      FROM materias_primas 
-      ORDER BY stock_actual ASC LIMIT 5
-    `);
-
-    // 4. SYSTEM PROMPT: DICCIONARIO DE DATOS Y AUTONOMÍA TOTAL
-    const promptContexto = `
-Sos Connie, la asistente inteligente de Inteligencia Operativa y Financiera de Conoflex Argentina.
-
-INFORMACIÓN DEL SISTEMA Y ENTORNO:
+ENTORNO:
 - FECHA DE HOY: ${hoyFormateado} (${hoyISO}).
-- DÓLAR OFICIAL HOY (Banco Nación Venta): $${tcVenta} ARS.
+- DÓLAR OFICIAL VENTA HOY: $${tcVenta} ARS.
 
-DICCIONARIO DE DATOS (CÓMO ENTENDER LA TABLA DE VENTAS):
-- 'op': Identificador del pedido. Un número de OP representa 1 PEDIDO ÚNICO (si la misma OP aparece en varias filas, sigue siendo 1 solo pedido).
-- 'cantidad': Unidades vendidas en esa línea.
-- 'punisiva': Precio unitario facturado en pesos sin IVA (ARS). Facturación de la línea = cantidad * punisiva.
-- 'cosusd': Costo total de esa línea registrado en dólares (USD).
-- 'detalles': Indica el canal de venta. Si contiene "MercadoLibre", es una venta de MercadoLibre. Si no, es Venta Directa/Normal.
-- 'fecha': Fecha real en que se registró la operación (YYYY-MM-DD).
-
-REGLAS DE RAZONAMIENTO Y CÁLCULO (LIBERTAD DE ACCIÓN):
-- Tenés total libertad para filtrar, agrupar, sumar y calcular la rentabilidad o pedidos sobre cualquier rango de fechas que te pidan (ayer, la semana pasada, este mes, un día específico, un producto o un canal).
-- Para calcular RENTABILIDAD EN PESOS de cualquier conjunto de datos:
-  1. Sumá la Facturación Total en ARS = SUM(cantidad * punisiva).
-  2. Sumá el Costo Total en USD = SUM(cosusd).
-  3. Convertí el Costo a ARS usando el dólar oficial de hoy ($${tcVenta}): Costo ARS = Costo USD * ${tcVenta}.
-  4. Rentabilidad en ARS = Facturación ARS - Costo ARS.
-- Sé directa, amable y respondé de forma ejecutiva en español argentino, mostrando las cuentas de forma clara y sin dar rodeos teóricos.
-
-REGISTROS DE VENTAS (ÚLTIMOS 60 DÍAS):
-${JSON.stringify(ventasRecientes)}
-
-MATERIAS PRIMAS CRÍTICAS:
-${JSON.stringify(alertasStockMP)}
+CAPACIDADES Y REGLAS:
+- Tenés acceso a la herramienta "obtenerReporteVentas". Usala siempre que necesites consultar datos de ventas, cantidades, productos más vendidos, rentabilidad o pedidos de cualquier fecha, rango, mes o canal.
+- Si te piden rentabilidad en ARS: Facturación ARS sin IVA - (Costo USD * $${tcVenta}).
+- Sé ejecutiva, amable y hablá en español argentino fluido. No expliques la parte técnica de las SQL o funciones, dá directamente los resultados de forma clara.
 `;
 
-    // 5. HISTORIAL Y GENERACIÓN DE RESPUESTA
     const historialAcotado = (historial || []).slice(-4);
     const contents = [
-      promptContexto,
-      ...historialAcotado.map(
-        (h) => `${h.rol === "user" ? "Usuario" : "Connie"}: ${h.texto}`,
-      ),
-      `Usuario: ${mensaje}`,
+      { role: "user", parts: [{ text: systemInstruction }] },
+      ...historialAcotado.map((h) => ({
+        role: h.rol === "user" ? "user" : "model",
+        parts: [{ text: h.texto }],
+      })),
+      { role: "user", parts: [{ text: mensaje }] },
     ];
 
-    const response = await ai.models.generateContent({
+    // Primer paso: Gemini analiza si requiere ejecutar la herramienta
+    let response = await ai.models.generateContent({
       model: "gemini-2.5-flash",
-      contents: contents.join("\n\n"),
+      contents: contents,
+      config: { tools: [toolObtenerVentas] },
     });
+
+    // Si Gemini decide llamar a la función
+    const functionCalls = response.functionCalls;
+    if (functionCalls && functionCalls.length > 0) {
+      const call = functionCalls[0];
+      if (call.name === "obtenerReporteVentas") {
+        const resultadoBD = await ejecutarConsultaVentasParams(call.args);
+
+        // Se le envían los datos de vuelta a Gemini para que elabore la respuesta final
+        contents.push(response.candidates[0].content);
+        contents.push({
+          role: "user",
+          parts: [
+            {
+              functionResponse: {
+                name: "obtenerReporteVentas",
+                response: { resultado: resultadoBD },
+              },
+            },
+          ],
+        });
+
+        response = await ai.models.generateContent({
+          model: "gemini-2.5-flash",
+          contents: contents,
+        });
+      }
+    }
 
     res.json({ success: true, respuesta: response.text });
   } catch (error) {
     console.error("Error en chat Connie:", error);
-    res.status(500).json({ error: "Error al procesar la consulta." });
+    res.status(500).json({ error: "Error al procesar consulta." });
   }
 });
 
