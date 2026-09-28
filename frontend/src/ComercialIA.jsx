@@ -30,20 +30,24 @@ import {
   ShieldCheck,
 } from "lucide-react";
 
-// HELPER ROBUSTO PARA RESOLVER RUTAS DE IMÁGENES
+// HELPER SANITIZADOR PARA EVITAR MIXED CONTENT (HTTPS VS HTTP)
 const getImageUrl = (url) => {
   if (!url) return "";
-  if (url.startsWith("http://") || url.startsWith("https://")) return url;
 
-  let path = url.replace(/\\/g, "/");
-  if (path.startsWith("public/")) {
-    path = path.substring(6);
-  }
-  if (!path.startsWith("/")) {
-    path = "/" + path;
+  // 1. Si la URL ya viene guardada con la IP o HTTP completo, extraemos solo la ruta relativa /imagenes/...
+  let path = url;
+  if (path.includes("/imagenes/")) {
+    path = "/imagenes/" + path.split("/imagenes/")[1];
+  } else {
+    path = path.replace(/\\/g, "/");
+    if (path.startsWith("public/")) path = path.substring(6);
+    if (!path.startsWith("/")) path = "/" + path;
   }
 
-  // Redirige llamadas desde el servidor local de Vite (5173 / 5174) al backend Express (3000)
+  // Codificamos caracteres especiales o espacios si los hubiera
+  path = encodeURI(path);
+
+  // 2. Si estamos en desarrollo local con Vite (puerto 5173/5174)
   if (
     typeof window !== "undefined" &&
     (window.location.port === "5173" || window.location.port === "5174")
@@ -51,11 +55,14 @@ const getImageUrl = (url) => {
     return `http://localhost:3000${path}`;
   }
 
+  // 3. En producción (Vercel en HTTPS), devolvemos la ruta relativa /imagenes/...
+  // Esto hace que el navegador pida https://conoflex-app.vercel.app/imagenes/...
+  // evitando el bloqueo de contenido mixto.
   return path;
 };
 
 export default function ComercialIA() {
-  const [activeTab, setActiveTab] = useState("bandeja");
+  const [activeTab, setActiveTab] = useState("bandeja"); // 'bandeja' | 'catalogo' | 'prompt'
   const [mails, setMails] = useState([]);
   const [selectedMail, setSelectedMail] = useState(null);
   const [reglas, setReglas] = useState("");
@@ -64,6 +71,7 @@ export default function ComercialIA() {
   const [conectado, setConectado] = useState(true);
   const [errorMsg, setErrorMsg] = useState("");
 
+  // SISTEMA DE NOTIFICACIONES TOAST CYBER-INDUSTRIAL
   const [toast, setToast] = useState(null);
 
   const showToast = (message, type = "success") => {
@@ -73,15 +81,18 @@ export default function ComercialIA() {
     }, 3800);
   };
 
+  // Catálogo, Lista de Precios y Paginación
   const [productos, setProductos] = useState([]);
   const [busqueda, setBusqueda] = useState("");
   const [procesandoArchivo, setProcesandoArchivo] = useState(false);
   const [productoDetalle, setProductoDetalle] = useState(null);
 
-  const [vistaModo, setVistaModo] = useState("tabla");
+  // Vista y Paginación del Catálogo
+  const [vistaModo, setVistaModo] = useState("tabla"); // 'tabla' | 'tarjetas'
   const [paginaCatalogo, setPaginaCatalogo] = useState(1);
   const itemsPorPagina = 10;
 
+  // ESTADO PARA MODAL LIGHTBOX DE FOTOS AMPLIADAS
   const [fotoLightbox, setFotoLightbox] = useState(null);
 
   useEffect(() => {
@@ -290,6 +301,7 @@ export default function ComercialIA() {
     }
   };
 
+  // RENDERIZADOR ESTRUCTURADO Y LIMPIO PARA PRECIOS COMPUESTOS
   const renderPrecioLimpio = (precioStr) => {
     if (!precioStr || precioStr === "-")
       return <span className="text-slate-500 font-mono">-</span>;
