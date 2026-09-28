@@ -3328,7 +3328,7 @@ app.post("/api/estado-pedidos/sincronizar", async (req, res) => {
 });
 
 // ==========================================
-// DEFINICIÓN DE LA HERRAMIENTA (TOOL) PARA GEMINI
+// TOOL MEJORADA: BÚSQUEDA FLEXIBLE
 // ==========================================
 const toolObtenerVentas = {
   functionDeclarations: [
@@ -3341,28 +3341,30 @@ const toolObtenerVentas = {
         properties: {
           fecha_inicio: {
             type: "STRING",
-            description:
-              "Fecha de inicio en formato YYYY-MM-DD (ej: '2026-09-01').",
+            description: "Fecha inicio YYYY-MM-DD (ej: '2026-09-01').",
           },
           fecha_fin: {
             type: "STRING",
-            description:
-              "Fecha de fin en formato YYYY-MM-DD (ej: '2026-09-30').",
+            description: "Fecha fin YYYY-MM-DD (ej: '2026-09-30').",
           },
           canal: {
             type: "STRING",
             description:
               "Canal de venta: 'MercadoLibre', 'Venta Directa' o 'Todos'.",
           },
+          modelo_filtro: {
+            type: "STRING",
+            description:
+              "Filtro opcional de modelo o código de producto (ej: '4000-2R' o '4000').",
+          },
           agrupar_por: {
             type: "STRING",
             description:
-              "Por qué campo agrupar: 'modelo' (para ranking de productos), 'dia', 'mes', o 'sin_agrupar'.",
+              "Campo de agrupación: 'modelo', 'dia', 'mes' o 'sin_agrupar'.",
           },
           limite: {
             type: "NUMBER",
-            description:
-              "Límite de resultados a devolver (ej: 10 para un Top 10). Por defecto 20.",
+            description: "Límite de resultados (por defecto 50).",
           },
         },
         required: ["fecha_inicio", "fecha_fin"],
@@ -3371,32 +3373,56 @@ const toolObtenerVentas = {
   ],
 };
 
-// HELPER: EJECUTA LA CONSULTA DINÁMICA PEDIDA POR LA IA
+// ==========================================
+// FUNCIÓN SQL CON MATCH FLEXIBLE DE CANAL Y MODELO
+// ==========================================
 async function ejecutarConsultaVentasParams(params) {
-  const { fecha_inicio, fecha_fin, canal, agrupar_por, limite = 20 } = params;
+  const {
+    fecha_inicio,
+    fecha_fin,
+    canal,
+    modelo_filtro,
+    agrupar_por,
+    limite = 50,
+  } = params;
 
   let whereClauses = ["fecha BETWEEN ? AND ?", "estado != 'CANCELADO'"];
   let queryParams = [fecha_inicio, fecha_fin];
 
+  // Match flexible para MercadoLibre (con espacio, sin espacio o sigla)
   if (canal === "MercadoLibre") {
-    whereClauses.push("LOWER(detalles) LIKE '%mercadolibre%'");
+    whereClauses.push(
+      "(LOWER(detalles) LIKE '%mercadolibre%' OR LOWER(detalles) LIKE '%mercado libre%' OR LOWER(detalles) LIKE '%ml%')",
+    );
   } else if (canal === "Venta Directa") {
-    whereClauses.push("LOWER(detalles) NOT LIKE '%mercadolibre%'");
+    whereClauses.push(
+      "(LOWER(detalles) NOT LIKE '%mercadolibre%' AND LOWER(detalles) NOT LIKE '%mercado libre%' AND LOWER(detalles) NOT LIKE '%ml%')",
+    );
+  }
+
+  // Filtro por modelo (parcial para capturar sufijos como 4000-2R NA)
+  if (modelo_filtro && modelo_filtro.trim() !== "") {
+    whereClauses.push("modelo LIKE ?");
+    queryParams.push(`%${modelo_filtro.trim()}%`);
   }
 
   let selectQuery = "";
 
-  if (agrupar_por === "modelo") {
+  if (
+    agrupar_por === "modelo" ||
+    (modelo_filtro && agrupar_por !== "sin_agrupar")
+  ) {
     selectQuery = `
       SELECT 
         modelo,
+        IF(LOWER(detalles) LIKE '%mercadolibre%' OR LOWER(detalles) LIKE '%mercado libre%' OR LOWER(detalles) LIKE '%ml%', 'MercadoLibre', 'Venta Directa') AS canal,
         SUM(cantidad) AS unidades_totales,
         COUNT(DISTINCT op) AS total_pedidos,
         SUM(cantidad * punisiva) AS facturacion_ars_sin_iva,
         SUM(cosusd) AS costo_total_usd
       FROM estado_pedidos
       WHERE ${whereClauses.join(" AND ")}
-      GROUP BY modelo
+      GROUP BY modelo, canal
       ORDER BY unidades_totales DESC
       LIMIT ?
     `;
@@ -3406,7 +3432,7 @@ async function ejecutarConsultaVentasParams(params) {
     selectQuery = `
       SELECT 
         DATE_FORMAT(fecha, '${format}') AS periodo,
-        IF(LOWER(detalles) LIKE '%mercadolibre%', 'MercadoLibre', 'Venta Directa') AS canal,
+        IF(LOWER(detalles) LIKE '%mercadolibre%' OR LOWER(detalles) LIKE '%mercado libre%' OR LOWER(detalles) LIKE '%ml%', 'MercadoLibre', 'Venta Directa') AS canal,
         COUNT(DISTINCT op) AS total_pedidos,
         SUM(cantidad) AS unidades_totales,
         SUM(cantidad * punisiva) AS facturacion_ars_sin_iva,
@@ -3419,7 +3445,6 @@ async function ejecutarConsultaVentasParams(params) {
     `;
     queryParams.push(limite);
   } else {
-    // Totales consolidados sin agrupar por modelo
     selectQuery = `
       SELECT 
         COUNT(DISTINCT op) AS total_pedidos,
