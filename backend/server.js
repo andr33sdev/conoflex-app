@@ -1313,6 +1313,51 @@ app.get(
   },
 );
 
+// HELPER PARA EXTRAER IMÁGENES ADJUNTAS DE UN MAIL DE GMAIL
+async function obtenerImagenesAdjuntasGmail(gmail, messageId, parts) {
+  const imagenesBase64 = [];
+
+  async function recorrerPartes(listaPartes) {
+    if (!listaPartes) return;
+    for (const part of listaPartes) {
+      // Si la parte es una imagen (PNG, JPEG, WEBP)
+      if (part.mimeType && part.mimeType.startsWith("image/")) {
+        let attachId = part.body?.attachmentId;
+        let inlineData = part.body?.data;
+
+        if (attachId) {
+          // Descargar el archivo adjunto desde la API de Gmail
+          const attachRes = await gmail.users.messages.attachments.get({
+            userId: "me",
+            messageId: messageId,
+            id: attachId,
+          });
+          inlineData = attachRes.data.data;
+        }
+
+        if (inlineData) {
+          // Convertir de URL-Safe Base64 (formato Gmail) a Standard Base64
+          const base64Standard = inlineData
+            .replace(/-/g, "+")
+            .replace(/_/g, "/");
+          imagenesBase64.push({
+            mimeType: part.mimeType,
+            data: base64Standard,
+          });
+        }
+      }
+
+      // Si tiene partes anidadas (emails multipart)
+      if (part.parts) {
+        await recorrerPartes(part.parts);
+      }
+    }
+  }
+
+  await recorrerPartes(parts);
+  return imagenesBase64;
+}
+
 app.post(
   "/api/crear-borrador-gmail",
   autenticarToken,
@@ -1321,6 +1366,66 @@ app.post(
     try {
       const { mailCliente, consultaText, asunto, threadId } = req.body;
 
+      // 1. EXTRAER IMÁGENES ADJUNTAS DEL HILO DE GMAIL (SI EXISTEN)
+      const imagenesAdjuntas = [];
+      const gmail = google.gmail({ version: "v1", auth: oauth2Client });
+
+      if (threadId) {
+        try {
+          const threadRes = await gmail.users.threads.get({ id: threadId });
+          const messages = threadRes.data.messages || [];
+          const lastMessage = messages[messages.length - 1];
+
+          const recorrerPartes = async (parts) => {
+            if (!parts) return;
+            for (const part of parts) {
+              if (part.mimeType && part.mimeType.startsWith("image/")) {
+                let attachId = part.body?.attachmentId;
+                let inlineData = part.body?.data;
+
+                if (attachId) {
+                  const attachRes = await gmail.users.messages.attachments.get({
+                    userId: "me",
+                    messageId: lastMessage.id,
+                    id: attachId,
+                  });
+                  inlineData = attachRes.data.data;
+                }
+
+                if (inlineData) {
+                  const base64Standard = inlineData
+                    .replace(/-/g, "+")
+                    .replace(/_/g, "/");
+                  imagenesAdjuntas.push({
+                    inlineData: {
+                      mimeType: part.mimeType,
+                      data: base64Standard,
+                    },
+                  });
+                }
+              }
+              if (part.parts) {
+                await recorrerPartes(part.parts);
+              }
+            }
+          };
+
+          if (lastMessage?.payload) {
+            if (lastMessage.payload.parts) {
+              await recorrerPartes(lastMessage.payload.parts);
+            } else if (lastMessage.payload.mimeType?.startsWith("image/")) {
+              await recorrerPartes([lastMessage.payload]);
+            }
+          }
+        } catch (errImg) {
+          console.error(
+            "Error obteniendo imágenes adjuntas de Gmail:",
+            errImg.message,
+          );
+        }
+      }
+
+      // 2. CONSULTAS A LA BASE DE DATOS
       const [reglaRows] = await db.query(
         "SELECT valor FROM reglas WHERE clave = 'prompt_comercial'",
       );
@@ -1330,6 +1435,7 @@ app.post(
         "SELECT codigo, nombre, medidas, precio_lista, especificacion, aplicacion, foto_tecnica, foto_catalogo FROM productos",
       );
 
+      // 3. PROMPT DE ENTRENAMIENTO COMERCIAL Y FILTRADO TÉCNICO ESTRICTO
       const prompt = `
       Sos el asesor comercial técnico senior de Conoflex Argentina.
 
@@ -1338,6 +1444,15 @@ app.post(
 
       REGLAS DE NEGOCIO Y POLITICAS:
       ${reglasEntrenamiento}
+
+      REGLAS CRÍTICAS DE COMPATIBILIDAD TÉCNICA (OBLIGATORIAS):
+      1. CADENAS Y PASACADENAS: Si la consulta o las imágenes adjuntas mencionan/muestran "cadena", "pasacadenas", "postes", "columnas" o enganches:
+         - SOLO pods sugerir:
+           * Postes viales / demarcatorios con orificio o pasacadenas.
+           * Columnas de señalización con base y cabezal pasacadenas (ej. Columna 2853-3R).
+           * Conos con orificio o mango pasacadenas (ej. Autopista 2400-2R, Vencedor 2300-2R, Obrador 2301).
+         - QUEDA ESTRICTAMENTE PROHIBIDO ofrecer Mojones (ej. Código 1301) o conos ciegos sin agarre/pasacadenas cuando pidan postes, columnas o pasacadenas.
+      2. ANÁLISIS VISUAL DE IMÁGENES: Si el cliente adjuntó fotos de referencia en el mail, analízalas visualmente. Si muestra un poste/columna amarillo/negro con base circular rellenable, el producto equivalente exacto de nuestro catálogo es la COLUMNA CON BASE (Código 2853-3R) o POSTE VIAL DEMARCATORIO.
 
       CONSULTA DEL CLIENTE (${mailCliente}):
       "${consultaText}"
@@ -1357,9 +1472,12 @@ app.post(
       Devuelve ÚNICAMENTE el código HTML crudo sin bloques Markdown, sin explicaciones.
     `;
 
+      // 4. CONSULTA A GEMINI FLASH MULTIMODAL (TEXTO + FOTOS ADJUNTAS)
+      const contentsGemini = [...imagenesAdjuntas, prompt];
+
       const response = await ai.models.generateContent({
         model: "gemini-2.5-flash",
-        contents: prompt,
+        contents: contentsGemini,
       });
 
       let htmlBody = response.text
@@ -1367,7 +1485,7 @@ app.post(
         .replace(/```/g, "")
         .trim();
 
-      // PROCESAMIENTO POST-IA: Node.js reemplaza las variables por las etiquetas de imagen reales
+      // 5. PROCESAMIENTO POST-IA: REEMPLAZO DE REGLAS DE IMAGEN POR ETIQUETAS REALES
       htmlBody = htmlBody.replace(
         /\{FOTO_TECNICA_URL=(https?:\/\/[^\}]+)\}/g,
         '<img src="$1" width="100%" style="max-height:220px; height: auto; object-fit:contain; border-radius:4px; margin: 0 5px;" alt="Técnica" />',
@@ -1381,7 +1499,7 @@ app.post(
       htmlBody = htmlBody.replace(/\{FOTO_TECNICA_URL=[^\}]*\}/g, "");
       htmlBody = htmlBody.replace(/\{FOTO_CATALOGO_URL=[^\}]*\}/g, "");
 
-      const gmail = google.gmail({ version: "v1", auth: oauth2Client });
+      // 6. CREACIÓN DEL BORRADOR EN GMAIL
       const draftPayload = crearRawEmail(
         mailCliente,
         asunto || "Presupuesto Conoflex Argentina",
