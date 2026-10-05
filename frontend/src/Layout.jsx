@@ -12,6 +12,10 @@ import {
   RefreshCw,
   Menu,
   X,
+  ClipboardList,
+  ShieldCheck,
+  LogOut,
+  UserCircle,
 } from "lucide-react";
 
 export default function Layout({
@@ -20,10 +24,13 @@ export default function Layout({
   setActiveModule,
   onReloadSheets,
   isReloading,
+  usuarioActual = { nombre: "Usuario", rol: "ADMIN", permisos: ["*"] }, // ESTADO POR DEFECTO
+  onLogout = () => {}, // FUNCIÓN DE LOGOUT
 }) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
-  const menuItems = [
+  // LISTADO COMPLETO DE MÓDULOS DEL SISTEMA
+  const ALL_MENU_ITEMS = [
     { id: "materias-primas", label: "Materias Primas", icon: Boxes },
     { id: "semielaborados", label: "Semielaborados", icon: Layers },
     { id: "reflectivas", label: "Reflectivas & Pegado", icon: Sparkles },
@@ -37,7 +44,29 @@ export default function Layout({
     { id: "planificacion", label: "Planificación OT", icon: CalendarDays },
     { id: "carga-produccion", label: "Carga Producción", icon: ClipboardCheck },
     { id: "comercial", label: "IA Comercial", icon: Bot },
+    {
+      id: "solicitudes-internas",
+      label: "Solicitudes Internas",
+      icon: ClipboardList,
+    },
+    { id: "planta-online", label: "Planta On-Line", icon: Activity },
+    {
+      id: "admin-usuarios",
+      label: "Panel Administrador",
+      icon: ShieldCheck,
+      adminOnly: true,
+    },
   ];
+
+  // FILTRADO DINÁMICO DE MÓDULOS SEGÚN EL ROL / PERMISOS DEL USUARIO
+  const rolUpper = (usuarioActual?.rol || "").toUpperCase();
+  const permisos = usuarioActual?.permisos || [];
+
+  const menuItems = ALL_MENU_ITEMS.filter((item) => {
+    if (rolUpper === "ADMIN") return true;
+    if (item.adminOnly) return false;
+    return permisos.includes(item.id) || permisos.includes("*");
+  });
 
   const handleSelectModule = (id) => {
     setActiveModule(id);
@@ -48,7 +77,7 @@ export default function Layout({
     <div className="h-screen w-full bg-[#04060c] flex items-center justify-center p-0 md:p-3 lg:p-5 overflow-hidden font-sans text-slate-100 antialiased selection:bg-emerald-500 selection:text-slate-950">
       {/* MARCO DE LA APLICACIÓN */}
       <div className="w-full max-w-[1480px] h-full md:max-h-[96vh] flex rounded-none md:rounded-2xl border-0 md:border md:border-slate-800/80 bg-[#070a12] shadow-none md:shadow-[0_0_50px_rgba(0,0,0,0.8)] overflow-hidden relative">
-        {/* SIDEBAR ESCRITORIO (Oculta en mobile, visible en pantallas md en adelante) */}
+        {/* SIDEBAR ESCRITORIO */}
         <aside className="hidden md:flex w-60 bg-[#090d16]/95 border-r border-[#1e293b] flex-col justify-between p-4 backdrop-blur-xl shrink-0 z-20 transition-all duration-300">
           <div className="space-y-5">
             {/* BRANDING */}
@@ -74,7 +103,7 @@ export default function Layout({
               <span className="px-2 text-[10px] font-mono uppercase text-slate-500 tracking-wider">
                 Módulos del Sistema
               </span>
-              <div className="pt-2 space-y-1">
+              <div className="pt-2 space-y-1 overflow-y-auto max-h-[50vh] pb-4 custom-scrollbar">
                 {menuItems.map((item) => {
                   const Icon = item.icon;
                   const isActive = activeModule === item.id;
@@ -84,9 +113,9 @@ export default function Layout({
                       onClick={() => handleSelectModule(item.id)}
                       className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-medium transition-all duration-200 cursor-pointer group ${
                         isActive
-                          ? item.highlight
-                            ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 shadow-[0_0_15px_rgba(16,185,129,0.12)] font-semibold"
-                            : "bg-amber-500/10 text-amber-400 border border-amber-500/30 shadow-[0_0_15px_rgba(245,158,11,0.12)] font-semibold"
+                          ? item.highlight || item.adminOnly
+                            ? "bg-cyan-500/10 text-cyan-400 border border-cyan-500/30 shadow-[0_0_15px_rgba(6,182,212,0.12)] font-semibold"
+                            : "bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 shadow-[0_0_15px_rgba(16,185,129,0.12)] font-semibold"
                           : "text-slate-400 hover:text-slate-200 hover:bg-[#121824] border border-transparent"
                       }`}
                     >
@@ -94,9 +123,9 @@ export default function Layout({
                         size={15}
                         className={`transition-transform duration-200 group-hover:scale-110 ${
                           isActive
-                            ? item.highlight
-                              ? "text-emerald-400"
-                              : "text-amber-400"
+                            ? item.highlight || item.adminOnly
+                              ? "text-cyan-400"
+                              : "text-emerald-400"
                             : "text-slate-500 group-hover:text-slate-300"
                         }`}
                       />
@@ -108,15 +137,38 @@ export default function Layout({
             </nav>
           </div>
 
-          {/* ESTADO CONEXIÓN */}
-          <div className="pt-3 border-t border-[#1e293b]">
-            <div className="bg-[#0e1422] p-2.5 rounded-xl border border-[#1e293b] flex items-center justify-between">
+          {/* PERFIL DE USUARIO Y LOGOUT + ESTADO CONEXIÓN */}
+          <div className="pt-3 border-t border-[#1e293b] space-y-2">
+            {/* USER CARD */}
+            <div className="bg-[#0e1422] p-2.5 rounded-xl border border-[#1e293b] flex items-center gap-2.5">
+              <UserCircle size={26} className="text-slate-400 shrink-0" />
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-bold text-white truncate">
+                  {usuarioActual.nombre || usuarioActual.email || "Usuario"}
+                </p>
+                <p className="text-[10px] font-mono text-emerald-400 uppercase tracking-widest truncate">
+                  {usuarioActual.rol}
+                </p>
+              </div>
+            </div>
+
+            {/* BOTÓN CERRAR SESIÓN */}
+            <button
+              onClick={onLogout}
+              className="w-full bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-400 text-[11px] font-mono font-bold py-1.5 rounded-xl flex items-center justify-center gap-2 transition cursor-pointer"
+            >
+              <LogOut size={13} />
+              <span>Cerrar Sesión</span>
+            </button>
+
+            {/* STATUS BADGE */}
+            <div className="bg-[#0e1422] p-2 rounded-xl border border-[#1e293b] flex items-center justify-between">
               <div className="flex items-center gap-2 text-[11px] text-slate-400 font-mono">
                 <Activity
                   size={13}
                   className="text-emerald-400 animate-pulse"
                 />
-                <span>Planta On-Line</span>
+                <span>Sistema On-Line</span>
               </div>
               <span className="text-[10px] text-slate-500 font-mono">v3.8</span>
             </div>
@@ -166,9 +218,9 @@ export default function Layout({
                           onClick={() => handleSelectModule(item.id)}
                           className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-medium transition-all ${
                             isActive
-                              ? item.highlight
-                                ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 font-semibold"
-                                : "bg-amber-500/10 text-amber-400 border border-amber-500/30 font-semibold"
+                              ? item.highlight || item.adminOnly
+                                ? "bg-cyan-500/10 text-cyan-400 border border-cyan-500/30 font-semibold"
+                                : "bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 font-semibold"
                               : "text-slate-400 hover:text-slate-200 hover:bg-[#121824]"
                           }`}
                         >
@@ -181,14 +233,35 @@ export default function Layout({
                 </nav>
               </div>
 
-              <div className="pt-3 border-t border-[#1e293b]">
-                <div className="bg-[#0e1422] p-2.5 rounded-xl border border-[#1e293b] flex items-center justify-between">
+              {/* FOOTER MOBILE CON PERFIL Y LOGOUT */}
+              <div className="pt-3 border-t border-[#1e293b] space-y-2">
+                <div className="bg-[#0e1422] p-2.5 rounded-xl border border-[#1e293b] flex items-center gap-2.5">
+                  <UserCircle size={24} className="text-slate-400 shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-bold text-white truncate">
+                      {usuarioActual.nombre || usuarioActual.email || "Usuario"}
+                    </p>
+                    <p className="text-[10px] font-mono text-emerald-400 uppercase tracking-widest truncate">
+                      {usuarioActual.rol}
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  onClick={onLogout}
+                  className="w-full bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-400 text-[11px] font-mono font-bold py-1.5 rounded-xl flex items-center justify-center gap-2 transition cursor-pointer"
+                >
+                  <LogOut size={13} />
+                  <span>Cerrar Sesión</span>
+                </button>
+
+                <div className="bg-[#0e1422] p-2 rounded-xl border border-[#1e293b] flex items-center justify-between">
                   <div className="flex items-center gap-2 text-[11px] text-slate-400 font-mono">
                     <Activity
                       size={13}
                       className="text-emerald-400 animate-pulse"
                     />
-                    <span>Planta On-Line</span>
+                    <span>Sistema On-Line</span>
                   </div>
                   <span className="text-[10px] text-slate-500 font-mono">
                     v3.8

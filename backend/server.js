@@ -879,33 +879,7 @@ function inferMachineCategory(codigo, articulo) {
 // MÓDULO 0: AUTENTICACIÓN Y GESTIÓN DE USUARIOS
 // ==========================================
 
-app.post("/api/auth/register", async (req, res) => {
-  const { nombre, email, password, rol } = req.body;
-  if (!nombre || !email || !password) {
-    return res.status(400).json({ error: "Faltan campos obligatorios." });
-  }
-
-  try {
-    const rolValido = ["ADMIN", "COMERCIAL", "PRODUCCION"].includes(rol)
-      ? rol
-      : "COMERCIAL";
-    const [result] = await db.query(
-      "INSERT INTO usuarios (nombre, email, password_hash, rol) VALUES (?, ?, ?, ?)",
-      [nombre.trim(), email.trim().toLowerCase(), password, rolValido],
-    );
-
-    res.json({
-      success: true,
-      id: result.insertId,
-      mensaje: "Usuario registrado con éxito",
-    });
-  } catch (error) {
-    res
-      .status(400)
-      .json({ error: "El email ya está registrado o datos inválidos." });
-  }
-});
-
+// LOGIN CON RETORNO DE PERMISOS DE MÓDULOS
 app.post("/api/auth/login", async (req, res) => {
   const { email, password } = req.body;
   if (!email || !password) {
@@ -922,6 +896,16 @@ app.post("/api/auth/login", async (req, res) => {
       return res.status(401).json({ error: "Credenciales inválidas" });
     }
 
+    // Obtener permisos asignados al rol en la base de datos
+    let permisos = ["*"];
+    if (user.rol !== "ADMIN") {
+      const [permRows] = await db.query(
+        "SELECT modulo_id FROM permisos_roles WHERE rol_nombre = ?",
+        [user.rol],
+      );
+      permisos = permRows.map((p) => p.modulo_id);
+    }
+
     const token = jwt.sign(
       { id: user.id, email: user.email, rol: user.rol, nombre: user.nombre },
       JWT_SECRET,
@@ -936,6 +920,7 @@ app.post("/api/auth/login", async (req, res) => {
         nombre: user.nombre,
         email: user.email,
         rol: user.rol,
+        permisos,
       },
     });
   } catch (error) {
@@ -943,46 +928,89 @@ app.post("/api/auth/login", async (req, res) => {
   }
 });
 
-app.get("/api/auth/me", autenticarToken, (req, res) => {
-  res.json({ usuario: req.usuario || { rol: "ADMIN", nombre: "Usuario" } });
+// LISTAR TODOS LOS USUARIOS (PANEL ADMIN)
+app.get("/api/usuarios", async (req, res) => {
+  try {
+    const [users] = await db.query(
+      "SELECT id, nombre, email, rol, created_at FROM usuarios ORDER BY id ASC",
+    );
+    res.json(users);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
 });
 
-app.get(
-  "/api/usuarios",
-  autenticarToken,
-  autorizarRoles("ADMIN"),
-  async (req, res) => {
-    try {
-      const [users] = await db.query(
-        "SELECT id, nombre, email, rol, created_at FROM usuarios",
-      );
-      res.json(users);
-    } catch (error) {
-      res.status(500).json({ error: error.message });
-    }
-  },
-);
+// CREAR NUEVO USUARIO (PANEL ADMIN)
+app.post("/api/usuarios", async (req, res) => {
+  const { nombre, email, password, rol } = req.body;
+  if (!nombre || !email || !password) {
+    return res.status(400).json({ error: "Faltan campos obligatorios." });
+  }
 
-app.put(
-  "/api/usuarios/:id/rol",
-  autenticarToken,
-  autorizarRoles("ADMIN"),
-  async (req, res) => {
-    const { rol } = req.body;
-    if (!["ADMIN", "COMERCIAL", "PRODUCCION"].includes(rol)) {
-      return res.status(400).json({ error: "Rol no válido" });
-    }
-    try {
-      await db.query("UPDATE usuarios SET rol = ? WHERE id = ?", [
-        rol,
-        req.params.id,
-      ]);
-      res.json({ success: true });
-    } catch (error) {
-      res.status(500).json({ error: error.message });
-    }
-  },
-);
+  try {
+    const rolValido = ["ADMIN", "COMERCIAL", "PRODUCCION", "DEPOSITO"].includes(
+      rol,
+    )
+      ? rol
+      : "PRODUCCION";
+
+    const [result] = await db.query(
+      "INSERT INTO usuarios (nombre, email, password_hash, rol) VALUES (?, ?, ?, ?)",
+      [nombre.trim(), email.trim().toLowerCase(), password, rolValido],
+    );
+
+    res.json({
+      id: result.insertId,
+      nombre: nombre.trim(),
+      email: email.trim().toLowerCase(),
+      rol: rolValido,
+    });
+  } catch (error) {
+    console.error("Error al crear usuario:", error);
+    res
+      .status(400)
+      .json({
+        error: "El email ya está registrado o los datos son inválidos.",
+      });
+  }
+});
+
+// CAMBIAR ROL DE UN USUARIO
+app.put("/api/usuarios/:id/rol", async (req, res) => {
+  const { rol } = req.body;
+  if (!["ADMIN", "COMERCIAL", "PRODUCCION", "DEPOSITO"].includes(rol)) {
+    return res.status(400).json({ error: "Rol no válido" });
+  }
+  try {
+    await db.query("UPDATE usuarios SET rol = ? WHERE id = ?", [
+      rol,
+      req.params.id,
+    ]);
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// FORZAR SOBREESCRITURA DE CONTRASEÑA POR EL ADMIN (SIN PASSWORD ANTERIOR)
+app.put("/api/usuarios/:id/password", async (req, res) => {
+  const { password } = req.body;
+  if (!password) {
+    return res.status(400).json({ error: "Contraseña requerida" });
+  }
+  try {
+    await db.query("UPDATE usuarios SET password_hash = ? WHERE id = ?", [
+      password,
+      req.params.id,
+    ]);
+    res.json({
+      success: true,
+      mensaje: "Contraseña actualizada correctamente",
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
 
 // ==========================================
 // MÓDULO EMAIL BOT, GEMINI Y CATÁLOGO COMERCIAL
@@ -1366,7 +1394,7 @@ app.post(
     try {
       const { mailCliente, consultaText, asunto, threadId } = req.body;
 
-      // 1. EXTRAER IMÁGENES ADJUNTAS DEL HILO DE GMAIL (SI EXISTEN)
+      // 1. LECTURA DE IMÁGENES ADJUNTAS DESDE GMAIL (MULTIMODAL)
       const imagenesAdjuntas = [];
       const gmail = google.gmail({ version: "v1", auth: oauth2Client });
 
@@ -1418,14 +1446,11 @@ app.post(
             }
           }
         } catch (errImg) {
-          console.error(
-            "Error obteniendo imágenes adjuntas de Gmail:",
-            errImg.message,
-          );
+          console.error("Error leyendo imágenes adjuntas:", errImg.message);
         }
       }
 
-      // 2. CONSULTAS A LA BASE DE DATOS
+      // 2. CONSULTAS A BASE DE DATOS (REGLAS CONFIGURADAS EN LA PESTAÑA Y CATÁLOGO)
       const [reglaRows] = await db.query(
         "SELECT valor FROM reglas WHERE clave = 'prompt_comercial'",
       );
@@ -1435,44 +1460,36 @@ app.post(
         "SELECT codigo, nombre, medidas, precio_lista, especificacion, aplicacion, foto_tecnica, foto_catalogo FROM productos",
       );
 
-      // 3. PROMPT DE ENTRENAMIENTO COMERCIAL Y FILTRADO TÉCNICO ESTRICTO
+      // 3. PROMPT DE MAQUETACIÓN (RINDE CONTROL A LAS REGLAS DE LA PESTAÑA)
       const prompt = `
-      Sos el asesor comercial técnico senior de Conoflex Argentina.
+      REGLAS Y POLITICAS COMERCIALES DEL USUARIO (PRIORIDAD MÁXIMA):
+      ${reglasEntrenamiento}
 
       CATÁLOGO DE PRODUCTOS DISPONIBLES:
       ${JSON.stringify(productosDB, null, 2)}
 
-      REGLAS DE NEGOCIO Y POLITICAS:
-      ${reglasEntrenamiento}
-
-      REGLAS CRÍTICAS DE COMPATIBILIDAD TÉCNICA (OBLIGATORIAS):
-      1. CADENAS Y PASACADENAS: Si la consulta o las imágenes adjuntas mencionan/muestran "cadena", "pasacadenas", "postes", "columnas" o enganches:
-         - SOLO pods sugerir:
-           * Postes viales / demarcatorios con orificio o pasacadenas.
-           * Columnas de señalización con base y cabezal pasacadenas (ej. Columna 2853-3R).
-           * Conos con orificio o mango pasacadenas (ej. Autopista 2400-2R, Vencedor 2300-2R, Obrador 2301).
-         - QUEDA ESTRICTAMENTE PROHIBIDO ofrecer Mojones (ej. Código 1301) o conos ciegos sin agarre/pasacadenas cuando pidan postes, columnas o pasacadenas.
-      2. ANÁLISIS VISUAL DE IMÁGENES: Si el cliente adjuntó fotos de referencia en el mail, analízalas visualmente. Si muestra un poste/columna amarillo/negro con base circular rellenable, el producto equivalente exacto de nuestro catálogo es la COLUMNA CON BASE (Código 2853-3R) o POSTE VIAL DEMARCATORIO.
-
-      CONSULTA DEL CLIENTE (${mailCliente}):
+      CONSULTA RECIBIDA DEL CLIENTE (${mailCliente}):
       "${consultaText}"
 
-      INSTRUCCIONES DE MAQUETACIÓN HTML Y SELECCIÓN DE PRODUCTOS:
-      1. Analiza la consulta y busca los productos cuyo campo 'aplicacion' o 'especificacion' mejor responden al requerimiento (garages, autopistas, obras, etc.).
-      2. Redacta un saludo comercial cordial.
-      3. Para cada producto cotizado, crea una TARJETA HORIZONTAL en HTML (tabla con borde #e2e8f0, esquinas redondeadas y padding de 10px).
-      4. MUY IMPORTANTE PARA LAS IMÁGENES:
-         - Si el producto tiene valor en 'foto_tecnica', escribí exactamente este texto crudo centrado arriba: {FOTO_TECNICA_URL=poner_aqui_la_url_de_la_BD}
-         - Si tiene 'foto_catalogo', escribí exactamente: {FOTO_CATALOGO_URL=poner_aqui_la_url_de_la_BD}
-         - NUNCA uses la etiqueta <img>. Yo me encargo de procesarlo. Si el valor es null, no escribas nada.
-      5. Muestra Nombre en negrita, Código, Medidas y Especificaciones/Aplicación.
-      6. Muestra las 3 cajas de precio naranjas (Lista, Precio c/Descuento y Total).
-      7. Agrega el cuadro final con notas comerciales sobre IVA, bonificaciones y despacho gratis.
+      ESTILO DE REDACCIÓN Y TONO COMERCIAL:
+      - Saludo inicial natural y fluido: Usá un encabezado profesional (ej: "Estimados, gracias por comunicarse con Conoflex Argentina. A continuación presentamos la propuesta comercial solicitada:").
+      - NUNCA incluyas corchetes ni variables de reemplazo como "[Tu Nombre]", "Atn. sr/a.", ni textos robóticos. Escribí directamente en representación del equipo de ventas de Conoflex.
+      - Redacción ordenada, directa y atenta.
 
-      Devuelve ÚNICAMENTE el código HTML crudo sin bloques Markdown, sin explicaciones.
+      INSTRUCCIONES DE MAQUETACIÓN EN TARJETAS HTML:
+      1. Para cada producto cotizado, genera una TARJETA HORIZONTAL en HTML (tabla con borde #e2e8f0, esquinas redondeadas y padding de 10px).
+      2. REGLA DE IMÁGENES:
+         - Si el producto tiene valor en 'foto_tecnica', escribí exactamente: {FOTO_TECNICA_URL=poner_aqui_la_url_de_la_BD}
+         - Si tiene 'foto_catalogo', escribí exactamente: {FOTO_CATALOGO_URL=poner_aqui_la_url_de_la_BD}
+         - NUNCA uses la etiqueta <img> ni omitas las llaves si la URL existe. Si el valor es null, no pongas la variable.
+      3. Muestra Nombre en negrita, Código, Medidas y Especificaciones/Aplicación.
+      4. Muestra las 3 cajas de precio de forma ordenada (Lista, Precio c/Descuento y Total).
+      5. Agrega el cuadro final resumido con notas sobre IVA, descuentos y despacho.
+
+      Devuelve ÚNICAMENTE el código HTML crudo sin bloques Markdown ni comentarios.
     `;
 
-      // 4. CONSULTA A GEMINI FLASH MULTIMODAL (TEXTO + FOTOS ADJUNTAS)
+      // 4. GENERACIÓN CON GEMINI FLASH MULTIMODAL
       const contentsGemini = [...imagenesAdjuntas, prompt];
 
       const response = await ai.models.generateContent({
@@ -1485,7 +1502,7 @@ app.post(
         .replace(/```/g, "")
         .trim();
 
-      // 5. PROCESAMIENTO POST-IA: REEMPLAZO DE REGLAS DE IMAGEN POR ETIQUETAS REALES
+      // 5. PROCESAMIENTO POST-IA: REEMPLAZO DE REGLAS POR ETIQUETAS DE IMAGEN REALES
       htmlBody = htmlBody.replace(
         /\{FOTO_TECNICA_URL=(https?:\/\/[^\}]+)\}/g,
         '<img src="$1" width="100%" style="max-height:220px; height: auto; object-fit:contain; border-radius:4px; margin: 0 5px;" alt="Técnica" />',
@@ -1495,7 +1512,7 @@ app.post(
         '<img src="$1" width="100%" style="max-height:220px; height: auto; object-fit:contain; border-radius:4px; margin: 0 5px;" alt="Catálogo" />',
       );
 
-      // Limpieza de seguridad por si la IA dejó variables sueltas por productos sin foto
+      // Limpieza de seguridad
       htmlBody = htmlBody.replace(/\{FOTO_TECNICA_URL=[^\}]*\}/g, "");
       htmlBody = htmlBody.replace(/\{FOTO_CATALOGO_URL=[^\}]*\}/g, "");
 

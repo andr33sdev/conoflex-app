@@ -1,0 +1,118 @@
+import { useState } from "react";
+import { Lock, User, ShieldCheck, ChevronRight } from "lucide-react";
+
+export default function Login({ onLogin }) {
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    setError("");
+
+    // SIMULACIÓN DE FETCH AL BACKEND NODE/FEROZO
+    // Acá iría: const res = await fetch('/api/login', { ... })
+    setTimeout(() => {
+      if (username === "admin" && password === "admin123") {
+        onLogin({
+          id: 1,
+          nombre: "Administrador",
+          username: "admin",
+          rol: "admin",
+          permisos: ["*"], // Admin ve todo
+        });
+      } else if (username === "juan.depo" && password === "1234") {
+        onLogin({
+          id: 2,
+          nombre: "Juan Depósito",
+          username: "juan.depo",
+          rol: "deposito",
+          permisos: ["solicitudes-internas", "semielaborados"], // Lo que dice la BD
+        });
+      } else {
+        setError("Usuario o contraseña incorrectos.");
+      }
+      setLoading(false);
+    }, 1000);
+  };
+
+  return (
+    <div className="min-h-screen bg-[#04060c] flex items-center justify-center p-4 font-sans selection:bg-emerald-500 selection:text-slate-950">
+      <div className="w-full max-w-md bg-[#090d16] border border-slate-800 rounded-3xl shadow-[0_0_50px_rgba(0,0,0,0.8)] overflow-hidden relative">
+        {/* Glow de fondo */}
+        <div className="absolute top-0 inset-x-0 h-1 bg-gradient-to-r from-cyan-500 via-emerald-500 to-emerald-400" />
+
+        <div className="p-8">
+          <div className="flex flex-col items-center mb-8">
+            <div className="w-14 h-14 bg-emerald-500/10 border border-emerald-500/30 rounded-2xl flex items-center justify-center mb-4 shadow-[0_0_20px_rgba(16,185,129,0.15)]">
+              <ShieldCheck size={28} className="text-emerald-400" />
+            </div>
+            <h1 className="text-xl font-bold font-mono text-white tracking-widest uppercase">
+              CONOFLEX
+            </h1>
+            <p className="text-emerald-400 font-mono text-[10px] tracking-[0.2em] mt-1">
+              SISTEMA INTEGRAL
+            </p>
+          </div>
+
+          <form onSubmit={handleSubmit} className="space-y-5">
+            <div className="space-y-1.5">
+              <label className="text-[10px] font-mono text-slate-400 uppercase ml-1">
+                Usuario
+              </label>
+              <div className="relative">
+                <User
+                  size={16}
+                  className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500"
+                />
+                <input
+                  type="text"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  className="w-full bg-[#070a12] border border-slate-700 text-white pl-10 pr-4 py-3 rounded-xl outline-none focus:border-emerald-500/50 transition-colors font-mono text-sm"
+                  placeholder="Ingrese su usuario"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-[10px] font-mono text-slate-400 uppercase ml-1">
+                Contraseña
+              </label>
+              <div className="relative">
+                <Lock
+                  size={16}
+                  className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500"
+                />
+                <input
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="w-full bg-[#070a12] border border-slate-700 text-white pl-10 pr-4 py-3 rounded-xl outline-none focus:border-emerald-500/50 transition-colors font-mono text-sm"
+                  placeholder="••••••••"
+                />
+              </div>
+            </div>
+
+            {error && (
+              <div className="bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs text-center py-2 rounded-lg font-mono">
+                {error}
+              </div>
+            )}
+
+            <button
+              type="submit"
+              disabled={loading || !username || !password}
+              className="w-full bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold font-mono px-4 py-3.5 rounded-xl transition-all flex items-center justify-center gap-2 mt-4 disabled:opacity-50 shadow-[0_0_20px_rgba(16,185,129,0.2)]"
+            >
+              {loading ? "VERIFICANDO..." : "INGRESAR AL SISTEMA"}
+              {!loading && <ChevronRight size={18} />}
+            </button>
+          </form>
+        </div>
+      </div>
+    </div>
+  );
+}
