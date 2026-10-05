@@ -14,33 +14,12 @@ import {
   AlertCircle,
 } from "lucide-react";
 
-// ==============================================================================
-// CONFIGURACIÓN DE URL DEL BACKEND (FEROZO / LOCALHOST)
-// ==============================================================================
 const API_BASE_URL = import.meta.env?.VITE_API_URL || "";
 
 const getApiUrl = (path) => {
   const cleanPath = path.startsWith("/") ? path : "/" + path;
-  if (
-    typeof window !== "undefined" &&
-    (window.location.port === "5173" || window.location.port === "5174")
-  ) {
-    return `http://localhost:3000${cleanPath}`;
-  }
   return `${API_BASE_URL}${cleanPath}`;
 };
-
-// ==============================================================================
-// ESTADOS INICIALES (Sólo el Admin Base + Estructura de Permisos)
-// ==============================================================================
-const INITIAL_USUARIOS = [
-  {
-    id: 1,
-    nombre: "Administrador Conoflex",
-    email: "admin@conoflex.com.ar",
-    rol: "ADMIN",
-  },
-];
 
 const MOCK_MODULOS = [
   { id: "materias-primas", nombre: "Materias Primas" },
@@ -56,29 +35,23 @@ const MOCK_MODULOS = [
 
 const MOCK_ROLES = ["ADMIN", "PRODUCCION", "DEPOSITO"];
 
-const PERMISOS_INICIALES = {
-  ADMIN: ["*"], // Acceso Total
-  PRODUCCION: [
-    "planta-online",
-    "planificacion",
-    "carga-produccion",
-    "materias-primas",
-  ],
-  DEPOSITO: ["solicitudes-internas", "semielaborados", "materias-primas"],
-};
-
 export default function AdminUsuarios() {
-  const [tab, setTab] = useState("USUARIOS"); // 'USUARIOS' | 'PERMISOS'
-  const [usuarios, setUsuarios] = useState(INITIAL_USUARIOS);
-  const [permisosRoles, setPermisosRoles] = useState(PERMISOS_INICIALES);
+  const [tab, setTab] = useState("USUARIOS");
+  const [usuarios, setUsuarios] = useState([]);
+
+  // Se carga vacío y luego se llena con el backend
+  const [permisosRoles, setPermisosRoles] = useState({
+    ADMIN: ["*"],
+    PRODUCCION: [],
+    DEPOSITO: [],
+  });
   const [rolSeleccionado, setRolSeleccionado] = useState("PRODUCCION");
 
-  // ESTADOS PARA MODALES
   const [modalCrearOpen, setModalCrearOpen] = useState(false);
-  const [modalPassOpen, setModalPassOpen] = useState(null); // Recibe el objeto del usuario a editar
+  const [modalPassOpen, setModalPassOpen] = useState(null);
   const [loadingForm, setLoadingForm] = useState(false);
+  const [guardandoPermisos, setGuardandoPermisos] = useState(false);
 
-  // FORMULARIOS
   const [formUsuario, setFormUsuario] = useState({
     nombre: "",
     email: "",
@@ -87,122 +60,118 @@ export default function AdminUsuarios() {
   });
   const [nuevaPassword, setNuevaPassword] = useState("");
 
-  // FETCH INICIAL DE USUARIOS DESDE BD
-  useEffect(() => {
-    const fetchUsuarios = async () => {
-      try {
-        const res = await fetch(getApiUrl("/api/usuarios"));
-        if (res.ok) {
-          const data = await res.json();
-          // Asegurarse de no duplicar al admin si ya viene en la BD
-          if (data && data.length > 0) {
-            setUsuarios(data);
-          }
-        }
-      } catch (error) {
-        console.warn(
-          "Usando usuarios locales. El backend no respondió:",
-          error,
-        );
-      }
+  const getAuthHeaders = () => {
+    const token = localStorage.getItem("token");
+    return {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
     };
+  };
+
+  const fetchUsuarios = async () => {
+    try {
+      const res = await fetch(getApiUrl("/api/usuarios"), {
+        headers: getAuthHeaders(),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data)) setUsuarios(data);
+      }
+    } catch (error) {
+      console.error("Error al consultar usuarios:", error);
+    }
+  };
+
+  // NUEVO: FETCH DE PERMISOS
+  const fetchPermisos = async () => {
+    try {
+      const res = await fetch(getApiUrl("/api/permisos"), {
+        headers: getAuthHeaders(),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setPermisosRoles(data);
+      }
+    } catch (error) {
+      console.error("Error al consultar permisos:", error);
+    }
+  };
+
+  useEffect(() => {
     fetchUsuarios();
+    fetchPermisos();
   }, []);
 
-  // ==========================================
-  // HANDLERS DE ACCIONES
-  // ==========================================
-
-  // 1. Cambiar Rol Rápido
   const cambiarRolUsuario = async (userId, nuevoRol) => {
     setUsuarios(
       usuarios.map((u) => (u.id === userId ? { ...u, rol: nuevoRol } : u)),
     );
-
     try {
       await fetch(getApiUrl(`/api/usuarios/${userId}/rol`), {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
+        headers: getAuthHeaders(),
         body: JSON.stringify({ rol: nuevoRol }),
       });
     } catch (err) {
-      console.error("Error al guardar rol en BD", err);
+      console.error("Error al modificar rol:", err);
     }
   };
 
-  // 2. Crear Nuevo Usuario
   const handleCrearUsuario = async (e) => {
     e.preventDefault();
     setLoadingForm(true);
-
     try {
-      // Intento de guardado real en la BD
       const res = await fetch(getApiUrl("/api/usuarios"), {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: getAuthHeaders(),
         body: JSON.stringify(formUsuario),
       });
 
-      let newUser;
       if (res.ok) {
-        newUser = await res.json();
+        await fetchUsuarios();
+        setModalCrearOpen(false);
+        setFormUsuario({
+          nombre: "",
+          email: "",
+          password: "",
+          rol: "PRODUCCION",
+        });
       } else {
-        // Fallback visual si falla el backend o no está lista la ruta
-        newUser = {
-          id: Math.floor(Math.random() * 10000),
-          nombre: formUsuario.nombre,
-          email: formUsuario.email,
-          rol: formUsuario.rol,
-        };
+        const errData = await res.json();
+        alert(errData.error || "No se pudo crear el usuario.");
       }
-
-      setUsuarios([...usuarios, newUser]);
-      setModalCrearOpen(false);
-      setFormUsuario({
-        nombre: "",
-        email: "",
-        password: "",
-        rol: "PRODUCCION",
-      });
     } catch (error) {
-      console.error("Error creando usuario", error);
-      // Fallback visual
-      setUsuarios([
-        ...usuarios,
-        { id: Math.floor(Math.random() * 10000), ...formUsuario },
-      ]);
-      setModalCrearOpen(false);
+      console.error("Error al crear usuario:", error);
     } finally {
       setLoadingForm(false);
     }
   };
 
-  // 3. Forzar Cambio de Contraseña (Como Admin, sin saber la anterior)
   const handleEditarPassword = async (e) => {
     e.preventDefault();
     if (!nuevaPassword || !modalPassOpen) return;
     setLoadingForm(true);
-
     try {
-      await fetch(getApiUrl(`/api/usuarios/${modalPassOpen.id}/password`), {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ password: nuevaPassword }),
-      });
-      // Visualmente no cambia nada en la tabla, pero se cerraría con éxito
-      setModalPassOpen(null);
-      setNuevaPassword("");
+      const res = await fetch(
+        getApiUrl(`/api/usuarios/${modalPassOpen.id}/password`),
+        {
+          method: "PUT",
+          headers: getAuthHeaders(),
+          body: JSON.stringify({ password: nuevaPassword }),
+        },
+      );
+      if (res.ok) {
+        alert("Contraseña actualizada con éxito.");
+        setModalPassOpen(null);
+        setNuevaPassword("");
+      }
     } catch (error) {
-      console.error("Error cambiando password", error);
-      // Fallback visual
-      setModalPassOpen(null);
-      setNuevaPassword("");
+      console.error("Error al cambiar contraseña:", error);
     } finally {
       setLoadingForm(false);
     }
   };
 
-  // 4. Activar/Desactivar permisos por rol
   const togglePermiso = (moduloId) => {
     setPermisosRoles((prev) => {
       const actuales = prev[rolSeleccionado] || [];
@@ -214,9 +183,31 @@ export default function AdminUsuarios() {
     });
   };
 
+  // NUEVA FUNCIÓN: ENVIAR PERMISOS AL BACKEND
+  const handleGuardarPermisos = async () => {
+    setGuardandoPermisos(true);
+    try {
+      const modulosAsignados = permisosRoles[rolSeleccionado] || [];
+      const res = await fetch(getApiUrl(`/api/permisos/${rolSeleccionado}`), {
+        method: "PUT",
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ modulos: modulosAsignados }),
+      });
+
+      if (res.ok) {
+        alert(`Permisos guardados con éxito para el rol: ${rolSeleccionado}`);
+      } else {
+        alert("Error al guardar permisos.");
+      }
+    } catch (error) {
+      console.error("Error de red al guardar permisos:", error);
+    } finally {
+      setGuardandoPermisos(false);
+    }
+  };
+
   return (
     <div className="flex-1 flex flex-col h-full min-h-0 bg-[#070a12] border border-slate-800/80 rounded-2xl font-sans text-slate-200 shadow-2xl overflow-hidden relative">
-      {/* CABECERA SUPERIOR */}
       <div className="bg-[#0f172a]/90 border-b border-slate-800/80 p-4 flex flex-wrap items-center justify-between gap-4 shrink-0 z-10">
         <div className="flex items-center gap-3.5">
           <div className="p-2.5 bg-cyan-500/10 border border-cyan-500/20 rounded-xl shadow-[0_0_15px_rgba(6,182,212,0.15)]">
@@ -257,9 +248,6 @@ export default function AdminUsuarios() {
       </div>
 
       <div className="flex-1 overflow-y-auto p-6">
-        {/* ======================================================== */}
-        {/* PESTAÑA: USUARIOS */}
-        {/* ======================================================== */}
         {tab === "USUARIOS" && (
           <div className="space-y-4 max-w-5xl mx-auto">
             <div className="flex justify-between items-end mb-6 border-b border-slate-800 pb-4">
@@ -290,59 +278,67 @@ export default function AdminUsuarios() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800/60 font-mono">
-                  {usuarios.map((u) => (
-                    <tr
-                      key={u.id}
-                      className="hover:bg-[#121824] transition-colors"
-                    >
-                      <td className="p-4">
-                        <span className="text-white font-bold block font-sans truncate">
-                          {u.nombre}
-                        </span>
-                        <span className="text-slate-500 text-[10px]">
-                          ID: {u.id}
-                        </span>
-                      </td>
-                      <td className="p-4 text-slate-300">{u.email}</td>
-                      <td className="p-4">
-                        <select
-                          value={u.rol}
-                          disabled={u.rol === "ADMIN"} // Protección para no quitarle el admin al superusuario accidentalmente
-                          onChange={(e) =>
-                            cambiarRolUsuario(u.id, e.target.value)
-                          }
-                          className={`w-full bg-[#070a12] border border-slate-700 font-bold rounded-lg px-3 py-1.5 outline-none cursor-pointer ${
-                            u.rol === "ADMIN"
-                              ? "text-rose-400"
-                              : "text-emerald-400"
-                          }`}
-                        >
-                          {MOCK_ROLES.map((r) => (
-                            <option key={r} value={r}>
-                              {r}
-                            </option>
-                          ))}
-                        </select>
-                      </td>
-                      <td className="p-4 text-center">
-                        <button
-                          onClick={() => setModalPassOpen(u)}
-                          className="text-slate-500 hover:text-cyan-400 transition cursor-pointer"
-                        >
-                          Editar Pass
-                        </button>
+                  {usuarios.length > 0 ? (
+                    usuarios.map((u) => (
+                      <tr
+                        key={u.id}
+                        className="hover:bg-[#121824] transition-colors"
+                      >
+                        <td className="p-4">
+                          <span className="text-white font-bold block font-sans truncate">
+                            {u.nombre}
+                          </span>
+                          <span className="text-slate-500 text-[10px]">
+                            ID: {u.id}
+                          </span>
+                        </td>
+                        <td className="p-4 text-slate-300">{u.email}</td>
+                        <td className="p-4">
+                          <select
+                            value={u.rol}
+                            disabled={u.id === 1}
+                            onChange={(e) =>
+                              cambiarRolUsuario(u.id, e.target.value)
+                            }
+                            className={`w-full bg-[#070a12] border border-slate-700 font-bold rounded-lg px-3 py-1.5 outline-none cursor-pointer ${
+                              u.rol === "ADMIN"
+                                ? "text-rose-400"
+                                : "text-emerald-400"
+                            }`}
+                          >
+                            {MOCK_ROLES.map((r) => (
+                              <option key={r} value={r}>
+                                {r}
+                              </option>
+                            ))}
+                          </select>
+                        </td>
+                        <td className="p-4 text-center">
+                          <button
+                            onClick={() => setModalPassOpen(u)}
+                            className="text-slate-500 hover:text-cyan-400 transition cursor-pointer"
+                          >
+                            Editar Pass
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td
+                        colSpan="4"
+                        className="p-6 text-center text-slate-500 font-mono"
+                      >
+                        Cargando lista de usuarios...
                       </td>
                     </tr>
-                  ))}
+                  )}
                 </tbody>
               </table>
             </div>
           </div>
         )}
 
-        {/* ======================================================== */}
-        {/* PESTAÑA: PERMISOS */}
-        {/* ======================================================== */}
         {tab === "PERMISOS" && (
           <div className="max-w-5xl mx-auto flex gap-6">
             <div className="w-64 shrink-0 space-y-3">
@@ -379,8 +375,15 @@ export default function AdminUsuarios() {
                     Habilitá los módulos que este rol podrá ver en el sidebar.
                   </p>
                 </div>
-                <button className="bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-mono font-bold text-xs px-4 py-2 rounded-lg flex items-center gap-2 transition cursor-pointer">
-                  <Save size={14} /> Guardar
+
+                {/* BOTÓN GUARDAR CONECTADO A LA API */}
+                <button
+                  onClick={handleGuardarPermisos}
+                  disabled={guardandoPermisos}
+                  className="bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-mono font-bold text-xs px-4 py-2 rounded-lg flex items-center gap-2 transition cursor-pointer disabled:opacity-50"
+                >
+                  <Save size={14} />{" "}
+                  {guardandoPermisos ? "Guardando..." : "Guardar"}
                 </button>
               </div>
 
@@ -420,9 +423,6 @@ export default function AdminUsuarios() {
         )}
       </div>
 
-      {/* ======================================================== */}
-      {/* MODAL: CREAR USUARIO */}
-      {/* ======================================================== */}
       {modalCrearOpen && (
         <div className="fixed inset-0 bg-slate-950/85 backdrop-blur-md z-[300] flex items-center justify-center p-4 font-sans animate-in fade-in duration-200">
           <div className="bg-[#0e1422] border border-slate-800 w-full max-w-md rounded-3xl shadow-2xl overflow-hidden flex flex-col relative text-xs">
@@ -460,7 +460,7 @@ export default function AdminUsuarios() {
                     onChange={(e) =>
                       setFormUsuario({ ...formUsuario, nombre: e.target.value })
                     }
-                    className="w-full bg-[#070a12] border border-slate-700 text-white pl-9 pr-3 py-2.5 rounded-xl outline-none focus:border-emerald-500 transition-colors font-sans"
+                    className="w-full bg-[#070a12] border border-slate-700 text-white pl-9 pr-3 py-2.5 rounded-xl outline-none focus:border-emerald-500 font-sans"
                     placeholder="Ej: Pedro Planta"
                   />
                 </div>
@@ -468,7 +468,7 @@ export default function AdminUsuarios() {
 
               <div className="space-y-1.5">
                 <label className="text-[10px] font-mono text-slate-400 uppercase ml-1">
-                  Email / Cuenta
+                  Email de Acceso
                 </label>
                 <div className="relative">
                   <Mail
@@ -482,7 +482,7 @@ export default function AdminUsuarios() {
                     onChange={(e) =>
                       setFormUsuario({ ...formUsuario, email: e.target.value })
                     }
-                    className="w-full bg-[#070a12] border border-slate-700 text-white pl-9 pr-3 py-2.5 rounded-xl outline-none focus:border-emerald-500 transition-colors font-mono"
+                    className="w-full bg-[#070a12] border border-slate-700 text-white pl-9 pr-3 py-2.5 rounded-xl outline-none focus:border-emerald-500 font-mono"
                     placeholder="usuario@conoflex.com.ar"
                   />
                 </div>
@@ -490,7 +490,7 @@ export default function AdminUsuarios() {
 
               <div className="space-y-1.5">
                 <label className="text-[10px] font-mono text-slate-400 uppercase ml-1">
-                  Contraseña de Acceso
+                  Contraseña Inicial
                 </label>
                 <div className="relative">
                   <Lock
@@ -507,7 +507,7 @@ export default function AdminUsuarios() {
                         password: e.target.value,
                       })
                     }
-                    className="w-full bg-[#070a12] border border-slate-700 text-white pl-9 pr-3 py-2.5 rounded-xl outline-none focus:border-emerald-500 transition-colors font-mono"
+                    className="w-full bg-[#070a12] border border-slate-700 text-white pl-9 pr-3 py-2.5 rounded-xl outline-none focus:border-emerald-500 font-mono"
                     placeholder="Clave inicial"
                   />
                 </div>
@@ -559,9 +559,6 @@ export default function AdminUsuarios() {
         </div>
       )}
 
-      {/* ======================================================== */}
-      {/* MODAL: EDITAR CONTRASEÑA (SOBREESCRITURA ADMIN) */}
-      {/* ======================================================== */}
       {modalPassOpen && (
         <div className="fixed inset-0 bg-slate-950/85 backdrop-blur-md z-[300] flex items-center justify-center p-4 font-sans animate-in fade-in duration-200">
           <div className="bg-[#0e1422] border border-slate-800 w-full max-w-md rounded-3xl shadow-2xl overflow-hidden flex flex-col relative text-xs">
@@ -598,7 +595,7 @@ export default function AdminUsuarios() {
                 />
                 <div>
                   <p className="text-slate-300">
-                    Estás por sobreescribir la contraseña del usuario:
+                    Sobreescribiendo la contraseña para:
                   </p>
                   <strong className="text-white block mt-1">
                     {modalPassOpen.nombre}
@@ -623,8 +620,8 @@ export default function AdminUsuarios() {
                     required
                     value={nuevaPassword}
                     onChange={(e) => setNuevaPassword(e.target.value)}
-                    className="w-full bg-[#070a12] border border-amber-500/30 text-amber-400 pl-9 pr-3 py-3 rounded-xl outline-none focus:border-amber-400 transition-colors font-mono font-bold text-sm"
-                    placeholder="Escribí la nueva clave acá"
+                    className="w-full bg-[#070a12] border border-amber-500/30 text-amber-400 pl-9 pr-3 py-3 rounded-xl outline-none focus:border-amber-400 font-mono font-bold text-sm"
+                    placeholder="Nueva clave"
                   />
                 </div>
               </div>

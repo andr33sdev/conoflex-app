@@ -11,8 +11,7 @@ import {
   Check,
   AlertCircle,
   Send,
-  AlertTriangle,
-  CheckCircle2,
+  Lock,
 } from "lucide-react";
 
 // ==============================================================================
@@ -25,7 +24,7 @@ const getApiUrl = (path) => {
   return `${API_BASE_URL}${cleanPath}`;
 };
 
-// DATA INICIAL DE MUESTRA (Con Historial y Timestamps)
+// DATA INICIAL DE MUESTRA
 const SOLICITUDES_INICIALES = [
   {
     id: "SOL-1001",
@@ -60,12 +59,17 @@ const SOLICITUDES_INICIALES = [
   },
 ];
 
-export default function SolicitudesInternas() {
+export default function SolicitudesInternas({ usuarioActual }) {
+  // DETERMINAR MATRIZ DE PERMISOS POR ROL
+  const rolUpper = (usuarioActual?.rol || "ADMIN").toUpperCase();
+  const isAdmin = rolUpper === "ADMIN";
+  const isDeposito = rolUpper === "DEPOSITO" || isAdmin;
+  const isProduccion = rolUpper === "PRODUCCION" || isAdmin;
+
   const [solicitudes, setSolicitudes] = useState(SOLICITUDES_INICIALES);
   const [filtroEstado, setFiltroEstado] = useState("TODOS");
   const [busqueda, setBusqueda] = useState("");
 
-  // BASE DE DATOS DE SEMIELABORADOS
   const [semielaboradosDB, setSemielaboradosDB] = useState([]);
 
   // MODALES
@@ -73,19 +77,17 @@ export default function SolicitudesInternas() {
   const [modalRetiroOpen, setModalRetiroOpen] = useState(null);
   const [modalHistorialOpen, setModalHistorialOpen] = useState(null);
 
-  // CAMPOS DE NUEVA SOLICITUD
+  // FORMULARIO SOLICITUD
   const [semiSeleccionado, setSemiSeleccionado] = useState(null);
   const [cantidadPedir, setCantidadPedir] = useState("");
   const [urgenciaPedir, setUrgenciaPedir] = useState("MEDIA");
   const [errorDuplicado, setErrorDuplicado] = useState(null);
   const [searchSemiText, setSearchSemiText] = useState("");
 
-  // ESTADO PARA RETIRO MANUAL
+  // RETIRO MANUAL
   const [cantidadRetiroManual, setCantidadRetiroManual] = useState("");
 
-  // ==========================================
   // FETCH DE SEMIELABORADOS DESDE BD
-  // ==========================================
   useEffect(() => {
     const fetchSemielaborados = async () => {
       try {
@@ -102,7 +104,6 @@ export default function SolicitudesInternas() {
     fetchSemielaborados();
   }, []);
 
-  // FILTRADO AUTOCOMPLETADO
   const semielaboradosFiltrados =
     searchSemiText.length >= 2
       ? semielaboradosDB
@@ -118,21 +119,18 @@ export default function SolicitudesInternas() {
           .slice(0, 10)
       : [];
 
-  // ==========================================
-  // LÓGICA DE RESTRICCIÓN DE 10 SOLICITUDES
-  // ==========================================
   const solicitudesActivas = solicitudes.filter(
     (s) => s.estado !== "ENTREGADO" && s.estado !== "CANCELADO",
   );
   const limiteAlcanzado = solicitudesActivas.length >= 10;
 
-  // CREAR NUEVA SOLICITUD
+  // CREAR SOLICITUD (Solo Depósito o Admin)
   const handleCrearSolicitud = (e) => {
     e.preventDefault();
+    if (!isDeposito) return;
     if (!semiSeleccionado || !cantidadPedir || Number(cantidadPedir) <= 0)
       return;
 
-    // Validación de Duplicado Activo
     const existente = solicitudesActivas.find(
       (s) => s.semielaboradoCodigo === semiSeleccionado.codigo,
     );
@@ -166,8 +164,15 @@ export default function SolicitudesInternas() {
     setErrorDuplicado(null);
   };
 
-  // CAMBIO DE ESTADOS
+  // CAMBIO DE ESTADO (Atendido / Listo por Producción | Cancelado solo por Admin)
   const handleCambiarEstado = (id, nuevoEstado) => {
+    if (nuevoEstado === "CANCELADO" && !isAdmin) return;
+    if (
+      (nuevoEstado === "ATENDIDO" || nuevoEstado === "DISPONIBLE") &&
+      !isProduccion
+    )
+      return;
+
     const now = new Date().toISOString().replace("T", " ").substring(0, 19);
     setSolicitudes((prev) =>
       prev.map((s) => {
@@ -183,8 +188,9 @@ export default function SolicitudesInternas() {
     );
   };
 
-  // REGISTRAR RETIRO PARCIAL
+  // REGISTRAR RETIRO (Solo Depósito o Admin)
   const handleRegistrarRetiro = (solicitudId, cantidad) => {
+    if (!isDeposito) return;
     const qty = Number(cantidad);
     if (!qty || qty <= 0) return;
 
@@ -202,7 +208,7 @@ export default function SolicitudesInternas() {
         const nuevoRetiroLog = {
           fecha: now,
           cantidad: qty,
-          usuario: "Depósito",
+          usuario: usuarioActual?.nombre || "Depósito",
         };
 
         return {
@@ -218,7 +224,6 @@ export default function SolicitudesInternas() {
     setCantidadRetiroManual("");
   };
 
-  // FILTRADO
   const solicitudesFiltradas = solicitudes.filter((s) => {
     const coincideBusqueda =
       s.id.toLowerCase().includes(busqueda.toLowerCase()) ||
@@ -279,7 +284,7 @@ export default function SolicitudesInternas() {
 
   return (
     <div className="flex-1 flex flex-col h-full min-h-0 bg-[#070a12] border border-slate-800/80 rounded-2xl font-sans text-slate-200 shadow-2xl overflow-hidden relative">
-      {/* CABECERA TÁCTICA */}
+      {/* CABECERA */}
       <div className="bg-[#0f172a]/90 border-b border-slate-800/80 p-4 flex flex-wrap items-center justify-between gap-4 shrink-0 backdrop-blur-xl z-10">
         <div className="flex items-center gap-3.5">
           <div className="p-2.5 bg-emerald-500/10 border border-emerald-500/20 rounded-xl shadow-[0_0_15px_rgba(16,185,129,0.15)]">
@@ -294,7 +299,7 @@ export default function SolicitudesInternas() {
                 SOLICITUDES INTERNAS DE DEPÓSITO
               </h2>
               <span className="text-[10px] bg-emerald-500/10 text-emerald-300 border border-emerald-500/20 px-2.5 py-0.5 rounded-full font-mono font-bold">
-                PANEL DE CONTROL
+                ROL: {rolUpper}
               </span>
             </div>
             <p className="text-[11px] text-slate-400 mt-0.5 flex items-center gap-2">
@@ -308,22 +313,28 @@ export default function SolicitudesInternas() {
           </div>
         </div>
 
-        {/* BOTÓN NUEVA SOLICITUD */}
-        <button
-          onClick={() => {
-            if (limiteAlcanzado) return;
-            setModalNuevoOpen(true);
-            setErrorDuplicado(null);
-          }}
-          disabled={limiteAlcanzado}
-          className={`font-bold font-mono text-xs px-4 py-2.5 rounded-xl transition flex items-center gap-2 shadow-[0_0_15px_rgba(16,185,129,0.2)] ${
-            limiteAlcanzado
-              ? "bg-slate-800 text-slate-500 cursor-not-allowed opacity-50"
-              : "bg-emerald-500 hover:bg-emerald-400 text-slate-950 cursor-pointer"
-          }`}
-        >
-          <Plus size={16} /> NUEVA SOLICITUD
-        </button>
+        {/* BOTÓN NUEVA SOLICITUD (Solo visible para Depósito o Admin) */}
+        {isDeposito ? (
+          <button
+            onClick={() => {
+              if (limiteAlcanzado) return;
+              setModalNuevoOpen(true);
+              setErrorDuplicado(null);
+            }}
+            disabled={limiteAlcanzado}
+            className={`font-bold font-mono text-xs px-4 py-2.5 rounded-xl transition flex items-center gap-2 shadow-[0_0_15px_rgba(16,185,129,0.2)] ${
+              limiteAlcanzado
+                ? "bg-slate-800 text-slate-500 cursor-not-allowed opacity-50"
+                : "bg-emerald-500 hover:bg-emerald-400 text-slate-950 cursor-pointer"
+            }`}
+          >
+            <Plus size={16} /> NUEVA SOLICITUD
+          </button>
+        ) : (
+          <span className="text-[11px] font-mono text-slate-500 bg-slate-900 border border-slate-800 px-3 py-1.5 rounded-xl flex items-center gap-1.5">
+            <Lock size={12} /> Creación reservada a Depósito
+          </span>
+        )}
       </div>
 
       {/* BARRA DE FILTROS Y BÚSQUEDA */}
@@ -365,7 +376,7 @@ export default function SolicitudesInternas() {
         </div>
       </div>
 
-      {/* TABLA PRINCIPAL DE SOLICITUDES */}
+      {/* TABLA PRINCIPAL */}
       <div className="flex-1 min-h-0 overflow-y-auto p-4">
         <div className="bg-[#0e1422] border border-slate-800/80 rounded-2xl overflow-hidden shadow-2xl">
           <table className="w-full text-left text-xs border-collapse">
@@ -377,7 +388,7 @@ export default function SolicitudesInternas() {
                 <th className="p-3 w-44">Avance / Retiro Parcial</th>
                 <th className="p-3 w-32">Estado Actual</th>
                 <th className="p-3 w-36">Último Cambio</th>
-                <th className="p-3 w-48 text-center">Acciones Tácticas</th>
+                <th className="p-3 w-48 text-center">Acciones Restringidas</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/60 bg-[#070a12]/30 font-mono">
@@ -464,9 +475,11 @@ export default function SolicitudesInternas() {
                         </span>
                       </td>
 
+                      {/* ACCIONES CONTROLADAS POR ROL */}
                       <td className="p-3 text-center">
                         <div className="flex items-center justify-center gap-1.5">
-                          {s.estado === "SOLICITADO" && (
+                          {/* SOLO PRODUCCIÓN O ADMIN: Atender */}
+                          {s.estado === "SOLICITADO" && isProduccion && (
                             <button
                               onClick={() =>
                                 handleCambiarEstado(s.id, "ATENDIDO")
@@ -477,7 +490,8 @@ export default function SolicitudesInternas() {
                             </button>
                           )}
 
-                          {s.estado === "ATENDIDO" && (
+                          {/* SOLO PRODUCCIÓN O ADMIN: Marcar Listo */}
+                          {s.estado === "ATENDIDO" && isProduccion && (
                             <button
                               onClick={() =>
                                 handleCambiarEstado(s.id, "DISPONIBLE")
@@ -488,7 +502,8 @@ export default function SolicitudesInternas() {
                             </button>
                           )}
 
-                          {s.estado === "DISPONIBLE" && (
+                          {/* SOLO DEPÓSITO O ADMIN: Extraer / Retirar */}
+                          {s.estado === "DISPONIBLE" && isDeposito && (
                             <button
                               onClick={() => {
                                 setModalRetiroOpen(s);
@@ -500,18 +515,32 @@ export default function SolicitudesInternas() {
                             </button>
                           )}
 
+                          {/* SOLO ADMIN: Cancelar Solicitud */}
                           {s.estado !== "ENTREGADO" &&
-                            s.estado !== "CANCELADO" && (
+                            s.estado !== "CANCELADO" &&
+                            isAdmin && (
                               <button
                                 onClick={() =>
                                   handleCambiarEstado(s.id, "CANCELADO")
                                 }
                                 className="text-slate-600 hover:text-rose-400 p-1.5 transition cursor-pointer"
-                                title="Cancelar solicitud"
+                                title="Cancelar solicitud (Solo Admin)"
                               >
                                 <Ban size={14} />
                               </button>
                             )}
+
+                          {/* TEXTO INFORMATIVO SI EL ROL NO TIENE ACCIONES DISPONIBLES EN ESTE ESTADO */}
+                          {((s.estado === "SOLICITADO" && !isProduccion) ||
+                            (s.estado === "ATENDIDO" && !isProduccion) ||
+                            (s.estado === "DISPONIBLE" && !isDeposito)) && (
+                            <span className="text-[10px] text-slate-600 font-mono italic">
+                              En espera de{" "}
+                              {s.estado === "DISPONIBLE"
+                                ? "Depósito"
+                                : "Producción"}
+                            </span>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -532,10 +561,8 @@ export default function SolicitudesInternas() {
         </div>
       </div>
 
-      {/* ========================================== */}
-      {/* MODAL 1: NUEVA SOLICITUD CON BASE DE DATOS */}
-      {/* ========================================== */}
-      {modalNuevoOpen && (
+      {/* MODAL CREAR SOLICITUD (ACCESIBLE SOLO PARA DEPOSITO / ADMIN) */}
+      {modalNuevoOpen && isDeposito && (
         <div className="fixed inset-0 bg-slate-950/85 backdrop-blur-md z-[300] flex items-center justify-center p-4 font-sans animate-in fade-in">
           <div className="bg-[#0e1422] border border-slate-800 w-full max-w-lg rounded-3xl shadow-2xl overflow-hidden flex flex-col relative text-xs">
             <div className="bg-[#090d16] border-b border-slate-800 p-5 flex items-center justify-between">
@@ -684,10 +711,8 @@ export default function SolicitudesInternas() {
         </div>
       )}
 
-      {/* ========================================== */}
-      {/* MODAL 2: REGISTRO DE RETIRO MANUAL */}
-      {/* ========================================== */}
-      {modalRetiroOpen && (
+      {/* MODAL RETIRO PARCIAL (ACCESIBLE SOLO PARA DEPOSITO / ADMIN) */}
+      {modalRetiroOpen && isDeposito && (
         <div className="fixed inset-0 bg-slate-950/85 backdrop-blur-md z-[300] flex items-center justify-center p-4 font-sans animate-in fade-in">
           <div className="bg-[#0e1422] border border-slate-800 w-full max-w-md rounded-3xl shadow-2xl overflow-hidden flex flex-col relative text-xs">
             <div className="bg-[#090d16] border-b border-slate-800 p-5 flex items-center justify-between">
@@ -738,7 +763,6 @@ export default function SolicitudesInternas() {
                 </div>
               </div>
 
-              {/* INPUT MANUAL PARA RETIRO PARCIAL */}
               <div className="space-y-2">
                 <label className="text-[10px] font-mono text-slate-400 uppercase block">
                   INGRESAR CANTIDAD MANUAL A RETIRAR AHORA:
@@ -753,7 +777,7 @@ export default function SolicitudesInternas() {
                     }
                     value={cantidadRetiroManual}
                     onChange={(e) => setCantidadRetiroManual(e.target.value)}
-                    placeholder={`Máximo a retirar: ${modalRetiroOpen.cantidadSolicitada - modalRetiroOpen.cantidadRetirada}`}
+                    placeholder={`Máximo: ${modalRetiroOpen.cantidadSolicitada - modalRetiroOpen.cantidadRetirada}`}
                     className="flex-1 bg-[#070a12] border border-slate-700 text-white font-mono px-3 py-2.5 rounded-xl outline-none focus:border-cyan-500"
                   />
                   <button
@@ -777,7 +801,6 @@ export default function SolicitudesInternas() {
                 </div>
               </div>
 
-              {/* BOTÓN DE CIERRE RÁPIDO */}
               <button
                 onClick={() =>
                   handleRegistrarRetiro(
@@ -788,7 +811,7 @@ export default function SolicitudesInternas() {
                 }
                 className="w-full bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 p-2.5 rounded-xl font-bold transition text-xs flex items-center justify-center gap-1.5 cursor-pointer"
               >
-                <CheckCircle2 size={14} /> Retirar Saldo Restante y Finalizar (
+                Retirar Saldo Restante (
                 {modalRetiroOpen.cantidadSolicitada -
                   modalRetiroOpen.cantidadRetirada}{" "}
                 u.)
@@ -798,7 +821,7 @@ export default function SolicitudesInternas() {
         </div>
       )}
 
-      {/* MODAL 3: AUDITORÍA (Mantenido intacto) */}
+      {/* MODAL AUDITORÍA (Visible para todos los roles) */}
       {modalHistorialOpen && (
         <div className="fixed inset-0 bg-slate-950/85 backdrop-blur-md z-[300] flex items-center justify-center p-4 font-sans animate-in fade-in">
           <div className="bg-[#0e1422] border border-slate-800 w-full max-w-md rounded-3xl shadow-2xl overflow-hidden flex flex-col relative text-xs">

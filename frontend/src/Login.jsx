@@ -1,8 +1,16 @@
 import { useState } from "react";
-import { Lock, User, ShieldCheck, ChevronRight } from "lucide-react";
+import { Lock, Mail, ShieldCheck, ChevronRight } from "lucide-react";
+
+// CONFIGURACIÓN DE URL BASE
+const API_BASE_URL = import.meta.env?.VITE_API_URL || "";
+
+const getApiUrl = (path) => {
+  const cleanPath = path.startsWith("/") ? path : "/" + path;
+  return `${API_BASE_URL}${cleanPath}`;
+};
 
 export default function Login({ onLogin }) {
-  const [username, setUsername] = useState("");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -12,36 +20,35 @@ export default function Login({ onLogin }) {
     setLoading(true);
     setError("");
 
-    // SIMULACIÓN DE FETCH AL BACKEND NODE/FEROZO
-    // Acá iría: const res = await fetch('/api/login', { ... })
-    setTimeout(() => {
-      if (username === "admin" && password === "admin123") {
-        onLogin({
-          id: 1,
-          nombre: "Administrador",
-          username: "admin",
-          rol: "admin",
-          permisos: ["*"], // Admin ve todo
-        });
-      } else if (username === "juan.depo" && password === "1234") {
-        onLogin({
-          id: 2,
-          nombre: "Juan Depósito",
-          username: "juan.depo",
-          rol: "deposito",
-          permisos: ["solicitudes-internas", "semielaborados"], // Lo que dice la BD
-        });
+    try {
+      // PETICIÓN REAL AL BACKEND NODE EN FEROZO
+      const res = await fetch(getApiUrl("/api/auth/login"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+      });
+
+      const data = await res.json();
+
+      if (res.ok && data.success) {
+        if (data.token) {
+          localStorage.setItem("token", data.token);
+        }
+        onLogin(data.usuario);
       } else {
-        setError("Usuario o contraseña incorrectos.");
+        setError(data.error || "Usuario o contraseña incorrectos.");
       }
+    } catch (err) {
+      console.error("Error al iniciar sesión:", err);
+      setError("Error de conexión con el servidor Ferozo.");
+    } finally {
       setLoading(false);
-    }, 1000);
+    }
   };
 
   return (
     <div className="min-h-screen bg-[#04060c] flex items-center justify-center p-4 font-sans selection:bg-emerald-500 selection:text-slate-950">
       <div className="w-full max-w-md bg-[#090d16] border border-slate-800 rounded-3xl shadow-[0_0_50px_rgba(0,0,0,0.8)] overflow-hidden relative">
-        {/* Glow de fondo */}
         <div className="absolute top-0 inset-x-0 h-1 bg-gradient-to-r from-cyan-500 via-emerald-500 to-emerald-400" />
 
         <div className="p-8">
@@ -60,19 +67,20 @@ export default function Login({ onLogin }) {
           <form onSubmit={handleSubmit} className="space-y-5">
             <div className="space-y-1.5">
               <label className="text-[10px] font-mono text-slate-400 uppercase ml-1">
-                Usuario
+                Email / Usuario
               </label>
               <div className="relative">
-                <User
+                <Mail
                   size={16}
                   className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500"
                 />
                 <input
-                  type="text"
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
+                  type="email"
+                  required
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
                   className="w-full bg-[#070a12] border border-slate-700 text-white pl-10 pr-4 py-3 rounded-xl outline-none focus:border-emerald-500/50 transition-colors font-mono text-sm"
-                  placeholder="Ingrese su usuario"
+                  placeholder="usuario@conoflex.com.ar"
                 />
               </div>
             </div>
@@ -88,6 +96,7 @@ export default function Login({ onLogin }) {
                 />
                 <input
                   type="password"
+                  required
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   className="w-full bg-[#070a12] border border-slate-700 text-white pl-10 pr-4 py-3 rounded-xl outline-none focus:border-emerald-500/50 transition-colors font-mono text-sm"
@@ -104,8 +113,8 @@ export default function Login({ onLogin }) {
 
             <button
               type="submit"
-              disabled={loading || !username || !password}
-              className="w-full bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold font-mono px-4 py-3.5 rounded-xl transition-all flex items-center justify-center gap-2 mt-4 disabled:opacity-50 shadow-[0_0_20px_rgba(16,185,129,0.2)]"
+              disabled={loading || !email || !password}
+              className="w-full bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold font-mono px-4 py-3.5 rounded-xl transition-all flex items-center justify-center gap-2 mt-4 disabled:opacity-50 cursor-pointer shadow-[0_0_20px_rgba(16,185,129,0.2)]"
             >
               {loading ? "VERIFICANDO..." : "INGRESAR AL SISTEMA"}
               {!loading && <ChevronRight size={18} />}
