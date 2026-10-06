@@ -879,26 +879,48 @@ function inferMachineCategory(codigo, articulo) {
 // GESTIÓN DE PERMISOS POR ROL
 // ==========================================
 
-// GET /api/permisos - Carga los permisos guardados en la BD
+// OBTENER TODOS LOS ROLES
+app.get("/api/roles", async (req, res) => {
+  try {
+    const [rows] = await db.query("SELECT nombre FROM roles ORDER BY id ASC");
+    res.json(rows.map((r) => r.nombre));
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// CREAR UN NUEVO ROL
+app.post("/api/roles", async (req, res) => {
+  const { nombre } = req.body;
+  if (!nombre || !nombre.trim()) {
+    return res.status(400).json({ error: "El nombre del rol es requerido." });
+  }
+  const rolNombre = nombre.trim().toUpperCase();
+  try {
+    await db.query("INSERT INTO roles (nombre) VALUES (?)", [rolNombre]);
+    res.json({ success: true, nombre: rolNombre });
+  } catch (error) {
+    res.status(400).json({ error: "El rol ya existe o no es válido." });
+  }
+});
+
+// OBTENER MATRIZ DE PERMISOS
 app.get("/api/permisos", async (req, res) => {
   try {
     const [rows] = await db.query(
       "SELECT rol_nombre, modulo_id FROM permisos_roles",
     );
+    const [rolesDb] = await db.query("SELECT nombre FROM roles");
 
-    // Estructura base
-    const permisos = {
-      ADMIN: ["*"],
-      PRODUCCION: [],
-      DEPOSITO: [],
-      COMERCIAL: [],
-    };
+    const permisos = { ADMIN: ["*"] };
+    rolesDb.forEach((r) => {
+      if (r.nombre !== "ADMIN") permisos[r.nombre] = [];
+    });
 
     rows.forEach((row) => {
-      if (!permisos[row.rol_nombre]) {
-        permisos[row.rol_nombre] = [];
+      if (permisos[row.rol_nombre] !== undefined) {
+        permisos[row.rol_nombre].push(row.modulo_id);
       }
-      permisos[row.rol_nombre].push(row.modulo_id);
     });
 
     res.json(permisos);
@@ -907,25 +929,22 @@ app.get("/api/permisos", async (req, res) => {
   }
 });
 
-// PUT /api/permisos/:rol - Guarda los cambios del panel de admin
+// GUARDAR PERMISOS DE UN ROL
 app.put("/api/permisos/:rol", async (req, res) => {
   const { rol } = req.params;
-  const { modulos } = req.body; // Array de IDs de módulos habilitados
+  const { modulos } = req.body;
 
   if (rol.toUpperCase() === "ADMIN") {
     return res
       .status(400)
-      .json({ error: "El rol ADMIN mantiene acceso total fijo." });
+      .json({ error: "El rol ADMIN mantiene acceso total de forma fija." });
   }
 
   const conn = await db.getConnection();
   try {
     await conn.beginTransaction();
-
-    // 1. Eliminar permisos anteriores del rol
     await conn.query("DELETE FROM permisos_roles WHERE rol_nombre = ?", [rol]);
 
-    // 2. Insertar la nueva lista de módulos habilitados
     if (Array.isArray(modulos) && modulos.length > 0) {
       const values = modulos.map((moduloId) => [rol, moduloId]);
       await conn.query(
@@ -3441,7 +3460,7 @@ app.get("/api/estado-pedidos", async (req, res) => {
 // MÓDULO ESTADO PEDIDOS & DESPACHOS
 // ==========================================
 
-// 1. Obtener lista de vendedores únicos guardados en la BD
+// OBTENER LISTA DE VENDEDORES VÁLIDOS (Excluye NULL, vacíos y '-')
 app.get("/api/estado-pedidos/vendedores", async (req, res) => {
   try {
     const [rows] = await db.query(
@@ -3453,38 +3472,36 @@ app.get("/api/estado-pedidos/vendedores", async (req, res) => {
   }
 });
 
-// 2. Obtener pedidos pendientes de despacho (filtrados estrictamente por Vendedor)
+// CONSULTAR PENDIENTES DE DESPACHO (Filtro estricto)
 app.get("/api/estado-pedidos/pendientes-despacho", async (req, res) => {
   try {
     const { vendedores } = req.query;
 
-    const whereConditions = [
-      "(preparado IS NOT NULL AND preparado != '' AND preparado != '-' AND preparado NOT LIKE '%SIN PREPARAR%')",
-      "(despacho IS NULL OR despacho = '' OR despacho = '-' OR despacho LIKE '%SIN DESPACHAR%')",
-    ];
+    if (!vendedores) {
+      return res
+        .status(400)
+        .json({ error: "Debe seleccionar al menos un vendedor." });
+    }
 
-    const params = [];
-
-    // Si se seleccionó uno o más vendedores específicos (distinto de "TODOS")
-    if (vendedores && vendedores !== "TODOS") {
-      const listaVendedores = vendedores
-        .split(",")
-        .map((v) => v.trim())
-        .filter(Boolean);
-      if (listaVendedores.length > 0) {
-        whereConditions.push("vendedor IN (?)");
-        params.push(listaVendedores);
-      }
+    const listaVendedores = vendedores
+      .split(",")
+      .map((v) => v.trim())
+      .filter(Boolean);
+    if (listaVendedores.length === 0) {
+      return res.status(400).json({ error: "Lista de vendedores inválida." });
     }
 
     const query = `
       SELECT id, fecha, op, cliente, modelo, cantidad, preparado, estado, vendedor
       FROM estado_pedidos
-      WHERE ${whereConditions.join(" AND ")}
+      WHERE (preparado IS NOT NULL AND preparado != '' AND preparado != '-' AND preparado NOT LIKE '%SIN PREPARAR%')
+        AND (despacho IS NULL OR despacho = '' OR despacho = '-' OR despacho LIKE '%SIN DESPACHAR%')
+        AND vendedor IS NOT NULL AND vendedor != '-' AND TRIM(vendedor) != ''
+        AND vendedor IN (?)
       ORDER BY preparado ASC, fecha DESC
     `;
 
-    const [rows] = await db.query(query, params);
+    const [rows] = await db.query(query, [listaVendedores]);
     res.json(rows);
   } catch (error) {
     console.error("Error al obtener pendientes de despacho:", error);

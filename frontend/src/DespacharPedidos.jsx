@@ -15,9 +15,7 @@ import {
 
 export default function DespacharPedidos() {
   const [vendedoresDisponibles, setVendedoresDisponibles] = useState([]);
-  const [vendedoresSeleccionados, setVendedoresSeleccionados] = useState([
-    "TODOS",
-  ]);
+  const [vendedoresSeleccionados, setVendedoresSeleccionados] = useState([]);
 
   const [pedidos, setPedidos] = useState([]);
   const [buscado, setBuscado] = useState(false);
@@ -26,7 +24,7 @@ export default function DespacharPedidos() {
   const [busqueda, setBusqueda] = useState("");
   const [toast, setToast] = useState(null);
 
-  // PAGINACIÓN ADAPTATIVA SIN SCROLL
+  // PAGINACIÓN DINÁMICA SEGÚN ALTO DE PANTALLA (SIN SCROLL)
   const tableContainerRef = useRef(null);
   const [itemsPerPage, setItemsPerPage] = useState(8);
   const [currentPage, setCurrentPage] = useState(1);
@@ -52,14 +50,14 @@ export default function DespacharPedidos() {
     fetchVendedores();
   }, []);
 
-  // Cálculo de cuántas filas entran según el alto disponible de la ventana
+  // Cálculo del límite exacto de filas según la altura visible
   useEffect(() => {
     const calculateItems = () => {
       if (!tableContainerRef.current) return;
       const height = tableContainerRef.current.clientHeight;
-      const headerAndFooterHeight = 90; // Cabecera de tabla + paginador
+      const headerAndFooterHeight = 90;
       const availableHeight = height - headerAndFooterHeight;
-      const rowHeight = 44; // Alto de cada fila
+      const rowHeight = 44;
       const calculated = Math.max(1, Math.floor(availableHeight / rowHeight));
       setItemsPerPage(calculated);
     };
@@ -71,28 +69,21 @@ export default function DespacharPedidos() {
   }, [buscado]);
 
   const toggleVendedor = (v) => {
-    if (v === "TODOS") {
-      setVendedoresSeleccionados(["TODOS"]);
-      return;
-    }
-
-    let copia = vendedoresSeleccionados.filter((x) => x !== "TODOS");
-    if (copia.includes(v)) {
-      copia = copia.filter((x) => x !== v);
+    if (vendedoresSeleccionados.includes(v)) {
+      setVendedoresSeleccionados(
+        vendedoresSeleccionados.filter((x) => x !== v),
+      );
     } else {
-      copia.push(v);
-    }
-
-    if (copia.length === 0 || copia.length === vendedoresDisponibles.length) {
-      setVendedoresSeleccionados(["TODOS"]);
-    } else {
-      setVendedoresSeleccionados(copia);
+      setVendedoresSeleccionados([...vendedoresSeleccionados, v]);
     }
   };
 
   const handleBuscar = async () => {
     if (vendedoresSeleccionados.length === 0) {
-      showToast("Seleccione al menos un vendedor o 'TODOS'", "error");
+      showToast(
+        "Tilde al menos un vendedor para realizar la búsqueda",
+        "error",
+      );
       return;
     }
 
@@ -101,10 +92,7 @@ export default function DespacharPedidos() {
     setCurrentPage(1);
 
     try {
-      const paramVendedores = vendedoresSeleccionados.includes("TODOS")
-        ? "TODOS"
-        : vendedoresSeleccionados.join(",");
-
+      const paramVendedores = vendedoresSeleccionados.join(",");
       const res = await fetch(
         `/api/estado-pedidos/pendientes-despacho?vendedores=${encodeURIComponent(paramVendedores)}`,
       );
@@ -172,7 +160,7 @@ export default function DespacharPedidos() {
 
   return (
     <div className="flex-1 flex flex-col h-full min-h-0 bg-[#070a12] border border-slate-800/80 rounded-2xl font-sans text-slate-200 shadow-2xl overflow-hidden relative">
-      {/* TOAST */}
+      {/* TOAST NOTIFICACIONES */}
       {toast && (
         <div
           className={`absolute top-4 right-4 z-50 px-4 py-3 rounded-xl border shadow-2xl flex items-center gap-3 backdrop-blur-xl transition-all ${
@@ -206,7 +194,7 @@ export default function DespacharPedidos() {
               )}
             </h1>
             <p className="text-xs text-slate-400">
-              Control de pedidos preparados listos para salida de fábrica
+              Pedidos preparados listos para despacho en fábrica
             </p>
           </div>
         </div>
@@ -242,40 +230,22 @@ export default function DespacharPedidos() {
         </div>
       </div>
 
-      {/* FILTRO DE VENDEDORES Y BOTÓN BUSCAR */}
+      {/* SELECCIÓN DE VENDEDORES (SIN OPCIÓN 'TODOS') */}
       <div className="p-3 border-b border-slate-800/80 bg-slate-950/60 flex flex-wrap items-center justify-between gap-3 shrink-0">
         <div className="flex items-center gap-2 flex-wrap">
           <span className="text-xs font-semibold text-slate-400 flex items-center gap-1.5 mr-1">
             <Filter size={13} className="text-amber-400" /> Vendedores:
           </span>
 
-          <button
-            onClick={() => toggleVendedor("TODOS")}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-all cursor-pointer ${
-              vendedoresSeleccionados.includes("TODOS")
-                ? "bg-amber-500/20 border-amber-500/50 text-amber-300"
-                : "bg-slate-900/60 border-slate-800 text-slate-400 hover:border-slate-700"
-            }`}
-          >
-            {vendedoresSeleccionados.includes("TODOS") ? (
-              <CheckSquare size={14} className="text-amber-400" />
-            ) : (
-              <Square size={14} />
-            )}
-            TODOS
-          </button>
-
           {vendedoresDisponibles.map((v) => {
-            const isChecked =
-              !vendedoresSeleccionados.includes("TODOS") &&
-              vendedoresSeleccionados.includes(v);
+            const isChecked = vendedoresSeleccionados.includes(v);
             return (
               <button
                 key={v}
                 onClick={() => toggleVendedor(v)}
                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-all cursor-pointer ${
                   isChecked
-                    ? "bg-amber-500/20 border-amber-500/50 text-amber-300"
+                    ? "bg-amber-500/20 border-amber-500/50 text-amber-300 font-bold"
                     : "bg-slate-900/60 border-slate-800 text-slate-400 hover:border-slate-700"
                 }`}
               >
@@ -300,7 +270,7 @@ export default function DespacharPedidos() {
         </button>
       </div>
 
-      {/* ÁREA DE TABLA Y PAGINACIÓN */}
+      {/* RESULTADOS */}
       <div
         className="flex-1 min-h-0 flex flex-col p-4 overflow-hidden"
         ref={tableContainerRef}
@@ -309,11 +279,11 @@ export default function DespacharPedidos() {
           <div className="h-full flex flex-col items-center justify-center text-slate-500 gap-3 border border-dashed border-slate-800/80 rounded-2xl p-8">
             <Filter size={36} className="text-slate-600" />
             <p className="text-sm font-medium text-slate-400">
-              Seleccione un vendedor y presione "BUSCAR"
+              Seleccione al menos un vendedor y presione "BUSCAR"
             </p>
             <p className="text-xs text-slate-600 text-center max-w-sm">
-              Tilde "TODOS" o marque vendedores específicos arriba para
-              consultar sus pedidos preparados listos para despacho.
+              Tilde las casillas de los vendedores arriba para consultar sus
+              pedidos preparados listos para despacho.
             </p>
           </div>
         ) : loading ? (
@@ -325,7 +295,8 @@ export default function DespacharPedidos() {
           <div className="h-full flex flex-col items-center justify-center text-slate-500 gap-3 border border-dashed border-slate-800/80 rounded-2xl p-8">
             <PackageCheck size={36} className="text-slate-600" />
             <p className="text-sm font-medium text-slate-400">
-              No se encontraron pedidos pendientes de despacho para la selección
+              No hay pedidos pendientes de despacho para los vendedores
+              seleccionados
             </p>
           </div>
         ) : (
@@ -367,13 +338,13 @@ export default function DespacharPedidos() {
                         </span>
                       </td>
                       <td className="py-1.5 px-4 text-center">
-                        <span className="inline-flex items-center gap-1 bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 px-2 py-0.5 rounded-lg font-mono font-medium text-[11px]">
+                        <span className="inline-flex items-center gap-1 bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 px-2.5 py-0.5 rounded-lg font-mono font-medium text-[11px]">
                           <CheckCircle2 size={12} />
                           {formatearFecha(item.preparado)}
                         </span>
                       </td>
                       <td className="py-1.5 px-4 text-center">
-                        <span className="inline-block bg-slate-900 border border-slate-800 text-slate-300 px-2 py-0.5 rounded-md font-mono text-[11px]">
+                        <span className="inline-block bg-slate-900 border border-slate-800 text-amber-300 font-bold px-2 py-0.5 rounded-md font-mono text-[11px]">
                           {item.vendedor || "-"}
                         </span>
                       </td>
