@@ -1031,30 +1031,26 @@ app.get("/api/usuarios", async (req, res) => {
   }
 });
 
-// 3. CREAR NUEVO USUARIO
+// 2. CREAR NUEVO USUARIO (Acepta cualquier rol creado)
 app.post("/api/usuarios", async (req, res) => {
   const { nombre, email, password, rol } = req.body;
   if (!nombre || !email || !password) {
     return res.status(400).json({ error: "Faltan campos obligatorios." });
   }
 
-  try {
-    const rolValido = ["ADMIN", "PRODUCCION", "DEPOSITO", "COMERCIAL"].includes(
-      rol,
-    )
-      ? rol
-      : "PRODUCCION";
+  const rolLimpio = (rol || "PRODUCCION").trim().toUpperCase();
 
+  try {
     const [result] = await db.query(
       "INSERT INTO usuarios (nombre, email, password_hash, rol) VALUES (?, ?, ?, ?)",
-      [nombre.trim(), email.trim().toLowerCase(), password, rolValido],
+      [nombre.trim(), email.trim().toLowerCase(), password, rolLimpio],
     );
 
     res.json({
       id: result.insertId,
       nombre: nombre.trim(),
       email: email.trim().toLowerCase(),
-      rol: rolValido,
+      rol: rolLimpio,
     });
   } catch (error) {
     console.error("Error al crear usuario:", error);
@@ -1064,19 +1060,36 @@ app.post("/api/usuarios", async (req, res) => {
   }
 });
 
-// 4. CAMBIAR ROL DE USUARIO
+// 1. CAMBIAR ROL DE USUARIO (Dinamico)
 app.put("/api/usuarios/:id/rol", async (req, res) => {
   const { rol } = req.body;
-  if (!["ADMIN", "PRODUCCION", "DEPOSITO", "COMERCIAL"].includes(rol)) {
-    return res.status(400).json({ error: "Rol no válido" });
+  if (!rol || typeof rol !== "string") {
+    return res.status(400).json({ error: "El rol es requerido." });
   }
+
+  const rolLimpio = rol.trim().toUpperCase();
+
   try {
+    // Validar que el rol exista en la tabla roles de MySQL
+    const [rolExistente] = await db.query(
+      "SELECT nombre FROM roles WHERE nombre = ?",
+      [rolLimpio],
+    );
+
+    if (rolExistente.length === 0) {
+      return res
+        .status(400)
+        .json({ error: `El rol '${rolLimpio}' no existe en el sistema.` });
+    }
+
     await db.query("UPDATE usuarios SET rol = ? WHERE id = ?", [
-      rol,
+      rolLimpio,
       req.params.id,
     ]);
-    res.json({ success: true });
+
+    res.json({ success: true, mensaje: "Rol actualizado correctamente" });
   } catch (error) {
+    console.error("Error al actualizar rol de usuario:", error);
     res.status(500).json({ error: error.message });
   }
 });

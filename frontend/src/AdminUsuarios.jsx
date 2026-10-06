@@ -1,9 +1,7 @@
 import { useState, useEffect } from "react";
 import {
   Users,
-  Key,
   ShieldCheck,
-  Settings2,
   Save,
   UserPlus,
   X,
@@ -12,45 +10,41 @@ import {
   User,
   CheckCircle2,
   AlertCircle,
+  Plus,
 } from "lucide-react";
 
-const API_BASE_URL = import.meta.env?.VITE_API_URL || "";
-
-const getApiUrl = (path) => {
-  const cleanPath = path.startsWith("/") ? path : "/" + path;
-  return `${API_BASE_URL}${cleanPath}`;
-};
-
-const MOCK_MODULOS = [
+const MODULOS_SISTEMA = [
   { id: "materias-primas", nombre: "Materias Primas" },
   { id: "semielaborados", nombre: "Semielaborados" },
-  { id: "reflectivas", label: "Reflectivas & Pegado" },
+  { id: "reflectivas", nombre: "Reflectivas & Pegado" },
   { id: "ingenieria", nombre: "Ingeniería & BOM" },
   { id: "metricas", nombre: "Métricas & KPI" },
   { id: "planificacion", nombre: "Planificación OT" },
   { id: "carga-produccion", nombre: "Carga Producción" },
+  { id: "despachar-pedidos", nombre: "Despachar Pedidos" },
+  { id: "comercial", nombre: "IA Comercial" },
   { id: "solicitudes-internas", nombre: "Solicitudes Internas" },
   { id: "planta-online", nombre: "Planta On-Line" },
 ];
 
-const MOCK_ROLES = ["ADMIN", "PRODUCCION", "DEPOSITO"];
-
 export default function AdminUsuarios() {
-  const [tab, setTab] = useState("USUARIOS");
+  const [tab, setTab] = useState("USUARIOS"); // "USUARIOS" | "ROLES"
   const [usuarios, setUsuarios] = useState([]);
-
-  // Se carga vacío y luego se llena con el backend
-  const [permisosRoles, setPermisosRoles] = useState({
-    ADMIN: ["*"],
-    PRODUCCION: [],
-    DEPOSITO: [],
-  });
+  const [roles, setRoles] = useState([
+    "ADMIN",
+    "PRODUCCION",
+    "DEPOSITO",
+    "COMERCIAL",
+  ]);
+  const [permisosRoles, setPermisosRoles] = useState({});
   const [rolSeleccionado, setRolSeleccionado] = useState("PRODUCCION");
 
-  const [modalCrearOpen, setModalCrearOpen] = useState(false);
+  const [modalCrearUser, setModalCrearUser] = useState(false);
+  const [modalCrearRol, setModalCrearRol] = useState(false);
   const [modalPassOpen, setModalPassOpen] = useState(null);
-  const [loadingForm, setLoadingForm] = useState(false);
-  const [guardandoPermisos, setGuardandoPermisos] = useState(false);
+
+  const [loading, setLoading] = useState(false);
+  const [toast, setToast] = useState(null);
 
   const [formUsuario, setFormUsuario] = useState({
     nombre: "",
@@ -58,473 +52,501 @@ export default function AdminUsuarios() {
     password: "",
     rol: "PRODUCCION",
   });
+  const [nuevoRolNombre, setNuevoRolNombre] = useState("");
   const [nuevaPassword, setNuevaPassword] = useState("");
 
-  const getAuthHeaders = () => {
-    const token = localStorage.getItem("token");
-    return {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`,
-    };
+  const showToast = (message, type = "success") => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 3800);
   };
 
   const fetchUsuarios = async () => {
     try {
-      const res = await fetch(getApiUrl("/api/usuarios"), {
-        headers: getAuthHeaders(),
-      });
-      if (res.ok) {
-        const data = await res.json();
-        if (Array.isArray(data)) setUsuarios(data);
-      }
-    } catch (error) {
-      console.error("Error al consultar usuarios:", error);
+      const res = await fetch("/api/usuarios");
+      if (res.ok) setUsuarios(await res.json());
+    } catch (err) {
+      console.error("Error cargando usuarios:", err);
     }
   };
 
-  // NUEVO: FETCH DE PERMISOS
-  const fetchPermisos = async () => {
+  const fetchRoles = async () => {
     try {
-      const res = await fetch(getApiUrl("/api/permisos"), {
-        headers: getAuthHeaders(),
-      });
+      const res = await fetch("/api/roles");
       if (res.ok) {
         const data = await res.json();
-        setPermisosRoles(data);
+        if (Array.isArray(data) && data.length > 0) {
+          setRoles(data);
+          if (!data.includes(rolSeleccionado)) setRolSeleccionado(data[0]);
+        }
       }
-    } catch (error) {
-      console.error("Error al consultar permisos:", error);
+    } catch (err) {
+      console.error("Error cargando roles:", err);
+    }
+  };
+
+  const fetchPermisos = async () => {
+    try {
+      const res = await fetch("/api/permisos");
+      if (res.ok) setPermisosRoles(await res.json());
+    } catch (err) {
+      console.error("Error cargando permisos:", err);
     }
   };
 
   useEffect(() => {
     fetchUsuarios();
+    fetchRoles();
     fetchPermisos();
   }, []);
 
-  const cambiarRolUsuario = async (userId, nuevoRol) => {
-    setUsuarios(
-      usuarios.map((u) => (u.id === userId ? { ...u, rol: nuevoRol } : u)),
-    );
-    try {
-      await fetch(getApiUrl(`/api/usuarios/${userId}/rol`), {
-        method: "PUT",
-        headers: getAuthHeaders(),
-        body: JSON.stringify({ rol: nuevoRol }),
-      });
-    } catch (err) {
-      console.error("Error al modificar rol:", err);
-    }
-  };
-
+  // CREAR USUARIO
   const handleCrearUsuario = async (e) => {
     e.preventDefault();
-    setLoadingForm(true);
+    setLoading(true);
     try {
-      const res = await fetch(getApiUrl("/api/usuarios"), {
+      const res = await fetch("/api/usuarios", {
         method: "POST",
-        headers: getAuthHeaders(),
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(formUsuario),
       });
-
+      const data = await res.json();
       if (res.ok) {
-        await fetchUsuarios();
-        setModalCrearOpen(false);
+        showToast("Usuario creado con éxito");
+        setModalCrearUser(false);
         setFormUsuario({
           nombre: "",
           email: "",
           password: "",
-          rol: "PRODUCCION",
+          rol: roles[0] || "PRODUCCION",
         });
+        await fetchUsuarios();
       } else {
-        const errData = await res.json();
-        alert(errData.error || "No se pudo crear el usuario.");
+        showToast(data.error || "Error al crear usuario", "error");
       }
-    } catch (error) {
-      console.error("Error al crear usuario:", error);
+    } catch (err) {
+      showToast("Error de conexión", "error");
     } finally {
-      setLoadingForm(false);
+      setLoading(false);
     }
   };
 
-  const handleEditarPassword = async (e) => {
+  // CREAR ROL
+  const handleCrearRol = async (e) => {
     e.preventDefault();
-    if (!nuevaPassword || !modalPassOpen) return;
-    setLoadingForm(true);
+    if (!nuevoRolNombre.trim()) return;
+    setLoading(true);
     try {
-      const res = await fetch(
-        getApiUrl(`/api/usuarios/${modalPassOpen.id}/password`),
-        {
-          method: "PUT",
-          headers: getAuthHeaders(),
-          body: JSON.stringify({ password: nuevaPassword }),
-        },
-      );
+      const res = await fetch("/api/roles", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ nombre: nuevoRolNombre }),
+      });
+      const data = await res.json();
       if (res.ok) {
-        alert("Contraseña actualizada con éxito.");
+        showToast(`Rol ${data.nombre} creado con éxito`);
+        setNuevoRolNombre("");
+        setModalCrearRol(false);
+        await fetchRoles();
+        await fetchPermisos();
+        setRolSeleccionado(data.nombre);
+      } else {
+        showToast(data.error || "Error al crear el rol", "error");
+      }
+    } catch (err) {
+      showToast("Error de conexión al crear el rol", "error");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // CAMBIAR ROL A UN USUARIO
+  const handleCambiarRolUsuario = async (userId, nuevoRol) => {
+    try {
+      const res = await fetch(`/api/usuarios/${userId}/rol`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ rol: nuevoRol }),
+      });
+      if (res.ok) {
+        showToast("Rol actualizado");
+        await fetchUsuarios();
+      } else {
+        showToast("No se pudo cambiar el rol", "error");
+      }
+    } catch (err) {
+      showToast("Error de conexión", "error");
+    }
+  };
+
+  // CAMBIAR CONTRASEÑA
+  const handleCambiarPassword = async (e) => {
+    e.preventDefault();
+    if (!nuevaPassword) return;
+    try {
+      const res = await fetch(`/api/usuarios/${modalPassOpen}/password`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password: nuevaPassword }),
+      });
+      if (res.ok) {
+        showToast("Contraseña modificada correctamente");
         setModalPassOpen(null);
         setNuevaPassword("");
+      } else {
+        showToast("Error al modificar contraseña", "error");
       }
-    } catch (error) {
-      console.error("Error al cambiar contraseña:", error);
-    } finally {
-      setLoadingForm(false);
+    } catch (err) {
+      showToast("Error de conexión", "error");
     }
   };
 
-  const togglePermiso = (moduloId) => {
-    setPermisosRoles((prev) => {
-      const actuales = prev[rolSeleccionado] || [];
-      const tiene = actuales.includes(moduloId);
-      const nuevos = tiene
-        ? actuales.filter((m) => m !== moduloId)
-        : [...actuales, moduloId];
-      return { ...prev, [rolSeleccionado]: nuevos };
-    });
+  // TOGGLE MÓDULO EN MATRIZ DE PERMISOS
+  const toggleModuloPermiso = (moduloId) => {
+    if (rolSeleccionado === "ADMIN") return;
+    const listaActual = permisosRoles[rolSeleccionado] || [];
+    let nuevaLista = [];
+    if (listaActual.includes(moduloId)) {
+      nuevaLista = listaActual.filter((m) => m !== moduloId);
+    } else {
+      nuevaLista = [...listaActual, moduloId];
+    }
+    setPermisosRoles({ ...permisosRoles, [rolSeleccionado]: nuevaLista });
   };
 
-  // NUEVA FUNCIÓN: ENVIAR PERMISOS AL BACKEND
+  // GUARDAR PERMISOS
   const handleGuardarPermisos = async () => {
-    setGuardandoPermisos(true);
+    if (rolSeleccionado === "ADMIN") return;
+    setLoading(true);
     try {
-      const modulosAsignados = permisosRoles[rolSeleccionado] || [];
-      const res = await fetch(getApiUrl(`/api/permisos/${rolSeleccionado}`), {
+      const res = await fetch(`/api/permisos/${rolSeleccionado}`, {
         method: "PUT",
-        headers: getAuthHeaders(),
-        body: JSON.stringify({ modulos: modulosAsignados }),
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ modulos: permisosRoles[rolSeleccionado] || [] }),
       });
-
       if (res.ok) {
-        alert(`Permisos guardados con éxito para el rol: ${rolSeleccionado}`);
+        showToast(`Permisos guardados para ${rolSeleccionado}`);
+        await fetchPermisos();
       } else {
-        alert("Error al guardar permisos.");
+        showToast("Error al guardar permisos", "error");
       }
-    } catch (error) {
-      console.error("Error de red al guardar permisos:", error);
+    } catch (err) {
+      showToast("Error de conexión", "error");
     } finally {
-      setGuardandoPermisos(false);
+      setLoading(false);
     }
   };
 
   return (
     <div className="flex-1 flex flex-col h-full min-h-0 bg-[#070a12] border border-slate-800/80 rounded-2xl font-sans text-slate-200 shadow-2xl overflow-hidden relative">
-      <div className="bg-[#0f172a]/90 border-b border-slate-800/80 p-4 flex flex-wrap items-center justify-between gap-4 shrink-0 z-10">
-        <div className="flex items-center gap-3.5">
-          <div className="p-2.5 bg-cyan-500/10 border border-cyan-500/20 rounded-xl shadow-[0_0_15px_rgba(6,182,212,0.15)]">
-            <ShieldCheck size={22} className="text-cyan-400" />
+      {/* TOAST */}
+      {toast && (
+        <div
+          className={`absolute top-4 right-4 z-50 px-4 py-3 rounded-xl border shadow-2xl flex items-center gap-3 backdrop-blur-xl ${
+            toast.type === "error"
+              ? "bg-rose-500/10 border-rose-500/30 text-rose-300"
+              : "bg-emerald-500/10 border-emerald-500/30 text-emerald-300"
+          }`}
+        >
+          {toast.type === "error" ? (
+            <AlertCircle size={18} />
+          ) : (
+            <CheckCircle2 size={18} />
+          )}
+          <span className="text-xs font-semibold">{toast.message}</span>
+        </div>
+      )}
+
+      {/* CABECERA */}
+      <div className="p-4 md:p-6 border-b border-slate-800/80 bg-slate-900/40 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shrink-0">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center text-cyan-400">
+            <ShieldCheck size={22} />
           </div>
           <div>
-            <h2 className="text-xs font-bold text-white tracking-widest uppercase font-mono">
-              PANEL DE ADMINISTRADOR
-            </h2>
-            <p className="text-[11px] text-slate-400 mt-0.5">
-              Gestión de credenciales y accesos al sistema
+            <h1 className="text-base font-bold text-slate-100 uppercase tracking-wide">
+              Panel de Administrador
+            </h1>
+            <p className="text-xs text-slate-400">
+              Gestión de usuarios, creación de roles y matriz de permisos
             </p>
           </div>
         </div>
 
-        <div className="flex items-center gap-2 font-mono text-xs">
+        <div className="flex items-center gap-2 bg-slate-950/80 p-1 border border-slate-800 rounded-xl">
           <button
             onClick={() => setTab("USUARIOS")}
-            className={`px-3.5 py-1.5 rounded-xl border transition font-bold flex items-center gap-2 ${
+            className={`px-4 py-1.5 text-xs font-semibold rounded-lg transition-all flex items-center gap-2 cursor-pointer ${
               tab === "USUARIOS"
-                ? "bg-cyan-500/20 border-cyan-500/50 text-cyan-300"
-                : "bg-[#090d16] border-slate-800 text-slate-400 hover:text-white"
+                ? "bg-cyan-500/20 border border-cyan-500/40 text-cyan-300"
+                : "text-slate-400 hover:text-slate-200"
             }`}
           >
             <Users size={14} /> Usuarios
           </button>
           <button
-            onClick={() => setTab("PERMISOS")}
-            className={`px-3.5 py-1.5 rounded-xl border transition font-bold flex items-center gap-2 ${
-              tab === "PERMISOS"
-                ? "bg-cyan-500/20 border-cyan-500/50 text-cyan-300"
-                : "bg-[#090d16] border-slate-800 text-slate-400 hover:text-white"
+            onClick={() => setTab("ROLES")}
+            className={`px-4 py-1.5 text-xs font-semibold rounded-lg transition-all flex items-center gap-2 cursor-pointer ${
+              tab === "ROLES"
+                ? "bg-cyan-500/20 border border-cyan-500/40 text-cyan-300"
+                : "text-slate-400 hover:text-slate-200"
             }`}
           >
-            <Key size={14} /> Roles y Accesos
+            <Lock size={14} /> Roles y Accesos
           </button>
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-6">
-        {tab === "USUARIOS" && (
-          <div className="space-y-4 max-w-5xl mx-auto">
-            <div className="flex justify-between items-end mb-6 border-b border-slate-800 pb-4">
-              <div>
-                <h3 className="text-sm font-bold text-white uppercase font-mono">
-                  Control de Cuentas
-                </h3>
-                <p className="text-xs text-slate-400 mt-1">
-                  Asignación de roles al personal.
-                </p>
-              </div>
+      {/* TAB USUARIOS */}
+      {tab === "USUARIOS" && (
+        <div className="flex-1 flex flex-col p-4 md:p-6 min-h-0 overflow-auto">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-xs font-bold uppercase tracking-wider text-slate-400">
+              Cuentas Registradas ({usuarios.length})
+            </h2>
+            <button
+              onClick={() => setModalCrearUser(true)}
+              className="bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold px-4 py-2 text-xs rounded-xl shadow-[0_0_15px_rgba(6,182,212,0.25)] transition-all flex items-center gap-2 cursor-pointer"
+            >
+              <UserPlus size={14} /> Crear Usuario
+            </button>
+          </div>
+
+          <div className="border border-slate-800/80 rounded-xl overflow-hidden bg-slate-950/40">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="border-b border-slate-800/80 bg-slate-900/60 text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+                  <th className="py-3 px-4">Nombre / ID</th>
+                  <th className="py-3 px-4">Email de Acceso</th>
+                  <th className="py-3 px-4">Rol Asignado</th>
+                  <th className="py-3 px-4 text-center">Acciones</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800/50 text-xs">
+                {usuarios.map((u) => (
+                  <tr
+                    key={u.id}
+                    className="hover:bg-slate-900/40 transition-colors"
+                  >
+                    <td className="py-3 px-4 font-semibold text-slate-200">
+                      {u.nombre}
+                      <span className="block text-[10px] text-slate-500 font-mono">
+                        ID: #{u.id}
+                      </span>
+                    </td>
+                    <td className="py-3 px-4 text-slate-300 font-mono">
+                      {u.email}
+                    </td>
+                    <td className="py-3 px-4">
+                      <select
+                        value={u.rol}
+                        onChange={(e) =>
+                          handleCambiarRolUsuario(u.id, e.target.value)
+                        }
+                        className="bg-slate-900 border border-slate-700/60 text-cyan-400 font-bold text-xs rounded-lg px-2.5 py-1 focus:outline-none focus:border-cyan-500 cursor-pointer"
+                      >
+                        {roles.map((r) => (
+                          <option key={r} value={r}>
+                            {r}
+                          </option>
+                        ))}
+                      </select>
+                    </td>
+                    <td className="py-3 px-4 text-center">
+                      <button
+                        onClick={() => setModalPassOpen(u.id)}
+                        className="text-slate-400 hover:text-cyan-400 bg-slate-900 border border-slate-800 px-3 py-1 rounded-lg text-xs font-medium transition-all cursor-pointer"
+                      >
+                        Cambiar Pass
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* TAB ROLES Y ACCESOS */}
+      {tab === "ROLES" && (
+        <div className="flex-1 flex flex-col md:flex-row p-4 md:p-6 gap-6 min-h-0 overflow-auto">
+          {/* COLUMNA ROLES */}
+          <div className="w-full md:w-64 flex flex-col gap-3">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold uppercase tracking-wider text-slate-400">
+                Roles del Sistema
+              </span>
               <button
-                onClick={() => setModalCrearOpen(true)}
-                className="bg-transparent border border-slate-700 hover:border-cyan-500 hover:text-cyan-400 text-slate-300 font-mono text-xs px-4 py-2 rounded-xl flex items-center gap-2 transition cursor-pointer"
+                onClick={() => setModalCrearRol(true)}
+                className="bg-cyan-500/10 border border-cyan-500/30 hover:bg-cyan-500/20 text-cyan-300 p-1.5 rounded-lg transition-all cursor-pointer"
+                title="Crear Nuevo Rol"
               >
-                <UserPlus size={14} /> Crear Usuario
+                <Plus size={14} />
               </button>
             </div>
 
-            <div className="bg-[#0e1422] border border-slate-800 rounded-xl overflow-hidden shadow-xl">
-              <table className="w-full text-left text-xs border-collapse">
-                <thead className="bg-[#090d16] text-slate-400 font-mono text-[10px] uppercase border-b border-slate-800">
-                  <tr>
-                    <th className="p-4 w-64">Nombre / ID</th>
-                    <th className="p-4">Email de Acceso</th>
-                    <th className="p-4 w-48">Rol Asignado</th>
-                    <th className="p-4 w-32 text-center">Acción</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-800/60 font-mono">
-                  {usuarios.length > 0 ? (
-                    usuarios.map((u) => (
-                      <tr
-                        key={u.id}
-                        className="hover:bg-[#121824] transition-colors"
-                      >
-                        <td className="p-4">
-                          <span className="text-white font-bold block font-sans truncate">
-                            {u.nombre}
-                          </span>
-                          <span className="text-slate-500 text-[10px]">
-                            ID: {u.id}
-                          </span>
-                        </td>
-                        <td className="p-4 text-slate-300">{u.email}</td>
-                        <td className="p-4">
-                          <select
-                            value={u.rol}
-                            disabled={u.id === 1}
-                            onChange={(e) =>
-                              cambiarRolUsuario(u.id, e.target.value)
-                            }
-                            className={`w-full bg-[#070a12] border border-slate-700 font-bold rounded-lg px-3 py-1.5 outline-none cursor-pointer ${
-                              u.rol === "ADMIN"
-                                ? "text-rose-400"
-                                : "text-emerald-400"
-                            }`}
-                          >
-                            {MOCK_ROLES.map((r) => (
-                              <option key={r} value={r}>
-                                {r}
-                              </option>
-                            ))}
-                          </select>
-                        </td>
-                        <td className="p-4 text-center">
-                          <button
-                            onClick={() => setModalPassOpen(u)}
-                            className="text-slate-500 hover:text-cyan-400 transition cursor-pointer"
-                          >
-                            Editar Pass
-                          </button>
-                        </td>
-                      </tr>
-                    ))
-                  ) : (
-                    <tr>
-                      <td
-                        colSpan="4"
-                        className="p-6 text-center text-slate-500 font-mono"
-                      >
-                        Cargando lista de usuarios...
-                      </td>
-                    </tr>
+            <div className="flex flex-col gap-2">
+              {roles.map((r) => (
+                <button
+                  key={r}
+                  onClick={() => setRolSeleccionado(r)}
+                  className={`w-full text-left px-4 py-3 rounded-xl border text-xs font-bold transition-all flex items-center justify-between cursor-pointer ${
+                    rolSeleccionado === r
+                      ? "bg-cyan-500/20 border-cyan-500/50 text-cyan-300 shadow-[0_0_15px_rgba(6,182,212,0.15)]"
+                      : "bg-slate-900/60 border-slate-800 text-slate-400 hover:border-slate-700"
+                  }`}
+                >
+                  <span>{r}</span>
+                  {r === "ADMIN" && (
+                    <span className="text-[10px] text-cyan-400 bg-cyan-950 px-2 py-0.5 rounded">
+                      FULL
+                    </span>
                   )}
-                </tbody>
-              </table>
+                </button>
+              ))}
             </div>
           </div>
-        )}
 
-        {tab === "PERMISOS" && (
-          <div className="max-w-5xl mx-auto flex gap-6">
-            <div className="w-64 shrink-0 space-y-3">
-              <h3 className="text-[10px] font-mono font-bold text-slate-500 uppercase tracking-wider pl-2">
-                Seleccionar Rol
-              </h3>
-              <div className="space-y-1.5">
-                {MOCK_ROLES.filter((r) => r !== "ADMIN").map((rol) => (
-                  <button
-                    key={rol}
-                    onClick={() => setRolSeleccionado(rol)}
-                    className={`w-full text-left px-4 py-3 rounded-xl font-mono text-xs uppercase font-bold transition-all cursor-pointer ${
-                      rolSeleccionado === rol
-                        ? "bg-cyan-500/10 text-cyan-400 border border-cyan-500/30 shadow-[0_0_15px_rgba(6,182,212,0.1)]"
-                        : "bg-[#0e1422] text-slate-400 border border-slate-800 hover:bg-[#121824]"
-                    }`}
-                  >
-                    {rol}
-                  </button>
-                ))}
-                <div className="px-4 py-3 rounded-xl border border-rose-500/20 bg-rose-500/5 text-rose-400/50 font-mono text-xs uppercase cursor-not-allowed">
-                  ADMIN (Acceso Total Fijo)
-                </div>
-              </div>
-            </div>
-
-            <div className="flex-1 bg-[#0e1422] border border-slate-800 p-6 rounded-2xl shadow-xl">
-              <div className="flex items-center justify-between mb-6 pb-4 border-b border-slate-800">
+          {/* COLUMNA ACCESOS DE MÓDULOS */}
+          <div className="flex-1 border border-slate-800/80 rounded-xl p-4 bg-slate-950/40 flex flex-col justify-between">
+            <div>
+              <div className="flex items-center justify-between border-b border-slate-800/80 pb-3 mb-4">
                 <div>
-                  <h3 className="text-sm font-bold text-white uppercase font-mono text-cyan-400 flex items-center gap-2">
-                    <Settings2 size={16} /> PERMISOS DE {rolSeleccionado}
+                  <h3 className="text-sm font-bold text-slate-100 uppercase">
+                    Permisos para:{" "}
+                    <span className="text-cyan-400">{rolSeleccionado}</span>
                   </h3>
-                  <p className="text-xs text-slate-400 mt-1">
-                    Habilitá los módulos que este rol podrá ver en el sidebar.
+                  <p className="text-xs text-slate-400">
+                    {rolSeleccionado === "ADMIN"
+                      ? "El rol ADMIN posee acceso total irrestricto."
+                      : "Marque los módulos que este rol podrá visualizar e interactuar."}
                   </p>
                 </div>
 
-                {/* BOTÓN GUARDAR CONECTADO A LA API */}
-                <button
-                  onClick={handleGuardarPermisos}
-                  disabled={guardandoPermisos}
-                  className="bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-mono font-bold text-xs px-4 py-2 rounded-lg flex items-center gap-2 transition cursor-pointer disabled:opacity-50"
-                >
-                  <Save size={14} />{" "}
-                  {guardandoPermisos ? "Guardando..." : "Guardar"}
-                </button>
+                {rolSeleccionado !== "ADMIN" && (
+                  <button
+                    onClick={handleGuardarPermisos}
+                    disabled={loading}
+                    className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold px-4 py-2 text-xs rounded-xl shadow-[0_0_15px_rgba(16,185,129,0.25)] transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                  >
+                    <Save size={14} /> Guardar Cambios
+                  </button>
+                )}
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                {MOCK_MODULOS.map((mod) => {
-                  const tieneAcceso = permisosRoles[rolSeleccionado]?.includes(
-                    mod.id,
-                  );
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                {MODULOS_SISTEMA.map((m) => {
+                  const tieneAcceso =
+                    rolSeleccionado === "ADMIN" ||
+                    (permisosRoles[rolSeleccionado] || []).includes(m.id);
+
                   return (
-                    <div
-                      key={mod.id}
-                      onClick={() => togglePermiso(mod.id)}
-                      className={`flex items-center justify-between p-3 rounded-xl border transition-all cursor-pointer select-none ${
-                        tieneAcceso
-                          ? "bg-emerald-500/5 border-emerald-500/30"
-                          : "bg-[#070a12] border-slate-800/80 hover:border-slate-700"
+                    <label
+                      key={m.id}
+                      className={`flex items-center gap-3 p-3 rounded-xl border text-xs font-medium transition-all ${
+                        rolSeleccionado === "ADMIN"
+                          ? "opacity-60 cursor-not-allowed bg-slate-900 border-slate-800"
+                          : "cursor-pointer hover:border-slate-700 " +
+                            (tieneAcceso
+                              ? "bg-cyan-500/10 border-cyan-500/30 text-cyan-200"
+                              : "bg-slate-900/40 border-slate-800 text-slate-500")
                       }`}
                     >
-                      <span
-                        className={`text-xs font-mono font-bold ${tieneAcceso ? "text-emerald-400" : "text-slate-500"}`}
-                      >
-                        {mod.nombre || mod.label}
-                      </span>
-                      <div
-                        className={`w-8 h-4 rounded-full flex items-center p-0.5 transition-colors ${tieneAcceso ? "bg-emerald-500" : "bg-slate-700"}`}
-                      >
-                        <div
-                          className={`w-3 h-3 bg-white rounded-full shadow-md transition-transform ${tieneAcceso ? "translate-x-4" : "translate-x-0"}`}
-                        />
-                      </div>
-                    </div>
+                      <input
+                        type="checkbox"
+                        checked={tieneAcceso}
+                        disabled={rolSeleccionado === "ADMIN"}
+                        onChange={() => toggleModuloPermiso(m.id)}
+                        className="rounded accent-cyan-500"
+                      />
+                      <span>{m.nombre}</span>
+                    </label>
                   );
                 })}
               </div>
             </div>
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
-      {modalCrearOpen && (
-        <div className="fixed inset-0 bg-slate-950/85 backdrop-blur-md z-[300] flex items-center justify-center p-4 font-sans animate-in fade-in duration-200">
-          <div className="bg-[#0e1422] border border-slate-800 w-full max-w-md rounded-3xl shadow-2xl overflow-hidden flex flex-col relative text-xs">
-            <div className="bg-[#090d16] border-b border-slate-800 p-5 flex items-center justify-between shrink-0">
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-emerald-500/10 border border-emerald-500/20 rounded-xl">
-                  <UserPlus size={18} className="text-emerald-400" />
-                </div>
-                <h3 className="text-sm font-bold text-white uppercase tracking-wider font-mono">
-                  ALTA DE USUARIO
-                </h3>
-              </div>
-              <button
-                onClick={() => setModalCrearOpen(false)}
-                className="p-1.5 text-slate-400 hover:text-white bg-slate-900 border border-slate-800 rounded-xl cursor-pointer transition-colors"
-              >
-                <X size={16} />
-              </button>
-            </div>
-
-            <form onSubmit={handleCrearUsuario} className="p-6 space-y-4">
-              <div className="space-y-1.5">
-                <label className="text-[10px] font-mono text-slate-400 uppercase ml-1">
+      {/* MODAL CREAR USUARIO */}
+      {modalCrearUser && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-[#090d16] border border-slate-800 rounded-2xl p-6 w-full max-w-md shadow-2xl relative">
+            <button
+              onClick={() => setModalCrearUser(false)}
+              className="absolute top-4 right-4 text-slate-500 hover:text-slate-200"
+            >
+              <X size={18} />
+            </button>
+            <h3 className="text-sm font-bold uppercase text-slate-100 mb-4 flex items-center gap-2">
+              <UserPlus size={16} className="text-cyan-400" /> Crear Nuevo
+              Usuario
+            </h3>
+            <form
+              onSubmit={handleCrearUsuario}
+              className="flex flex-col gap-3 text-xs"
+            >
+              <div>
+                <label className="text-slate-400 font-semibold mb-1 block">
                   Nombre Completo
                 </label>
-                <div className="relative">
-                  <User
-                    size={15}
-                    className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500"
-                  />
-                  <input
-                    type="text"
-                    required
-                    value={formUsuario.nombre}
-                    onChange={(e) =>
-                      setFormUsuario({ ...formUsuario, nombre: e.target.value })
-                    }
-                    className="w-full bg-[#070a12] border border-slate-700 text-white pl-9 pr-3 py-2.5 rounded-xl outline-none focus:border-emerald-500 font-sans"
-                    placeholder="Ej: Pedro Planta"
-                  />
-                </div>
+                <input
+                  type="text"
+                  required
+                  value={formUsuario.nombre}
+                  onChange={(e) =>
+                    setFormUsuario({ ...formUsuario, nombre: e.target.value })
+                  }
+                  placeholder="Ej: Juan Pérez"
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-slate-200 focus:outline-none focus:border-cyan-500"
+                />
               </div>
 
-              <div className="space-y-1.5">
-                <label className="text-[10px] font-mono text-slate-400 uppercase ml-1">
-                  Email de Acceso
+              <div>
+                <label className="text-slate-400 font-semibold mb-1 block">
+                  Email
                 </label>
-                <div className="relative">
-                  <Mail
-                    size={15}
-                    className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500"
-                  />
-                  <input
-                    type="email"
-                    required
-                    value={formUsuario.email}
-                    onChange={(e) =>
-                      setFormUsuario({ ...formUsuario, email: e.target.value })
-                    }
-                    className="w-full bg-[#070a12] border border-slate-700 text-white pl-9 pr-3 py-2.5 rounded-xl outline-none focus:border-emerald-500 font-mono"
-                    placeholder="usuario@conoflex.com.ar"
-                  />
-                </div>
+                <input
+                  type="email"
+                  required
+                  value={formUsuario.email}
+                  onChange={(e) =>
+                    setFormUsuario({ ...formUsuario, email: e.target.value })
+                  }
+                  placeholder="usuario@conoflex.com.ar"
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-slate-200 focus:outline-none focus:border-cyan-500"
+                />
               </div>
 
-              <div className="space-y-1.5">
-                <label className="text-[10px] font-mono text-slate-400 uppercase ml-1">
-                  Contraseña Inicial
+              <div>
+                <label className="text-slate-400 font-semibold mb-1 block">
+                  Contraseña
                 </label>
-                <div className="relative">
-                  <Lock
-                    size={15}
-                    className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500"
-                  />
-                  <input
-                    type="text"
-                    required
-                    value={formUsuario.password}
-                    onChange={(e) =>
-                      setFormUsuario({
-                        ...formUsuario,
-                        password: e.target.value,
-                      })
-                    }
-                    className="w-full bg-[#070a12] border border-slate-700 text-white pl-9 pr-3 py-2.5 rounded-xl outline-none focus:border-emerald-500 font-mono"
-                    placeholder="Clave inicial"
-                  />
-                </div>
+                <input
+                  type="password"
+                  required
+                  value={formUsuario.password}
+                  onChange={(e) =>
+                    setFormUsuario({ ...formUsuario, password: e.target.value })
+                  }
+                  placeholder="••••••••"
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-slate-200 focus:outline-none focus:border-cyan-500"
+                />
               </div>
 
-              <div className="space-y-1.5">
-                <label className="text-[10px] font-mono text-slate-400 uppercase ml-1">
-                  Rol Operativo
+              <div>
+                <label className="text-slate-400 font-semibold mb-1 block">
+                  Rol Asignado
                 </label>
                 <select
                   value={formUsuario.rol}
                   onChange={(e) =>
                     setFormUsuario({ ...formUsuario, rol: e.target.value })
                   }
-                  className="w-full bg-[#070a12] border border-slate-700 text-emerald-400 font-bold px-3 py-2.5 rounded-xl outline-none cursor-pointer"
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-cyan-400 font-bold focus:outline-none focus:border-cyan-500"
                 >
-                  {MOCK_ROLES.map((r) => (
+                  {roles.map((r) => (
                     <option key={r} value={r}>
                       {r}
                     </option>
@@ -532,120 +554,98 @@ export default function AdminUsuarios() {
                 </select>
               </div>
 
-              <div className="pt-4 border-t border-slate-800 flex justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={() => setModalCrearOpen(false)}
-                  className="px-4 py-2 text-slate-400 hover:text-white font-mono font-bold transition cursor-pointer"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  disabled={
-                    loadingForm ||
-                    !formUsuario.nombre ||
-                    !formUsuario.email ||
-                    !formUsuario.password
-                  }
-                  className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 disabled:opacity-50 font-bold font-mono px-5 py-2.5 rounded-xl transition flex items-center gap-2 cursor-pointer shadow-[0_0_15px_rgba(16,185,129,0.2)]"
-                >
-                  <Save size={14} />{" "}
-                  {loadingForm ? "Guardando..." : "Crear Usuario"}
-                </button>
-              </div>
+              <button
+                type="submit"
+                disabled={loading}
+                className="mt-2 bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold py-2.5 rounded-xl transition-all shadow-[0_0_15px_rgba(6,182,212,0.25)] cursor-pointer"
+              >
+                {loading ? "Creando..." : "Guardar Usuario"}
+              </button>
             </form>
           </div>
         </div>
       )}
 
-      {modalPassOpen && (
-        <div className="fixed inset-0 bg-slate-950/85 backdrop-blur-md z-[300] flex items-center justify-center p-4 font-sans animate-in fade-in duration-200">
-          <div className="bg-[#0e1422] border border-slate-800 w-full max-w-md rounded-3xl shadow-2xl overflow-hidden flex flex-col relative text-xs">
-            <div className="bg-[#090d16] border-b border-slate-800 p-5 flex items-center justify-between shrink-0">
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-amber-500/10 border border-amber-500/20 rounded-xl">
-                  <Key size={18} className="text-amber-400" />
-                </div>
-                <div>
-                  <h3 className="text-sm font-bold text-white uppercase tracking-wider font-mono">
-                    FORZAR NUEVA CLAVE
-                  </h3>
-                  <p className="text-[10px] text-slate-400 font-mono mt-0.5">
-                    Acción administrativa
-                  </p>
-                </div>
-              </div>
-              <button
-                onClick={() => {
-                  setModalPassOpen(null);
-                  setNuevaPassword("");
-                }}
-                className="p-1.5 text-slate-400 hover:text-white bg-slate-900 border border-slate-800 rounded-xl cursor-pointer transition-colors"
-              >
-                <X size={16} />
-              </button>
-            </div>
-
-            <form onSubmit={handleEditarPassword} className="p-6 space-y-5">
-              <div className="bg-[#070a12] border border-slate-800 p-4 rounded-xl flex items-start gap-3">
-                <AlertCircle
-                  size={20}
-                  className="text-amber-400 shrink-0 mt-0.5"
-                />
-                <div>
-                  <p className="text-slate-300">
-                    Sobreescribiendo la contraseña para:
-                  </p>
-                  <strong className="text-white block mt-1">
-                    {modalPassOpen.nombre}
-                  </strong>
-                  <span className="text-[10px] text-slate-500 font-mono block">
-                    [{modalPassOpen.email}]
-                  </span>
-                </div>
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="text-[10px] font-mono text-slate-400 uppercase ml-1">
-                  Ingresar Nueva Contraseña
+      {/* MODAL CREAR ROL */}
+      {modalCrearRol && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-[#090d16] border border-slate-800 rounded-2xl p-6 w-full max-w-sm shadow-2xl relative">
+            <button
+              onClick={() => setModalCrearRol(false)}
+              className="absolute top-4 right-4 text-slate-500 hover:text-slate-200"
+            >
+              <X size={18} />
+            </button>
+            <h3 className="text-sm font-bold uppercase text-slate-100 mb-4 flex items-center gap-2">
+              <Plus size={16} className="text-cyan-400" /> Crear Nuevo Rol
+            </h3>
+            <form
+              onSubmit={handleCrearRol}
+              className="flex flex-col gap-3 text-xs"
+            >
+              <div>
+                <label className="text-slate-400 font-semibold mb-1 block">
+                  Nombre del Rol
                 </label>
-                <div className="relative">
-                  <Lock
-                    size={15}
-                    className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500"
-                  />
-                  <input
-                    type="text"
-                    required
-                    value={nuevaPassword}
-                    onChange={(e) => setNuevaPassword(e.target.value)}
-                    className="w-full bg-[#070a12] border border-amber-500/30 text-amber-400 pl-9 pr-3 py-3 rounded-xl outline-none focus:border-amber-400 font-mono font-bold text-sm"
-                    placeholder="Nueva clave"
-                  />
-                </div>
+                <input
+                  type="text"
+                  required
+                  value={nuevoRolNombre}
+                  onChange={(e) => setNuevoRolNombre(e.target.value)}
+                  placeholder="Ej: SUPERVISOR, LOGISTICA..."
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-slate-200 focus:outline-none focus:border-cyan-500 uppercase font-mono"
+                />
               </div>
 
-              <div className="pt-2 border-t border-slate-800 flex justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setModalPassOpen(null);
-                    setNuevaPassword("");
-                  }}
-                  className="px-4 py-2 text-slate-400 hover:text-white font-mono font-bold transition cursor-pointer"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  disabled={loadingForm || !nuevaPassword}
-                  className="bg-amber-500 hover:bg-amber-400 text-slate-950 disabled:opacity-50 font-bold font-mono px-5 py-2.5 rounded-xl transition flex items-center gap-2 cursor-pointer shadow-[0_0_15px_rgba(245,158,11,0.2)]"
-                >
-                  <CheckCircle2 size={15} />{" "}
-                  {loadingForm ? "Actualizando..." : "Sobreescribir Clave"}
-                </button>
+              <button
+                type="submit"
+                disabled={loading}
+                className="mt-2 bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold py-2.5 rounded-xl transition-all shadow-[0_0_15px_rgba(6,182,212,0.25)] cursor-pointer"
+              >
+                {loading ? "Guardando..." : "Crear Rol"}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL CAMBIAR PASS */}
+      {modalPassOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-[#090d16] border border-slate-800 rounded-2xl p-6 w-full max-w-sm shadow-2xl relative">
+            <button
+              onClick={() => setModalPassOpen(null)}
+              className="absolute top-4 right-4 text-slate-500 hover:text-slate-200"
+            >
+              <X size={18} />
+            </button>
+            <h3 className="text-sm font-bold uppercase text-slate-100 mb-4 flex items-center gap-2">
+              <Lock size={16} className="text-cyan-400" /> Modificar Contraseña
+            </h3>
+            <form
+              onSubmit={handleCambiarPassword}
+              className="flex flex-col gap-3 text-xs"
+            >
+              <div>
+                <label className="text-slate-400 font-semibold mb-1 block">
+                  Nueva Contraseña
+                </label>
+                <input
+                  type="password"
+                  required
+                  value={nuevaPassword}
+                  onChange={(e) => setNuevaPassword(e.target.value)}
+                  placeholder="••••••••"
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-slate-200 focus:outline-none focus:border-cyan-500"
+                />
               </div>
+
+              <button
+                type="submit"
+                className="mt-2 bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold py-2.5 rounded-xl transition-all shadow-[0_0_15px_rgba(6,182,212,0.25)] cursor-pointer"
+              >
+                Guardar Nueva Contraseña
+              </button>
             </form>
           </div>
         </div>
