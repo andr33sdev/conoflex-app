@@ -3478,6 +3478,20 @@ const parseRetirosHistorial = (hist) => {
   return Array.isArray(hist) ? hist : [];
 };
 
+// Helper para formatear fechas de MySQL a formato YYYY-MM-DD HH:mm:ss sin usar UTC
+const formatLocal = (dateInput) => {
+  if (!dateInput) return null;
+  const d = new Date(dateInput);
+  if (isNaN(d.getTime())) return null;
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  const hours = String(d.getHours()).padStart(2, "0");
+  const minutes = String(d.getMinutes()).padStart(2, "0");
+  const seconds = String(d.getSeconds()).padStart(2, "0");
+  return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+};
+
 // 1. OBTENER TODAS LAS SOLICITUDES
 app.get("/api/solicitudes-internas", async (req, res) => {
   try {
@@ -3493,30 +3507,10 @@ app.get("/api/solicitudes-internas", async (req, res) => {
       cantidadRetirada: r.cantidad_retirada,
       urgencia: r.urgencia,
       estado: r.estado,
-      solicitadoAt: r.solicitado_at
-        ? new Date(r.solicitado_at)
-            .toISOString()
-            .replace("T", " ")
-            .substring(0, 19)
-        : null,
-      atendidoAt: r.atendido_at
-        ? new Date(r.atendido_at)
-            .toISOString()
-            .replace("T", " ")
-            .substring(0, 19)
-        : null,
-      disponibleAt: r.disponible_at
-        ? new Date(r.disponible_at)
-            .toISOString()
-            .replace("T", " ")
-            .substring(0, 19)
-        : null,
-      entregadoAt: r.entregado_at
-        ? new Date(r.entregado_at)
-            .toISOString()
-            .replace("T", " ")
-            .substring(0, 19)
-        : null,
+      solicitadoAt: formatLocal(r.solicitado_at),
+      atendidoAt: formatLocal(r.atendido_at),
+      disponibleAt: formatLocal(r.disponible_at),
+      entregadoAt: formatLocal(r.entregado_at),
       retirosHistorial: parseRetirosHistorial(r.retiros_historial),
     }));
 

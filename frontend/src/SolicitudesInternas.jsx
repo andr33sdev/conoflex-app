@@ -25,6 +25,18 @@ const getApiUrl = (path) => {
   return `${API_BASE_URL}${cleanPath}`;
 };
 
+// HELPER: OBTENER HORA LOCAL EXACTA (EJ: "2026-10-06 14:45:00")
+const getNowLocal = () => {
+  const d = new Date();
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  const hours = String(d.getHours()).padStart(2, "0");
+  const minutes = String(d.getMinutes()).padStart(2, "0");
+  const seconds = String(d.getSeconds()).padStart(2, "0");
+  return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+};
+
 export default function SolicitudesInternas({ usuarioActual }) {
   // MATRIZ DE PERMISOS POR ROL
   const rolUpper = (usuarioActual?.rol || "ADMIN").toUpperCase();
@@ -141,7 +153,6 @@ export default function SolicitudesInternas({ usuarioActual }) {
       return;
     }
 
-    const now = new Date().toISOString().replace("T", " ").substring(0, 19);
     const nueva = {
       id: `SOL-${Math.floor(1000 + Math.random() * 9000)}`,
       semielaboradoCodigo: semiSeleccionado.codigo || "S/C",
@@ -149,7 +160,7 @@ export default function SolicitudesInternas({ usuarioActual }) {
       cantidadSolicitada: Number(cantidadPedir),
       urgencia: urgenciaPedir,
       estado: "SOLICITADO",
-      solicitadoAt: now,
+      solicitadoAt: getNowLocal(), // <-- Usa hora local de Argentina
     };
 
     try {
@@ -181,7 +192,7 @@ export default function SolicitudesInternas({ usuarioActual }) {
     )
       return;
 
-    const now = new Date().toISOString().replace("T", " ").substring(0, 19);
+    const now = getNowLocal(); // <-- Usa hora local
     const payload = { estado: nuevoEstado };
     if (nuevoEstado === "ATENDIDO") payload.atendidoAt = now;
     if (nuevoEstado === "DISPONIBLE") payload.disponibleAt = now;
@@ -213,7 +224,7 @@ export default function SolicitudesInternas({ usuarioActual }) {
     const solicitudActual = solicitudes.find((s) => s.id === solicitudId);
     if (!solicitudActual) return;
 
-    const now = new Date().toISOString().replace("T", " ").substring(0, 19);
+    const now = getNowLocal(); // <-- Usa hora local
     const nuevaCantidadRetirada = Math.min(
       solicitudActual.cantidadRetirada + qty,
       solicitudActual.cantidadSolicitada,
@@ -400,9 +411,9 @@ export default function SolicitudesInternas({ usuarioActual }) {
         )}
       </div>
 
-      {/* FILTROS & BÚSQUEDA ADAPTADOS PARA MOBILE (Scroll suave horizontal) */}
-      <div className="p-3 bg-[#090d16] border-b border-slate-800/80 flex flex-col gap-2.5 shrink-0">
-        <div className="relative w-full">
+      {/* FILTROS & BÚSQUEDA (CON FLEX-WRAP PARA ELIMINAR EL SCROLL HORIZONTAL) */}
+      <div className="p-3 bg-[#090d16] border-b border-slate-800/80 flex flex-col lg:flex-row lg:items-center justify-between gap-3 shrink-0">
+        <div className="relative w-full lg:max-w-xs shrink-0">
           <Search
             size={14}
             className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500"
@@ -416,17 +427,13 @@ export default function SolicitudesInternas({ usuarioActual }) {
           />
         </div>
 
-        {/* CINTA DE PESTAÑAS ELEGANTE EN MOBILE (Sin desbordes ni cortes) */}
-        <div
-          className="flex items-center gap-1.5 overflow-x-auto w-full py-0.5 px-0.5"
-          style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
-        >
+        <div className="flex flex-wrap items-center gap-1.5 w-full lg:w-auto lg:justify-end">
           {["TODOS", "SOLICITADO", "ATENDIDO", "DISPONIBLE", "AUDITORIA"].map(
             (est) => (
               <button
                 key={est}
                 onClick={() => setFiltroEstado(est)}
-                className={`px-3 py-1.5 rounded-xl border transition cursor-pointer font-bold whitespace-nowrap text-[11px] font-mono shrink-0 ${
+                className={`flex-1 sm:flex-none min-w-[30%] sm:min-w-0 px-2 py-1.5 rounded-xl border transition cursor-pointer font-bold text-[11px] font-mono text-center shrink-0 ${
                   filtroEstado === est
                     ? "bg-emerald-500/20 border-emerald-500/50 text-emerald-300 shadow-[0_0_12px_rgba(16,185,129,0.15)]"
                     : "bg-[#070a12] border-slate-800 text-slate-400 hover:text-white"
