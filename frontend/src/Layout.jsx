@@ -16,6 +16,7 @@ import {
   ShieldCheck,
   LogOut,
   UserCircle,
+  Truck,
 } from "lucide-react";
 
 export default function Layout({
@@ -44,6 +45,7 @@ export default function Layout({
     { id: "planificacion", label: "Planificación OT", icon: CalendarDays },
     { id: "carga-produccion", label: "Carga Producción", icon: ClipboardCheck },
     { id: "comercial", label: "IA Comercial", icon: Bot },
+    { id: "despachar-pedidos", label: "Despachar Pedidos", icon: Truck },
     {
       id: "solicitudes-internas",
       label: "Solicitudes Internas",

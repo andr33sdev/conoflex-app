@@ -3437,6 +3437,24 @@ app.get("/api/estado-pedidos", async (req, res) => {
   }
 });
 
+// OBTENER PEDIDOS PREPARADOS PENDIENTES DE DESPACHO
+app.get("/api/estado-pedidos/pendientes-despacho", async (req, res) => {
+  try {
+    const query = `
+      SELECT id, fecha, op, cliente, modelo, cantidad, preparado, estado, vendedor
+      FROM estado_pedidos
+      WHERE (preparado IS NOT NULL AND preparado != '' AND preparado != '-' AND preparado NOT LIKE '%SIN PREPARAR%')
+        AND (despacho IS NULL OR despacho = '' OR despacho = '-' OR despacho LIKE '%SIN DESPACHAR%')
+      ORDER BY preparado ASC, fecha DESC
+    `;
+    const [rows] = await db.query(query);
+    res.json(rows);
+  } catch (error) {
+    console.error("Error al obtener pedidos pendientes de despacho:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // 2. Sincronizar tabla completa desde el Google Sheets de Ventas
 app.post("/api/estado-pedidos/sincronizar", async (req, res) => {
   try {

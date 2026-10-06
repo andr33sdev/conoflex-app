@@ -12,6 +12,7 @@ import CargaProduccion from "./CargaProduccion";
 import ComercialIA from "./ComercialIA";
 import ProduccionPlanta from "./ProduccionPlanta";
 import SolicitudesInternas from "./SolicitudesInternas";
+import DespacharPedidos from "./DespacharPedidos";
 
 function App() {
   // PERSISTENCIA DE SESIÓN: Carga la sesión previa desde localStorage al refrescar
@@ -180,6 +181,7 @@ function App() {
       {hasAccess("planificacion") && activeModule === "planificacion" && (
         <PlanificacionProduccion />
       )}
+      {activeModule === "despachar-pedidos" && <DespacharPedidos />}
 
       {hasAccess("carga-produccion") && activeModule === "carga-produccion" && (
         <CargaProduccion />

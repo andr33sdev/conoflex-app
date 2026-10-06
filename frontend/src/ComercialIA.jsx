@@ -34,7 +34,7 @@ import {
 const getImageUrl = (url) => {
   if (!url) return "";
 
-  // 1. Si la URL ya viene guardada con la IP o HTTP completo, extraemos solo la ruta relativa /imagenes/...
+  // 1. Extraemos o construimos la ruta relativa /imagenes/...
   let path = url;
   if (path.includes("/imagenes/")) {
     path = "/imagenes/" + path.split("/imagenes/")[1];
@@ -44,21 +44,10 @@ const getImageUrl = (url) => {
     if (!path.startsWith("/")) path = "/" + path;
   }
 
-  // Codificamos caracteres especiales o espacios si los hubiera
-  path = encodeURI(path);
-
-  // 2. Si estamos en desarrollo local con Vite (puerto 5173/5174)
-  if (
-    typeof window !== "undefined" &&
-    (window.location.port === "5173" || window.location.port === "5174")
-  ) {
-    return `http://localhost:3000${path}`;
-  }
-
-  // 3. En producción (Vercel en HTTPS), devolvemos la ruta relativa /imagenes/...
-  // Esto hace que el navegador pida https://conoflex-app.vercel.app/imagenes/...
-  // evitando el bloqueo de contenido mixto.
-  return path;
+  // 2. Devolvemos la ruta relativa codificada.
+  // Tanto el proxy de Vite en local como el rewrite de Vercel en producción
+  // se encargan de redirigir /imagenes/... a tu servidor Ferozo automáticamente.
+  return encodeURI(path);
 };
 
 export default function ComercialIA() {
