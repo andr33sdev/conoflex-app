@@ -945,6 +945,202 @@ app.put("/api/permisos/:rol", async (req, res) => {
 });
 
 // ==========================================
+// MÓDULO DE AUTENTICACIÓN Y USUARIOS
+// ==========================================
+
+// 1. INICIO DE SESIÓN
+app.post("/api/auth/login", async (req, res) => {
+  const { email, password } = req.body;
+  if (!email || !password) {
+    return res.status(400).json({ error: "Email y contraseña requeridos." });
+  }
+
+  try {
+    const [rows] = await db.query("SELECT * FROM usuarios WHERE email = ?", [
+      email.trim().toLowerCase(),
+    ]);
+    const user = rows[0];
+
+    if (!user || user.password_hash !== password) {
+      return res
+        .status(401)
+        .json({ error: "Usuario o contraseña incorrectos." });
+    }
+
+    let permisos = ["*"];
+    if (user.rol !== "ADMIN") {
+      const [permRows] = await db.query(
+        "SELECT modulo_id FROM permisos_roles WHERE rol_nombre = ?",
+        [user.rol],
+      );
+      permisos = permRows.map((p) => p.modulo_id);
+    }
+
+    const token = jwt.sign(
+      { id: user.id, email: user.email, rol: user.rol, nombre: user.nombre },
+      JWT_SECRET,
+      { expiresIn: "12h" },
+    );
+
+    res.json({
+      success: true,
+      token,
+      usuario: {
+        id: user.id,
+        nombre: user.nombre,
+        email: user.email,
+        rol: user.rol,
+        permisos,
+      },
+    });
+  } catch (error) {
+    console.error("Error en login:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// 2. OBTENER LISTA DE USUARIOS
+app.get("/api/usuarios", async (req, res) => {
+  try {
+    const [users] = await db.query(
+      "SELECT id, nombre, email, rol, created_at FROM usuarios ORDER BY id ASC",
+    );
+    res.json(users);
+  } catch (error) {
+    console.error("Error al obtener usuarios:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// 3. CREAR NUEVO USUARIO
+app.post("/api/usuarios", async (req, res) => {
+  const { nombre, email, password, rol } = req.body;
+  if (!nombre || !email || !password) {
+    return res.status(400).json({ error: "Faltan campos obligatorios." });
+  }
+
+  try {
+    const rolValido = ["ADMIN", "PRODUCCION", "DEPOSITO", "COMERCIAL"].includes(
+      rol,
+    )
+      ? rol
+      : "PRODUCCION";
+
+    const [result] = await db.query(
+      "INSERT INTO usuarios (nombre, email, password_hash, rol) VALUES (?, ?, ?, ?)",
+      [nombre.trim(), email.trim().toLowerCase(), password, rolValido],
+    );
+
+    res.json({
+      id: result.insertId,
+      nombre: nombre.trim(),
+      email: email.trim().toLowerCase(),
+      rol: rolValido,
+    });
+  } catch (error) {
+    console.error("Error al crear usuario:", error);
+    res.status(400).json({
+      error: "El email ya está registrado o los datos son inválidos.",
+    });
+  }
+});
+
+// 4. CAMBIAR ROL DE USUARIO
+app.put("/api/usuarios/:id/rol", async (req, res) => {
+  const { rol } = req.body;
+  if (!["ADMIN", "PRODUCCION", "DEPOSITO", "COMERCIAL"].includes(rol)) {
+    return res.status(400).json({ error: "Rol no válido" });
+  }
+  try {
+    await db.query("UPDATE usuarios SET rol = ? WHERE id = ?", [
+      rol,
+      req.params.id,
+    ]);
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// 5. CAMBIAR CONTRASEÑA DE USUARIO
+app.put("/api/usuarios/:id/password", async (req, res) => {
+  const { password } = req.body;
+  if (!password) {
+    return res.status(400).json({ error: "Contraseña requerida" });
+  }
+  try {
+    await db.query("UPDATE usuarios SET password_hash = ? WHERE id = ?", [
+      password,
+      req.params.id,
+    ]);
+    res.json({
+      success: true,
+      mensaje: "Contraseña actualizada correctamente",
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// 6. CONSULTAR PERMISOS
+app.get("/api/permisos", async (req, res) => {
+  try {
+    const [rows] = await db.query(
+      "SELECT rol_nombre, modulo_id FROM permisos_roles",
+    );
+    const permisos = {
+      ADMIN: ["*"],
+      PRODUCCION: [],
+      DEPOSITO: [],
+      COMERCIAL: [],
+    };
+
+    rows.forEach((row) => {
+      if (!permisos[row.rol_nombre]) permisos[row.rol_nombre] = [];
+      permisos[row.rol_nombre].push(row.modulo_id);
+    });
+
+    res.json(permisos);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// 7. GUARDAR PERMISOS DE UN ROL
+app.put("/api/permisos/:rol", async (req, res) => {
+  const { rol } = req.params;
+  const { modulos } = req.body;
+
+  if (rol.toUpperCase() === "ADMIN") {
+    return res
+      .status(400)
+      .json({ error: "El rol ADMIN mantiene acceso total fijo." });
+  }
+
+  const conn = await db.getConnection();
+  try {
+    await conn.beginTransaction();
+    await conn.query("DELETE FROM permisos_roles WHERE rol_nombre = ?", [rol]);
+
+    if (Array.isArray(modulos) && modulos.length > 0) {
+      const values = modulos.map((moduloId) => [rol, moduloId]);
+      await conn.query(
+        "INSERT INTO permisos_roles (rol_nombre, modulo_id) VALUES ?",
+        [values],
+      );
+    }
+
+    await conn.commit();
+    res.json({ success: true, mensaje: `Permisos actualizados para ${rol}` });
+  } catch (error) {
+    await conn.rollback();
+    res.status(500).json({ error: error.message });
+  } finally {
+    conn.release();
+  }
+});
+
+// ==========================================
 // MÓDULO EMAIL BOT, GEMINI Y CATÁLOGO COMERCIAL
 // ==========================================
 
