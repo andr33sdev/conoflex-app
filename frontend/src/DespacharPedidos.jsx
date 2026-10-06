@@ -179,8 +179,8 @@ export default function DespacharPedidos({ usuarioActual }) {
         </div>
       )}
 
-      {/* CABECERA */}
-      <div className="p-4 border-b border-slate-800/80 bg-slate-900/40 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shrink-0">
+      {/* CABECERA CON BUSCADOR COMPACTO */}
+      <div className="p-4 border-b border-slate-800/80 bg-slate-900/40 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shrink-0">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 shadow-[0_0_15px_rgba(245,158,11,0.15)]">
             <Truck size={22} />
@@ -200,8 +200,9 @@ export default function DespacharPedidos({ usuarioActual }) {
           </div>
         </div>
 
+        {/* BUSCADOR COMPACTO CON ANCHO FIJO (w-64) */}
         {buscado && (
-          <div className="relative flex-1 md:w-56">
+          <div className="relative w-full sm:w-64 shrink-0">
             <Search
               size={14}
               className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500"
@@ -214,7 +215,7 @@ export default function DespacharPedidos({ usuarioActual }) {
                 setCurrentPage(1);
               }}
               placeholder="Filtrar por OP, cliente..."
-              className="w-full bg-slate-950/80 border border-slate-800 rounded-xl pl-9 pr-3 py-2 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-amber-500/50 transition-all"
+              className="w-full bg-slate-950/80 border border-slate-800 rounded-xl pl-9 pr-3 py-2 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-amber-500/50 transition-all shadow-inner"
             />
           </div>
         )}

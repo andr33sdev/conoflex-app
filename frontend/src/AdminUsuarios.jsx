@@ -23,7 +23,7 @@ const MODULOS_SISTEMA = [
   { id: "planificacion", nombre: "Planificación OT" },
   { id: "carga-produccion", nombre: "Carga Producción" },
   { id: "despachar-pedidos", nombre: "Despachar Pedidos" },
-  { id: "comercial", label: "IA Comercial" },
+  { id: "comercial", nombre: "IA Comercial" },
   { id: "solicitudes-internas", nombre: "Solicitudes Internas" },
   { id: "planta-online", nombre: "Planta On-Line" },
 ];
@@ -44,7 +44,7 @@ export default function AdminUsuarios() {
   const [modalCrearUser, setModalCrearUser] = useState(false);
   const [modalCrearRol, setModalCrearRol] = useState(false);
   const [modalPassOpen, setModalPassOpen] = useState(null);
-  const [modalVendedoresUser, setModalVendedoresUser] = useState(null); // Usuario para editar vendedores
+  const [modalVendedoresUser, setModalVendedoresUser] = useState(null);
 
   const [loading, setLoading] = useState(false);
   const [toast, setToast] = useState(null);
@@ -91,9 +91,8 @@ export default function AdminUsuarios() {
       const res = await fetch("/api/estado-pedidos/vendedores");
       if (res.ok) {
         const data = await res.json();
-        setVendedoresDisponibles(
-          data.vendedores || (Array.isArray(data) ? data : []),
-        );
+        const lista = Array.isArray(data) ? data : data.vendedores || [];
+        setVendedoresDisponibles(lista);
       }
     } catch (err) {
       console.error("Error cargando vendedores:", err);
@@ -115,6 +114,16 @@ export default function AdminUsuarios() {
     fetchVendedores();
     fetchPermisos();
   }, []);
+
+  const handleAbrirCrearUsuario = () => {
+    fetchVendedores();
+    setModalCrearUser(true);
+  };
+
+  const handleAbrirEditarVendedores = (u) => {
+    fetchVendedores();
+    setModalVendedoresUser(u);
+  };
 
   const handleCrearUsuario = async (e) => {
     e.preventDefault();
@@ -341,7 +350,7 @@ export default function AdminUsuarios() {
               Cuentas Registradas ({usuarios.length})
             </h2>
             <button
-              onClick={() => setModalCrearUser(true)}
+              onClick={handleAbrirCrearUsuario}
               className="bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold px-4 py-2 text-xs rounded-xl shadow-[0_0_15px_rgba(6,182,212,0.25)] transition-all flex items-center gap-2 cursor-pointer"
             >
               <UserPlus size={14} /> Crear Usuario
@@ -391,7 +400,7 @@ export default function AdminUsuarios() {
                     </td>
                     <td className="py-3 px-4">
                       <button
-                        onClick={() => setModalVendedoresUser(u)}
+                        onClick={() => handleAbrirEditarVendedores(u)}
                         className="bg-slate-900 border border-slate-800 hover:border-slate-700 text-amber-300 font-mono px-2.5 py-1 rounded-lg text-xs transition-all flex items-center gap-1.5 cursor-pointer"
                       >
                         <Briefcase size={12} className="text-amber-400" />
@@ -607,36 +616,42 @@ export default function AdminUsuarios() {
                   Vendedor(es) Asignados (Despacho)
                 </label>
                 <div className="flex flex-wrap gap-2 max-h-36 overflow-y-auto p-2 border border-slate-800 rounded-xl bg-slate-950">
-                  {vendedoresDisponibles.map((v) => {
-                    const checked = formUsuario.vendedores.includes(v);
-                    return (
-                      <button
-                        key={v}
-                        type="button"
-                        onClick={() => {
-                          const nuevaLista = checked
-                            ? formUsuario.vendedores.filter((x) => x !== v)
-                            : [...formUsuario.vendedores, v];
-                          setFormUsuario({
-                            ...formUsuario,
-                            vendedores: nuevaLista,
-                          });
-                        }}
-                        className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-mono transition-all cursor-pointer ${
-                          checked
-                            ? "bg-amber-500/20 border border-amber-500/50 text-amber-300 font-bold"
-                            : "bg-slate-900 border border-slate-800 text-slate-400"
-                        }`}
-                      >
-                        {checked ? (
-                          <CheckSquare size={12} className="text-amber-400" />
-                        ) : (
-                          <Square size={12} />
-                        )}
-                        {v}
-                      </button>
-                    );
-                  })}
+                  {vendedoresDisponibles.length === 0 ? (
+                    <span className="text-[11px] text-slate-500 italic p-1">
+                      Cargando vendedores de la base de datos...
+                    </span>
+                  ) : (
+                    vendedoresDisponibles.map((v) => {
+                      const checked = formUsuario.vendedores.includes(v);
+                      return (
+                        <button
+                          key={v}
+                          type="button"
+                          onClick={() => {
+                            const nuevaLista = checked
+                              ? formUsuario.vendedores.filter((x) => x !== v)
+                              : [...formUsuario.vendedores, v];
+                            setFormUsuario({
+                              ...formUsuario,
+                              vendedores: nuevaLista,
+                            });
+                          }}
+                          className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-mono transition-all cursor-pointer ${
+                            checked
+                              ? "bg-amber-500/20 border border-amber-500/50 text-amber-300 font-bold"
+                              : "bg-slate-900 border border-slate-800 text-slate-400"
+                          }`}
+                        >
+                          {checked ? (
+                            <CheckSquare size={12} className="text-amber-400" />
+                          ) : (
+                            <Square size={12} />
+                          )}
+                          {v}
+                        </button>
+                      );
+                    })
+                  )}
                 </div>
               </div>
 
@@ -674,37 +689,43 @@ export default function AdminUsuarios() {
             </p>
 
             <div className="flex flex-wrap gap-2 max-h-48 overflow-y-auto p-3 border border-slate-800 rounded-xl bg-slate-950 mb-4">
-              {vendedoresDisponibles.map((v) => {
-                const list = modalVendedoresUser.vendedores || [];
-                const checked = list.includes(v);
-                return (
-                  <button
-                    key={v}
-                    type="button"
-                    onClick={() => {
-                      const nuevaLista = checked
-                        ? list.filter((x) => x !== v)
-                        : [...list, v];
-                      setModalVendedoresUser({
-                        ...modalVendedoresUser,
-                        vendedores: nuevaLista,
-                      });
-                    }}
-                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-mono transition-all cursor-pointer ${
-                      checked
-                        ? "bg-amber-500/20 border border-amber-500/50 text-amber-300 font-bold"
-                        : "bg-slate-900 border border-slate-800 text-slate-400"
-                    }`}
-                  >
-                    {checked ? (
-                      <CheckSquare size={13} className="text-amber-400" />
-                    ) : (
-                      <Square size={13} />
-                    )}
-                    {v}
-                  </button>
-                );
-              })}
+              {vendedoresDisponibles.length === 0 ? (
+                <span className="text-[11px] text-slate-500 italic p-1">
+                  Cargando vendedores de la base de datos...
+                </span>
+              ) : (
+                vendedoresDisponibles.map((v) => {
+                  const list = modalVendedoresUser.vendedores || [];
+                  const checked = list.includes(v);
+                  return (
+                    <button
+                      key={v}
+                      type="button"
+                      onClick={() => {
+                        const nuevaLista = checked
+                          ? list.filter((x) => x !== v)
+                          : [...list, v];
+                        setModalVendedoresUser({
+                          ...modalVendedoresUser,
+                          vendedores: nuevaLista,
+                        });
+                      }}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-mono transition-all cursor-pointer ${
+                        checked
+                          ? "bg-amber-500/20 border border-amber-500/50 text-amber-300 font-bold"
+                          : "bg-slate-900 border border-slate-800 text-slate-400"
+                      }`}
+                    >
+                      {checked ? (
+                        <CheckSquare size={13} className="text-amber-400" />
+                      ) : (
+                        <Square size={13} />
+                      )}
+                      {v}
+                    </button>
+                  );
+                })
+              )}
             </div>
 
             <button
