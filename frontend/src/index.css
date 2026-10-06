@@ -1,6 +1,21 @@
-@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Pixelify+Sans:wght@500;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Sora:wght@100..800&display=swap');
 
 @import "tailwindcss";
+
+/* 2. Redefinir la variable interna de Tailwind CSS */
+:root {
+  --font-sans: 'Sora', sans-serif !important;
+}
+
+/* 3. Forzar a que la clase .font-sans use Sora */
+.font-sans {
+  font-family: 'Sora', sans-serif !important;
+}
+
+/* 4. Aplicar globalmente al documento */
+html, body, #root {
+  font-family: 'Sora', sans-serif !important;
+}
 
 /* Fondo Grafito Industrial con Patrón de Puntos Muted (Gris Oscuro) */
 body {
@@ -8,7 +23,7 @@ body {
   background-image: radial-gradient(#1e212b 1.5px, transparent 1.5px);
   background-size: 16px 16px;
   color: #e2e8f0;
-  font-family: 'JetBrains Mono', monospace;
+  font-family: 'Sora', sans-serif;
   overflow-x: hidden;
 }
 

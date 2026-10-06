@@ -19,18 +19,19 @@ import {
   Truck,
 } from "lucide-react";
 
+import logo from "./assets/logo.svg";
+
 export default function Layout({
   children,
   activeModule,
   setActiveModule,
   onReloadSheets,
   isReloading,
-  usuarioActual = { nombre: "Usuario", rol: "ADMIN", permisos: ["*"] }, // ESTADO POR DEFECTO
-  onLogout = () => {}, // FUNCIÓN DE LOGOUT
+  usuarioActual = { nombre: "Usuario", rol: "ADMIN", permisos: ["*"] },
+  onLogout = () => {},
 }) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
-  // LISTADO COMPLETO DE MÓDULOS DEL SISTEMA
   const ALL_MENU_ITEMS = [
     { id: "materias-primas", label: "Materias Primas", icon: Boxes },
     { id: "semielaborados", label: "Semielaborados", icon: Layers },
@@ -60,7 +61,6 @@ export default function Layout({
     },
   ];
 
-  // FILTRADO DINÁMICO DE MÓDULOS SEGÚN EL ROL / PERMISOS DEL USUARIO
   const rolUpper = (usuarioActual?.rol || "").toUpperCase();
   const permisos = usuarioActual?.permisos || [];
 
@@ -72,40 +72,59 @@ export default function Layout({
 
   const handleSelectModule = (id) => {
     setActiveModule(id);
-    setMobileMenuOpen(false); // Cierra automáticamente el menú en celulares al seleccionar
+    setMobileMenuOpen(false);
   };
 
   return (
-    <div className="h-screen w-full bg-[#04060c] flex items-center justify-center p-0 md:p-3 lg:p-5 overflow-hidden font-sans text-slate-100 antialiased selection:bg-emerald-500 selection:text-slate-950">
-      {/* MARCO DE LA APLICACIÓN */}
-      <div className="w-full max-w-[1480px] h-full md:max-h-[96vh] flex rounded-none md:rounded-2xl border-0 md:border md:border-slate-800/80 bg-[#070a12] shadow-none md:shadow-[0_0_50px_rgba(0,0,0,0.8)] overflow-hidden relative">
-        {/* SIDEBAR ESCRITORIO */}
-        <aside className="hidden md:flex w-60 bg-[#090d16]/95 border-r border-[#1e293b] flex-col justify-between p-4 backdrop-blur-xl shrink-0 z-20 transition-all duration-300">
-          <div className="space-y-5">
+    <div className="h-screen w-full bg-[#020202] flex items-center justify-center p-0 md:p-3 lg:p-4 overflow-hidden font-sans text-zinc-100 antialiased selection:bg-[#FF5A00]/30 selection:text-white relative">
+      {/* FONDO DE PUNTOS */}
+      <style>{`
+        .bg-dots-orange {
+          background-image: radial-gradient(rgba(255, 90, 0, 0.2) 1px, transparent 1px);
+          background-size: 24px 26px;
+        }
+        @keyframes dotsDrift {
+          0% { background-position: 0 0; }
+          50% { background-position: 12px 13px; }
+          100% { background-position: 0 0; }
+        }
+        .animate-dots-drift {
+          animation: dotsDrift 20s ease-in-out infinite;
+        }
+      `}</style>
+
+      <div className="absolute inset-0 pointer-events-none z-0 overflow-hidden">
+        <div className="absolute inset-0 bg-dots-orange animate-dots-drift opacity-60" />
+      </div>
+
+      {/* MARCO PRINCIPAL */}
+      <div className="w-full max-w-[1600px] h-full md:max-h-[98vh] flex rounded-none md:rounded-2xl border-0 md:border md:border-zinc-800/90 bg-[#030303] shadow-[0_0_60px_rgba(0,0,0,0.95)] overflow-hidden relative z-10">
+        {/* SIDEBAR DESKTOP */}
+        <aside className="hidden md:flex w-64 bg-black border-r border-zinc-800/60 flex-col justify-between p-4 shrink-0 z-20 transition-all duration-300 relative">
+          <div className="space-y-6 z-10">
             {/* BRANDING */}
-            <div className="flex items-center gap-3 px-2 py-2.5 border-b border-[#1e293b]">
-              <div className="p-2 bg-gradient-to-br from-amber-500/20 to-amber-600/10 border border-amber-500/40 rounded-xl shadow-[0_0_15px_rgba(245,158,11,0.15)]">
-                <span className="font-mono font-black text-amber-400 text-sm tracking-tighter">
-                  CX
-                </span>
+            <div className="flex items-center gap-3 px-2 py-3 border-b border-zinc-800/60">
+              <div className="w-10 h-10 flex items-center justify-center rounded-xl shadow-[0_0_15px_rgba(255,90,0,0.2)] shrink-0">
+                {/* Si usas logo, reemplazá este span por la etiqueta img */}
+                <img src={logo} alt="Logo"/>
               </div>
               <div>
-                <h1 className="font-mono font-bold text-xs tracking-widest text-white uppercase">
+                <h1 className="font-extrabold italic text-base tracking-tighter text-white uppercase leading-none">
                   CONOFLEX
                 </h1>
-                <p className="text-[10px] text-emerald-400 font-mono flex items-center gap-1.5 mt-0.5">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_8px_#10b981]" />
+                <p className="text-[9px] text-[#FF5A00] font-mono font-bold tracking-widest flex items-center gap-1.5 mt-1 uppercase">
+                  <span className="w-1.5 h-1.5 rounded-full bg-[#FF5A00] shadow-[0_0_8px_#FF5A00]" />
                   GESTIÓN INDUSTRIAL
                 </p>
               </div>
             </div>
 
-            {/* MENÚ DE MÓDULOS */}
+            {/* NAVEGACIÓN */}
             <nav className="space-y-1">
-              <span className="px-2 text-[10px] font-mono uppercase text-slate-500 tracking-wider">
+              <span className="px-2 text-[10px] font-mono font-bold uppercase text-zinc-600 tracking-widest block mb-2">
                 Módulos del Sistema
               </span>
-              <div className="pt-2 space-y-1 overflow-y-auto max-h-[50vh] pb-4 custom-scrollbar">
+              <div className="space-y-1 overflow-y-auto max-h-[52vh] pr-1 scrollbar-none">
                 {menuItems.map((item) => {
                   const Icon = item.icon;
                   const isActive = activeModule === item.id;
@@ -113,25 +132,23 @@ export default function Layout({
                     <button
                       key={item.id}
                       onClick={() => handleSelectModule(item.id)}
-                      className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-medium transition-all duration-200 cursor-pointer group ${
+                      className={`w-full flex items-center gap-3 px-2 py-2.5 text-xs font-bold uppercase tracking-wider transition-all duration-300 cursor-pointer group relative border-b-2 ${
                         isActive
-                          ? item.highlight || item.adminOnly
-                            ? "bg-cyan-500/10 text-cyan-400 border border-cyan-500/30 shadow-[0_0_15px_rgba(6,182,212,0.12)] font-semibold"
-                            : "bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 shadow-[0_0_15px_rgba(16,185,129,0.12)] font-semibold"
-                          : "text-slate-400 hover:text-slate-200 hover:bg-[#121824] border border-transparent"
+                          ? "text-[#FF5A00] border-[#FF5A00] bg-transparent"
+                          : "text-zinc-500 hover:text-white border-transparent"
                       }`}
                     >
                       <Icon
-                        size={15}
-                        className={`transition-transform duration-200 group-hover:scale-110 ${
+                        size={16}
+                        className={`transition-all duration-300 ${
                           isActive
-                            ? item.highlight || item.adminOnly
-                              ? "text-cyan-400"
-                              : "text-emerald-400"
-                            : "text-slate-500 group-hover:text-slate-300"
+                            ? "text-[#FF5A00] scale-110"
+                            : "text-zinc-500 group-hover:text-white group-hover:scale-105"
                         }`}
                       />
-                      <span className="truncate">{item.label}</span>
+                      <span className="truncate transition-colors duration-300">
+                        {item.label}
+                      </span>
                     </button>
                   );
                 })}
@@ -139,78 +156,63 @@ export default function Layout({
             </nav>
           </div>
 
-          {/* PERFIL DE USUARIO Y LOGOUT + ESTADO CONEXIÓN */}
-          <div className="pt-3 border-t border-[#1e293b] space-y-2">
-            {/* USER CARD */}
-            <div className="bg-[#0e1422] p-2.5 rounded-xl border border-[#1e293b] flex items-center gap-2.5">
-              <UserCircle size={26} className="text-slate-400 shrink-0" />
+          {/* USER AREA */}
+          <div className="pt-3 border-t border-zinc-800/60 space-y-2 z-10">
+            <div className="bg-[#080808] p-3 rounded-xl border border-zinc-800/60 flex items-center gap-3">
+              <UserCircle size={26} className="text-zinc-500 shrink-0" />
               <div className="flex-1 min-w-0">
                 <p className="text-xs font-bold text-white truncate">
                   {usuarioActual.nombre || usuarioActual.email || "Usuario"}
                 </p>
-                <p className="text-[10px] font-mono text-emerald-400 uppercase tracking-widest truncate">
+                <p className="text-[9px] font-mono font-bold text-[#FF5A00] uppercase tracking-widest truncate">
                   {usuarioActual.rol}
                 </p>
               </div>
             </div>
 
-            {/* BOTÓN CERRAR SESIÓN */}
             <button
               onClick={onLogout}
-              className="w-full bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-400 text-[11px] font-mono font-bold py-1.5 rounded-xl flex items-center justify-center gap-2 transition cursor-pointer"
+              className="w-full bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-400 text-[10px] font-mono font-bold py-2 rounded-xl flex items-center justify-center gap-2 transition-all cursor-pointer active:scale-95 uppercase tracking-wider"
             >
               <LogOut size={13} />
               <span>Cerrar Sesión</span>
             </button>
-
-            {/* STATUS BADGE */}
-            <div className="bg-[#0e1422] p-2 rounded-xl border border-[#1e293b] flex items-center justify-between">
-              <div className="flex items-center gap-2 text-[11px] text-slate-400 font-mono">
-                <Activity
-                  size={13}
-                  className="text-emerald-400 animate-pulse"
-                />
-                <span>Sistema On-Line</span>
-              </div>
-              <span className="text-[10px] text-slate-500 font-mono">v3.8</span>
-            </div>
           </div>
         </aside>
 
-        {/* MENÚ DESLIZANTE PARA CELULARES (DRAWER MOBILE) */}
+        {/* DRAWER MOBILE CON ANIMACIÓN DESLIZABLE IZQUIERDA */}
         {mobileMenuOpen && (
-          <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-md z-50 md:hidden animate-in fade-in duration-200">
-            <div className="w-72 max-w-[85vw] h-full bg-[#090d16] p-4 flex flex-col justify-between border-r border-[#1e293b] shadow-2xl relative">
+          <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[100] md:hidden">
+            {/* Animación: animate-in slide-in-from-left-4 */}
+            <div className="w-72 max-w-[85vw] h-full bg-[#050505] p-5 flex flex-col justify-between border-r border-zinc-800 shadow-2xl relative animate-in slide-in-from-left-8 duration-300 ease-out">
               <button
                 onClick={() => setMobileMenuOpen(false)}
-                className="absolute top-4 right-4 p-2 text-slate-400 hover:text-white"
+                className="absolute top-4 right-4 p-2 text-zinc-500 hover:text-white"
               >
                 <X size={20} />
               </button>
 
-              <div className="space-y-5 pt-2">
-                <div className="flex items-center gap-3 px-2 py-2.5 border-b border-[#1e293b]">
-                  <div className="p-2 bg-gradient-to-br from-amber-500/20 to-amber-600/10 border border-amber-500/40 rounded-xl">
-                    <span className="font-mono font-black text-amber-400 text-sm">
-                      CX
-                    </span>
+              <div className="space-y-6 pt-2">
+                <div className="flex items-center gap-3 px-2 py-3 border-b border-zinc-800/60 pr-8">
+                  <div className="w-9 h-9 flex items-center justify-center rounded-xl shrink-0">
+                    <img src={logo} alt="Logo"/>
                   </div>
-                  <div>
-                    <h1 className="font-mono font-bold text-xs tracking-widest text-white uppercase">
+                  <div className="min-w-0">
+                    <h1 className="font-extrabold italic text-sm tracking-tighter text-white uppercase truncate">
                       CONOFLEX
                     </h1>
-                    <p className="text-[10px] text-emerald-400 font-mono flex items-center gap-1 mt-0.5">
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                    <p className="text-[9px] text-[#FF5A00] font-mono font-bold tracking-widest flex items-center gap-1 mt-0.5 uppercase truncate">
+                      <span className="w-1.5 h-1.5 rounded-full bg-[#FF5A00] shrink-0" />
                       GESTIÓN INDUSTRIAL
                     </p>
                   </div>
                 </div>
 
                 <nav className="space-y-1">
-                  <span className="px-2 text-[10px] font-mono uppercase text-slate-500 tracking-wider">
+                  <span className="px-2 text-[10px] font-mono uppercase text-zinc-600 font-bold tracking-widest block mb-2">
                     Módulos del Sistema
                   </span>
-                  <div className="pt-2 space-y-1">
+                  <div className="space-y-1 max-h-[60vh] overflow-y-auto scrollbar-none pr-1">
                     {menuItems.map((item) => {
                       const Icon = item.icon;
                       const isActive = activeModule === item.id;
@@ -218,15 +220,18 @@ export default function Layout({
                         <button
                           key={item.id}
                           onClick={() => handleSelectModule(item.id)}
-                          className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-medium transition-all ${
+                          className={`w-full flex items-center gap-3 px-3 py-3 text-xs font-bold uppercase tracking-wider transition-all duration-300 border-b-2 ${
                             isActive
-                              ? item.highlight || item.adminOnly
-                                ? "bg-cyan-500/10 text-cyan-400 border border-cyan-500/30 font-semibold"
-                                : "bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 font-semibold"
-                              : "text-slate-400 hover:text-slate-200 hover:bg-[#121824]"
+                              ? "text-[#FF5A00] border-[#FF5A00] bg-transparent"
+                              : "text-zinc-500 hover:text-white border-transparent"
                           }`}
                         >
-                          <Icon size={16} />
+                          <Icon
+                            size={16}
+                            className={
+                              isActive ? "text-[#FF5A00]" : "text-zinc-500"
+                            }
+                          />
                           <span className="truncate">{item.label}</span>
                         </button>
                       );
@@ -235,15 +240,14 @@ export default function Layout({
                 </nav>
               </div>
 
-              {/* FOOTER MOBILE CON PERFIL Y LOGOUT */}
-              <div className="pt-3 border-t border-[#1e293b] space-y-2">
-                <div className="bg-[#0e1422] p-2.5 rounded-xl border border-[#1e293b] flex items-center gap-2.5">
-                  <UserCircle size={24} className="text-slate-400 shrink-0" />
+              <div className="pt-3 border-t border-zinc-800/60 space-y-2 shrink-0">
+                <div className="bg-black p-3 rounded-xl border border-zinc-800/60 flex items-center gap-3">
+                  <UserCircle size={24} className="text-zinc-500 shrink-0" />
                   <div className="flex-1 min-w-0">
                     <p className="text-xs font-bold text-white truncate">
                       {usuarioActual.nombre || usuarioActual.email || "Usuario"}
                     </p>
-                    <p className="text-[10px] font-mono text-emerald-400 uppercase tracking-widest truncate">
+                    <p className="text-[9px] font-mono text-[#FF5A00] uppercase tracking-widest truncate">
                       {usuarioActual.rol}
                     </p>
                   </div>
@@ -251,72 +255,69 @@ export default function Layout({
 
                 <button
                   onClick={onLogout}
-                  className="w-full bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-400 text-[11px] font-mono font-bold py-1.5 rounded-xl flex items-center justify-center gap-2 transition cursor-pointer"
+                  className="w-full bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-400 text-[10px] font-mono font-bold py-2 rounded-xl flex items-center justify-center gap-2 transition"
                 >
                   <LogOut size={13} />
                   <span>Cerrar Sesión</span>
                 </button>
-
-                <div className="bg-[#0e1422] p-2 rounded-xl border border-[#1e293b] flex items-center justify-between">
-                  <div className="flex items-center gap-2 text-[11px] text-slate-400 font-mono">
-                    <Activity
-                      size={13}
-                      className="text-emerald-400 animate-pulse"
-                    />
-                    <span>Sistema On-Line</span>
-                  </div>
-                  <span className="text-[10px] text-slate-500 font-mono">
-                    v3.8
-                  </span>
-                </div>
               </div>
             </div>
           </div>
         )}
 
-        {/* ÁREA PRINCIPAL */}
-        <div className="flex-1 flex flex-col min-w-0 bg-[#070a12] overflow-hidden">
-          {/* HEADER TOP-BAR RESPONSIVE */}
-          <header className="bg-[#0f172a]/60 border-b border-[#1e293b] px-3 sm:px-5 py-2.5 sm:py-3 flex items-center justify-between backdrop-blur-md shrink-0 z-10">
-            <div className="flex items-center gap-2.5">
-              {/* BOTÓN HAMBURGUESA SOLO VISIBLE EN CELULARES */}
+        {/* ÁREA PRINCIPAL CONTENEDORA */}
+        <div className="flex-1 flex flex-col min-w-0 bg-black overflow-hidden relative">
+          {/* HEADER MOBILE ULTRA FINO (SOLO VISIBLE EN CELULARES) */}
+          <div className="md:hidden flex items-center justify-between p-3 border-b border-zinc-800/50 bg-[#050505] shrink-0 z-30">
+            <div className="flex items-center gap-3 min-w-0">
               <button
                 onClick={() => setMobileMenuOpen(true)}
-                className="p-1.5 md:hidden text-slate-300 hover:text-white bg-[#121824] border border-slate-800 rounded-lg"
-                title="Abrir menú"
+                className="p-1.5 text-zinc-300 hover:text-white bg-black border border-zinc-800 rounded-lg shrink-0"
               >
                 <Menu size={18} />
               </button>
-
-              <div className="flex items-center gap-1.5 font-mono text-xs">
-                <span className="text-slate-500 hidden xs:inline">
-                  Módulo /
-                </span>
-                <span className="font-bold text-amber-400 uppercase tracking-wider truncate max-w-[160px] sm:max-w-none">
+              <div className="flex flex-col min-w-0">
+                <span className="text-white font-extrabold italic text-sm uppercase tracking-tighter truncate">
                   {activeModule.replace("-", " ")}
+                </span>
+                <span className="text-[9px] text-[#FF5A00] font-mono tracking-widest font-bold uppercase truncate">
+                  Conoflex App
                 </span>
               </div>
             </div>
 
-            <div className="flex items-center gap-2">
-              {activeModule === "semielaborados" && (
-                <button
-                  onClick={onReloadSheets}
-                  disabled={isReloading}
-                  className="bg-[#121824] hover:bg-[#1c253b] text-emerald-400 border border-emerald-500/30 px-2.5 sm:px-3 py-1.5 text-xs font-mono rounded-lg transition-all flex items-center gap-1.5 cursor-pointer shadow-sm"
-                >
-                  <RefreshCw
-                    size={13}
-                    className={isReloading ? "animate-spin" : ""}
-                  />
-                  <span className="hidden sm:inline">Sincronizar Sheets</span>
-                </button>
-              )}
-            </div>
-          </header>
+            {activeModule === "semielaborados" && (
+              <button
+                onClick={onReloadSheets}
+                disabled={isReloading}
+                className="bg-[#FFD700] text-black p-2 rounded-lg shrink-0"
+              >
+                <RefreshCw
+                  size={14}
+                  className={isReloading ? "animate-spin" : ""}
+                />
+              </button>
+            )}
+          </div>
 
-          {/* CONTENIDO INTERNO */}
-          <main className="flex-1 overflow-y-auto overflow-x-hidden p-2 sm:p-4 md:p-5 min-h-0 relative">
+          {/* BOTÓN SINC. DE ESCRITORIO FLOTANTE (Opcional, si es necesario en escritorio) */}
+          <div className="hidden md:block absolute top-6 right-8 z-30">
+            {activeModule === "semielaborados" && (
+              <button
+                onClick={onReloadSheets}
+                disabled={isReloading}
+                className="bg-[#FFD700] hover:bg-white text-black px-4 py-2 text-xs font-bold uppercase tracking-widest transition-all flex items-center gap-2 cursor-pointer active:scale-95 disabled:opacity-50"
+              >
+                <RefreshCw
+                  size={14}
+                  className={isReloading ? "animate-spin" : ""}
+                />
+                Sincronizar Sheets
+              </button>
+            )}
+          </div>
+
+          <main className="flex-1 overflow-y-auto overflow-x-hidden p-0 min-h-0 relative bg-black">
             <div className="h-full transition-all duration-300 ease-out">
               {children}
             </div>

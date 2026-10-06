@@ -1,23 +1,16 @@
 import { useState, useEffect, useMemo } from "react";
 import {
-  ClipboardList,
   History,
   Truck,
-  PackageCheck,
   X,
   Search,
-  Plus,
   Ban,
-  Check,
-  AlertCircle,
-  Send,
-  Lock,
-  Clock,
-  AlertTriangle,
   RefreshCw,
+  ChevronRight,
+  ChevronLeft,
+  AlertTriangle,
 } from "lucide-react";
 
-// CONFIGURACIÓN DE URL DEL BACKEND (FEROZO / LOCALHOST)
 const API_BASE_URL = import.meta.env?.VITE_API_URL || "";
 
 const getApiUrl = (path) => {
@@ -25,7 +18,6 @@ const getApiUrl = (path) => {
   return `${API_BASE_URL}${cleanPath}`;
 };
 
-// HELPER: OBTENER HORA LOCAL EXACTA (EJ: "2026-10-06 14:45:00")
 const getNowLocal = () => {
   const d = new Date();
   const year = d.getFullYear();
@@ -38,7 +30,6 @@ const getNowLocal = () => {
 };
 
 export default function SolicitudesInternas({ usuarioActual }) {
-  // MATRIZ DE PERMISOS POR ROL
   const rolUpper = (usuarioActual?.rol || "ADMIN").toUpperCase();
   const isAdmin = rolUpper === "ADMIN";
   const isDeposito = rolUpper === "DEPOSITO" || isAdmin;
@@ -48,6 +39,10 @@ export default function SolicitudesInternas({ usuarioActual }) {
   const [loading, setLoading] = useState(true);
   const [filtroEstado, setFiltroEstado] = useState("TODOS");
   const [busqueda, setBusqueda] = useState("");
+
+  // PAGINACIÓN (12 TARJETAS POR PÁGINA)
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 12;
 
   const [semielaboradosDB, setSemielaboradosDB] = useState([]);
 
@@ -63,19 +58,14 @@ export default function SolicitudesInternas({ usuarioActual }) {
   const [errorDuplicado, setErrorDuplicado] = useState(null);
   const [searchSemiText, setSearchSemiText] = useState("");
 
-  // RETIRO MANUAL
   const [cantidadRetiroManual, setCantidadRetiroManual] = useState("");
 
-  // CARGAR SOLICITUDES DESDE BASE DE DATOS
   const fetchSolicitudes = async () => {
     try {
-      const url = getApiUrl("/api/solicitudes-internas");
-      const res = await fetch(url);
-      if (!res.ok) return;
-      const data = await res.json();
-      setSolicitudes(Array.isArray(data) ? data : []);
+      const res = await fetch(getApiUrl("/api/solicitudes-internas"));
+      if (res.ok) setSolicitudes((await res.json()) || []);
     } catch (err) {
-      console.error("Error al cargar solicitudes internas:", err);
+      console.error(err);
     } finally {
       setLoading(false);
     }
@@ -83,14 +73,15 @@ export default function SolicitudesInternas({ usuarioActual }) {
 
   const fetchSemielaborados = async () => {
     try {
-      const url = getApiUrl("/api/semielaborados");
-      const res = await fetch(url);
-      if (!res.ok) return;
-      const data = await res.json();
-      const list = data.semielaborados || data.productos || data || [];
-      setSemielaboradosDB(Array.isArray(list) ? list : []);
+      const res = await fetch(getApiUrl("/api/semielaborados"));
+      if (res.ok) {
+        const data = await res.json();
+        setSemielaboradosDB(
+          data.semielaborados || data.productos || data || [],
+        );
+      }
     } catch (err) {
-      console.error("Error al cargar semielaborados:", err);
+      console.error(err);
     }
   };
 
@@ -99,17 +90,18 @@ export default function SolicitudesInternas({ usuarioActual }) {
     fetchSemielaborados();
   }, []);
 
-  // REGLA DE NEGOCIO: CÁLCULO DE BLOQUEO DE 8 HORAS
+  // REINICIAR PAGINACIÓN CUANDO CAMBIA EL FILTRO O BÚSQUEDA
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [filtroEstado, busqueda]);
+
   const solicitudesDemoradas8hs = useMemo(() => {
     const ahora = new Date().getTime();
     return solicitudes.filter((s) => {
       if (s.estado === "DISPONIBLE" && s.disponibleAt) {
-        const disponibleTime = new Date(
-          s.disponibleAt.replace(" ", "T"),
-        ).getTime();
-        if (isNaN(disponibleTime)) return false;
-        const diffHoras = (ahora - disponibleTime) / (1000 * 60 * 60);
-        return diffHoras >= 8;
+        const dTime = new Date(s.disponibleAt.replace(" ", "T")).getTime();
+        if (isNaN(dTime)) return false;
+        return (ahora - dTime) / (1000 * 60 * 60) >= 8;
       }
       return false;
     });
@@ -137,19 +129,23 @@ export default function SolicitudesInternas({ usuarioActual }) {
   );
   const limiteAlcanzado = solicitudesActivas.length >= 10;
 
-  // CREAR SOLICITUD EN BASE DE DATOS
   const handleCrearSolicitud = async (e) => {
     e.preventDefault();
-    if (!isDeposito || bloqueadoPor8hs || limiteAlcanzado) return;
-    if (!semiSeleccionado || !cantidadPedir || Number(cantidadPedir) <= 0)
+    if (
+      !isDeposito ||
+      bloqueadoPor8hs ||
+      limiteAlcanzado ||
+      !semiSeleccionado ||
+      !cantidadPedir
+    )
       return;
 
-    const existente = solicitudesActivas.find(
-      (s) => s.semielaboradoCodigo === semiSeleccionado.codigo,
-    );
-
-    if (existente) {
-      setErrorDuplicado(existente);
+    if (
+      solicitudesActivas.find(
+        (s) => s.semielaboradoCodigo === semiSeleccionado.codigo,
+      )
+    ) {
+      setErrorDuplicado(true);
       return;
     }
 
@@ -160,7 +156,7 @@ export default function SolicitudesInternas({ usuarioActual }) {
       cantidadSolicitada: Number(cantidadPedir),
       urgencia: urgenciaPedir,
       estado: "SOLICITADO",
-      solicitadoAt: getNowLocal(), // <-- Usa hora local de Argentina
+      solicitadoAt: getNowLocal(),
     };
 
     try {
@@ -169,21 +165,18 @@ export default function SolicitudesInternas({ usuarioActual }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(nueva),
       });
-
       if (res.ok) {
         await fetchSolicitudes();
         setModalNuevoOpen(false);
         setSemiSeleccionado(null);
         setCantidadPedir("");
         setSearchSemiText("");
-        setErrorDuplicado(null);
       }
     } catch (err) {
-      console.error("Error guardando nueva solicitud:", err);
+      console.error(err);
     }
   };
 
-  // CAMBIO DE ESTADO PERSISTIDO EN BD
   const handleCambiarEstado = async (id, nuevoEstado) => {
     if (nuevoEstado === "CANCELADO" && !isAdmin) return;
     if (
@@ -192,7 +185,7 @@ export default function SolicitudesInternas({ usuarioActual }) {
     )
       return;
 
-    const now = getNowLocal(); // <-- Usa hora local
+    const now = getNowLocal();
     const payload = { estado: nuevoEstado };
     if (nuevoEstado === "ATENDIDO") payload.atendidoAt = now;
     if (nuevoEstado === "DISPONIBLE") payload.disponibleAt = now;
@@ -206,42 +199,31 @@ export default function SolicitudesInternas({ usuarioActual }) {
           body: JSON.stringify(payload),
         },
       );
-
-      if (res.ok) {
-        await fetchSolicitudes();
-      }
+      if (res.ok) await fetchSolicitudes();
     } catch (err) {
-      console.error("Error al cambiar estado:", err);
+      console.error(err);
     }
   };
 
-  // REGISTRAR RETIRO PARCIAL PERSISTIDO EN BD
   const handleRegistrarRetiro = async (solicitudId, cantidad) => {
     if (!isDeposito) return;
     const qty = Number(cantidad);
-    if (!qty || qty <= 0) return;
+    const sol = solicitudes.find((s) => s.id === solicitudId);
+    if (!qty || !sol) return;
 
-    const solicitudActual = solicitudes.find((s) => s.id === solicitudId);
-    if (!solicitudActual) return;
-
-    const now = getNowLocal(); // <-- Usa hora local
-    const nuevaCantidadRetirada = Math.min(
-      solicitudActual.cantidadRetirada + qty,
-      solicitudActual.cantidadSolicitada,
+    const now = getNowLocal();
+    const nuevaRetirada = Math.min(
+      sol.cantidadRetirada + qty,
+      sol.cantidadSolicitada,
     );
-    const estaCompleto =
-      nuevaCantidadRetirada >= solicitudActual.cantidadSolicitada;
+    const completo = nuevaRetirada >= sol.cantidadSolicitada;
 
-    const nuevoRetiroLog = {
+    const log = {
       fecha: now,
       cantidad: qty,
       usuario: usuarioActual?.nombre || "Depósito",
     };
-
-    const historialActualizado = [
-      nuevoRetiroLog,
-      ...(solicitudActual.retirosHistorial || []),
-    ];
+    const historial = [log, ...(sol.retirosHistorial || [])];
 
     try {
       const res = await fetch(
@@ -250,32 +232,29 @@ export default function SolicitudesInternas({ usuarioActual }) {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            cantidadRetirada: nuevaCantidadRetirada,
-            estado: estaCompleto ? "ENTREGADO" : "DISPONIBLE",
-            entregadoAt: estaCompleto ? now : solicitudActual.entregadoAt,
-            retirosHistorial: historialActualizado,
+            cantidadRetirada: nuevaRetirada,
+            estado: completo ? "ENTREGADO" : "DISPONIBLE",
+            entregadoAt: completo ? now : sol.entregadoAt,
+            retirosHistorial: historial,
           }),
         },
       );
-
       if (res.ok) {
         await fetchSolicitudes();
         setModalRetiroOpen(null);
         setCantidadRetiroManual("");
       }
     } catch (err) {
-      console.error("Error al registrar retiro:", err);
+      console.error(err);
     }
   };
 
   const solicitudesFiltradas = solicitudes.filter((s) => {
-    const coincideBusqueda =
+    const match =
       s.id.toLowerCase().includes(busqueda.toLowerCase()) ||
       s.semielaboradoNombre.toLowerCase().includes(busqueda.toLowerCase()) ||
       s.semielaboradoCodigo.toLowerCase().includes(busqueda.toLowerCase());
-
-    if (!coincideBusqueda) return false;
-
+    if (!match) return false;
     if (filtroEstado === "TODOS")
       return s.estado !== "ENTREGADO" && s.estado !== "CANCELADO";
     if (filtroEstado === "AUDITORIA")
@@ -283,166 +262,109 @@ export default function SolicitudesInternas({ usuarioActual }) {
     return s.estado === filtroEstado;
   });
 
-  const getUrgenciaBadge = (urgencia) => {
-    switch (urgencia) {
-      case "ALTA":
-        return "bg-rose-500/10 text-rose-400 border-rose-500/30 animate-pulse";
-      case "MEDIA":
-        return "bg-amber-500/10 text-amber-400 border-amber-500/30";
-      case "BAJA":
-      default:
-        return "bg-slate-500/10 text-slate-400 border-slate-500/30";
-    }
+  // CÁLCULO DE PÁGINAS Y TARJETAS ACTUALES
+  const totalPages = Math.ceil(solicitudesFiltradas.length / itemsPerPage) || 1;
+  const currentItems = useMemo(() => {
+    const start = (currentPage - 1) * itemsPerPage;
+    return solicitudesFiltradas.slice(start, start + itemsPerPage);
+  }, [solicitudesFiltradas, currentPage]);
+
+  // FUNCIÓN PARA VERIFICAR SI UNA TARJETA DEBE VERSE DESATURADA (Gris/Archivada)
+  const isArchived = (estado) =>
+    estado === "ENTREGADO" || estado === "CANCELADO";
+
+  const getUrgenciaStyle = (urgencia, isArchivedState) => {
+    if (isArchivedState) return "text-zinc-600 border-zinc-800";
+    if (urgencia === "ALTA")
+      return "text-[#FF0055] border-[#FF0055]/30 bg-[#FF0055]/10 animate-pulse";
+    if (urgencia === "MEDIA") return "text-[#FFD700] border-[#FFD700]/30";
+    return "text-zinc-400 border-zinc-700";
   };
 
-  const getEstadoBadge = (estado) => {
-    switch (estado) {
-      case "SOLICITADO":
-        return {
-          bg: "bg-blue-500/10 text-blue-400 border-blue-500/30",
-          label: "SOLICITADO",
-        };
-      case "ATENDIDO":
-        return {
-          bg: "bg-amber-500/10 text-amber-400 border-amber-500/30",
-          label: "EN PROCESO",
-        };
-      case "DISPONIBLE":
-        return {
-          bg: "bg-emerald-500/10 text-emerald-400 border-emerald-500/30",
-          label: "DISPONIBLE",
-        };
-      case "ENTREGADO":
-        return {
-          bg: "bg-slate-500/10 text-slate-400 border-slate-500/30",
-          label: "ENTREGADO",
-        };
-      case "CANCELADO":
-      default:
-        return {
-          bg: "bg-rose-500/10 text-rose-400 border-rose-500/30",
-          label: "CANCELADO",
-        };
+  const getEstadoStyle = (estado, isArchivedState) => {
+    if (isArchivedState) {
+      if (estado === "CANCELADO") return "text-rose-900 border-rose-900/50";
+      return "text-zinc-600 border-zinc-800";
     }
-  };
-
-  const getTiempoDisponibleTexto = (disponibleAt) => {
-    if (!disponibleAt) return null;
-    const disponibleTime = new Date(disponibleAt.replace(" ", "T")).getTime();
-    if (isNaN(disponibleTime)) return null;
-    const diffMs = new Date().getTime() - disponibleTime;
-    const diffHoras = Math.floor(diffMs / (1000 * 60 * 60));
-    return `${diffHoras}h en espera`;
+    if (estado === "SOLICITADO") return "text-zinc-300 border-zinc-700";
+    if (estado === "ATENDIDO")
+      return "text-[#FF5A00] border-[#FF5A00]/30 bg-[#FF5A00]/10";
+    if (estado === "DISPONIBLE")
+      return "text-[#FFD700] border-[#FFD700]/30 bg-[#FFD700]/10";
+    return "text-zinc-500 border-zinc-800"; // Fallback
   };
 
   return (
-    <div className="flex-1 flex flex-col h-full min-h-0 bg-[#070a12] border border-slate-800/80 rounded-2xl font-sans text-slate-200 shadow-2xl overflow-hidden relative">
-      {/* BANNER DE BLOQUEO POR 8 HORAS */}
+    <div className="flex-1 flex flex-col h-full min-h-0 bg-black font-sans text-zinc-200 overflow-hidden relative selection:bg-[#FF5A00]/30">
+      {/* BANNER BLOQUEO */}
       {bloqueadoPor8hs && (
-        <div className="bg-rose-500/15 border-b border-rose-500/40 p-3 px-4 flex items-center justify-between gap-3 text-rose-300 font-mono text-xs z-20 animate-in fade-in shrink-0">
-          <div className="flex items-center gap-2.5">
-            <AlertTriangle
-              size={18}
-              className="text-rose-400 shrink-0 animate-bounce"
-            />
-            <span>
-              <strong className="text-white font-bold uppercase">
-                CREACIÓN BLOQUEADA:
-              </strong>{" "}
-              Tienes{" "}
-              <strong>{solicitudesDemoradas8hs.length} solicitud(es)</strong>{" "}
-              listas en Planta hace más de 8 horas sin retirar. Confirmá la
-              recepción antes de hacer nuevos pedidos.
-            </span>
-          </div>
+        <div className="bg-[#FF0055]/10 border-b border-[#FF0055]/30 p-2.5 px-4 md:px-6 flex items-center gap-3 text-[#FF0055] text-xs z-20 shrink-0">
+          <AlertTriangle size={16} className="animate-pulse shrink-0" />
+          <span className="font-medium tracking-wide">
+            ATENCIÓN: TENÉS SOLICITUDES PENDIENTES HACE MÁS DE 8HS.
+          </span>
         </div>
       )}
 
-      {/* CABECERA */}
-      <div className="bg-[#0f172a]/90 border-b border-slate-800/80 p-3.5 sm:p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shrink-0 backdrop-blur-xl z-10">
-        <div className="flex items-center gap-3">
-          <div className="p-2 sm:p-2.5 bg-emerald-500/10 border border-emerald-500/20 rounded-xl shadow-[0_0_15px_rgba(16,185,129,0.15)] shrink-0">
-            <ClipboardList
-              size={20}
-              className="text-emerald-400 animate-pulse"
-            />
-          </div>
-          <div>
-            <div className="flex items-center gap-2 flex-wrap">
-              <h2 className="text-xs sm:text-sm font-bold text-white tracking-widest uppercase font-mono">
-                SOLICITUDES INTERNAS DE DEPÓSITO
-              </h2>
-              <span className="text-[10px] bg-emerald-500/10 text-emerald-300 border border-emerald-500/20 px-2 py-0.5 rounded-full font-mono font-bold">
-                {rolUpper}
-              </span>
-            </div>
-            <p className="text-[10px] sm:text-[11px] text-slate-400 mt-0.5 flex items-center gap-2">
-              Gestión centralizada de pedidos inter-planta
-              {limiteAlcanzado && (
-                <span className="bg-rose-500/20 text-rose-400 border border-rose-500/50 px-1.5 rounded font-bold animate-pulse">
-                  LÍMITE 10 ACTIVAS
-                </span>
-              )}
-            </p>
-          </div>
+      {/* HEADER TÍTULO Y BOTÓN DE CREAR */}
+      <div className="border-b border-zinc-800/50 p-6 md:p-10 flex flex-col md:flex-row md:items-end justify-between gap-6 shrink-0 bg-[#050505] relative overflow-hidden">
+        <div className="z-10">
+          <h1 className="text-4xl md:text-5xl font-extrabold italic tracking-tighter text-white uppercase leading-none">
+            Solicitudes <span className="text-[#FF5A00]">Internas</span>
+          </h1>
+          <p className="text-zinc-500 text-sm mt-2 max-w-md uppercase tracking-widest font-bold">
+            Rol de visualización: <span className="text-white">{rolUpper}</span>
+          </p>
         </div>
 
-        {/* BOTÓN NUEVA SOLICITUD */}
-        {isDeposito ? (
+        {isDeposito && (
           <button
-            onClick={() => {
-              if (limiteAlcanzado || bloqueadoPor8hs) return;
-              setModalNuevoOpen(true);
-              setErrorDuplicado(null);
-            }}
+            onClick={() => setModalNuevoOpen(true)}
             disabled={limiteAlcanzado || bloqueadoPor8hs}
-            className={`w-full sm:w-auto justify-center font-bold font-mono text-xs px-4 py-2.5 rounded-xl transition flex items-center gap-2 shadow-[0_0_15px_rgba(16,185,129,0.2)] ${
+            className={`flex items-center justify-between gap-4 px-6 py-3 font-bold text-sm uppercase tracking-widest transition-all z-10 w-full md:w-auto ${
               limiteAlcanzado || bloqueadoPor8hs
-                ? "bg-slate-800 text-slate-500 border border-slate-700 cursor-not-allowed opacity-60"
-                : "bg-emerald-500 hover:bg-emerald-400 text-slate-950 cursor-pointer active:scale-95"
+                ? "bg-zinc-900 text-zinc-600 cursor-not-allowed"
+                : "bg-[#FFD700] hover:bg-white text-black active:scale-95"
             }`}
           >
-            <Plus size={16} /> NUEVA SOLICITUD
+            NUEVA SOLICITUD
+            <ChevronRight size={18} strokeWidth={3} />
           </button>
-        ) : (
-          <span className="text-[10px] font-mono text-slate-500 bg-slate-900 border border-slate-800 px-3 py-1.5 rounded-xl flex items-center gap-1.5 self-start sm:self-auto">
-            <Lock size={12} /> Creación reservada a Depósito
-          </span>
         )}
       </div>
 
-      {/* FILTROS & BÚSQUEDA (CON FLEX-WRAP PARA ELIMINAR EL SCROLL HORIZONTAL) */}
-      <div className="p-3 bg-[#090d16] border-b border-slate-800/80 flex flex-col lg:flex-row lg:items-center justify-between gap-3 shrink-0">
-        <div className="relative w-full lg:max-w-xs shrink-0">
+      {/* FILTROS & BÚSQUEDA */}
+      <div className="px-4 py-3 md:px-8 border-b border-zinc-800/50 flex flex-col md:flex-row items-center justify-between gap-3 shrink-0 bg-black">
+        <div className="relative w-full md:w-80">
           <Search
             size={14}
-            className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500"
+            className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-600"
           />
           <input
             type="text"
             value={busqueda}
             onChange={(e) => setBusqueda(e.target.value)}
-            placeholder="Buscar por código o nombre..."
-            className="w-full bg-[#070a12] border border-slate-800 text-slate-200 pl-9 pr-3 py-2 rounded-xl outline-none focus:border-emerald-500/50 text-xs font-mono"
+            placeholder="Buscar pedido..."
+            className="w-full bg-transparent border border-zinc-800 focus:border-[#FF5A00] text-white pl-10 pr-4 py-2 text-xs transition-colors outline-none"
           />
         </div>
 
-        <div className="flex flex-wrap items-center gap-1.5 w-full lg:w-auto lg:justify-end">
+        <div className="flex gap-2 w-full md:w-auto overflow-x-auto scrollbar-none pb-1 md:pb-0">
           {["TODOS", "SOLICITADO", "ATENDIDO", "DISPONIBLE", "AUDITORIA"].map(
             (est) => (
               <button
                 key={est}
                 onClick={() => setFiltroEstado(est)}
-                className={`flex-1 sm:flex-none min-w-[30%] sm:min-w-0 px-2 py-1.5 rounded-xl border transition cursor-pointer font-bold text-[11px] font-mono text-center shrink-0 ${
+                className={`px-4 py-2 text-[10px] md:text-[11px] font-bold tracking-widest uppercase transition-all whitespace-nowrap border-b-2 ${
                   filtroEstado === est
-                    ? "bg-emerald-500/20 border-emerald-500/50 text-emerald-300 shadow-[0_0_12px_rgba(16,185,129,0.15)]"
-                    : "bg-[#070a12] border-slate-800 text-slate-400 hover:text-white"
+                    ? "border-[#FF5A00] text-[#FF5A00]"
+                    : "border-transparent text-zinc-500 hover:text-white"
                 }`}
               >
                 {est === "TODOS"
-                  ? `Activas (${solicitudesActivas.length}/10)`
+                  ? "ACTIVAS"
                   : est === "AUDITORIA"
-                    ? "Archivadas"
+                    ? "ARCHIVADAS"
                     : est}
               </button>
             ),
@@ -450,576 +372,356 @@ export default function SolicitudesInternas({ usuarioActual }) {
         </div>
       </div>
 
-      {/* CONTENIDO PRINCIPAL PERSISTENTE */}
-      <div className="flex-1 min-h-0 overflow-y-auto p-3 sm:p-4">
+      {/* CONTENIDO PRINCIPAL: CREADO PARA ALBERGAR HASTA 12 TARJETAS */}
+      <div className="flex-1 flex flex-col justify-between overflow-hidden p-3 md:p-6 bg-black min-h-0">
         {loading ? (
-          <div className="h-full flex flex-col items-center justify-center text-slate-500 gap-2 font-mono text-xs">
-            <RefreshCw size={24} className="animate-spin text-emerald-400" />
-            <span>Cargando solicitudes internas...</span>
+          <div className="flex justify-center items-center flex-1 text-[#FF5A00]">
+            <RefreshCw className="animate-spin" size={28} />
           </div>
-        ) : solicitudesFiltradas.length === 0 ? (
-          <div className="h-full flex flex-col items-center justify-center text-slate-500 gap-2 border border-dashed border-slate-800/80 rounded-2xl p-8 font-mono text-xs text-center">
-            <ClipboardList size={32} className="text-slate-600 mb-1" />
-            <p>
-              No se encontraron solicitudes registradas en la base de datos.
+        ) : currentItems.length === 0 ? (
+          <div className="flex justify-center items-center flex-1 text-zinc-600">
+            <p className="uppercase tracking-widest text-xs font-bold">
+              No hay solicitudes registradas en esta vista.
             </p>
           </div>
         ) : (
-          <>
-            {/* VISTA MOBILE (< 1024px) - TARJETAS INDUSTRIALES */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 lg:hidden">
-              {solicitudesFiltradas.map((s) => {
-                const estBadge = getEstadoBadge(s.estado);
-                const saldoPendiente =
-                  s.cantidadSolicitada - s.cantidadRetirada;
-                const porcentajeProgreso = Math.round(
-                  (s.cantidadRetirada / s.cantidadSolicitada) * 100,
-                );
-                const esDemorado8hs =
-                  s.estado === "DISPONIBLE" &&
-                  s.disponibleAt &&
-                  (new Date().getTime() -
-                    new Date(s.disponibleAt.replace(" ", "T")).getTime()) /
-                    (1000 * 60 * 60) >=
-                    8;
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 items-start content-start flex-1 overflow-y-auto pr-1 custom-scrollbar">
+            {currentItems.map((s) => {
+              const archived = isArchived(s.estado);
+              const styleEst = getEstadoStyle(s.estado, archived);
+              const pct = Math.round(
+                (s.cantidadRetirada / s.cantidadSolicitada) * 100,
+              );
 
-                return (
-                  <div
-                    key={s.id}
-                    className={`bg-[#0e1422] border rounded-2xl p-3.5 flex flex-col justify-between gap-3 shadow-lg transition-all ${
-                      esDemorado8hs
-                        ? "border-rose-500/50 bg-rose-950/10 shadow-[0_0_15px_rgba(244,63,94,0.1)]"
-                        : "border-slate-800/80 hover:border-slate-700"
-                    }`}
-                  >
-                    <div className="flex items-start justify-between gap-2 border-b border-slate-800/80 pb-2.5">
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <span className="font-mono font-bold text-emerald-400 text-xs">
-                            {s.id}
-                          </span>
-                          <span
-                            className={`text-[9px] font-mono font-bold px-2 py-0.5 rounded-full border ${getUrgenciaBadge(
-                              s.urgencia,
-                            )}`}
-                          >
-                            {s.urgencia}
-                          </span>
-                        </div>
-                        <span className="text-[10px] text-slate-500 font-mono mt-0.5 block">
-                          {s.solicitadoAt}
+              return (
+                <div
+                  key={s.id}
+                  className={`border transition-colors duration-200 p-5 flex flex-col justify-between gap-3.5 group ${
+                    archived
+                      ? "border-zinc-900 bg-[#030303] hover:border-zinc-800 opacity-80"
+                      : "border-zinc-800/80 bg-[#050505] hover:border-[#FF5A00]/50"
+                  }`}
+                >
+                  {/* Fila 1: N° Solicitud, Urgencia, Fecha y Estado */}
+                  <div className="flex justify-between items-start border-b border-zinc-800/50 pb-2.5">
+                    <div className="flex flex-col gap-1 min-w-0">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span
+                          className={`font-extrabold tracking-wider text-sm md:text-base shrink-0 ${archived ? "text-zinc-500" : "text-white"}`}
+                        >
+                          {s.id}
+                        </span>
+                        <span
+                          className={`text-[8px] px-1.5 py-0.2 border uppercase font-bold tracking-wider shrink-0 ${getUrgenciaStyle(s.urgencia, archived)}`}
+                        >
+                          {s.urgencia}
                         </span>
                       </div>
 
-                      <span
-                        className={`text-[10px] font-mono font-bold px-2.5 py-1 rounded-lg border ${estBadge.bg}`}
-                      >
-                        {estBadge.label}
+                      <div className="text-zinc-600 font-mono text-[9px] leading-tight">
+                        <span>
+                          {s.solicitadoAt ? s.solicitadoAt.slice(0, 10) : ""}
+                        </span>
+                        <span className="ml-1">
+                          {s.solicitadoAt
+                            ? s.solicitadoAt.slice(11, 16) + " HS"
+                            : ""}
+                        </span>
+                      </div>
+                    </div>
+
+                    <span
+                      className={`text-[8px] px-2 py-0.5 uppercase font-bold tracking-widest border shrink-0 ${styleEst}`}
+                    >
+                      {s.estado}
+                    </span>
+                  </div>
+
+                  {/* Fila 2: Código + Nombre */}
+                  <div className="flex items-center gap-2.5 pt-1">
+                    <span
+                      className={`px-1.5 py-0.5 text-[9px] font-mono font-bold tracking-widest shrink-0 ${
+                        archived
+                          ? "text-zinc-600 bg-zinc-900/50 border border-zinc-800"
+                          : "text-[#FF5A00] bg-[#FF5A00]/10 border border-[#FF5A00]/20"
+                      }`}
+                    >
+                      {s.semielaboradoCodigo}
+                    </span>
+                    <h3
+                      className={`text-sm font-bold leading-none truncate flex-1 ${archived ? "text-zinc-500" : "text-zinc-200"}`}
+                    >
+                      {s.semielaboradoNombre}
+                    </h3>
+                  </div>
+
+                  {/* Fila 3: Barra de Progreso */}
+                  <div className="mt-1">
+                    <div className="flex justify-between text-[9px] text-zinc-500 mb-1.5 uppercase tracking-wider font-bold">
+                      <span>
+                        Retirado:{" "}
+                        <strong
+                          className={
+                            archived ? "text-zinc-500" : "text-zinc-300"
+                          }
+                        >
+                          {s.cantidadRetirada}
+                        </strong>
+                      </span>
+                      <span>
+                        Total:{" "}
+                        <strong
+                          className={archived ? "text-zinc-500" : "text-white"}
+                        >
+                          {s.cantidadSolicitada}
+                        </strong>
                       </span>
                     </div>
-
-                    <div>
-                      <span className="font-mono font-bold text-amber-400 text-xs block mb-0.5">
-                        [{s.semielaboradoCodigo}]
-                      </span>
-                      <h3 className="text-xs font-bold text-slate-100 leading-snug">
-                        {s.semielaboradoNombre}
-                      </h3>
-                    </div>
-
-                    <div className="bg-[#070a12] p-2.5 rounded-xl border border-slate-800/80 space-y-1.5 font-mono text-[11px]">
-                      <div className="flex justify-between items-center">
-                        <span className="text-slate-300 font-bold">
-                          Retirado: {s.cantidadRetirada} /{" "}
-                          {s.cantidadSolicitada} u.
-                        </span>
-                        <span className="text-cyan-400 font-bold">
-                          Saldo: {saldoPendiente} u.
-                        </span>
-                      </div>
-                      <div className="w-full bg-slate-900 rounded-full h-2 overflow-hidden border border-slate-800">
-                        <div
-                          className="h-full bg-gradient-to-r from-cyan-500 to-emerald-400 transition-all duration-500"
-                          style={{ width: `${porcentajeProgreso}%` }}
-                        />
-                      </div>
-                    </div>
-
-                    {esDemorado8hs && (
-                      <div className="bg-rose-500/10 border border-rose-500/30 p-2 rounded-xl flex items-center justify-between text-[11px] font-mono text-rose-300">
-                        <span className="flex items-center gap-1 font-bold">
-                          <Clock
-                            size={12}
-                            className="text-rose-400 animate-spin"
-                          />
-                          {getTiempoDisponibleTexto(s.disponibleAt)}
-                        </span>
-                        <span className="text-[10px] bg-rose-500/20 px-1.5 py-0.5 rounded font-bold">
-                          +8hs pendiente
-                        </span>
-                      </div>
-                    )}
-
-                    <div className="pt-2 border-t border-slate-800/80 flex items-center justify-between gap-2">
-                      <button
-                        onClick={() => setModalHistorialOpen(s)}
-                        className="text-[11px] font-mono text-slate-400 hover:text-slate-200 flex items-center gap-1 cursor-pointer underline"
-                      >
-                        <History size={12} /> Historial
-                      </button>
-
-                      <div className="flex items-center gap-1.5">
-                        {s.estado === "SOLICITADO" && isProduccion && (
-                          <button
-                            onClick={() =>
-                              handleCambiarEstado(s.id, "ATENDIDO")
-                            }
-                            className="bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 font-bold px-3 py-1.5 rounded-xl transition text-xs flex items-center gap-1 cursor-pointer active:scale-95"
-                          >
-                            <Check size={14} /> Atender
-                          </button>
-                        )}
-
-                        {s.estado === "ATENDIDO" && isProduccion && (
-                          <button
-                            onClick={() =>
-                              handleCambiarEstado(s.id, "DISPONIBLE")
-                            }
-                            className="bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-bold px-3 py-1.5 rounded-xl transition text-xs flex items-center gap-1 cursor-pointer active:scale-95"
-                          >
-                            <PackageCheck size={14} /> Marcar Listo
-                          </button>
-                        )}
-
-                        {s.estado === "DISPONIBLE" && isDeposito && (
-                          <button
-                            onClick={() => {
-                              setModalRetiroOpen(s);
-                              setCantidadRetiroManual("");
-                            }}
-                            className="bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold px-3.5 py-1.5 rounded-xl transition text-xs flex items-center gap-1 cursor-pointer shadow-[0_0_12px_rgba(6,182,212,0.2)] active:scale-95"
-                          >
-                            <Truck size={14} /> + Extraer
-                          </button>
-                        )}
-
-                        {s.estado !== "ENTREGADO" &&
-                          s.estado !== "CANCELADO" &&
-                          isAdmin && (
-                            <button
-                              onClick={() =>
-                                handleCambiarEstado(s.id, "CANCELADO")
-                              }
-                              className="text-slate-600 hover:text-rose-400 p-1.5 transition cursor-pointer"
-                              title="Cancelar solicitud"
-                            >
-                              <Ban size={15} />
-                            </button>
-                          )}
-                      </div>
+                    <div className="h-1 w-full bg-zinc-900 overflow-hidden">
+                      <div
+                        className={`h-full ${archived ? "bg-zinc-700" : "bg-gradient-to-r from-[#FF5A00] to-[#FFD700]"}`}
+                        style={{ width: `${pct}%` }}
+                      />
                     </div>
                   </div>
-                );
-              })}
-            </div>
 
-            {/* VISTA DESKTOP (>= 1024px) - TABLA TRADICIONAL */}
-            <div className="hidden lg:block bg-[#0e1422] border border-slate-800/80 rounded-2xl overflow-hidden shadow-2xl">
-              <table className="w-full text-left text-xs border-collapse">
-                <thead className="bg-[#090d16] text-slate-400 font-mono text-[10px] uppercase border-b border-slate-800">
-                  <tr>
-                    <th className="p-3 w-28">N° Solicitud</th>
-                    <th className="p-3 w-28">Urgencia</th>
-                    <th className="p-3">Semielaborado Requerido</th>
-                    <th className="p-3 w-44">Avance / Retiro Parcial</th>
-                    <th className="p-3 w-32">Estado Actual</th>
-                    <th className="p-3 w-36">Último Cambio</th>
-                    <th className="p-3 w-48 text-center">
-                      Acciones Restringidas
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-800/60 bg-[#070a12]/30 font-mono">
-                  {solicitudesFiltradas.map((s) => {
-                    const estBadge = getEstadoBadge(s.estado);
-                    const saldoPendiente =
-                      s.cantidadSolicitada - s.cantidadRetirada;
-                    const porcentajeProgreso = Math.round(
-                      (s.cantidadRetirada / s.cantidadSolicitada) * 100,
-                    );
-                    const esDemorado8hs =
-                      s.estado === "DISPONIBLE" &&
-                      s.disponibleAt &&
-                      (new Date().getTime() -
-                        new Date(s.disponibleAt.replace(" ", "T")).getTime()) /
-                        (1000 * 60 * 60) >=
-                        8;
+                  {/* Fila 4: Acciones */}
+                  <div className="pt-3 mt-1 border-t border-zinc-800/50 flex justify-between items-center">
+                    <button
+                      onClick={() => setModalHistorialOpen(s)}
+                      className="text-zinc-600 hover:text-zinc-300 text-[9px] uppercase tracking-widest font-bold flex items-center gap-1 transition-colors"
+                    >
+                      <History size={11} /> Auditoría
+                    </button>
 
-                    return (
-                      <tr
-                        key={s.id}
-                        className={`hover:bg-[#121824] transition-colors align-middle ${
-                          esDemorado8hs ? "bg-rose-950/10" : ""
-                        }`}
-                      >
-                        <td className="p-3">
-                          <span className="font-bold text-emerald-400 text-xs block">
-                            {s.id}
-                          </span>
+                    <div className="flex gap-1.5">
+                      {s.estado === "SOLICITADO" && isProduccion && (
+                        <button
+                          onClick={() => handleCambiarEstado(s.id, "ATENDIDO")}
+                          className="text-[9px] uppercase tracking-widest font-bold text-[#FF5A00] border border-[#FF5A00]/30 hover:bg-[#FF5A00]/10 px-2.5 py-1 transition-colors"
+                        >
+                          Atender
+                        </button>
+                      )}
+                      {s.estado === "ATENDIDO" && isProduccion && (
+                        <button
+                          onClick={() =>
+                            handleCambiarEstado(s.id, "DISPONIBLE")
+                          }
+                          className="text-[9px] uppercase tracking-widest font-bold text-[#FFD700] border border-[#FFD700]/30 hover:bg-[#FFD700]/10 px-2.5 py-1 transition-colors"
+                        >
+                          Disponible
+                        </button>
+                      )}
+                      {s.estado === "DISPONIBLE" && isDeposito && (
+                        <button
+                          onClick={() => {
+                            setModalRetiroOpen(s);
+                            setCantidadRetiroManual("");
+                          }}
+                          className="text-[9px] uppercase tracking-widest font-bold text-black bg-[#FFD700] hover:bg-white px-2.5 py-1 transition-colors"
+                        >
+                          Extraer
+                        </button>
+                      )}
+                      {s.estado !== "ENTREGADO" &&
+                        s.estado !== "CANCELADO" &&
+                        isAdmin && (
                           <button
-                            onClick={() => setModalHistorialOpen(s)}
-                            className="text-[10px] text-slate-500 hover:text-slate-300 flex items-center gap-1 mt-0.5 cursor-pointer underline"
+                            onClick={() =>
+                              handleCambiarEstado(s.id, "CANCELADO")
+                            }
+                            className="text-zinc-700 hover:text-[#FF0055] p-1 transition-colors"
                           >
-                            <History size={11} /> Auditoría
+                            <Ban size={13} />
                           </button>
-                        </td>
+                        )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
 
-                        <td className="p-3">
-                          <span
-                            className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${getUrgenciaBadge(
-                              s.urgencia,
-                            )}`}
-                          >
-                            {s.urgencia}
-                          </span>
-                        </td>
+        {/* PIE DE PAGINACIÓN */}
+        {solicitudesFiltradas.length > 0 && (
+          <div className="mt-4 pt-4 border-t border-zinc-800/60 flex items-center justify-between font-mono text-xs text-zinc-500 shrink-0">
+            <span className="uppercase text-[10px] font-bold tracking-widest text-zinc-400">
+              Página <strong className="text-white">{currentPage}</strong> de{" "}
+              <strong className="text-white">{totalPages}</strong> (
+              {solicitudesFiltradas.length} registros)
+            </span>
 
-                        <td className="p-3">
-                          <span className="font-bold text-amber-400 text-[11px] block">
-                            [{s.semielaboradoCodigo}]
-                          </span>
-                          <span className="text-slate-200 text-xs font-sans font-bold leading-tight block truncate">
-                            {s.semielaboradoNombre}
-                          </span>
-                        </td>
+            <div className="flex items-center gap-1.5">
+              <button
+                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                disabled={currentPage === 1}
+                className="w-8 h-8 flex items-center justify-center border border-zinc-800 bg-[#050505] text-zinc-300 hover:border-[#FF5A00] hover:text-[#FF5A00] disabled:opacity-20 disabled:hover:border-zinc-800 disabled:hover:text-zinc-300 transition-all cursor-pointer"
+              >
+                <ChevronLeft size={16} />
+              </button>
 
-                        <td className="p-3">
-                          <div className="space-y-1">
-                            <div className="flex justify-between text-[11px]">
-                              <span className="text-slate-300 font-bold">
-                                {s.cantidadRetirada} / {s.cantidadSolicitada} u.
-                              </span>
-                              <span className="text-cyan-400 font-bold">
-                                Saldo: {saldoPendiente} u.
-                              </span>
-                            </div>
-                            <div className="w-full bg-slate-900 rounded-full h-1.5 overflow-hidden border border-slate-800">
-                              <div
-                                className="h-full bg-gradient-to-r from-cyan-500 to-emerald-400 transition-all duration-500"
-                                style={{ width: `${porcentajeProgreso}%` }}
-                              />
-                            </div>
-                          </div>
-                        </td>
-
-                        <td className="p-3">
-                          <span
-                            className={`text-[10px] font-bold px-2.5 py-1 rounded-lg border inline-block ${estBadge.bg}`}
-                          >
-                            {estBadge.label}
-                          </span>
-                          {esDemorado8hs && (
-                            <span className="block text-[9px] text-rose-400 font-bold mt-1">
-                              ⚠️ +8hs sin retirar
-                            </span>
-                          )}
-                        </td>
-
-                        <td className="p-3 text-[10px] text-slate-400">
-                          <span className="block text-slate-300">
-                            {s.disponibleAt || s.atendidoAt || s.solicitadoAt}
-                          </span>
-                          <span className="text-[9px] text-slate-500">
-                            {s.disponibleAt
-                              ? "Listo en Planta"
-                              : s.atendidoAt
-                                ? "Atendido por Planta"
-                                : "Solicitado"}
-                          </span>
-                        </td>
-
-                        <td className="p-3 text-center">
-                          <div className="flex items-center justify-center gap-1.5">
-                            {s.estado === "SOLICITADO" && isProduccion && (
-                              <button
-                                onClick={() =>
-                                  handleCambiarEstado(s.id, "ATENDIDO")
-                                }
-                                className="bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 font-bold px-2.5 py-1 rounded-lg transition text-[10px] flex items-center gap-1 cursor-pointer"
-                              >
-                                <Check size={12} /> Marcar Atendido
-                              </button>
-                            )}
-
-                            {s.estado === "ATENDIDO" && isProduccion && (
-                              <button
-                                onClick={() =>
-                                  handleCambiarEstado(s.id, "DISPONIBLE")
-                                }
-                                className="bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-bold px-2.5 py-1 rounded-lg transition text-[10px] flex items-center gap-1 cursor-pointer"
-                              >
-                                <PackageCheck size={12} /> Marcar Listo
-                              </button>
-                            )}
-
-                            {s.estado === "DISPONIBLE" && isDeposito && (
-                              <button
-                                onClick={() => {
-                                  setModalRetiroOpen(s);
-                                  setCantidadRetiroManual("");
-                                }}
-                                className="bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 font-bold px-2.5 py-1.5 rounded-lg transition text-[10px] flex items-center gap-1 cursor-pointer shadow-[0_0_10px_rgba(6,182,212,0.15)]"
-                              >
-                                <Truck size={13} /> + Extraer
-                              </button>
-                            )}
-
-                            {s.estado !== "ENTREGADO" &&
-                              s.estado !== "CANCELADO" &&
-                              isAdmin && (
-                                <button
-                                  onClick={() =>
-                                    handleCambiarEstado(s.id, "CANCELADO")
-                                  }
-                                  className="text-slate-600 hover:text-rose-400 p-1.5 transition cursor-pointer"
-                                  title="Cancelar solicitud (Solo Admin)"
-                                >
-                                  <Ban size={14} />
-                                </button>
-                              )}
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+              <button
+                onClick={() =>
+                  setCurrentPage((p) => Math.min(totalPages, p + 1))
+                }
+                disabled={currentPage === totalPages}
+                className="w-8 h-8 flex items-center justify-center border border-zinc-800 bg-[#050505] text-zinc-300 hover:border-[#FF5A00] hover:text-[#FF5A00] disabled:opacity-20 disabled:hover:border-zinc-800 disabled:hover:text-zinc-300 transition-all cursor-pointer"
+              >
+                <ChevronRight size={16} />
+              </button>
             </div>
-          </>
+          </div>
         )}
       </div>
 
-      {/* MODAL CREAR SOLICITUD */}
-      {modalNuevoOpen && isDeposito && (
-        <div className="fixed inset-0 bg-slate-950/85 backdrop-blur-md z-[300] flex items-center justify-center p-3 sm:p-4 font-sans animate-in fade-in">
-          <div className="bg-[#0e1422] border border-slate-800 w-full max-w-lg rounded-3xl shadow-2xl overflow-hidden flex flex-col relative text-xs max-h-[90vh]">
-            <div className="bg-[#090d16] border-b border-slate-800 p-4 sm:p-5 flex items-center justify-between shrink-0">
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-emerald-500/10 border border-emerald-500/20 rounded-xl">
-                  <ClipboardList size={18} className="text-emerald-400" />
-                </div>
-                <h3 className="text-xs sm:text-sm font-bold text-white uppercase tracking-wider font-mono">
-                  NUEVA SOLICITUD DE DEPÓSITO
-                </h3>
-              </div>
+      {/* =========================================
+          MODALES
+      ========================================= */}
+
+      {/* MODAL NUEVA SOLICITUD */}
+      {modalNuevoOpen && (
+        <div className="fixed inset-0 bg-black/90 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+          <div className="bg-[#050505] border border-zinc-800 w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col relative shadow-2xl">
+            <div className="p-6 border-b border-zinc-800 flex justify-between items-center bg-[#020202]">
+              <h3 className="text-xl md:text-2xl font-extrabold italic uppercase tracking-tighter text-white">
+                Nueva <span className="text-[#FF5A00]">Solicitud</span>
+              </h3>
               <button
                 onClick={() => setModalNuevoOpen(false)}
-                className="p-1.5 text-slate-400 hover:text-white bg-slate-900 border border-slate-800 rounded-xl cursor-pointer"
+                className="text-zinc-500 hover:text-[#FF5A00] transition-colors"
               >
-                <X size={16} />
+                <X size={24} />
               </button>
             </div>
 
             <form
               onSubmit={handleCrearSolicitud}
-              className="p-4 sm:p-6 space-y-4 sm:space-y-5 overflow-y-auto"
+              className="p-6 overflow-y-auto flex flex-col gap-6"
             >
-              <div className="space-y-1.5">
-                <label className="text-[10px] font-mono text-slate-400 uppercase block">
-                  1. SELECCIONAR SEMIELABORADO DE LA BD
+              <div>
+                <label className="block text-xs uppercase tracking-widest text-zinc-500 mb-2 font-bold">
+                  1. Material a procesar
                 </label>
                 <div className="relative">
-                  <Search
-                    size={14}
-                    className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500"
-                  />
                   <input
                     type="text"
                     value={searchSemiText}
                     onChange={(e) => {
                       setSearchSemiText(e.target.value);
-                      setErrorDuplicado(null);
                       setSemiSeleccionado(null);
                     }}
-                    placeholder="Escribí código o nombre..."
-                    className="w-full bg-[#070a12] border border-slate-700 text-white font-sans text-xs pl-9 pr-3 py-2.5 rounded-xl outline-none focus:border-emerald-500"
+                    className="w-full bg-black border border-zinc-800 text-white p-4 text-sm focus:border-[#FF5A00] outline-none transition-colors"
+                    placeholder="Buscar código o nombre..."
                   />
-
                   {searchSemiText && !semiSeleccionado && (
-                    <div className="absolute top-full left-0 right-0 mt-1 bg-[#0e1422] border border-slate-700 rounded-xl shadow-2xl z-50 overflow-hidden max-h-40 overflow-y-auto">
-                      {semielaboradosFiltrados.length > 0 ? (
-                        semielaboradosFiltrados.map((item, idx) => (
-                          <div
-                            key={idx}
-                            onClick={() => {
-                              setSemiSeleccionado(item);
-                              setSearchSemiText(
-                                `[${item.codigo || "S/C"}] ${item.nombre}`,
-                              );
-                              setErrorDuplicado(null);
-                            }}
-                            className="p-2.5 hover:bg-[#1e293b] flex items-center justify-between cursor-pointer border-b border-slate-800/50 last:border-0"
-                          >
-                            <span className="font-mono text-amber-400 font-bold text-[10px]">
-                              [{item.codigo || "S/C"}]
-                            </span>
-                            <span className="text-slate-200 font-sans truncate max-w-[200px] sm:max-w-[240px]">
-                              {item.nombre}
-                            </span>
-                          </div>
-                        ))
-                      ) : (
-                        <div className="p-3 text-slate-500 italic text-center text-[10px]">
-                          No hay resultados en la BD.
+                    <div className="absolute top-full left-0 w-full bg-[#0a0a0a] border border-zinc-800 mt-1 max-h-48 overflow-y-auto z-50 shadow-xl">
+                      {semielaboradosFiltrados.map((item, i) => (
+                        <div
+                          key={i}
+                          onClick={() => {
+                            setSemiSeleccionado(item);
+                            setSearchSemiText(item.nombre);
+                          }}
+                          className="p-4 border-b border-zinc-800 hover:bg-zinc-900 cursor-pointer flex items-center gap-3 transition-colors"
+                        >
+                          <span className="bg-[#FF5A00]/10 border border-[#FF5A00]/30 text-[#FF5A00] px-2 py-0.5 text-[10px] font-mono font-bold shrink-0">
+                            {item.codigo}
+                          </span>
+                          <span className="text-white text-sm truncate">
+                            {item.nombre}
+                          </span>
                         </div>
-                      )}
+                      ))}
                     </div>
                   )}
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
-                <div className="space-y-1.5">
-                  <label className="text-[10px] font-mono text-slate-400 uppercase block">
-                    2. CANTIDAD TOTAL
+              <div className="grid grid-cols-2 gap-6">
+                <div>
+                  <label className="block text-xs uppercase tracking-widest text-zinc-500 mb-2 font-bold">
+                    2. Unidades
                   </label>
                   <input
                     type="number"
                     value={cantidadPedir}
                     onChange={(e) => setCantidadPedir(e.target.value)}
-                    placeholder="Ej: 500"
-                    className="w-full bg-[#070a12] border border-slate-700 text-white font-mono text-xs px-3 py-2.5 rounded-xl outline-none focus:border-emerald-500"
+                    className="w-full bg-black border border-zinc-800 text-white p-4 focus:border-[#FF5A00] outline-none font-mono transition-colors"
                   />
                 </div>
-
-                <div className="space-y-1.5">
-                  <label className="text-[10px] font-mono text-slate-400 uppercase block">
-                    3. NIVEL DE URGENCIA
+                <div>
+                  <label className="block text-xs uppercase tracking-widest text-zinc-500 mb-2 font-bold">
+                    3. Prioridad
                   </label>
                   <select
                     value={urgenciaPedir}
                     onChange={(e) => setUrgenciaPedir(e.target.value)}
-                    className="w-full bg-[#070a12] border border-slate-700 text-amber-400 font-mono font-bold text-xs px-3 py-2.5 rounded-xl outline-none cursor-pointer"
+                    className="w-full bg-black border border-zinc-800 text-white p-4 focus:border-[#FF5A00] outline-none appearance-none font-bold tracking-wider transition-colors cursor-pointer"
                   >
-                    <option value="BAJA">🟢 BAJA (Stock)</option>
-                    <option value="MEDIA">🟡 MEDIA (Regular)</option>
-                    <option value="ALTA">🔴 ALTA (Urgente)</option>
+                    <option value="BAJA">NORMAL</option>
+                    <option value="MEDIA">PRIORIDAD</option>
+                    <option value="ALTA">URGENTE</option>
                   </select>
                 </div>
               </div>
 
-              {errorDuplicado && (
-                <div className="bg-rose-500/10 border border-rose-500/40 p-3 rounded-xl flex items-start gap-2.5 text-rose-300 font-mono text-[11px] animate-in fade-in">
-                  <AlertCircle
-                    size={18}
-                    className="shrink-0 mt-0.5 text-rose-400"
-                  />
-                  <div>
-                    <strong className="block text-white font-bold">
-                      SOLICITUD REPETIDA BLOQUEADA
-                    </strong>
-                    Ya existe la solicitud{" "}
-                    <strong className="text-amber-400">
-                      {errorDuplicado.id}
-                    </strong>{" "}
-                    para este producto en estado{" "}
-                    <strong className="text-emerald-400">
-                      [{errorDuplicado.estado}]
-                    </strong>
-                    .
-                  </div>
-                </div>
-              )}
-
-              <div className="pt-3 border-t border-slate-800 flex justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={() => setModalNuevoOpen(false)}
-                  className="px-4 py-2 text-slate-400 hover:text-white font-mono font-bold transition cursor-pointer"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  disabled={!!errorDuplicado || !semiSeleccionado}
-                  className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 disabled:opacity-50 disabled:cursor-not-allowed font-bold font-mono px-5 py-2.5 rounded-xl transition flex items-center gap-1.5 cursor-pointer shadow-lg active:scale-95"
-                >
-                  <Send size={14} /> Enviar Solicitud
-                </button>
-              </div>
+              <button
+                type="submit"
+                disabled={!semiSeleccionado || !cantidadPedir}
+                className="mt-4 w-full bg-[#FFD700] hover:bg-white text-black font-extrabold italic uppercase tracking-tighter text-xl p-4 transition-all disabled:opacity-30 disabled:hover:bg-[#FFD700] flex justify-center items-center gap-2"
+              >
+                Confirmar <ChevronRight size={20} strokeWidth={3} />
+              </button>
             </form>
           </div>
         </div>
       )}
 
       {/* MODAL RETIRO PARCIAL */}
-      {modalRetiroOpen && isDeposito && (
-        <div className="fixed inset-0 bg-slate-950/85 backdrop-blur-md z-[300] flex items-center justify-center p-3 sm:p-4 font-sans animate-in fade-in">
-          <div className="bg-[#0e1422] border border-slate-800 w-full max-w-md rounded-3xl shadow-2xl overflow-hidden flex flex-col relative text-xs">
-            <div className="bg-[#090d16] border-b border-slate-800 p-4 sm:p-5 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-cyan-500/10 border border-cyan-500/20 rounded-xl">
-                  <Truck size={18} className="text-cyan-400" />
-                </div>
-                <div>
-                  <span className="font-mono text-xs font-bold text-amber-400">
-                    [{modalRetiroOpen.id}]
-                  </span>
-                  <h3 className="text-xs sm:text-sm font-bold text-white uppercase tracking-wider font-mono">
-                    REGISTRAR EXTRACCIÓN
-                  </h3>
-                </div>
-              </div>
+      {modalRetiroOpen && (
+        <div className="fixed inset-0 bg-black/90 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+          <div className="bg-[#050505] border border-zinc-800 w-full max-w-md flex flex-col relative shadow-2xl">
+            <div className="p-6 border-b border-zinc-800 flex justify-between items-center bg-[#020202]">
+              <h3 className="text-xl font-extrabold italic uppercase tracking-tighter text-[#FFD700]">
+                Extraer Material
+              </h3>
               <button
                 onClick={() => setModalRetiroOpen(null)}
-                className="p-1.5 text-slate-400 hover:text-white bg-slate-900 border border-slate-800 rounded-xl cursor-pointer"
+                className="text-zinc-500 hover:text-white transition-colors"
               >
-                <X size={16} />
+                <X size={24} />
               </button>
             </div>
-
-            <div className="p-4 sm:p-6 space-y-4 sm:space-y-5">
-              <div className="bg-[#070a12] border border-slate-800 p-3.5 rounded-xl space-y-1">
-                <span className="text-[10px] font-mono text-amber-400 font-bold">
-                  [{modalRetiroOpen.semielaboradoCodigo}]
+            <div className="p-6 space-y-6">
+              <div>
+                <span className="bg-[#FF5A00]/10 border border-[#FF5A00]/20 text-[#FF5A00] px-1.5 py-0.5 text-[10px] font-mono font-bold tracking-widest mb-2 inline-block">
+                  {modalRetiroOpen.semielaboradoCodigo}
                 </span>
-                <h4 className="text-xs font-bold text-white leading-snug">
+                <p className="text-zinc-300 text-sm mb-2">
                   {modalRetiroOpen.semielaboradoNombre}
-                </h4>
-                <div className="flex justify-between text-[11px] font-mono text-slate-400 pt-2 border-t border-slate-800/80">
-                  <span>
-                    Retirado:{" "}
-                    <strong className="text-white">
-                      {modalRetiroOpen.cantidadRetirada} u.
-                    </strong>
+                </p>
+                <p className="text-3xl font-mono font-bold text-white">
+                  {modalRetiroOpen.cantidadSolicitada -
+                    modalRetiroOpen.cantidadRetirada}{" "}
+                  <span className="text-sm font-sans font-normal text-zinc-600">
+                    u. disp.
                   </span>
-                  <span>
-                    Saldo disponible:{" "}
-                    <strong className="text-cyan-400">
-                      {modalRetiroOpen.cantidadSolicitada -
-                        modalRetiroOpen.cantidadRetirada}{" "}
-                      u.
-                    </strong>
-                  </span>
-                </div>
+                </p>
               </div>
 
-              <div className="space-y-2">
-                <label className="text-[10px] font-mono text-slate-400 uppercase block">
-                  INGRESAR CANTIDAD MANUAL A RETIRAR AHORA:
+              <div>
+                <label className="block text-xs uppercase tracking-widest text-zinc-500 mb-2 font-bold">
+                  Retiro Parcial
                 </label>
-                <div className="flex gap-2">
+                <div className="flex">
                   <input
                     type="number"
-                    min="1"
-                    max={
-                      modalRetiroOpen.cantidadSolicitada -
-                      modalRetiroOpen.cantidadRetirada
-                    }
                     value={cantidadRetiroManual}
                     onChange={(e) => setCantidadRetiroManual(e.target.value)}
-                    placeholder={`Máx: ${modalRetiroOpen.cantidadSolicitada - modalRetiroOpen.cantidadRetirada}`}
-                    className="flex-1 bg-[#070a12] border border-slate-700 text-white font-mono px-3 py-2.5 rounded-xl outline-none focus:border-cyan-500"
+                    className="w-full bg-black border border-zinc-800 border-r-0 text-white p-4 focus:border-[#FFD700] outline-none font-mono transition-colors"
+                    placeholder="Ingresar cant..."
                   />
                   <button
                     onClick={() =>
@@ -1028,16 +730,9 @@ export default function SolicitudesInternas({ usuarioActual }) {
                         cantidadRetiroManual,
                       )
                     }
-                    disabled={
-                      !cantidadRetiroManual ||
-                      Number(cantidadRetiroManual) <= 0 ||
-                      Number(cantidadRetiroManual) >
-                        modalRetiroOpen.cantidadSolicitada -
-                          modalRetiroOpen.cantidadRetirada
-                    }
-                    className="bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold px-4 rounded-xl disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer transition-colors active:scale-95"
+                    className="bg-zinc-800 text-white px-6 font-bold uppercase text-xs tracking-wider hover:bg-[#FFD700] hover:text-black transition-colors"
                   >
-                    Confirmar
+                    OK
                   </button>
                 </div>
               </div>
@@ -1050,106 +745,95 @@ export default function SolicitudesInternas({ usuarioActual }) {
                       modalRetiroOpen.cantidadRetirada,
                   )
                 }
-                className="w-full bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 p-3 rounded-xl font-bold transition text-xs flex items-center justify-center gap-1.5 cursor-pointer active:scale-95"
+                className="w-full bg-transparent border border-[#FFD700] text-[#FFD700] hover:bg-[#FFD700] hover:text-black font-bold uppercase tracking-widest text-sm p-4 transition-colors mt-2"
               >
-                Retirar Saldo Restante (
-                {modalRetiroOpen.cantidadSolicitada -
-                  modalRetiroOpen.cantidadRetirada}{" "}
-                u.)
+                Extraer Todo
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* MODAL AUDITORÍA */}
+      {/* MODAL HISTORIAL */}
       {modalHistorialOpen && (
-        <div className="fixed inset-0 bg-slate-950/85 backdrop-blur-md z-[300] flex items-center justify-center p-3 sm:p-4 font-sans animate-in fade-in">
-          <div className="bg-[#0e1422] border border-slate-800 w-full max-w-md rounded-3xl shadow-2xl overflow-hidden flex flex-col relative text-xs">
-            <div className="bg-[#090d16] border-b border-slate-800 p-4 sm:p-5 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-amber-500/10 border border-amber-500/20 rounded-xl">
-                  <History size={18} className="text-amber-400" />
-                </div>
-                <div>
-                  <span className="font-mono text-xs font-bold text-amber-400">
-                    [{modalHistorialOpen.id}]
-                  </span>
-                  <h3 className="text-xs sm:text-sm font-bold text-white uppercase tracking-wider font-mono">
-                    AUDITORÍA Y TIEMPOS
-                  </h3>
-                </div>
-              </div>
+        <div className="fixed inset-0 bg-black/90 backdrop-blur-sm z-[100] flex flex-col items-center justify-center p-4">
+          <div className="bg-[#050505] border border-zinc-800 w-full max-w-md max-h-[85vh] flex flex-col relative shadow-2xl">
+            <div className="p-6 border-b border-zinc-800 flex justify-between items-center bg-[#020202] shrink-0">
+              <h3 className="text-xl font-extrabold italic uppercase tracking-tighter text-white">
+                Auditoría
+              </h3>
               <button
                 onClick={() => setModalHistorialOpen(null)}
-                className="p-1.5 text-slate-400 hover:text-white bg-slate-900 border border-slate-800 rounded-xl cursor-pointer"
+                className="text-zinc-500 hover:text-white transition-colors"
               >
-                <X size={16} />
+                <X size={24} />
               </button>
             </div>
-
-            <div className="p-4 sm:p-6 space-y-4 font-mono">
-              <div className="space-y-3 border-l-2 border-slate-800 pl-4 ml-2">
+            <div className="p-6 overflow-y-auto space-y-6">
+              {/* Timeline estados */}
+              <div className="space-y-5 border-l border-zinc-800 pl-5 ml-2">
                 <div className="relative">
-                  <span className="w-2.5 h-2.5 rounded-full bg-blue-400 absolute -left-[21px] top-1" />
-                  <strong className="text-white block text-xs">
-                    SOLICITADO POR DEPÓSITO
-                  </strong>
-                  <span className="text-[10px] text-slate-400">
+                  <div className="w-2.5 h-2.5 rounded-full bg-zinc-600 absolute -left-[26px] top-1" />
+                  <p className="text-[10px] font-bold uppercase text-white tracking-wider">
+                    Solicitado
+                  </p>
+                  <p className="text-[10px] text-zinc-500 font-mono mt-0.5">
                     {modalHistorialOpen.solicitadoAt}
-                  </span>
+                  </p>
                 </div>
                 {modalHistorialOpen.atendidoAt && (
                   <div className="relative">
-                    <span className="w-2.5 h-2.5 rounded-full bg-amber-400 absolute -left-[21px] top-1" />
-                    <strong className="text-white block text-xs">
-                      ATENDIDO / EN PROCESO
-                    </strong>
-                    <span className="text-[10px] text-slate-400">
+                    <div className="w-2.5 h-2.5 rounded-full bg-[#FF5A00] absolute -left-[26px] top-1" />
+                    <p className="text-[10px] font-bold uppercase text-[#FF5A00] tracking-wider">
+                      En Proceso
+                    </p>
+                    <p className="text-[10px] text-zinc-500 font-mono mt-0.5">
                       {modalHistorialOpen.atendidoAt}
-                    </span>
+                    </p>
                   </div>
                 )}
                 {modalHistorialOpen.disponibleAt && (
                   <div className="relative">
-                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 absolute -left-[21px] top-1" />
-                    <strong className="text-white block text-xs">
-                      DISPONIBLE PARA RETIRO
-                    </strong>
-                    <span className="text-[10px] text-slate-400">
+                    <div className="w-2.5 h-2.5 rounded-full bg-[#FFD700] absolute -left-[26px] top-1" />
+                    <p className="text-[10px] font-bold uppercase text-[#FFD700] tracking-wider">
+                      Disponible
+                    </p>
+                    <p className="text-[10px] text-zinc-500 font-mono mt-0.5">
                       {modalHistorialOpen.disponibleAt}
-                    </span>
+                    </p>
                   </div>
                 )}
               </div>
 
-              <div className="pt-3 border-t border-slate-800 space-y-2">
-                <span className="text-[10px] text-slate-400 uppercase block font-bold">
-                  HISTORIAL DE EXTRACCIONES:
-                </span>
-                {modalHistorialOpen.retirosHistorial &&
-                modalHistorialOpen.retirosHistorial.length > 0 ? (
-                  modalHistorialOpen.retirosHistorial.map((r, i) => (
-                    <div
-                      key={i}
-                      className="bg-[#070a12] p-2.5 rounded-xl border border-slate-800 flex justify-between items-center text-[11px]"
-                    >
-                      <div>
-                        <span className="text-cyan-300 font-bold block">
-                          +{r.cantidad} unidades
-                        </span>
-                        <span className="text-[9px] text-slate-500">
-                          {r.usuario}
-                        </span>
+              {/* Retiros */}
+              <div className="pt-6 border-t border-zinc-800/50">
+                <p className="text-[10px] uppercase tracking-widest text-zinc-500 mb-4 font-bold">
+                  Movimientos de Extracción
+                </p>
+                {modalHistorialOpen.retirosHistorial?.length > 0 ? (
+                  <div className="space-y-2">
+                    {modalHistorialOpen.retirosHistorial.map((r, i) => (
+                      <div
+                        key={i}
+                        className="flex justify-between items-center bg-black p-3 border border-zinc-800 hover:border-zinc-700 transition-colors"
+                      >
+                        <div>
+                          <p className="text-white text-sm font-bold font-mono">
+                            +{r.cantidad}
+                          </p>
+                          <p className="text-zinc-500 text-[10px] uppercase tracking-wider mt-0.5">
+                            {r.usuario}
+                          </p>
+                        </div>
+                        <p className="text-zinc-500 text-xs font-mono">
+                          {r.fecha.slice(11, 16)}hs
+                        </p>
                       </div>
-                      <span className="text-[10px] text-slate-400">
-                        {r.fecha}
-                      </span>
-                    </div>
-                  ))
+                    ))}
+                  </div>
                 ) : (
-                  <p className="text-[11px] text-slate-500 italic">
-                    Sin retiros registrados todavía.
+                  <p className="text-sm text-zinc-600 italic">
+                    No hay registros de retiro.
                   </p>
                 )}
               </div>

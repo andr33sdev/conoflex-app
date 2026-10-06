@@ -23,6 +23,7 @@ export default {
         }
       },
       fontFamily: {
+        sans: ['Sora', 'sans-serif'],
         pixel: ['"Pixelify Sans"', 'cursive'],
         mono: ['"JetBrains Mono"', 'monospace'],
       },
