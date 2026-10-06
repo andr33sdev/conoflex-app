@@ -1342,15 +1342,16 @@ app.post(
 );
 
 // ==========================================
-// RUTAS DE AUTENTICACIÓN GOOGLE (CON STATE DYNAMIC)
+// RUTAS DE AUTENTICACIÓN GOOGLE (CORREGIDAS)
 // ==========================================
+
 app.get("/auth/google", (req, res) => {
   const referer = req.headers.referer || req.headers.origin || "";
   const isLocal = referer.includes("localhost");
 
   const redirectUri = isLocal
     ? "http://localhost:5173/auth/google/callback"
-    : "[https://conoflex-app.vercel.app/auth/google/callback](https://conoflex-app.vercel.app/auth/google/callback)";
+    : "https://conoflex-app.vercel.app/auth/google/callback";
 
   const client = new google.auth.OAuth2(
     process.env.GOOGLE_CLIENT_ID,
@@ -1358,10 +1359,11 @@ app.get("/auth/google", (req, res) => {
     redirectUri,
   );
 
+  // Permisos limpios de Gmail
   const scopes = [
-    "[https://www.googleapis.com/auth/gmail.readonly](https://www.googleapis.com/auth/gmail.readonly)",
-    "[https://www.googleapis.com/auth/gmail.compose](https://www.googleapis.com/auth/gmail.compose)",
-    "[https://www.googleapis.com/auth/gmail.modify](https://www.googleapis.com/auth/gmail.modify)",
+    "https://www.googleapis.com/auth/gmail.readonly",
+    "https://www.googleapis.com/auth/gmail.compose",
+    "https://www.googleapis.com/auth/gmail.modify",
   ];
 
   res.redirect(
@@ -1380,7 +1382,7 @@ app.get("/auth/google/callback", async (req, res) => {
 
     const redirectUri = isLocal
       ? "http://localhost:5173/auth/google/callback"
-      : "[https://conoflex-app.vercel.app/auth/google/callback](https://conoflex-app.vercel.app/auth/google/callback)";
+      : "https://conoflex-app.vercel.app/auth/google/callback";
 
     const client = new google.auth.OAuth2(
       process.env.GOOGLE_CLIENT_ID,
@@ -1390,15 +1392,13 @@ app.get("/auth/google/callback", async (req, res) => {
 
     const { tokens } = await client.getToken(req.query.code);
 
-    // Asignamos tokens al cliente global y guardamos en archivo
     oauth2Client.setCredentials(tokens);
     const mainTokenPath = path.join(__dirname, "token.json");
     fs.writeFileSync(mainTokenPath, JSON.stringify(tokens));
 
     const targetUrl = isLocal
       ? "http://localhost:5173"
-      : process.env.FRONTEND_URL ||
-        "[https://conoflex-app.vercel.app](https://conoflex-app.vercel.app)";
+      : process.env.FRONTEND_URL || "https://conoflex-app.vercel.app";
 
     res.redirect(`${targetUrl}?status=conectado&module=comercial`);
   } catch (error) {
