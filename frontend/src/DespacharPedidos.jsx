@@ -14,9 +14,17 @@ import {
   Clock,
 } from "lucide-react";
 
-export default function DespacharPedidos() {
+export default function DespacharPedidos({ usuarioActual }) {
   const [vendedoresDisponibles, setVendedoresDisponibles] = useState([]);
-  const [vendedoresSeleccionados, setVendedoresSeleccionados] = useState([]);
+
+  // AUTOTILDAR AL CARGAR: Si el usuario tiene vendedores asignados en su perfil, se marcan automáticamente
+  const [vendedoresSeleccionados, setVendedoresSeleccionados] = useState(() => {
+    return Array.isArray(usuarioActual?.vendedores) &&
+      usuarioActual.vendedores.length > 0
+      ? usuarioActual.vendedores
+      : [];
+  });
+
   const [ultimaSinc, setUltimaSinc] = useState(null);
 
   const [pedidos, setPedidos] = useState([]);
@@ -55,6 +63,16 @@ export default function DespacharPedidos() {
   useEffect(() => {
     fetchVendedores();
   }, []);
+
+  // Actualizar vendedores autotildados cuando cambie el usuario de la sesión
+  useEffect(() => {
+    if (
+      Array.isArray(usuarioActual?.vendedores) &&
+      usuarioActual.vendedores.length > 0
+    ) {
+      setVendedoresSeleccionados(usuarioActual.vendedores);
+    }
+  }, [usuarioActual]);
 
   useEffect(() => {
     const calculateItems = () => {

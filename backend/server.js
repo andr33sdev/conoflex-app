@@ -967,7 +967,19 @@ app.put("/api/permisos/:rol", async (req, res) => {
 // MÓDULO DE AUTENTICACIÓN Y USUARIOS
 // ==========================================
 
-// 1. INICIO DE SESIÓN
+// Helper para parsear vendedores de la BD
+const parseVendedoresUser = (vendedoresRaw) => {
+  if (!vendedoresRaw) return [];
+  try {
+    return typeof vendedoresRaw === "string"
+      ? JSON.parse(vendedoresRaw)
+      : vendedoresRaw || [];
+  } catch (e) {
+    return [];
+  }
+};
+
+// 1. LOGIN CON VENDEDORES INCLUIDOS EN SESIÓN
 app.post("/api/auth/login", async (req, res) => {
   const { email, password } = req.body;
   if (!email || !password) {
@@ -995,6 +1007,8 @@ app.post("/api/auth/login", async (req, res) => {
       permisos = permRows.map((p) => p.modulo_id);
     }
 
+    const vendedoresArr = parseVendedoresUser(user.vendedores);
+
     const token = jwt.sign(
       { id: user.id, email: user.email, rol: user.rol, nombre: user.nombre },
       JWT_SECRET,
@@ -1010,6 +1024,7 @@ app.post("/api/auth/login", async (req, res) => {
         email: user.email,
         rol: user.rol,
         permisos,
+        vendedores: vendedoresArr, // <-- ENVIADO A LA SESIÓN
       },
     });
   } catch (error) {
@@ -1018,32 +1033,44 @@ app.post("/api/auth/login", async (req, res) => {
   }
 });
 
-// 2. OBTENER LISTA DE USUARIOS
+// 2. OBTENER TODOS LOS USUARIOS (con sus vendedores)
 app.get("/api/usuarios", async (req, res) => {
   try {
     const [users] = await db.query(
-      "SELECT id, nombre, email, rol, created_at FROM usuarios ORDER BY id ASC",
+      "SELECT id, nombre, email, rol, vendedores, created_at FROM usuarios ORDER BY id ASC",
     );
-    res.json(users);
+    const usuariosFormateados = users.map((u) => ({
+      ...u,
+      vendedores: parseVendedoresUser(u.vendedores),
+    }));
+    res.json(usuariosFormateados);
   } catch (error) {
-    console.error("Error al obtener usuarios:", error);
     res.status(500).json({ error: error.message });
   }
 });
 
-// 2. CREAR NUEVO USUARIO (Acepta cualquier rol creado)
+// 3. CREAR USUARIO (con rol y vendedores)
 app.post("/api/usuarios", async (req, res) => {
-  const { nombre, email, password, rol } = req.body;
+  const { nombre, email, password, rol, vendedores } = req.body;
   if (!nombre || !email || !password) {
     return res.status(400).json({ error: "Faltan campos obligatorios." });
   }
 
   const rolLimpio = (rol || "PRODUCCION").trim().toUpperCase();
+  const vendedoresJson = JSON.stringify(
+    Array.isArray(vendedores) ? vendedores : [],
+  );
 
   try {
     const [result] = await db.query(
-      "INSERT INTO usuarios (nombre, email, password_hash, rol) VALUES (?, ?, ?, ?)",
-      [nombre.trim(), email.trim().toLowerCase(), password, rolLimpio],
+      "INSERT INTO usuarios (nombre, email, password_hash, rol, vendedores) VALUES (?, ?, ?, ?, ?)",
+      [
+        nombre.trim(),
+        email.trim().toLowerCase(),
+        password,
+        rolLimpio,
+        vendedoresJson,
+      ],
     );
 
     res.json({
@@ -1051,12 +1078,32 @@ app.post("/api/usuarios", async (req, res) => {
       nombre: nombre.trim(),
       email: email.trim().toLowerCase(),
       rol: rolLimpio,
+      vendedores: Array.isArray(vendedores) ? vendedores : [],
     });
   } catch (error) {
     console.error("Error al crear usuario:", error);
     res.status(400).json({
       error: "El email ya está registrado o los datos son inválidos.",
     });
+  }
+});
+
+// 4. ACTUALIZAR VENDEDORES DE UN USUARIO
+app.put("/api/usuarios/:id/vendedores", async (req, res) => {
+  const { vendedores } = req.body;
+  const vendedoresJson = JSON.stringify(
+    Array.isArray(vendedores) ? vendedores : [],
+  );
+
+  try {
+    await db.query("UPDATE usuarios SET vendedores = ? WHERE id = ?", [
+      vendedoresJson,
+      req.params.id,
+    ]);
+    res.json({ success: true, mensaje: "Vendedores asignados correctamente" });
+  } catch (error) {
+    console.error("Error actualizando vendedores del usuario:", error);
+    res.status(500).json({ error: error.message });
   }
 });
 

@@ -181,7 +181,9 @@ function App() {
       {hasAccess("planificacion") && activeModule === "planificacion" && (
         <PlanificacionProduccion />
       )}
-      {activeModule === "despachar-pedidos" && <DespacharPedidos />}
+      {activeModule === "despachar-pedidos" && (
+        <DespacharPedidos usuarioActual={usuarioActual} />
+      )}
 
       {hasAccess("carga-produccion") && activeModule === "carga-produccion" && (
         <CargaProduccion />

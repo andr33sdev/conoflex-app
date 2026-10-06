@@ -6,11 +6,12 @@ import {
   UserPlus,
   X,
   Lock,
-  Mail,
-  User,
   CheckCircle2,
   AlertCircle,
   Plus,
+  Briefcase,
+  CheckSquare,
+  Square,
 } from "lucide-react";
 
 const MODULOS_SISTEMA = [
@@ -22,13 +23,13 @@ const MODULOS_SISTEMA = [
   { id: "planificacion", nombre: "Planificación OT" },
   { id: "carga-produccion", nombre: "Carga Producción" },
   { id: "despachar-pedidos", nombre: "Despachar Pedidos" },
-  { id: "comercial", nombre: "IA Comercial" },
+  { id: "comercial", label: "IA Comercial" },
   { id: "solicitudes-internas", nombre: "Solicitudes Internas" },
   { id: "planta-online", nombre: "Planta On-Line" },
 ];
 
 export default function AdminUsuarios() {
-  const [tab, setTab] = useState("USUARIOS"); // "USUARIOS" | "ROLES"
+  const [tab, setTab] = useState("USUARIOS");
   const [usuarios, setUsuarios] = useState([]);
   const [roles, setRoles] = useState([
     "ADMIN",
@@ -36,12 +37,14 @@ export default function AdminUsuarios() {
     "DEPOSITO",
     "COMERCIAL",
   ]);
+  const [vendedoresDisponibles, setVendedoresDisponibles] = useState([]);
   const [permisosRoles, setPermisosRoles] = useState({});
   const [rolSeleccionado, setRolSeleccionado] = useState("PRODUCCION");
 
   const [modalCrearUser, setModalCrearUser] = useState(false);
   const [modalCrearRol, setModalCrearRol] = useState(false);
   const [modalPassOpen, setModalPassOpen] = useState(null);
+  const [modalVendedoresUser, setModalVendedoresUser] = useState(null); // Usuario para editar vendedores
 
   const [loading, setLoading] = useState(false);
   const [toast, setToast] = useState(null);
@@ -51,7 +54,9 @@ export default function AdminUsuarios() {
     email: "",
     password: "",
     rol: "PRODUCCION",
+    vendedores: [],
   });
+
   const [nuevoRolNombre, setNuevoRolNombre] = useState("");
   const [nuevaPassword, setNuevaPassword] = useState("");
 
@@ -74,13 +79,24 @@ export default function AdminUsuarios() {
       const res = await fetch("/api/roles");
       if (res.ok) {
         const data = await res.json();
-        if (Array.isArray(data) && data.length > 0) {
-          setRoles(data);
-          if (!data.includes(rolSeleccionado)) setRolSeleccionado(data[0]);
-        }
+        if (Array.isArray(data) && data.length > 0) setRoles(data);
       }
     } catch (err) {
       console.error("Error cargando roles:", err);
+    }
+  };
+
+  const fetchVendedores = async () => {
+    try {
+      const res = await fetch("/api/estado-pedidos/vendedores");
+      if (res.ok) {
+        const data = await res.json();
+        setVendedoresDisponibles(
+          data.vendedores || (Array.isArray(data) ? data : []),
+        );
+      }
+    } catch (err) {
+      console.error("Error cargando vendedores:", err);
     }
   };
 
@@ -96,10 +112,10 @@ export default function AdminUsuarios() {
   useEffect(() => {
     fetchUsuarios();
     fetchRoles();
+    fetchVendedores();
     fetchPermisos();
   }, []);
 
-  // CREAR USUARIO
   const handleCrearUsuario = async (e) => {
     e.preventDefault();
     setLoading(true);
@@ -118,6 +134,7 @@ export default function AdminUsuarios() {
           email: "",
           password: "",
           rol: roles[0] || "PRODUCCION",
+          vendedores: [],
         });
         await fetchUsuarios();
       } else {
@@ -130,7 +147,6 @@ export default function AdminUsuarios() {
     }
   };
 
-  // CREAR ROL
   const handleCrearRol = async (e) => {
     e.preventDefault();
     if (!nuevoRolNombre.trim()) return;
@@ -153,13 +169,12 @@ export default function AdminUsuarios() {
         showToast(data.error || "Error al crear el rol", "error");
       }
     } catch (err) {
-      showToast("Error de conexión al crear el rol", "error");
+      showToast("Error de conexión", "error");
     } finally {
       setLoading(false);
     }
   };
 
-  // CAMBIAR ROL A UN USUARIO
   const handleCambiarRolUsuario = async (userId, nuevoRol) => {
     try {
       const res = await fetch(`/api/usuarios/${userId}/rol`, {
@@ -178,7 +193,34 @@ export default function AdminUsuarios() {
     }
   };
 
-  // CAMBIAR CONTRASEÑA
+  const handleGuardarVendedoresUsuario = async () => {
+    if (!modalVendedoresUser) return;
+    setLoading(true);
+    try {
+      const res = await fetch(
+        `/api/usuarios/${modalVendedoresUser.id}/vendedores`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            vendedores: modalVendedoresUser.vendedores || [],
+          }),
+        },
+      );
+      if (res.ok) {
+        showToast("Vendedores asignados guardados");
+        setModalVendedoresUser(null);
+        await fetchUsuarios();
+      } else {
+        showToast("Error al guardar vendedores", "error");
+      }
+    } catch (err) {
+      showToast("Error de conexión", "error");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleCambiarPassword = async (e) => {
     e.preventDefault();
     if (!nuevaPassword) return;
@@ -200,20 +242,15 @@ export default function AdminUsuarios() {
     }
   };
 
-  // TOGGLE MÓDULO EN MATRIZ DE PERMISOS
   const toggleModuloPermiso = (moduloId) => {
     if (rolSeleccionado === "ADMIN") return;
     const listaActual = permisosRoles[rolSeleccionado] || [];
-    let nuevaLista = [];
-    if (listaActual.includes(moduloId)) {
-      nuevaLista = listaActual.filter((m) => m !== moduloId);
-    } else {
-      nuevaLista = [...listaActual, moduloId];
-    }
+    let nuevaLista = listaActual.includes(moduloId)
+      ? listaActual.filter((m) => m !== moduloId)
+      : [...listaActual, moduloId];
     setPermisosRoles({ ...permisosRoles, [rolSeleccionado]: nuevaLista });
   };
 
-  // GUARDAR PERMISOS
   const handleGuardarPermisos = async () => {
     if (rolSeleccionado === "ADMIN") return;
     setLoading(true);
@@ -267,7 +304,7 @@ export default function AdminUsuarios() {
               Panel de Administrador
             </h1>
             <p className="text-xs text-slate-400">
-              Gestión de usuarios, creación de roles y matriz de permisos
+              Gestión de usuarios, asignación de vendedores y roles
             </p>
           </div>
         </div>
@@ -318,6 +355,7 @@ export default function AdminUsuarios() {
                   <th className="py-3 px-4">Nombre / ID</th>
                   <th className="py-3 px-4">Email de Acceso</th>
                   <th className="py-3 px-4">Rol Asignado</th>
+                  <th className="py-3 px-4">Vendedor(es) Asignados</th>
                   <th className="py-3 px-4 text-center">Acciones</th>
                 </tr>
               </thead>
@@ -351,6 +389,17 @@ export default function AdminUsuarios() {
                         ))}
                       </select>
                     </td>
+                    <td className="py-3 px-4">
+                      <button
+                        onClick={() => setModalVendedoresUser(u)}
+                        className="bg-slate-900 border border-slate-800 hover:border-slate-700 text-amber-300 font-mono px-2.5 py-1 rounded-lg text-xs transition-all flex items-center gap-1.5 cursor-pointer"
+                      >
+                        <Briefcase size={12} className="text-amber-400" />
+                        {u.vendedores && u.vendedores.length > 0
+                          ? u.vendedores.join(", ")
+                          : "Sin Asignar"}
+                      </button>
+                    </td>
                     <td className="py-3 px-4 text-center">
                       <button
                         onClick={() => setModalPassOpen(u.id)}
@@ -370,7 +419,6 @@ export default function AdminUsuarios() {
       {/* TAB ROLES Y ACCESOS */}
       {tab === "ROLES" && (
         <div className="flex-1 flex flex-col md:flex-row p-4 md:p-6 gap-6 min-h-0 overflow-auto">
-          {/* COLUMNA ROLES */}
           <div className="w-full md:w-64 flex flex-col gap-3">
             <div className="flex items-center justify-between">
               <span className="text-xs font-bold uppercase tracking-wider text-slate-400">
@@ -407,7 +455,6 @@ export default function AdminUsuarios() {
             </div>
           </div>
 
-          {/* COLUMNA ACCESOS DE MÓDULOS */}
           <div className="flex-1 border border-slate-800/80 rounded-xl p-4 bg-slate-950/40 flex flex-col justify-between">
             <div>
               <div className="flex items-center justify-between border-b border-slate-800/80 pb-3 mb-4">
@@ -419,7 +466,7 @@ export default function AdminUsuarios() {
                   <p className="text-xs text-slate-400">
                     {rolSeleccionado === "ADMIN"
                       ? "El rol ADMIN posee acceso total irrestricto."
-                      : "Marque los módulos que este rol podrá visualizar e interactuar."}
+                      : "Marque los módulos que este rol podrá visualizar."}
                   </p>
                 </div>
 
@@ -472,7 +519,7 @@ export default function AdminUsuarios() {
       {/* MODAL CREAR USUARIO */}
       {modalCrearUser && (
         <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-[#090d16] border border-slate-800 rounded-2xl p-6 w-full max-w-md shadow-2xl relative">
+          <div className="bg-[#090d16] border border-slate-800 rounded-2xl p-6 w-full max-w-md shadow-2xl relative max-h-[90vh] overflow-y-auto">
             <button
               onClick={() => setModalCrearUser(false)}
               className="absolute top-4 right-4 text-slate-500 hover:text-slate-200"
@@ -554,6 +601,45 @@ export default function AdminUsuarios() {
                 </select>
               </div>
 
+              {/* SELECCIÓN DE VENDEDORES EN CREACIÓN */}
+              <div>
+                <label className="text-slate-400 font-semibold mb-1.5 block">
+                  Vendedor(es) Asignados (Despacho)
+                </label>
+                <div className="flex flex-wrap gap-2 max-h-36 overflow-y-auto p-2 border border-slate-800 rounded-xl bg-slate-950">
+                  {vendedoresDisponibles.map((v) => {
+                    const checked = formUsuario.vendedores.includes(v);
+                    return (
+                      <button
+                        key={v}
+                        type="button"
+                        onClick={() => {
+                          const nuevaLista = checked
+                            ? formUsuario.vendedores.filter((x) => x !== v)
+                            : [...formUsuario.vendedores, v];
+                          setFormUsuario({
+                            ...formUsuario,
+                            vendedores: nuevaLista,
+                          });
+                        }}
+                        className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-mono transition-all cursor-pointer ${
+                          checked
+                            ? "bg-amber-500/20 border border-amber-500/50 text-amber-300 font-bold"
+                            : "bg-slate-900 border border-slate-800 text-slate-400"
+                        }`}
+                      >
+                        {checked ? (
+                          <CheckSquare size={12} className="text-amber-400" />
+                        ) : (
+                          <Square size={12} />
+                        )}
+                        {v}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
               <button
                 type="submit"
                 disabled={loading}
@@ -562,6 +648,72 @@ export default function AdminUsuarios() {
                 {loading ? "Creando..." : "Guardar Usuario"}
               </button>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL ASIGNAR VENDEDORES A USUARIO EXISTENTE */}
+      {modalVendedoresUser && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-[#090d16] border border-slate-800 rounded-2xl p-6 w-full max-w-md shadow-2xl relative">
+            <button
+              onClick={() => setModalVendedoresUser(null)}
+              className="absolute top-4 right-4 text-slate-500 hover:text-slate-200"
+            >
+              <X size={18} />
+            </button>
+            <h3 className="text-sm font-bold uppercase text-slate-100 mb-1 flex items-center gap-2">
+              <Briefcase size={16} className="text-amber-400" /> Asignar
+              Vendedores
+            </h3>
+            <p className="text-xs text-slate-400 mb-4">
+              Usuario:{" "}
+              <strong className="text-cyan-300">
+                {modalVendedoresUser.nombre}
+              </strong>
+            </p>
+
+            <div className="flex flex-wrap gap-2 max-h-48 overflow-y-auto p-3 border border-slate-800 rounded-xl bg-slate-950 mb-4">
+              {vendedoresDisponibles.map((v) => {
+                const list = modalVendedoresUser.vendedores || [];
+                const checked = list.includes(v);
+                return (
+                  <button
+                    key={v}
+                    type="button"
+                    onClick={() => {
+                      const nuevaLista = checked
+                        ? list.filter((x) => x !== v)
+                        : [...list, v];
+                      setModalVendedoresUser({
+                        ...modalVendedoresUser,
+                        vendedores: nuevaLista,
+                      });
+                    }}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-mono transition-all cursor-pointer ${
+                      checked
+                        ? "bg-amber-500/20 border border-amber-500/50 text-amber-300 font-bold"
+                        : "bg-slate-900 border border-slate-800 text-slate-400"
+                    }`}
+                  >
+                    {checked ? (
+                      <CheckSquare size={13} className="text-amber-400" />
+                    ) : (
+                      <Square size={13} />
+                    )}
+                    {v}
+                  </button>
+                );
+              })}
+            </div>
+
+            <button
+              onClick={handleGuardarVendedoresUsuario}
+              disabled={loading}
+              className="w-full bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold py-2.5 rounded-xl transition-all shadow-[0_0_15px_rgba(245,158,11,0.25)] cursor-pointer"
+            >
+              {loading ? "Guardando..." : "Guardar Vendedores Asignados"}
+            </button>
           </div>
         </div>
       )}
