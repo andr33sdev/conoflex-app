@@ -11,6 +11,11 @@ export default defineConfig({
         changeOrigin: true,
         secure: false,
       },
+      "/auth": {
+        target: "http://66.97.34.163:3001",
+        changeOrigin: true,
+        secure: false,
+      },
       "/imagenes": {
         target: "http://66.97.34.163:3001",
         changeOrigin: true,

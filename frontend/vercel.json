@@ -5,6 +5,10 @@
       "destination": "http://66.97.34.163:3001/api/:path*"
     },
     {
+      "source": "/auth/:path*",
+      "destination": "http://66.97.34.163:3001/auth/:path*"
+    },
+    {
       "source": "/imagenes/:path*",
       "destination": "http://66.97.34.163:3001/imagenes/:path*"
     }
