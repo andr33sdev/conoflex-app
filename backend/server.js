@@ -3455,7 +3455,56 @@ app.get("/api/estado-pedidos/pendientes-despacho", async (req, res) => {
   }
 });
 
-// 2. Sincronizar tabla completa desde el Google Sheets de Ventas
+// Obtener lista única de vendedores guardados en la BD
+app.get("/api/estado-pedidos/vendedores", async (req, res) => {
+  try {
+    const [rows] = await db.query(
+      "SELECT DISTINCT vendedor FROM estado_pedidos WHERE vendedor IS NOT NULL AND vendedor != '' ORDER BY vendedor ASC",
+    );
+    res.json(rows.map((r) => r.vendedor));
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Obtener pedidos pendientes de despacho filtrados por vendedores
+app.get("/api/estado-pedidos/pendientes-despacho", async (req, res) => {
+  try {
+    const { vendedores } = req.query; // Puede ser 'TODOS' o lista separada por comas
+
+    let baseWhere = `
+      (preparado IS NOT NULL AND preparado != '' AND preparado != '-' AND preparado NOT LIKE '%SIN PREPARAR%')
+      AND (despacho IS NULL OR despacho = '' OR despacho = '-' OR despacho LIKE '%SIN DESPACHAR%')
+    `;
+
+    const params = [];
+
+    if (vendedores && vendedores !== "TODOS") {
+      const listaVendedores = vendedores
+        .split(",")
+        .map((v) => v.trim())
+        .filter(Boolean);
+      if (listaVendedores.length > 0) {
+        baseWhere += ` AND vendedor IN (?)`;
+        params.push(listaVendedores);
+      }
+    }
+
+    const query = `
+      SELECT id, fecha, op, cliente, modelo, cantidad, preparado, estado, vendedor
+      FROM estado_pedidos
+      WHERE ${baseWhere}
+      ORDER BY preparado ASC, fecha DESC
+    `;
+
+    const [rows] = await db.query(query, params);
+    res.json(rows);
+  } catch (error) {
+    console.error("Error al obtener pendientes de despacho:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 app.post("/api/estado-pedidos/sincronizar", async (req, res) => {
   try {
     const csvUrl = process.env.GOOGLE_SHEETS_PEDIDOS_URL || VENTAS_CSV_URL;
@@ -3469,7 +3518,6 @@ app.post("/api/estado-pedidos/sincronizar", async (req, res) => {
     const response = await fetch(csvUrl);
     const csvText = await response.text();
 
-    // Helper para limpiar montos en pesos o USD (ej: "$ 14.876,03" o "7,47")
     const parseMonto = (val) => {
       if (!val) return 0;
       let str = String(val).replace(/\$/g, "").replace(/\s/g, "").trim();
@@ -3481,7 +3529,6 @@ app.post("/api/estado-pedidos/sincronizar", async (req, res) => {
       return parseFloat(str) || 0;
     };
 
-    // Parser CSV que respeta comillas en campos con comas
     const parseCSVLine = (text) => {
       const result = [];
       let cell = "";
@@ -3508,10 +3555,9 @@ app.post("/api/estado-pedidos/sincronizar", async (req, res) => {
         .json({ error: "El archivo Sheets no contiene filas de datos." });
     }
 
-    // Cabecera limpia
     const headers = parseCSVLine(lines[0]).map((h) => h.toUpperCase().trim());
 
-    // Mapeo dinámico de columnas por nombre
+    // Mapeo de índices
     const idxFecha = headers.indexOf("FECHA");
     const idxPeriodo = headers.indexOf("PERIODO");
     const idxOp = headers.indexOf("OP");
@@ -3534,17 +3580,17 @@ app.post("/api/estado-pedidos/sincronizar", async (req, res) => {
     const idxDespachado = headers.indexOf("DESPACHADO");
     const idxPunisiva = headers.indexOf("PUNISIVA");
     const idxCosusd = headers.indexOf("COSUSD");
+    const idxVendedor = headers.indexOf("VENDEDOR"); // <-- COLUMNA V
 
     const conn = await db.getConnection();
     try {
       await conn.beginTransaction();
 
-      // Limpiar tabla antes de recargar
       await conn.query("TRUNCATE TABLE estado_pedidos");
 
       const insertQuery = `
         INSERT INTO estado_pedidos 
-        (fecha, periodo, op, cliente, modelo, detalles, oc, cantidad, estado, programado, preparado, despacho, demora_entrega_dias, demora_preparacion, comentarios, despachado, punisiva, cosusd) 
+        (fecha, periodo, op, cliente, modelo, detalles, oc, cantidad, estado, programado, preparado, despacho, demora_entrega_dias, demora_preparacion, comentarios, despachado, punisiva, cosusd, vendedor) 
         VALUES ?
       `;
 
@@ -3554,12 +3600,20 @@ app.post("/api/estado-pedidos/sincronizar", async (req, res) => {
         const cols = parseCSVLine(lines[i]);
         if (!cols[idxOp] && !cols[idxModelo]) continue;
 
-        const fechaFormateada = parseFecha(cols[idxFecha]);
+        const fechaFormateada = parseFechaDeterminista(cols[idxFecha]);
         const punisivaVal =
           idxPunisiva !== -1 ? parseMonto(cols[idxPunisiva]) : 0;
         const cosusdVal = idxCosusd !== -1 ? parseMonto(cols[idxCosusd]) : 0;
         const cantVal =
           idxCantidad !== -1 ? parseInt(cols[idxCantidad]) || 1 : 1;
+
+        // Regla Vendedor: Solo guarda datos a partir del 2026-10-05, de lo contrario NULL
+        let vendedorVal = null;
+        if (idxVendedor !== -1 && cols[idxVendedor] && fechaFormateada) {
+          if (fechaFormateada >= "2026-10-05") {
+            vendedorVal = cols[idxVendedor].trim() || null;
+          }
+        }
 
         valuesToInsert.push([
           fechaFormateada,
@@ -3580,6 +3634,7 @@ app.post("/api/estado-pedidos/sincronizar", async (req, res) => {
           cols[idxDespachado] || "no",
           punisivaVal,
           cosusdVal,
+          vendedorVal,
         ]);
       }
 
@@ -3594,7 +3649,7 @@ app.post("/api/estado-pedidos/sincronizar", async (req, res) => {
       await conn.commit();
       res.json({
         success: true,
-        mensaje: `Se sincronizaron ${valuesToInsert.length} pedidos con fechas corregidas a formato MySQL.`,
+        mensaje: `Se sincronizaron ${valuesToInsert.length} pedidos incluyendo vendedores.`,
       });
     } catch (err) {
       await conn.rollback();
