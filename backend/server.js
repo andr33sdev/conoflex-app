@@ -607,6 +607,23 @@ async function initDB() {
       );
     `);
 
+    await db.query(`
+  CREATE TABLE IF NOT EXISTS solicitudes_internas (
+    id VARCHAR(20) PRIMARY KEY,
+    semielaborado_codigo VARCHAR(50) NOT NULL,
+    semielaborado_nombre VARCHAR(255) NOT NULL,
+    cantidad_solicitada INT NOT NULL,
+    cantidad_retirada INT DEFAULT 0,
+    urgencia VARCHAR(20) NOT NULL DEFAULT 'MEDIA',
+    estado VARCHAR(30) NOT NULL DEFAULT 'SOLICITADO',
+    solicitado_at DATETIME NOT NULL,
+    atendido_at DATETIME DEFAULT NULL,
+    disponible_at DATETIME DEFAULT NULL,
+    entregado_at DATETIME DEFAULT NULL,
+    retiros_historial JSON DEFAULT NULL
+  );
+`);
+
     // USUARIO ADMIN POR DEFECTO
     const [adminRows] = await db.query(
       "SELECT COUNT(*) as count FROM usuarios",
@@ -3440,6 +3457,172 @@ app.delete("/api/ordenes-trabajo/:id", async (req, res) => {
     await db.query("DELETE FROM ordenes_trabajo WHERE id = ?", [req.params.id]);
     res.json({ success: true });
   } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ==========================================
+// MÓDULO SOLICITUDES INTERNAS (PERSISTENTE)
+// ==========================================
+
+// Helper para parsear JSON de retiros de MySQL
+const parseRetirosHistorial = (hist) => {
+  if (!hist) return [];
+  if (typeof hist === "string") {
+    try {
+      return JSON.parse(hist);
+    } catch (e) {
+      return [];
+    }
+  }
+  return Array.isArray(hist) ? hist : [];
+};
+
+// 1. OBTENER TODAS LAS SOLICITUDES
+app.get("/api/solicitudes-internas", async (req, res) => {
+  try {
+    const [rows] = await db.query(
+      "SELECT * FROM solicitudes_internas ORDER BY solicitado_at DESC",
+    );
+
+    const solicitudes = rows.map((r) => ({
+      id: r.id,
+      semielaboradoCodigo: r.semielaborado_codigo,
+      semielaboradoNombre: r.semielaborado_nombre,
+      cantidadSolicitada: r.cantidad_solicitada,
+      cantidadRetirada: r.cantidad_retirada,
+      urgencia: r.urgencia,
+      estado: r.estado,
+      solicitadoAt: r.solicitado_at
+        ? new Date(r.solicitado_at)
+            .toISOString()
+            .replace("T", " ")
+            .substring(0, 19)
+        : null,
+      atendidoAt: r.atendido_at
+        ? new Date(r.atendido_at)
+            .toISOString()
+            .replace("T", " ")
+            .substring(0, 19)
+        : null,
+      disponibleAt: r.disponible_at
+        ? new Date(r.disponible_at)
+            .toISOString()
+            .replace("T", " ")
+            .substring(0, 19)
+        : null,
+      entregadoAt: r.entregado_at
+        ? new Date(r.entregado_at)
+            .toISOString()
+            .replace("T", " ")
+            .substring(0, 19)
+        : null,
+      retirosHistorial: parseRetirosHistorial(r.retiros_historial),
+    }));
+
+    res.json(solicitudes);
+  } catch (error) {
+    console.error("Error al obtener solicitudes internas:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// 2. CREAR NUEVA SOLICITUD
+app.post("/api/solicitudes-internas", async (req, res) => {
+  const {
+    id,
+    semielaboradoCodigo,
+    semielaboradoNombre,
+    cantidadSolicitada,
+    urgencia,
+    estado,
+    solicitadoAt,
+  } = req.body;
+
+  if (!id || !semielaboradoNombre || !cantidadSolicitada) {
+    return res.status(400).json({ error: "Faltan datos requeridos." });
+  }
+
+  try {
+    await db.query(
+      `INSERT INTO solicitudes_internas 
+       (id, semielaborado_codigo, semielaborado_nombre, cantidad_solicitada, cantidad_retirada, urgencia, estado, solicitado_at, retiros_historial)
+       VALUES (?, ?, ?, ?, 0, ?, ?, ?, ?)`,
+      [
+        id,
+        semielaboradoCodigo || "S/C",
+        semielaboradoNombre,
+        cantidadSolicitada,
+        urgencia || "MEDIA",
+        estado || "SOLICITADO",
+        solicitadoAt ||
+          new Date().toISOString().replace("T", " ").substring(0, 19),
+        JSON.stringify([]),
+      ],
+    );
+
+    res.json({ success: true, mensaje: "Solicitud registrada con éxito" });
+  } catch (error) {
+    console.error("Error al crear solicitud interna:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// 3. CAMBIAR ESTADO DE UNA SOLICITUD
+app.put("/api/solicitudes-internas/:id/estado", async (req, res) => {
+  const { id } = req.params;
+  const { estado, atendidoAt, disponibleAt, entregadoAt } = req.body;
+
+  try {
+    let query = "UPDATE solicitudes_internas SET estado = ?";
+    const params = [estado];
+
+    if (atendidoAt) {
+      query += ", atendido_at = ?";
+      params.push(atendidoAt);
+    }
+    if (disponibleAt) {
+      query += ", disponible_at = ?";
+      params.push(disponibleAt);
+    }
+    if (entregadoAt) {
+      query += ", entregado_at = ?";
+      params.push(entregadoAt);
+    }
+
+    query += " WHERE id = ?";
+    params.push(id);
+
+    await db.query(query, params);
+    res.json({ success: true });
+  } catch (error) {
+    console.error("Error al actualizar estado:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// 4. REGISTRAR EXTRACCIÓN Y RETIRO PARCIAL
+app.put("/api/solicitudes-internas/:id/retiro", async (req, res) => {
+  const { id } = req.params;
+  const { cantidadRetirada, estado, entregadoAt, retirosHistorial } = req.body;
+
+  try {
+    await db.query(
+      `UPDATE solicitudes_internas 
+       SET cantidad_retirada = ?, estado = ?, entregado_at = ?, retiros_historial = ?
+       WHERE id = ?`,
+      [
+        cantidadRetirada,
+        estado,
+        entregadoAt || null,
+        JSON.stringify(retirosHistorial || []),
+        id,
+      ],
+    );
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error("Error al registrar retiro:", error);
     res.status(500).json({ error: error.message });
   }
 });

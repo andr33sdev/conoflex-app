@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import {
   ClipboardList,
   History,
@@ -12,11 +12,12 @@ import {
   AlertCircle,
   Send,
   Lock,
+  Clock,
+  AlertTriangle,
+  RefreshCw,
 } from "lucide-react";
 
-// ==============================================================================
 // CONFIGURACIÓN DE URL DEL BACKEND (FEROZO / LOCALHOST)
-// ==============================================================================
 const API_BASE_URL = import.meta.env?.VITE_API_URL || "";
 
 const getApiUrl = (path) => {
@@ -24,49 +25,15 @@ const getApiUrl = (path) => {
   return `${API_BASE_URL}${cleanPath}`;
 };
 
-// DATA INICIAL DE MUESTRA
-const SOLICITUDES_INICIALES = [
-  {
-    id: "SOL-1001",
-    semielaboradoCodigo: "2400-2R",
-    semielaboradoNombre: "Cuerpo Cono Autopista 120cm Amarillo",
-    cantidadSolicitada: 500,
-    cantidadRetirada: 300,
-    urgencia: "ALTA",
-    estado: "DISPONIBLE",
-    solicitadoAt: "2026-10-01 08:30:12",
-    atendidoAt: "2026-10-01 09:15:00",
-    disponibleAt: "2026-10-01 16:00:00",
-    entregadoAt: null,
-    retirosHistorial: [
-      { fecha: "2026-10-01 17:10:00", cantidad: 150, usuario: "Depósito" },
-      { fecha: "2026-10-02 09:00:00", cantidad: 150, usuario: "Depósito" },
-    ],
-  },
-  {
-    id: "SOL-1002",
-    semielaboradoCodigo: "CAD-105",
-    semielaboradoNombre: "Cadena Plástica 8mm Amarilla/Negra",
-    cantidadSolicitada: 1000,
-    cantidadRetirada: 0,
-    urgencia: "MEDIA",
-    estado: "ATENDIDO",
-    solicitadoAt: "2026-10-02 07:45:30",
-    atendidoAt: "2026-10-02 08:10:00",
-    disponibleAt: null,
-    entregadoAt: null,
-    retirosHistorial: [],
-  },
-];
-
 export default function SolicitudesInternas({ usuarioActual }) {
-  // DETERMINAR MATRIZ DE PERMISOS POR ROL
+  // MATRIZ DE PERMISOS POR ROL
   const rolUpper = (usuarioActual?.rol || "ADMIN").toUpperCase();
   const isAdmin = rolUpper === "ADMIN";
   const isDeposito = rolUpper === "DEPOSITO" || isAdmin;
   const isProduccion = rolUpper === "PRODUCCION" || isAdmin;
 
-  const [solicitudes, setSolicitudes] = useState(SOLICITUDES_INICIALES);
+  const [solicitudes, setSolicitudes] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [filtroEstado, setFiltroEstado] = useState("TODOS");
   const [busqueda, setBusqueda] = useState("");
 
@@ -87,22 +54,56 @@ export default function SolicitudesInternas({ usuarioActual }) {
   // RETIRO MANUAL
   const [cantidadRetiroManual, setCantidadRetiroManual] = useState("");
 
-  // FETCH DE SEMIELABORADOS DESDE BD
+  // CARGAR SOLICITUDES DESDE BASE DE DATOS
+  const fetchSolicitudes = async () => {
+    try {
+      const url = getApiUrl("/api/solicitudes-internas");
+      const res = await fetch(url);
+      if (!res.ok) return;
+      const data = await res.json();
+      setSolicitudes(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error("Error al cargar solicitudes internas:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchSemielaborados = async () => {
+    try {
+      const url = getApiUrl("/api/semielaborados");
+      const res = await fetch(url);
+      if (!res.ok) return;
+      const data = await res.json();
+      const list = data.semielaborados || data.productos || data || [];
+      setSemielaboradosDB(Array.isArray(list) ? list : []);
+    } catch (err) {
+      console.error("Error al cargar semielaborados:", err);
+    }
+  };
+
   useEffect(() => {
-    const fetchSemielaborados = async () => {
-      try {
-        const url = getApiUrl("/api/semielaborados");
-        const res = await fetch(url);
-        if (!res.ok) return;
-        const data = await res.json();
-        const list = data.semielaborados || data.productos || data || [];
-        setSemielaboradosDB(Array.isArray(list) ? list : []);
-      } catch (err) {
-        console.error("Error al cargar semielaborados:", err);
-      }
-    };
+    fetchSolicitudes();
     fetchSemielaborados();
   }, []);
+
+  // REGLA DE NEGOCIO: CÁLCULO DE BLOQUEO DE 8 HORAS
+  const solicitudesDemoradas8hs = useMemo(() => {
+    const ahora = new Date().getTime();
+    return solicitudes.filter((s) => {
+      if (s.estado === "DISPONIBLE" && s.disponibleAt) {
+        const disponibleTime = new Date(
+          s.disponibleAt.replace(" ", "T"),
+        ).getTime();
+        if (isNaN(disponibleTime)) return false;
+        const diffHoras = (ahora - disponibleTime) / (1000 * 60 * 60);
+        return diffHoras >= 8;
+      }
+      return false;
+    });
+  }, [solicitudes]);
+
+  const bloqueadoPor8hs = solicitudesDemoradas8hs.length > 0;
 
   const semielaboradosFiltrados =
     searchSemiText.length >= 2
@@ -124,10 +125,10 @@ export default function SolicitudesInternas({ usuarioActual }) {
   );
   const limiteAlcanzado = solicitudesActivas.length >= 10;
 
-  // CREAR SOLICITUD (Solo Depósito o Admin)
-  const handleCrearSolicitud = (e) => {
+  // CREAR SOLICITUD EN BASE DE DATOS
+  const handleCrearSolicitud = async (e) => {
     e.preventDefault();
-    if (!isDeposito) return;
+    if (!isDeposito || bloqueadoPor8hs || limiteAlcanzado) return;
     if (!semiSeleccionado || !cantidadPedir || Number(cantidadPedir) <= 0)
       return;
 
@@ -146,26 +147,33 @@ export default function SolicitudesInternas({ usuarioActual }) {
       semielaboradoCodigo: semiSeleccionado.codigo || "S/C",
       semielaboradoNombre: semiSeleccionado.nombre,
       cantidadSolicitada: Number(cantidadPedir),
-      cantidadRetirada: 0,
       urgencia: urgenciaPedir,
       estado: "SOLICITADO",
       solicitadoAt: now,
-      atendidoAt: null,
-      disponibleAt: null,
-      entregadoAt: null,
-      retirosHistorial: [],
     };
 
-    setSolicitudes([nueva, ...solicitudes]);
-    setModalNuevoOpen(false);
-    setSemiSeleccionado(null);
-    setCantidadPedir("");
-    setSearchSemiText("");
-    setErrorDuplicado(null);
+    try {
+      const res = await fetch(getApiUrl("/api/solicitudes-internas"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(nueva),
+      });
+
+      if (res.ok) {
+        await fetchSolicitudes();
+        setModalNuevoOpen(false);
+        setSemiSeleccionado(null);
+        setCantidadPedir("");
+        setSearchSemiText("");
+        setErrorDuplicado(null);
+      }
+    } catch (err) {
+      console.error("Error guardando nueva solicitud:", err);
+    }
   };
 
-  // CAMBIO DE ESTADO (Atendido / Listo por Producción | Cancelado solo por Admin)
-  const handleCambiarEstado = (id, nuevoEstado) => {
+  // CAMBIO DE ESTADO PERSISTIDO EN BD
+  const handleCambiarEstado = async (id, nuevoEstado) => {
     if (nuevoEstado === "CANCELADO" && !isAdmin) return;
     if (
       (nuevoEstado === "ATENDIDO" || nuevoEstado === "DISPONIBLE") &&
@@ -174,54 +182,79 @@ export default function SolicitudesInternas({ usuarioActual }) {
       return;
 
     const now = new Date().toISOString().replace("T", " ").substring(0, 19);
-    setSolicitudes((prev) =>
-      prev.map((s) => {
-        if (s.id !== id) return s;
-        const updated = { ...s, estado: nuevoEstado };
-        if (nuevoEstado === "ATENDIDO" && !s.atendidoAt)
-          updated.atendidoAt = now;
-        if (nuevoEstado === "DISPONIBLE" && !s.disponibleAt)
-          updated.disponibleAt = now;
-        if (nuevoEstado === "CANCELADO") updated.estado = "CANCELADO";
-        return updated;
-      }),
-    );
+    const payload = { estado: nuevoEstado };
+    if (nuevoEstado === "ATENDIDO") payload.atendidoAt = now;
+    if (nuevoEstado === "DISPONIBLE") payload.disponibleAt = now;
+
+    try {
+      const res = await fetch(
+        getApiUrl(`/api/solicitudes-internas/${id}/estado`),
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        },
+      );
+
+      if (res.ok) {
+        await fetchSolicitudes();
+      }
+    } catch (err) {
+      console.error("Error al cambiar estado:", err);
+    }
   };
 
-  // REGISTRAR RETIRO (Solo Depósito o Admin)
-  const handleRegistrarRetiro = (solicitudId, cantidad) => {
+  // REGISTRAR RETIRO PARCIAL PERSISTIDO EN BD
+  const handleRegistrarRetiro = async (solicitudId, cantidad) => {
     if (!isDeposito) return;
     const qty = Number(cantidad);
     if (!qty || qty <= 0) return;
 
+    const solicitudActual = solicitudes.find((s) => s.id === solicitudId);
+    if (!solicitudActual) return;
+
     const now = new Date().toISOString().replace("T", " ").substring(0, 19);
-    setSolicitudes((prev) =>
-      prev.map((s) => {
-        if (s.id !== solicitudId) return s;
-
-        const nuevaCantidadRetirada = Math.min(
-          s.cantidadRetirada + qty,
-          s.cantidadSolicitada,
-        );
-        const estaCompleto = nuevaCantidadRetirada >= s.cantidadSolicitada;
-
-        const nuevoRetiroLog = {
-          fecha: now,
-          cantidad: qty,
-          usuario: usuarioActual?.nombre || "Depósito",
-        };
-
-        return {
-          ...s,
-          cantidadRetirada: nuevaCantidadRetirada,
-          estado: estaCompleto ? "ENTREGADO" : "DISPONIBLE",
-          entregadoAt: estaCompleto ? now : s.entregadoAt,
-          retirosHistorial: [nuevoRetiroLog, ...s.retirosHistorial],
-        };
-      }),
+    const nuevaCantidadRetirada = Math.min(
+      solicitudActual.cantidadRetirada + qty,
+      solicitudActual.cantidadSolicitada,
     );
-    setModalRetiroOpen(null);
-    setCantidadRetiroManual("");
+    const estaCompleto =
+      nuevaCantidadRetirada >= solicitudActual.cantidadSolicitada;
+
+    const nuevoRetiroLog = {
+      fecha: now,
+      cantidad: qty,
+      usuario: usuarioActual?.nombre || "Depósito",
+    };
+
+    const historialActualizado = [
+      nuevoRetiroLog,
+      ...(solicitudActual.retirosHistorial || []),
+    ];
+
+    try {
+      const res = await fetch(
+        getApiUrl(`/api/solicitudes-internas/${solicitudId}/retiro`),
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            cantidadRetirada: nuevaCantidadRetirada,
+            estado: estaCompleto ? "ENTREGADO" : "DISPONIBLE",
+            entregadoAt: estaCompleto ? now : solicitudActual.entregadoAt,
+            retirosHistorial: historialActualizado,
+          }),
+        },
+      );
+
+      if (res.ok) {
+        await fetchSolicitudes();
+        setModalRetiroOpen(null);
+        setCantidadRetiroManual("");
+      }
+    } catch (err) {
+      console.error("Error al registrar retiro:", err);
+    }
   };
 
   const solicitudesFiltradas = solicitudes.filter((s) => {
@@ -282,64 +315,94 @@ export default function SolicitudesInternas({ usuarioActual }) {
     }
   };
 
+  const getTiempoDisponibleTexto = (disponibleAt) => {
+    if (!disponibleAt) return null;
+    const disponibleTime = new Date(disponibleAt.replace(" ", "T")).getTime();
+    if (isNaN(disponibleTime)) return null;
+    const diffMs = new Date().getTime() - disponibleTime;
+    const diffHoras = Math.floor(diffMs / (1000 * 60 * 60));
+    return `${diffHoras}h en espera`;
+  };
+
   return (
     <div className="flex-1 flex flex-col h-full min-h-0 bg-[#070a12] border border-slate-800/80 rounded-2xl font-sans text-slate-200 shadow-2xl overflow-hidden relative">
+      {/* BANNER DE BLOQUEO POR 8 HORAS */}
+      {bloqueadoPor8hs && (
+        <div className="bg-rose-500/15 border-b border-rose-500/40 p-3 px-4 flex items-center justify-between gap-3 text-rose-300 font-mono text-xs z-20 animate-in fade-in shrink-0">
+          <div className="flex items-center gap-2.5">
+            <AlertTriangle
+              size={18}
+              className="text-rose-400 shrink-0 animate-bounce"
+            />
+            <span>
+              <strong className="text-white font-bold uppercase">
+                CREACIÓN BLOQUEADA:
+              </strong>{" "}
+              Tienes{" "}
+              <strong>{solicitudesDemoradas8hs.length} solicitud(es)</strong>{" "}
+              listas en Planta hace más de 8 horas sin retirar. Confirmá la
+              recepción antes de hacer nuevos pedidos.
+            </span>
+          </div>
+        </div>
+      )}
+
       {/* CABECERA */}
-      <div className="bg-[#0f172a]/90 border-b border-slate-800/80 p-4 flex flex-wrap items-center justify-between gap-4 shrink-0 backdrop-blur-xl z-10">
-        <div className="flex items-center gap-3.5">
-          <div className="p-2.5 bg-emerald-500/10 border border-emerald-500/20 rounded-xl shadow-[0_0_15px_rgba(16,185,129,0.15)]">
+      <div className="bg-[#0f172a]/90 border-b border-slate-800/80 p-3.5 sm:p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shrink-0 backdrop-blur-xl z-10">
+        <div className="flex items-center gap-3">
+          <div className="p-2 sm:p-2.5 bg-emerald-500/10 border border-emerald-500/20 rounded-xl shadow-[0_0_15px_rgba(16,185,129,0.15)] shrink-0">
             <ClipboardList
-              size={22}
+              size={20}
               className="text-emerald-400 animate-pulse"
             />
           </div>
           <div>
-            <div className="flex items-center gap-2.5">
-              <h2 className="text-xs font-bold text-white tracking-widest uppercase font-mono">
+            <div className="flex items-center gap-2 flex-wrap">
+              <h2 className="text-xs sm:text-sm font-bold text-white tracking-widest uppercase font-mono">
                 SOLICITUDES INTERNAS DE DEPÓSITO
               </h2>
-              <span className="text-[10px] bg-emerald-500/10 text-emerald-300 border border-emerald-500/20 px-2.5 py-0.5 rounded-full font-mono font-bold">
-                ROL: {rolUpper}
+              <span className="text-[10px] bg-emerald-500/10 text-emerald-300 border border-emerald-500/20 px-2 py-0.5 rounded-full font-mono font-bold">
+                {rolUpper}
               </span>
             </div>
-            <p className="text-[11px] text-slate-400 mt-0.5 flex items-center gap-2">
+            <p className="text-[10px] sm:text-[11px] text-slate-400 mt-0.5 flex items-center gap-2">
               Gestión centralizada de pedidos inter-planta
               {limiteAlcanzado && (
-                <span className="bg-rose-500/20 text-rose-400 border border-rose-500/50 px-2 rounded font-bold animate-pulse">
-                  LÍMITE DE 10 SOLICITUDES ACTIVAS ALCANZADO
+                <span className="bg-rose-500/20 text-rose-400 border border-rose-500/50 px-1.5 rounded font-bold animate-pulse">
+                  LÍMITE 10 ACTIVAS
                 </span>
               )}
             </p>
           </div>
         </div>
 
-        {/* BOTÓN NUEVA SOLICITUD (Solo visible para Depósito o Admin) */}
+        {/* BOTÓN NUEVA SOLICITUD */}
         {isDeposito ? (
           <button
             onClick={() => {
-              if (limiteAlcanzado) return;
+              if (limiteAlcanzado || bloqueadoPor8hs) return;
               setModalNuevoOpen(true);
               setErrorDuplicado(null);
             }}
-            disabled={limiteAlcanzado}
-            className={`font-bold font-mono text-xs px-4 py-2.5 rounded-xl transition flex items-center gap-2 shadow-[0_0_15px_rgba(16,185,129,0.2)] ${
-              limiteAlcanzado
-                ? "bg-slate-800 text-slate-500 cursor-not-allowed opacity-50"
-                : "bg-emerald-500 hover:bg-emerald-400 text-slate-950 cursor-pointer"
+            disabled={limiteAlcanzado || bloqueadoPor8hs}
+            className={`w-full sm:w-auto justify-center font-bold font-mono text-xs px-4 py-2.5 rounded-xl transition flex items-center gap-2 shadow-[0_0_15px_rgba(16,185,129,0.2)] ${
+              limiteAlcanzado || bloqueadoPor8hs
+                ? "bg-slate-800 text-slate-500 border border-slate-700 cursor-not-allowed opacity-60"
+                : "bg-emerald-500 hover:bg-emerald-400 text-slate-950 cursor-pointer active:scale-95"
             }`}
           >
             <Plus size={16} /> NUEVA SOLICITUD
           </button>
         ) : (
-          <span className="text-[11px] font-mono text-slate-500 bg-slate-900 border border-slate-800 px-3 py-1.5 rounded-xl flex items-center gap-1.5">
+          <span className="text-[10px] font-mono text-slate-500 bg-slate-900 border border-slate-800 px-3 py-1.5 rounded-xl flex items-center gap-1.5 self-start sm:self-auto">
             <Lock size={12} /> Creación reservada a Depósito
           </span>
         )}
       </div>
 
-      {/* BARRA DE FILTROS Y BÚSQUEDA */}
-      <div className="p-4 bg-[#090d16] border-b border-slate-800/80 flex flex-wrap items-center justify-between gap-3 text-xs font-mono shrink-0">
-        <div className="relative flex-1 max-w-sm">
+      {/* FILTROS & BÚSQUEDA ADAPTADOS PARA MOBILE (Scroll suave horizontal) */}
+      <div className="p-3 bg-[#090d16] border-b border-slate-800/80 flex flex-col gap-2.5 shrink-0">
+        <div className="relative w-full">
           <Search
             size={14}
             className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500"
@@ -348,18 +411,22 @@ export default function SolicitudesInternas({ usuarioActual }) {
             type="text"
             value={busqueda}
             onChange={(e) => setBusqueda(e.target.value)}
-            placeholder="Buscar por código o descripción..."
-            className="w-full bg-[#070a12] border border-slate-800 text-slate-200 pl-9 pr-3 py-1.5 rounded-xl outline-none focus:border-emerald-500/50"
+            placeholder="Buscar por código o nombre..."
+            className="w-full bg-[#070a12] border border-slate-800 text-slate-200 pl-9 pr-3 py-2 rounded-xl outline-none focus:border-emerald-500/50 text-xs font-mono"
           />
         </div>
 
-        <div className="flex items-center gap-1.5">
+        {/* CINTA DE PESTAÑAS ELEGANTE EN MOBILE (Sin desbordes ni cortes) */}
+        <div
+          className="flex items-center gap-1.5 overflow-x-auto w-full py-0.5 px-0.5"
+          style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
+        >
           {["TODOS", "SOLICITADO", "ATENDIDO", "DISPONIBLE", "AUDITORIA"].map(
             (est) => (
               <button
                 key={est}
                 onClick={() => setFiltroEstado(est)}
-                className={`px-3 py-1.5 rounded-xl border transition cursor-pointer font-bold ${
+                className={`px-3 py-1.5 rounded-xl border transition cursor-pointer font-bold whitespace-nowrap text-[11px] font-mono shrink-0 ${
                   filtroEstado === est
                     ? "bg-emerald-500/20 border-emerald-500/50 text-emerald-300 shadow-[0_0_12px_rgba(16,185,129,0.15)]"
                     : "bg-[#070a12] border-slate-800 text-slate-400 hover:text-white"
@@ -376,201 +443,365 @@ export default function SolicitudesInternas({ usuarioActual }) {
         </div>
       </div>
 
-      {/* TABLA PRINCIPAL */}
-      <div className="flex-1 min-h-0 overflow-y-auto p-4">
-        <div className="bg-[#0e1422] border border-slate-800/80 rounded-2xl overflow-hidden shadow-2xl">
-          <table className="w-full text-left text-xs border-collapse">
-            <thead className="bg-[#090d16] text-slate-400 font-mono text-[10px] uppercase border-b border-slate-800">
-              <tr>
-                <th className="p-3 w-28">N° Solicitud</th>
-                <th className="p-3 w-28">Urgencia</th>
-                <th className="p-3">Semielaborado Requerido</th>
-                <th className="p-3 w-44">Avance / Retiro Parcial</th>
-                <th className="p-3 w-32">Estado Actual</th>
-                <th className="p-3 w-36">Último Cambio</th>
-                <th className="p-3 w-48 text-center">Acciones Restringidas</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-800/60 bg-[#070a12]/30 font-mono">
-              {solicitudesFiltradas.length > 0 ? (
-                solicitudesFiltradas.map((s) => {
-                  const estBadge = getEstadoBadge(s.estado);
-                  const saldoPendiente =
-                    s.cantidadSolicitada - s.cantidadRetirada;
-                  const porcentajeProgreso = Math.round(
-                    (s.cantidadRetirada / s.cantidadSolicitada) * 100,
-                  );
+      {/* CONTENIDO PRINCIPAL PERSISTENTE */}
+      <div className="flex-1 min-h-0 overflow-y-auto p-3 sm:p-4">
+        {loading ? (
+          <div className="h-full flex flex-col items-center justify-center text-slate-500 gap-2 font-mono text-xs">
+            <RefreshCw size={24} className="animate-spin text-emerald-400" />
+            <span>Cargando solicitudes internas...</span>
+          </div>
+        ) : solicitudesFiltradas.length === 0 ? (
+          <div className="h-full flex flex-col items-center justify-center text-slate-500 gap-2 border border-dashed border-slate-800/80 rounded-2xl p-8 font-mono text-xs text-center">
+            <ClipboardList size={32} className="text-slate-600 mb-1" />
+            <p>
+              No se encontraron solicitudes registradas en la base de datos.
+            </p>
+          </div>
+        ) : (
+          <>
+            {/* VISTA MOBILE (< 1024px) - TARJETAS INDUSTRIALES */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 lg:hidden">
+              {solicitudesFiltradas.map((s) => {
+                const estBadge = getEstadoBadge(s.estado);
+                const saldoPendiente =
+                  s.cantidadSolicitada - s.cantidadRetirada;
+                const porcentajeProgreso = Math.round(
+                  (s.cantidadRetirada / s.cantidadSolicitada) * 100,
+                );
+                const esDemorado8hs =
+                  s.estado === "DISPONIBLE" &&
+                  s.disponibleAt &&
+                  (new Date().getTime() -
+                    new Date(s.disponibleAt.replace(" ", "T")).getTime()) /
+                    (1000 * 60 * 60) >=
+                    8;
 
-                  return (
-                    <tr
-                      key={s.id}
-                      className="hover:bg-[#121824] transition-colors align-middle"
-                    >
-                      <td className="p-3">
-                        <span className="font-bold text-emerald-400 text-xs block">
-                          {s.id}
-                        </span>
-                        <button
-                          onClick={() => setModalHistorialOpen(s)}
-                          className="text-[10px] text-slate-500 hover:text-slate-300 flex items-center gap-1 mt-0.5 cursor-pointer underline"
-                        >
-                          <History size={11} /> Auditoría
-                        </button>
-                      </td>
-
-                      <td className="p-3">
-                        <span
-                          className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${getUrgenciaBadge(s.urgencia)}`}
-                        >
-                          {s.urgencia}
-                        </span>
-                      </td>
-
-                      <td className="p-3">
-                        <span className="font-bold text-amber-400 text-[11px] block">
-                          [{s.semielaboradoCodigo}]
-                        </span>
-                        <span className="text-slate-200 text-xs font-sans font-bold leading-tight block truncate">
-                          {s.semielaboradoNombre}
-                        </span>
-                      </td>
-
-                      <td className="p-3">
-                        <div className="space-y-1">
-                          <div className="flex justify-between text-[11px]">
-                            <span className="text-slate-300 font-bold">
-                              {s.cantidadRetirada} / {s.cantidadSolicitada} u.
-                            </span>
-                            <span className="text-cyan-400 font-bold">
-                              Saldo: {saldoPendiente} u.
-                            </span>
-                          </div>
-                          <div className="w-full bg-slate-900 rounded-full h-1.5 overflow-hidden border border-slate-800">
-                            <div
-                              className="h-full bg-gradient-to-r from-cyan-500 to-emerald-400 transition-all duration-500"
-                              style={{ width: `${porcentajeProgreso}%` }}
-                            />
-                          </div>
+                return (
+                  <div
+                    key={s.id}
+                    className={`bg-[#0e1422] border rounded-2xl p-3.5 flex flex-col justify-between gap-3 shadow-lg transition-all ${
+                      esDemorado8hs
+                        ? "border-rose-500/50 bg-rose-950/10 shadow-[0_0_15px_rgba(244,63,94,0.1)]"
+                        : "border-slate-800/80 hover:border-slate-700"
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-2 border-b border-slate-800/80 pb-2.5">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono font-bold text-emerald-400 text-xs">
+                            {s.id}
+                          </span>
+                          <span
+                            className={`text-[9px] font-mono font-bold px-2 py-0.5 rounded-full border ${getUrgenciaBadge(
+                              s.urgencia,
+                            )}`}
+                          >
+                            {s.urgencia}
+                          </span>
                         </div>
-                      </td>
-
-                      <td className="p-3">
-                        <span
-                          className={`text-[10px] font-bold px-2.5 py-1 rounded-lg border inline-block ${estBadge.bg}`}
-                        >
-                          {estBadge.label}
+                        <span className="text-[10px] text-slate-500 font-mono mt-0.5 block">
+                          {s.solicitadoAt}
                         </span>
-                      </td>
+                      </div>
 
-                      <td className="p-3 text-[10px] text-slate-400">
-                        <span className="block text-slate-300">
-                          {s.disponibleAt || s.atendidoAt || s.solicitadoAt}
-                        </span>
-                        <span className="text-[9px] text-slate-500">
-                          {s.disponibleAt
-                            ? "Listo en Planta"
-                            : s.atendidoAt
-                              ? "Atendido por Planta"
-                              : "Solicitado"}
-                        </span>
-                      </td>
+                      <span
+                        className={`text-[10px] font-mono font-bold px-2.5 py-1 rounded-lg border ${estBadge.bg}`}
+                      >
+                        {estBadge.label}
+                      </span>
+                    </div>
 
-                      {/* ACCIONES CONTROLADAS POR ROL */}
-                      <td className="p-3 text-center">
-                        <div className="flex items-center justify-center gap-1.5">
-                          {/* SOLO PRODUCCIÓN O ADMIN: Atender */}
-                          {s.estado === "SOLICITADO" && isProduccion && (
+                    <div>
+                      <span className="font-mono font-bold text-amber-400 text-xs block mb-0.5">
+                        [{s.semielaboradoCodigo}]
+                      </span>
+                      <h3 className="text-xs font-bold text-slate-100 leading-snug">
+                        {s.semielaboradoNombre}
+                      </h3>
+                    </div>
+
+                    <div className="bg-[#070a12] p-2.5 rounded-xl border border-slate-800/80 space-y-1.5 font-mono text-[11px]">
+                      <div className="flex justify-between items-center">
+                        <span className="text-slate-300 font-bold">
+                          Retirado: {s.cantidadRetirada} /{" "}
+                          {s.cantidadSolicitada} u.
+                        </span>
+                        <span className="text-cyan-400 font-bold">
+                          Saldo: {saldoPendiente} u.
+                        </span>
+                      </div>
+                      <div className="w-full bg-slate-900 rounded-full h-2 overflow-hidden border border-slate-800">
+                        <div
+                          className="h-full bg-gradient-to-r from-cyan-500 to-emerald-400 transition-all duration-500"
+                          style={{ width: `${porcentajeProgreso}%` }}
+                        />
+                      </div>
+                    </div>
+
+                    {esDemorado8hs && (
+                      <div className="bg-rose-500/10 border border-rose-500/30 p-2 rounded-xl flex items-center justify-between text-[11px] font-mono text-rose-300">
+                        <span className="flex items-center gap-1 font-bold">
+                          <Clock
+                            size={12}
+                            className="text-rose-400 animate-spin"
+                          />
+                          {getTiempoDisponibleTexto(s.disponibleAt)}
+                        </span>
+                        <span className="text-[10px] bg-rose-500/20 px-1.5 py-0.5 rounded font-bold">
+                          +8hs pendiente
+                        </span>
+                      </div>
+                    )}
+
+                    <div className="pt-2 border-t border-slate-800/80 flex items-center justify-between gap-2">
+                      <button
+                        onClick={() => setModalHistorialOpen(s)}
+                        className="text-[11px] font-mono text-slate-400 hover:text-slate-200 flex items-center gap-1 cursor-pointer underline"
+                      >
+                        <History size={12} /> Historial
+                      </button>
+
+                      <div className="flex items-center gap-1.5">
+                        {s.estado === "SOLICITADO" && isProduccion && (
+                          <button
+                            onClick={() =>
+                              handleCambiarEstado(s.id, "ATENDIDO")
+                            }
+                            className="bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 font-bold px-3 py-1.5 rounded-xl transition text-xs flex items-center gap-1 cursor-pointer active:scale-95"
+                          >
+                            <Check size={14} /> Atender
+                          </button>
+                        )}
+
+                        {s.estado === "ATENDIDO" && isProduccion && (
+                          <button
+                            onClick={() =>
+                              handleCambiarEstado(s.id, "DISPONIBLE")
+                            }
+                            className="bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-bold px-3 py-1.5 rounded-xl transition text-xs flex items-center gap-1 cursor-pointer active:scale-95"
+                          >
+                            <PackageCheck size={14} /> Marcar Listo
+                          </button>
+                        )}
+
+                        {s.estado === "DISPONIBLE" && isDeposito && (
+                          <button
+                            onClick={() => {
+                              setModalRetiroOpen(s);
+                              setCantidadRetiroManual("");
+                            }}
+                            className="bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold px-3.5 py-1.5 rounded-xl transition text-xs flex items-center gap-1 cursor-pointer shadow-[0_0_12px_rgba(6,182,212,0.2)] active:scale-95"
+                          >
+                            <Truck size={14} /> + Extraer
+                          </button>
+                        )}
+
+                        {s.estado !== "ENTREGADO" &&
+                          s.estado !== "CANCELADO" &&
+                          isAdmin && (
                             <button
                               onClick={() =>
-                                handleCambiarEstado(s.id, "ATENDIDO")
+                                handleCambiarEstado(s.id, "CANCELADO")
                               }
-                              className="bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 font-bold px-2.5 py-1 rounded-lg transition text-[10px] flex items-center gap-1 cursor-pointer"
+                              className="text-slate-600 hover:text-rose-400 p-1.5 transition cursor-pointer"
+                              title="Cancelar solicitud"
                             >
-                              <Check size={12} /> Marcar Atendido
+                              <Ban size={15} />
                             </button>
                           )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
 
-                          {/* SOLO PRODUCCIÓN O ADMIN: Marcar Listo */}
-                          {s.estado === "ATENDIDO" && isProduccion && (
-                            <button
-                              onClick={() =>
-                                handleCambiarEstado(s.id, "DISPONIBLE")
-                              }
-                              className="bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-bold px-2.5 py-1 rounded-lg transition text-[10px] flex items-center gap-1 cursor-pointer"
-                            >
-                              <PackageCheck size={12} /> Marcar Listo
-                            </button>
+            {/* VISTA DESKTOP (>= 1024px) - TABLA TRADICIONAL */}
+            <div className="hidden lg:block bg-[#0e1422] border border-slate-800/80 rounded-2xl overflow-hidden shadow-2xl">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead className="bg-[#090d16] text-slate-400 font-mono text-[10px] uppercase border-b border-slate-800">
+                  <tr>
+                    <th className="p-3 w-28">N° Solicitud</th>
+                    <th className="p-3 w-28">Urgencia</th>
+                    <th className="p-3">Semielaborado Requerido</th>
+                    <th className="p-3 w-44">Avance / Retiro Parcial</th>
+                    <th className="p-3 w-32">Estado Actual</th>
+                    <th className="p-3 w-36">Último Cambio</th>
+                    <th className="p-3 w-48 text-center">
+                      Acciones Restringidas
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-800/60 bg-[#070a12]/30 font-mono">
+                  {solicitudesFiltradas.map((s) => {
+                    const estBadge = getEstadoBadge(s.estado);
+                    const saldoPendiente =
+                      s.cantidadSolicitada - s.cantidadRetirada;
+                    const porcentajeProgreso = Math.round(
+                      (s.cantidadRetirada / s.cantidadSolicitada) * 100,
+                    );
+                    const esDemorado8hs =
+                      s.estado === "DISPONIBLE" &&
+                      s.disponibleAt &&
+                      (new Date().getTime() -
+                        new Date(s.disponibleAt.replace(" ", "T")).getTime()) /
+                        (1000 * 60 * 60) >=
+                        8;
+
+                    return (
+                      <tr
+                        key={s.id}
+                        className={`hover:bg-[#121824] transition-colors align-middle ${
+                          esDemorado8hs ? "bg-rose-950/10" : ""
+                        }`}
+                      >
+                        <td className="p-3">
+                          <span className="font-bold text-emerald-400 text-xs block">
+                            {s.id}
+                          </span>
+                          <button
+                            onClick={() => setModalHistorialOpen(s)}
+                            className="text-[10px] text-slate-500 hover:text-slate-300 flex items-center gap-1 mt-0.5 cursor-pointer underline"
+                          >
+                            <History size={11} /> Auditoría
+                          </button>
+                        </td>
+
+                        <td className="p-3">
+                          <span
+                            className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${getUrgenciaBadge(
+                              s.urgencia,
+                            )}`}
+                          >
+                            {s.urgencia}
+                          </span>
+                        </td>
+
+                        <td className="p-3">
+                          <span className="font-bold text-amber-400 text-[11px] block">
+                            [{s.semielaboradoCodigo}]
+                          </span>
+                          <span className="text-slate-200 text-xs font-sans font-bold leading-tight block truncate">
+                            {s.semielaboradoNombre}
+                          </span>
+                        </td>
+
+                        <td className="p-3">
+                          <div className="space-y-1">
+                            <div className="flex justify-between text-[11px]">
+                              <span className="text-slate-300 font-bold">
+                                {s.cantidadRetirada} / {s.cantidadSolicitada} u.
+                              </span>
+                              <span className="text-cyan-400 font-bold">
+                                Saldo: {saldoPendiente} u.
+                              </span>
+                            </div>
+                            <div className="w-full bg-slate-900 rounded-full h-1.5 overflow-hidden border border-slate-800">
+                              <div
+                                className="h-full bg-gradient-to-r from-cyan-500 to-emerald-400 transition-all duration-500"
+                                style={{ width: `${porcentajeProgreso}%` }}
+                              />
+                            </div>
+                          </div>
+                        </td>
+
+                        <td className="p-3">
+                          <span
+                            className={`text-[10px] font-bold px-2.5 py-1 rounded-lg border inline-block ${estBadge.bg}`}
+                          >
+                            {estBadge.label}
+                          </span>
+                          {esDemorado8hs && (
+                            <span className="block text-[9px] text-rose-400 font-bold mt-1">
+                              ⚠️ +8hs sin retirar
+                            </span>
                           )}
+                        </td>
 
-                          {/* SOLO DEPÓSITO O ADMIN: Extraer / Retirar */}
-                          {s.estado === "DISPONIBLE" && isDeposito && (
-                            <button
-                              onClick={() => {
-                                setModalRetiroOpen(s);
-                                setCantidadRetiroManual("");
-                              }}
-                              className="bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 font-bold px-2.5 py-1.5 rounded-lg transition text-[10px] flex items-center gap-1 cursor-pointer shadow-[0_0_10px_rgba(6,182,212,0.15)]"
-                            >
-                              <Truck size={13} /> + Extraer
-                            </button>
-                          )}
+                        <td className="p-3 text-[10px] text-slate-400">
+                          <span className="block text-slate-300">
+                            {s.disponibleAt || s.atendidoAt || s.solicitadoAt}
+                          </span>
+                          <span className="text-[9px] text-slate-500">
+                            {s.disponibleAt
+                              ? "Listo en Planta"
+                              : s.atendidoAt
+                                ? "Atendido por Planta"
+                                : "Solicitado"}
+                          </span>
+                        </td>
 
-                          {/* SOLO ADMIN: Cancelar Solicitud */}
-                          {s.estado !== "ENTREGADO" &&
-                            s.estado !== "CANCELADO" &&
-                            isAdmin && (
+                        <td className="p-3 text-center">
+                          <div className="flex items-center justify-center gap-1.5">
+                            {s.estado === "SOLICITADO" && isProduccion && (
                               <button
                                 onClick={() =>
-                                  handleCambiarEstado(s.id, "CANCELADO")
+                                  handleCambiarEstado(s.id, "ATENDIDO")
                                 }
-                                className="text-slate-600 hover:text-rose-400 p-1.5 transition cursor-pointer"
-                                title="Cancelar solicitud (Solo Admin)"
+                                className="bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 font-bold px-2.5 py-1 rounded-lg transition text-[10px] flex items-center gap-1 cursor-pointer"
                               >
-                                <Ban size={14} />
+                                <Check size={12} /> Marcar Atendido
                               </button>
                             )}
 
-                          {/* TEXTO INFORMATIVO SI EL ROL NO TIENE ACCIONES DISPONIBLES EN ESTE ESTADO */}
-                          {((s.estado === "SOLICITADO" && !isProduccion) ||
-                            (s.estado === "ATENDIDO" && !isProduccion) ||
-                            (s.estado === "DISPONIBLE" && !isDeposito)) && (
-                            <span className="text-[10px] text-slate-600 font-mono italic">
-                              En espera de{" "}
-                              {s.estado === "DISPONIBLE"
-                                ? "Depósito"
-                                : "Producción"}
-                            </span>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })
-              ) : (
-                <tr>
-                  <td
-                    colSpan="7"
-                    className="p-8 text-center text-slate-500 italic font-mono"
-                  >
-                    No se encontraron solicitudes con los filtros aplicados.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+                            {s.estado === "ATENDIDO" && isProduccion && (
+                              <button
+                                onClick={() =>
+                                  handleCambiarEstado(s.id, "DISPONIBLE")
+                                }
+                                className="bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-bold px-2.5 py-1 rounded-lg transition text-[10px] flex items-center gap-1 cursor-pointer"
+                              >
+                                <PackageCheck size={12} /> Marcar Listo
+                              </button>
+                            )}
+
+                            {s.estado === "DISPONIBLE" && isDeposito && (
+                              <button
+                                onClick={() => {
+                                  setModalRetiroOpen(s);
+                                  setCantidadRetiroManual("");
+                                }}
+                                className="bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 font-bold px-2.5 py-1.5 rounded-lg transition text-[10px] flex items-center gap-1 cursor-pointer shadow-[0_0_10px_rgba(6,182,212,0.15)]"
+                              >
+                                <Truck size={13} /> + Extraer
+                              </button>
+                            )}
+
+                            {s.estado !== "ENTREGADO" &&
+                              s.estado !== "CANCELADO" &&
+                              isAdmin && (
+                                <button
+                                  onClick={() =>
+                                    handleCambiarEstado(s.id, "CANCELADO")
+                                  }
+                                  className="text-slate-600 hover:text-rose-400 p-1.5 transition cursor-pointer"
+                                  title="Cancelar solicitud (Solo Admin)"
+                                >
+                                  <Ban size={14} />
+                                </button>
+                              )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
       </div>
 
-      {/* MODAL CREAR SOLICITUD (ACCESIBLE SOLO PARA DEPOSITO / ADMIN) */}
+      {/* MODAL CREAR SOLICITUD */}
       {modalNuevoOpen && isDeposito && (
-        <div className="fixed inset-0 bg-slate-950/85 backdrop-blur-md z-[300] flex items-center justify-center p-4 font-sans animate-in fade-in">
-          <div className="bg-[#0e1422] border border-slate-800 w-full max-w-lg rounded-3xl shadow-2xl overflow-hidden flex flex-col relative text-xs">
-            <div className="bg-[#090d16] border-b border-slate-800 p-5 flex items-center justify-between">
+        <div className="fixed inset-0 bg-slate-950/85 backdrop-blur-md z-[300] flex items-center justify-center p-3 sm:p-4 font-sans animate-in fade-in">
+          <div className="bg-[#0e1422] border border-slate-800 w-full max-w-lg rounded-3xl shadow-2xl overflow-hidden flex flex-col relative text-xs max-h-[90vh]">
+            <div className="bg-[#090d16] border-b border-slate-800 p-4 sm:p-5 flex items-center justify-between shrink-0">
               <div className="flex items-center gap-3">
                 <div className="p-2 bg-emerald-500/10 border border-emerald-500/20 rounded-xl">
                   <ClipboardList size={18} className="text-emerald-400" />
                 </div>
-                <h3 className="text-sm font-bold text-white uppercase tracking-wider font-mono">
+                <h3 className="text-xs sm:text-sm font-bold text-white uppercase tracking-wider font-mono">
                   NUEVA SOLICITUD DE DEPÓSITO
                 </h3>
               </div>
@@ -582,7 +813,10 @@ export default function SolicitudesInternas({ usuarioActual }) {
               </button>
             </div>
 
-            <form onSubmit={handleCrearSolicitud} className="p-6 space-y-5">
+            <form
+              onSubmit={handleCrearSolicitud}
+              className="p-4 sm:p-6 space-y-4 sm:space-y-5 overflow-y-auto"
+            >
               <div className="space-y-1.5">
                 <label className="text-[10px] font-mono text-slate-400 uppercase block">
                   1. SELECCIONAR SEMIELABORADO DE LA BD
@@ -601,7 +835,7 @@ export default function SolicitudesInternas({ usuarioActual }) {
                       setSemiSeleccionado(null);
                     }}
                     placeholder="Escribí código o nombre..."
-                    className="w-full bg-[#070a12] border border-slate-700 text-white font-sans text-xs pl-9 pr-3 py-2 rounded-xl outline-none focus:border-emerald-500"
+                    className="w-full bg-[#070a12] border border-slate-700 text-white font-sans text-xs pl-9 pr-3 py-2.5 rounded-xl outline-none focus:border-emerald-500"
                   />
 
                   {searchSemiText && !semiSeleccionado && (
@@ -622,7 +856,7 @@ export default function SolicitudesInternas({ usuarioActual }) {
                             <span className="font-mono text-amber-400 font-bold text-[10px]">
                               [{item.codigo || "S/C"}]
                             </span>
-                            <span className="text-slate-200 font-sans truncate max-w-[240px]">
+                            <span className="text-slate-200 font-sans truncate max-w-[200px] sm:max-w-[240px]">
                               {item.nombre}
                             </span>
                           </div>
@@ -637,7 +871,7 @@ export default function SolicitudesInternas({ usuarioActual }) {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                 <div className="space-y-1.5">
                   <label className="text-[10px] font-mono text-slate-400 uppercase block">
                     2. CANTIDAD TOTAL
@@ -647,7 +881,7 @@ export default function SolicitudesInternas({ usuarioActual }) {
                     value={cantidadPedir}
                     onChange={(e) => setCantidadPedir(e.target.value)}
                     placeholder="Ej: 500"
-                    className="w-full bg-[#070a12] border border-slate-700 text-white font-mono text-xs px-3 py-2 rounded-xl outline-none focus:border-emerald-500"
+                    className="w-full bg-[#070a12] border border-slate-700 text-white font-mono text-xs px-3 py-2.5 rounded-xl outline-none focus:border-emerald-500"
                   />
                 </div>
 
@@ -658,7 +892,7 @@ export default function SolicitudesInternas({ usuarioActual }) {
                   <select
                     value={urgenciaPedir}
                     onChange={(e) => setUrgenciaPedir(e.target.value)}
-                    className="w-full bg-[#070a12] border border-slate-700 text-amber-400 font-mono font-bold text-xs px-3 py-2 rounded-xl outline-none cursor-pointer"
+                    className="w-full bg-[#070a12] border border-slate-700 text-amber-400 font-mono font-bold text-xs px-3 py-2.5 rounded-xl outline-none cursor-pointer"
                   >
                     <option value="BAJA">🟢 BAJA (Stock)</option>
                     <option value="MEDIA">🟡 MEDIA (Regular)</option>
@@ -685,7 +919,7 @@ export default function SolicitudesInternas({ usuarioActual }) {
                     <strong className="text-emerald-400">
                       [{errorDuplicado.estado}]
                     </strong>
-                    . Esperá su entrega o cancelala.
+                    .
                   </div>
                 </div>
               )}
@@ -701,7 +935,7 @@ export default function SolicitudesInternas({ usuarioActual }) {
                 <button
                   type="submit"
                   disabled={!!errorDuplicado || !semiSeleccionado}
-                  className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 disabled:opacity-50 disabled:cursor-not-allowed font-bold font-mono px-5 py-2 rounded-xl transition flex items-center gap-1.5 cursor-pointer shadow-lg"
+                  className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 disabled:opacity-50 disabled:cursor-not-allowed font-bold font-mono px-5 py-2.5 rounded-xl transition flex items-center gap-1.5 cursor-pointer shadow-lg active:scale-95"
                 >
                   <Send size={14} /> Enviar Solicitud
                 </button>
@@ -711,11 +945,11 @@ export default function SolicitudesInternas({ usuarioActual }) {
         </div>
       )}
 
-      {/* MODAL RETIRO PARCIAL (ACCESIBLE SOLO PARA DEPOSITO / ADMIN) */}
+      {/* MODAL RETIRO PARCIAL */}
       {modalRetiroOpen && isDeposito && (
-        <div className="fixed inset-0 bg-slate-950/85 backdrop-blur-md z-[300] flex items-center justify-center p-4 font-sans animate-in fade-in">
+        <div className="fixed inset-0 bg-slate-950/85 backdrop-blur-md z-[300] flex items-center justify-center p-3 sm:p-4 font-sans animate-in fade-in">
           <div className="bg-[#0e1422] border border-slate-800 w-full max-w-md rounded-3xl shadow-2xl overflow-hidden flex flex-col relative text-xs">
-            <div className="bg-[#090d16] border-b border-slate-800 p-5 flex items-center justify-between">
+            <div className="bg-[#090d16] border-b border-slate-800 p-4 sm:p-5 flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <div className="p-2 bg-cyan-500/10 border border-cyan-500/20 rounded-xl">
                   <Truck size={18} className="text-cyan-400" />
@@ -724,7 +958,7 @@ export default function SolicitudesInternas({ usuarioActual }) {
                   <span className="font-mono text-xs font-bold text-amber-400">
                     [{modalRetiroOpen.id}]
                   </span>
-                  <h3 className="text-sm font-bold text-white uppercase tracking-wider font-mono">
+                  <h3 className="text-xs sm:text-sm font-bold text-white uppercase tracking-wider font-mono">
                     REGISTRAR EXTRACCIÓN
                   </h3>
                 </div>
@@ -737,17 +971,17 @@ export default function SolicitudesInternas({ usuarioActual }) {
               </button>
             </div>
 
-            <div className="p-6 space-y-5">
+            <div className="p-4 sm:p-6 space-y-4 sm:space-y-5">
               <div className="bg-[#070a12] border border-slate-800 p-3.5 rounded-xl space-y-1">
                 <span className="text-[10px] font-mono text-amber-400 font-bold">
                   [{modalRetiroOpen.semielaboradoCodigo}]
                 </span>
-                <h4 className="text-xs font-bold text-white">
+                <h4 className="text-xs font-bold text-white leading-snug">
                   {modalRetiroOpen.semielaboradoNombre}
                 </h4>
                 <div className="flex justify-between text-[11px] font-mono text-slate-400 pt-2 border-t border-slate-800/80">
                   <span>
-                    Retirado acumulado:{" "}
+                    Retirado:{" "}
                     <strong className="text-white">
                       {modalRetiroOpen.cantidadRetirada} u.
                     </strong>
@@ -777,7 +1011,7 @@ export default function SolicitudesInternas({ usuarioActual }) {
                     }
                     value={cantidadRetiroManual}
                     onChange={(e) => setCantidadRetiroManual(e.target.value)}
-                    placeholder={`Máximo: ${modalRetiroOpen.cantidadSolicitada - modalRetiroOpen.cantidadRetirada}`}
+                    placeholder={`Máx: ${modalRetiroOpen.cantidadSolicitada - modalRetiroOpen.cantidadRetirada}`}
                     className="flex-1 bg-[#070a12] border border-slate-700 text-white font-mono px-3 py-2.5 rounded-xl outline-none focus:border-cyan-500"
                   />
                   <button
@@ -794,7 +1028,7 @@ export default function SolicitudesInternas({ usuarioActual }) {
                         modalRetiroOpen.cantidadSolicitada -
                           modalRetiroOpen.cantidadRetirada
                     }
-                    className="bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold px-4 rounded-xl disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer transition-colors"
+                    className="bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold px-4 rounded-xl disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer transition-colors active:scale-95"
                   >
                     Confirmar
                   </button>
@@ -809,7 +1043,7 @@ export default function SolicitudesInternas({ usuarioActual }) {
                       modalRetiroOpen.cantidadRetirada,
                   )
                 }
-                className="w-full bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 p-2.5 rounded-xl font-bold transition text-xs flex items-center justify-center gap-1.5 cursor-pointer"
+                className="w-full bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 p-3 rounded-xl font-bold transition text-xs flex items-center justify-center gap-1.5 cursor-pointer active:scale-95"
               >
                 Retirar Saldo Restante (
                 {modalRetiroOpen.cantidadSolicitada -
@@ -821,11 +1055,11 @@ export default function SolicitudesInternas({ usuarioActual }) {
         </div>
       )}
 
-      {/* MODAL AUDITORÍA (Visible para todos los roles) */}
+      {/* MODAL AUDITORÍA */}
       {modalHistorialOpen && (
-        <div className="fixed inset-0 bg-slate-950/85 backdrop-blur-md z-[300] flex items-center justify-center p-4 font-sans animate-in fade-in">
+        <div className="fixed inset-0 bg-slate-950/85 backdrop-blur-md z-[300] flex items-center justify-center p-3 sm:p-4 font-sans animate-in fade-in">
           <div className="bg-[#0e1422] border border-slate-800 w-full max-w-md rounded-3xl shadow-2xl overflow-hidden flex flex-col relative text-xs">
-            <div className="bg-[#090d16] border-b border-slate-800 p-5 flex items-center justify-between">
+            <div className="bg-[#090d16] border-b border-slate-800 p-4 sm:p-5 flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <div className="p-2 bg-amber-500/10 border border-amber-500/20 rounded-xl">
                   <History size={18} className="text-amber-400" />
@@ -834,8 +1068,8 @@ export default function SolicitudesInternas({ usuarioActual }) {
                   <span className="font-mono text-xs font-bold text-amber-400">
                     [{modalHistorialOpen.id}]
                   </span>
-                  <h3 className="text-sm font-bold text-white uppercase tracking-wider font-mono">
-                    LÍNEA DE TIEMPO DE AUDITORÍA
+                  <h3 className="text-xs sm:text-sm font-bold text-white uppercase tracking-wider font-mono">
+                    AUDITORÍA Y TIEMPOS
                   </h3>
                 </div>
               </div>
@@ -847,7 +1081,7 @@ export default function SolicitudesInternas({ usuarioActual }) {
               </button>
             </div>
 
-            <div className="p-6 space-y-4 font-mono">
+            <div className="p-4 sm:p-6 space-y-4 font-mono">
               <div className="space-y-3 border-l-2 border-slate-800 pl-4 ml-2">
                 <div className="relative">
                   <span className="w-2.5 h-2.5 rounded-full bg-blue-400 absolute -left-[21px] top-1" />
@@ -881,11 +1115,13 @@ export default function SolicitudesInternas({ usuarioActual }) {
                   </div>
                 )}
               </div>
+
               <div className="pt-3 border-t border-slate-800 space-y-2">
                 <span className="text-[10px] text-slate-400 uppercase block font-bold">
                   HISTORIAL DE EXTRACCIONES:
                 </span>
-                {modalHistorialOpen.retirosHistorial.length > 0 ? (
+                {modalHistorialOpen.retirosHistorial &&
+                modalHistorialOpen.retirosHistorial.length > 0 ? (
                   modalHistorialOpen.retirosHistorial.map((r, i) => (
                     <div
                       key={i}
