@@ -11,11 +11,13 @@ import {
   ChevronRight,
   CheckSquare,
   Square,
+  Clock,
 } from "lucide-react";
 
 export default function DespacharPedidos() {
   const [vendedoresDisponibles, setVendedoresDisponibles] = useState([]);
   const [vendedoresSeleccionados, setVendedoresSeleccionados] = useState([]);
+  const [ultimaSinc, setUltimaSinc] = useState(null);
 
   const [pedidos, setPedidos] = useState([]);
   const [buscado, setBuscado] = useState(false);
@@ -24,7 +26,6 @@ export default function DespacharPedidos() {
   const [busqueda, setBusqueda] = useState("");
   const [toast, setToast] = useState(null);
 
-  // PAGINACIÓN DINÁMICA SEGÚN ALTO DE PANTALLA (SIN SCROLL)
   const tableContainerRef = useRef(null);
   const [itemsPerPage, setItemsPerPage] = useState(8);
   const [currentPage, setCurrentPage] = useState(1);
@@ -39,7 +40,12 @@ export default function DespacharPedidos() {
       const res = await fetch("/api/estado-pedidos/vendedores");
       if (res.ok) {
         const data = await res.json();
-        setVendedoresDisponibles(Array.isArray(data) ? data : []);
+        if (data.vendedores) {
+          setVendedoresDisponibles(data.vendedores);
+          setUltimaSinc(data.ultimaSincronizacion);
+        } else if (Array.isArray(data)) {
+          setVendedoresDisponibles(data);
+        }
       }
     } catch (err) {
       console.error("Error cargando vendedores:", err);
@@ -50,7 +56,6 @@ export default function DespacharPedidos() {
     fetchVendedores();
   }, []);
 
-  // Cálculo del límite exacto de filas según la altura visible
   useEffect(() => {
     const calculateItems = () => {
       if (!tableContainerRef.current) return;
@@ -80,10 +85,7 @@ export default function DespacharPedidos() {
 
   const handleBuscar = async () => {
     if (vendedoresSeleccionados.length === 0) {
-      showToast(
-        "Tilde al menos un vendedor para realizar la búsqueda",
-        "error",
-      );
+      showToast("Seleccione al menos un vendedor", "error");
       return;
     }
 
@@ -120,6 +122,9 @@ export default function DespacharPedidos() {
       const data = await res.json();
       if (res.ok && data.success) {
         showToast("Sincronización exitosa");
+        if (data.ultimaSincronizacion) {
+          setUltimaSinc(data.ultimaSincronizacion);
+        }
         await fetchVendedores();
         if (buscado) await handleBuscar();
       } else {
@@ -158,9 +163,25 @@ export default function DespacharPedidos() {
     return fechaStr;
   };
 
+  const formatearFechaHora = (fechaStr) => {
+    if (!fechaStr) return null;
+    try {
+      const d = new Date(fechaStr);
+      if (isNaN(d.getTime())) return null;
+      const day = String(d.getDate()).padStart(2, "0");
+      const month = String(d.getMonth() + 1).padStart(2, "0");
+      const year = String(d.getFullYear()).slice(2);
+      const hours = String(d.getHours()).padStart(2, "0");
+      const minutes = String(d.getMinutes()).padStart(2, "0");
+      return `${day}/${month}/${year} ${hours}:${minutes} hs`;
+    } catch (e) {
+      return null;
+    }
+  };
+
   return (
     <div className="flex-1 flex flex-col h-full min-h-0 bg-[#070a12] border border-slate-800/80 rounded-2xl font-sans text-slate-200 shadow-2xl overflow-hidden relative">
-      {/* TOAST NOTIFICACIONES */}
+      {/* TOAST */}
       {toast && (
         <div
           className={`absolute top-4 right-4 z-50 px-4 py-3 rounded-xl border shadow-2xl flex items-center gap-3 backdrop-blur-xl transition-all ${
@@ -201,7 +222,7 @@ export default function DespacharPedidos() {
 
         <div className="flex items-center gap-3 w-full md:w-auto">
           {buscado && (
-            <div className="relative flex-1 md:w-60">
+            <div className="relative flex-1 md:w-56">
               <Search
                 size={14}
                 className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500"
@@ -219,10 +240,23 @@ export default function DespacharPedidos() {
             </div>
           )}
 
+          {/* ÚLTIMA SINCRONIZACIÓN */}
+          {ultimaSinc && (
+            <div className="hidden sm:flex flex-col items-end text-right px-2">
+              <span className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider flex items-center gap-1">
+                <Clock size={10} className="text-amber-400" /> Última Sinc.
+              </span>
+              <span className="text-xs font-mono font-bold text-amber-300">
+                {formatearFechaHora(ultimaSinc)}
+              </span>
+            </div>
+          )}
+
+          {/* BOTÓN SINCRONIZAR */}
           <button
             onClick={handleSincronizar}
             disabled={isSyncing}
-            className="bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-300 font-semibold px-4 py-2 text-xs rounded-xl transition-all flex items-center gap-2 disabled:opacity-50 cursor-pointer"
+            className="bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-300 font-semibold px-4 py-2 text-xs rounded-xl transition-all flex items-center gap-2 disabled:opacity-50 cursor-pointer shrink-0"
           >
             <RefreshCw size={14} className={isSyncing ? "animate-spin" : ""} />
             {isSyncing ? "Sincronizando..." : "Sincronizar"}
@@ -230,7 +264,7 @@ export default function DespacharPedidos() {
         </div>
       </div>
 
-      {/* SELECCIÓN DE VENDEDORES (SIN OPCIÓN 'TODOS') */}
+      {/* VENDEDORES & BUSCAR */}
       <div className="p-3 border-b border-slate-800/80 bg-slate-950/60 flex flex-wrap items-center justify-between gap-3 shrink-0">
         <div className="flex items-center gap-2 flex-wrap">
           <span className="text-xs font-semibold text-slate-400 flex items-center gap-1.5 mr-1">
@@ -270,7 +304,7 @@ export default function DespacharPedidos() {
         </button>
       </div>
 
-      {/* RESULTADOS */}
+      {/* TABLA Y PAGINADOR */}
       <div
         className="flex-1 min-h-0 flex flex-col p-4 overflow-hidden"
         ref={tableContainerRef}
@@ -280,10 +314,6 @@ export default function DespacharPedidos() {
             <Filter size={36} className="text-slate-600" />
             <p className="text-sm font-medium text-slate-400">
               Seleccione al menos un vendedor y presione "BUSCAR"
-            </p>
-            <p className="text-xs text-slate-600 text-center max-w-sm">
-              Tilde las casillas de los vendedores arriba para consultar sus
-              pedidos preparados listos para despacho.
             </p>
           </div>
         ) : loading ? (
@@ -295,8 +325,7 @@ export default function DespacharPedidos() {
           <div className="h-full flex flex-col items-center justify-center text-slate-500 gap-3 border border-dashed border-slate-800/80 rounded-2xl p-8">
             <PackageCheck size={36} className="text-slate-600" />
             <p className="text-sm font-medium text-slate-400">
-              No hay pedidos pendientes de despacho para los vendedores
-              seleccionados
+              No hay pedidos pendientes de despacho para la selección
             </p>
           </div>
         ) : (
@@ -354,7 +383,6 @@ export default function DespacharPedidos() {
               </table>
             </div>
 
-            {/* CONTROLES DE PAGINACIÓN */}
             <div className="pt-2 flex items-center justify-between border-t border-slate-800/80 text-xs text-slate-400 shrink-0">
               <span className="font-mono text-slate-500">
                 Página <strong className="text-slate-200">{currentPage}</strong>{" "}

@@ -3473,13 +3473,20 @@ app.get("/api/estado-pedidos", async (req, res) => {
 // MÓDULO ESTADO PEDIDOS & DESPACHOS
 // ==========================================
 
-// OBTENER LISTA DE VENDEDORES VÁLIDOS (Excluye NULL, vacíos y '-')
+// 1. Obtener lista de vendedores y fecha de última sincronización
 app.get("/api/estado-pedidos/vendedores", async (req, res) => {
   try {
     const [rows] = await db.query(
       "SELECT DISTINCT vendedor FROM estado_pedidos WHERE vendedor IS NOT NULL AND TRIM(vendedor) != '' AND vendedor != '-' ORDER BY vendedor ASC",
     );
-    res.json(rows.map((r) => r.vendedor));
+    const [reglaRows] = await db.query(
+      "SELECT valor FROM reglas WHERE clave = 'ultima_sincronizacion_pedidos'",
+    );
+
+    res.json({
+      vendedores: rows.map((r) => r.vendedor),
+      ultimaSincronizacion: reglaRows[0]?.valor || null,
+    });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -3522,7 +3529,7 @@ app.get("/api/estado-pedidos/pendientes-despacho", async (req, res) => {
   }
 });
 
-// 3. Sincronizar desde Google Sheets guardando Columna V (VENDEDOR)
+// 2. Sincronizar desde Sheets guardando fecha y hora exacta de ejecución
 app.post("/api/estado-pedidos/sincronizar", async (req, res) => {
   try {
     const csvUrl = process.env.GOOGLE_SHEETS_PEDIDOS_URL || VENTAS_CSV_URL;
@@ -3594,7 +3601,7 @@ app.post("/api/estado-pedidos/sincronizar", async (req, res) => {
     const idxDespachado = headers.indexOf("DESPACHADO");
     const idxPunisiva = headers.indexOf("PUNISIVA");
     const idxCosusd = headers.indexOf("COSUSD");
-    const idxVendedor = headers.indexOf("VENDEDOR"); // Columna V
+    const idxVendedor = headers.indexOf("VENDEDOR");
 
     const conn = await db.getConnection();
     try {
@@ -3620,7 +3627,6 @@ app.post("/api/estado-pedidos/sincronizar", async (req, res) => {
         const cantVal =
           idxCantidad !== -1 ? parseInt(cols[idxCantidad]) || 1 : 1;
 
-        // Regla: A partir del 2026-10-05 se guarda el valor de la Columna V, antes es NULL
         let vendedorVal = null;
         if (idxVendedor !== -1 && cols[idxVendedor] && fechaFormateada) {
           if (fechaFormateada >= "2026-10-05") {
@@ -3660,168 +3666,18 @@ app.post("/api/estado-pedidos/sincronizar", async (req, res) => {
         }
       }
 
-      await conn.commit();
-      res.json({
-        success: true,
-        mensaje: `Se sincronizaron ${valuesToInsert.length} pedidos. Vendedores guardados correctamente.`,
-      });
-    } catch (err) {
-      await conn.rollback();
-      throw err;
-    } finally {
-      conn.release();
-    }
-  } catch (error) {
-    console.error("Error al sincronizar estado_pedidos:", error);
-    res.status(500).json({ error: "Error procesando la sincronización." });
-  }
-});
-
-app.post("/api/estado-pedidos/sincronizar", async (req, res) => {
-  try {
-    const csvUrl = process.env.GOOGLE_SHEETS_PEDIDOS_URL || VENTAS_CSV_URL;
-
-    if (!csvUrl) {
-      return res
-        .status(400)
-        .json({ error: "No se configuró GOOGLE_SHEETS_PEDIDOS_URL en .env" });
-    }
-
-    const response = await fetch(csvUrl);
-    const csvText = await response.text();
-
-    const parseMonto = (val) => {
-      if (!val) return 0;
-      let str = String(val).replace(/\$/g, "").replace(/\s/g, "").trim();
-      if (str.includes(".") && str.includes(",")) {
-        str = str.replace(/\./g, "").replace(",", ".");
-      } else if (str.includes(",")) {
-        str = str.replace(",", ".");
-      }
-      return parseFloat(str) || 0;
-    };
-
-    const parseCSVLine = (text) => {
-      const result = [];
-      let cell = "";
-      let inQuotes = false;
-      for (let i = 0; i < text.length; i++) {
-        const c = text[i];
-        if (c === '"') {
-          inQuotes = !inQuotes;
-        } else if (c === "," && !inQuotes) {
-          result.push(cell.trim().replace(/^"|"$/g, ""));
-          cell = "";
-        } else {
-          cell += c;
-        }
-      }
-      result.push(cell.trim().replace(/^"|"$/g, ""));
-      return result;
-    };
-
-    const lines = csvText.split(/\r?\n/).filter((l) => l.trim().length > 0);
-    if (lines.length < 2) {
-      return res
-        .status(400)
-        .json({ error: "El archivo Sheets no contiene filas de datos." });
-    }
-
-    const headers = parseCSVLine(lines[0]).map((h) => h.toUpperCase().trim());
-
-    // Mapeo de índices
-    const idxFecha = headers.indexOf("FECHA");
-    const idxPeriodo = headers.indexOf("PERIODO");
-    const idxOp = headers.indexOf("OP");
-    const idxCliente = headers.indexOf("CLIENTE");
-    const idxModelo = headers.indexOf("MODELO");
-    const idxDetalles = headers.indexOf("DETALLES");
-    const idxOc = headers.indexOf("OC");
-    const idxCantidad = headers.indexOf("CANTIDAD");
-    const idxEstado = headers.indexOf("ESTADO");
-    const idxProgramado = headers.indexOf("PROGRAMADO");
-    const idxPreparado = headers.indexOf("PREPARADO");
-    const idxDespacho = headers.indexOf("DESPACHO");
-    const idxDemoraEntrega = headers.findIndex((h) =>
-      h.includes("DEMORA ENTREGA"),
-    );
-    const idxDemoraPrep = headers.findIndex((h) =>
-      h.includes("DEMORA PREPARACION"),
-    );
-    const idxComentarios = headers.indexOf("COMENTARIOS");
-    const idxDespachado = headers.indexOf("DESPACHADO");
-    const idxPunisiva = headers.indexOf("PUNISIVA");
-    const idxCosusd = headers.indexOf("COSUSD");
-    const idxVendedor = headers.indexOf("VENDEDOR"); // <-- COLUMNA V
-
-    const conn = await db.getConnection();
-    try {
-      await conn.beginTransaction();
-
-      await conn.query("TRUNCATE TABLE estado_pedidos");
-
-      const insertQuery = `
-        INSERT INTO estado_pedidos 
-        (fecha, periodo, op, cliente, modelo, detalles, oc, cantidad, estado, programado, preparado, despacho, demora_entrega_dias, demora_preparacion, comentarios, despachado, punisiva, cosusd, vendedor) 
-        VALUES ?
-      `;
-
-      const valuesToInsert = [];
-
-      for (let i = 1; i < lines.length; i++) {
-        const cols = parseCSVLine(lines[i]);
-        if (!cols[idxOp] && !cols[idxModelo]) continue;
-
-        const fechaFormateada = parseFechaDeterminista(cols[idxFecha]);
-        const punisivaVal =
-          idxPunisiva !== -1 ? parseMonto(cols[idxPunisiva]) : 0;
-        const cosusdVal = idxCosusd !== -1 ? parseMonto(cols[idxCosusd]) : 0;
-        const cantVal =
-          idxCantidad !== -1 ? parseInt(cols[idxCantidad]) || 1 : 1;
-
-        // Regla Vendedor: Solo guarda datos a partir del 2026-10-05, de lo contrario NULL
-        let vendedorVal = null;
-        if (idxVendedor !== -1 && cols[idxVendedor] && fechaFormateada) {
-          if (fechaFormateada >= "2026-10-05") {
-            vendedorVal = cols[idxVendedor].trim() || null;
-          }
-        }
-
-        valuesToInsert.push([
-          fechaFormateada,
-          cols[idxPeriodo] || null,
-          cols[idxOp] || "",
-          cols[idxCliente] || "",
-          cols[idxModelo] || "",
-          cols[idxDetalles] || "",
-          cols[idxOc] || "",
-          cantVal,
-          cols[idxEstado] || "En stock",
-          cols[idxProgramado] || "-",
-          cols[idxPreparado] || "-",
-          cols[idxDespacho] || "-",
-          parseInt(cols[idxDemoraEntrega]) || 0,
-          parseInt(cols[idxDemoraPrep]) || 0,
-          cols[idxComentarios] || "",
-          cols[idxDespachado] || "no",
-          punisivaVal,
-          cosusdVal,
-          vendedorVal,
-        ]);
-      }
-
-      if (valuesToInsert.length > 0) {
-        const chunkSize = 1000;
-        for (let i = 0; i < valuesToInsert.length; i += chunkSize) {
-          const chunk = valuesToInsert.slice(i, i + chunkSize);
-          await conn.query(insertQuery, [chunk]);
-        }
-      }
+      // Guardar fecha y hora actual en la tabla reglas
+      const ahora = new Date();
+      await conn.query(
+        "INSERT INTO reglas (clave, valor) VALUES ('ultima_sincronizacion_pedidos', ?) ON DUPLICATE KEY UPDATE valor = ?",
+        [ahora.toISOString(), ahora.toISOString()],
+      );
 
       await conn.commit();
       res.json({
         success: true,
-        mensaje: `Se sincronizaron ${valuesToInsert.length} pedidos incluyendo vendedores.`,
+        mensaje: `Se sincronizaron ${valuesToInsert.length} pedidos.`,
+        ultimaSincronizacion: ahora.toISOString(),
       });
     } catch (err) {
       await conn.rollback();
