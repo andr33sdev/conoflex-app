@@ -3437,29 +3437,15 @@ app.get("/api/estado-pedidos", async (req, res) => {
   }
 });
 
-// OBTENER PEDIDOS PREPARADOS PENDIENTES DE DESPACHO
-app.get("/api/estado-pedidos/pendientes-despacho", async (req, res) => {
-  try {
-    const query = `
-      SELECT id, fecha, op, cliente, modelo, cantidad, preparado, estado, vendedor
-      FROM estado_pedidos
-      WHERE (preparado IS NOT NULL AND preparado != '' AND preparado != '-' AND preparado NOT LIKE '%SIN PREPARAR%')
-        AND (despacho IS NULL OR despacho = '' OR despacho = '-' OR despacho LIKE '%SIN DESPACHAR%')
-      ORDER BY preparado ASC, fecha DESC
-    `;
-    const [rows] = await db.query(query);
-    res.json(rows);
-  } catch (error) {
-    console.error("Error al obtener pedidos pendientes de despacho:", error);
-    res.status(500).json({ error: error.message });
-  }
-});
+// ==========================================
+// MÓDULO ESTADO PEDIDOS & DESPACHOS
+// ==========================================
 
-// Obtener lista única de vendedores guardados en la BD
+// 1. Obtener lista de vendedores únicos guardados en la BD
 app.get("/api/estado-pedidos/vendedores", async (req, res) => {
   try {
     const [rows] = await db.query(
-      "SELECT DISTINCT vendedor FROM estado_pedidos WHERE vendedor IS NOT NULL AND vendedor != '' ORDER BY vendedor ASC",
+      "SELECT DISTINCT vendedor FROM estado_pedidos WHERE vendedor IS NOT NULL AND TRIM(vendedor) != '' AND vendedor != '-' ORDER BY vendedor ASC",
     );
     res.json(rows.map((r) => r.vendedor));
   } catch (error) {
@@ -3467,25 +3453,26 @@ app.get("/api/estado-pedidos/vendedores", async (req, res) => {
   }
 });
 
-// Obtener pedidos pendientes de despacho filtrados por vendedores
+// 2. Obtener pedidos pendientes de despacho (filtrados estrictamente por Vendedor)
 app.get("/api/estado-pedidos/pendientes-despacho", async (req, res) => {
   try {
-    const { vendedores } = req.query; // Puede ser 'TODOS' o lista separada por comas
+    const { vendedores } = req.query;
 
-    let baseWhere = `
-      (preparado IS NOT NULL AND preparado != '' AND preparado != '-' AND preparado NOT LIKE '%SIN PREPARAR%')
-      AND (despacho IS NULL OR despacho = '' OR despacho = '-' OR despacho LIKE '%SIN DESPACHAR%')
-    `;
+    const whereConditions = [
+      "(preparado IS NOT NULL AND preparado != '' AND preparado != '-' AND preparado NOT LIKE '%SIN PREPARAR%')",
+      "(despacho IS NULL OR despacho = '' OR despacho = '-' OR despacho LIKE '%SIN DESPACHAR%')",
+    ];
 
     const params = [];
 
+    // Si se seleccionó uno o más vendedores específicos (distinto de "TODOS")
     if (vendedores && vendedores !== "TODOS") {
       const listaVendedores = vendedores
         .split(",")
         .map((v) => v.trim())
         .filter(Boolean);
       if (listaVendedores.length > 0) {
-        baseWhere += ` AND vendedor IN (?)`;
+        whereConditions.push("vendedor IN (?)");
         params.push(listaVendedores);
       }
     }
@@ -3493,7 +3480,7 @@ app.get("/api/estado-pedidos/pendientes-despacho", async (req, res) => {
     const query = `
       SELECT id, fecha, op, cliente, modelo, cantidad, preparado, estado, vendedor
       FROM estado_pedidos
-      WHERE ${baseWhere}
+      WHERE ${whereConditions.join(" AND ")}
       ORDER BY preparado ASC, fecha DESC
     `;
 
@@ -3502,6 +3489,161 @@ app.get("/api/estado-pedidos/pendientes-despacho", async (req, res) => {
   } catch (error) {
     console.error("Error al obtener pendientes de despacho:", error);
     res.status(500).json({ error: error.message });
+  }
+});
+
+// 3. Sincronizar desde Google Sheets guardando Columna V (VENDEDOR)
+app.post("/api/estado-pedidos/sincronizar", async (req, res) => {
+  try {
+    const csvUrl = process.env.GOOGLE_SHEETS_PEDIDOS_URL || VENTAS_CSV_URL;
+    if (!csvUrl) {
+      return res
+        .status(400)
+        .json({ error: "No se configuró GOOGLE_SHEETS_PEDIDOS_URL" });
+    }
+
+    const response = await fetch(csvUrl);
+    const csvText = await response.text();
+
+    const parseMonto = (val) => {
+      if (!val) return 0;
+      let str = String(val).replace(/\$/g, "").replace(/\s/g, "").trim();
+      if (str.includes(".") && str.includes(",")) {
+        str = str.replace(/\./g, "").replace(",", ".");
+      } else if (str.includes(",")) {
+        str = str.replace(",", ".");
+      }
+      return parseFloat(str) || 0;
+    };
+
+    const parseCSVLine = (text) => {
+      const result = [];
+      let cell = "";
+      let inQuotes = false;
+      for (let i = 0; i < text.length; i++) {
+        const c = text[i];
+        if (c === '"') {
+          inQuotes = !inQuotes;
+        } else if (c === "," && !inQuotes) {
+          result.push(cell.trim().replace(/^"|"$/g, ""));
+          cell = "";
+        } else {
+          cell += c;
+        }
+      }
+      result.push(cell.trim().replace(/^"|"$/g, ""));
+      return result;
+    };
+
+    const lines = csvText.split(/\r?\n/).filter((l) => l.trim().length > 0);
+    if (lines.length < 2) {
+      return res.status(400).json({ error: "El archivo no contiene filas." });
+    }
+
+    const headers = parseCSVLine(lines[0]).map((h) => h.toUpperCase().trim());
+
+    const idxFecha = headers.indexOf("FECHA");
+    const idxPeriodo = headers.indexOf("PERIODO");
+    const idxOp = headers.indexOf("OP");
+    const idxCliente = headers.indexOf("CLIENTE");
+    const idxModelo = headers.indexOf("MODELO");
+    const idxDetalles = headers.indexOf("DETALLES");
+    const idxOc = headers.indexOf("OC");
+    const idxCantidad = headers.indexOf("CANTIDAD");
+    const idxEstado = headers.indexOf("ESTADO");
+    const idxProgramado = headers.indexOf("PROGRAMADO");
+    const idxPreparado = headers.indexOf("PREPARADO");
+    const idxDespacho = headers.indexOf("DESPACHO");
+    const idxDemoraEntrega = headers.findIndex((h) =>
+      h.includes("DEMORA ENTREGA"),
+    );
+    const idxDemoraPrep = headers.findIndex((h) =>
+      h.includes("DEMORA PREPARACION"),
+    );
+    const idxComentarios = headers.indexOf("COMENTARIOS");
+    const idxDespachado = headers.indexOf("DESPACHADO");
+    const idxPunisiva = headers.indexOf("PUNISIVA");
+    const idxCosusd = headers.indexOf("COSUSD");
+    const idxVendedor = headers.indexOf("VENDEDOR"); // Columna V
+
+    const conn = await db.getConnection();
+    try {
+      await conn.beginTransaction();
+      await conn.query("TRUNCATE TABLE estado_pedidos");
+
+      const insertQuery = `
+        INSERT INTO estado_pedidos 
+        (fecha, periodo, op, cliente, modelo, detalles, oc, cantidad, estado, programado, preparado, despacho, demora_entrega_dias, demora_preparacion, comentarios, despachado, punisiva, cosusd, vendedor) 
+        VALUES ?
+      `;
+
+      const valuesToInsert = [];
+
+      for (let i = 1; i < lines.length; i++) {
+        const cols = parseCSVLine(lines[i]);
+        if (!cols[idxOp] && !cols[idxModelo]) continue;
+
+        const fechaFormateada = parseFechaDeterminista(cols[idxFecha]);
+        const punisivaVal =
+          idxPunisiva !== -1 ? parseMonto(cols[idxPunisiva]) : 0;
+        const cosusdVal = idxCosusd !== -1 ? parseMonto(cols[idxCosusd]) : 0;
+        const cantVal =
+          idxCantidad !== -1 ? parseInt(cols[idxCantidad]) || 1 : 1;
+
+        // Regla: A partir del 2026-10-05 se guarda el valor de la Columna V, antes es NULL
+        let vendedorVal = null;
+        if (idxVendedor !== -1 && cols[idxVendedor] && fechaFormateada) {
+          if (fechaFormateada >= "2026-10-05") {
+            const vClean = cols[idxVendedor].trim();
+            vendedorVal = vClean.length > 0 ? vClean : null;
+          }
+        }
+
+        valuesToInsert.push([
+          fechaFormateada,
+          cols[idxPeriodo] || null,
+          cols[idxOp] || "",
+          cols[idxCliente] || "",
+          cols[idxModelo] || "",
+          cols[idxDetalles] || "",
+          cols[idxOc] || "",
+          cantVal,
+          cols[idxEstado] || "En stock",
+          cols[idxProgramado] || "-",
+          cols[idxPreparado] || "-",
+          cols[idxDespacho] || "-",
+          parseInt(cols[idxDemoraEntrega]) || 0,
+          parseInt(cols[idxDemoraPrep]) || 0,
+          cols[idxComentarios] || "",
+          cols[idxDespachado] || "no",
+          punisivaVal,
+          cosusdVal,
+          vendedorVal,
+        ]);
+      }
+
+      if (valuesToInsert.length > 0) {
+        const chunkSize = 1000;
+        for (let i = 0; i < valuesToInsert.length; i += chunkSize) {
+          const chunk = valuesToInsert.slice(i, i + chunkSize);
+          await conn.query(insertQuery, [chunk]);
+        }
+      }
+
+      await conn.commit();
+      res.json({
+        success: true,
+        mensaje: `Se sincronizaron ${valuesToInsert.length} pedidos. Vendedores guardados correctamente.`,
+      });
+    } catch (err) {
+      await conn.rollback();
+      throw err;
+    } finally {
+      conn.release();
+    }
+  } catch (error) {
+    console.error("Error al sincronizar estado_pedidos:", error);
+    res.status(500).json({ error: "Error procesando la sincronización." });
   }
 });
 
