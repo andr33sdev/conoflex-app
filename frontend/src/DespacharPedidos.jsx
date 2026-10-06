@@ -11,7 +11,6 @@ import {
   ChevronRight,
   CheckSquare,
   Square,
-  Clock,
 } from "lucide-react";
 
 export default function DespacharPedidos({ usuarioActual }) {
@@ -24,8 +23,6 @@ export default function DespacharPedidos({ usuarioActual }) {
       ? usuarioActual.vendedores
       : [];
   });
-
-  const [ultimaSinc, setUltimaSinc] = useState(null);
 
   const [pedidos, setPedidos] = useState([]);
   const [buscado, setBuscado] = useState(false);
@@ -47,12 +44,8 @@ export default function DespacharPedidos({ usuarioActual }) {
       const res = await fetch("/api/estado-pedidos/vendedores");
       if (res.ok) {
         const data = await res.json();
-        if (data.vendedores) {
-          setVendedoresDisponibles(data.vendedores);
-          setUltimaSinc(data.ultimaSincronizacion);
-        } else if (Array.isArray(data)) {
-          setVendedoresDisponibles(data);
-        }
+        const lista = Array.isArray(data) ? data : data.vendedores || [];
+        setVendedoresDisponibles(lista);
       }
     } catch (err) {
       console.error("Error cargando vendedores:", err);
@@ -63,7 +56,6 @@ export default function DespacharPedidos({ usuarioActual }) {
     fetchVendedores();
   }, []);
 
-  // Actualizar vendedores autotildados cuando cambie el usuario de la sesión
   useEffect(() => {
     if (
       Array.isArray(usuarioActual?.vendedores) &&
@@ -100,7 +92,6 @@ export default function DespacharPedidos({ usuarioActual }) {
     }
   };
 
-  // BOTÓN ÚNICO: SINCRONIZA Y BUSCA EN UN SOLO PASO
   const handleBuscar = async () => {
     if (vendedoresSeleccionados.length === 0) {
       showToast("Seleccione al menos un vendedor", "error");
@@ -119,12 +110,7 @@ export default function DespacharPedidos({ usuarioActual }) {
       const syncData = await syncRes.json();
 
       if (syncRes.ok && syncData.success) {
-        if (syncData.ultimaSincronizacion) {
-          setUltimaSinc(syncData.ultimaSincronizacion);
-        }
         await fetchVendedores();
-      } else {
-        console.warn("Aviso al sincronizar:", syncData.error);
       }
 
       // 2. Consulta de los pedidos de los vendedores seleccionados
@@ -173,22 +159,6 @@ export default function DespacharPedidos({ usuarioActual }) {
     return fechaStr;
   };
 
-  const formatearFechaHora = (fechaStr) => {
-    if (!fechaStr) return null;
-    try {
-      const d = new Date(fechaStr);
-      if (isNaN(d.getTime())) return null;
-      const day = String(d.getDate()).padStart(2, "0");
-      const month = String(d.getMonth() + 1).padStart(2, "0");
-      const year = String(d.getFullYear()).slice(2);
-      const hours = String(d.getHours()).padStart(2, "0");
-      const minutes = String(d.getMinutes()).padStart(2, "0");
-      return `${day}/${month}/${year} ${hours}:${minutes} hs`;
-    } catch (e) {
-      return null;
-    }
-  };
-
   return (
     <div className="flex-1 flex flex-col h-full min-h-0 bg-[#070a12] border border-slate-800/80 rounded-2xl font-sans text-slate-200 shadow-2xl overflow-hidden relative">
       {/* TOAST */}
@@ -230,41 +200,27 @@ export default function DespacharPedidos({ usuarioActual }) {
           </div>
         </div>
 
-        <div className="flex items-center gap-3 w-full md:w-auto">
-          {buscado && (
-            <div className="relative flex-1 md:w-56">
-              <Search
-                size={14}
-                className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500"
-              />
-              <input
-                type="text"
-                value={busqueda}
-                onChange={(e) => {
-                  setBusqueda(e.target.value);
-                  setCurrentPage(1);
-                }}
-                placeholder="Filtrar por OP, cliente..."
-                className="w-full bg-slate-950/80 border border-slate-800 rounded-xl pl-9 pr-3 py-2 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-amber-500/50 transition-all"
-              />
-            </div>
-          )}
-
-          {/* ÚLTIMA SINCRONIZACIÓN */}
-          {ultimaSinc && (
-            <div className="flex flex-col items-end text-right px-2">
-              <span className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider flex items-center gap-1">
-                <Clock size={10} className="text-amber-400" /> Última Sinc.
-              </span>
-              <span className="text-xs font-mono font-bold text-amber-300">
-                {formatearFechaHora(ultimaSinc)}
-              </span>
-            </div>
-          )}
-        </div>
+        {buscado && (
+          <div className="relative flex-1 md:w-56">
+            <Search
+              size={14}
+              className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500"
+            />
+            <input
+              type="text"
+              value={busqueda}
+              onChange={(e) => {
+                setBusqueda(e.target.value);
+                setCurrentPage(1);
+              }}
+              placeholder="Filtrar por OP, cliente..."
+              className="w-full bg-slate-950/80 border border-slate-800 rounded-xl pl-9 pr-3 py-2 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-amber-500/50 transition-all"
+            />
+          </div>
+        )}
       </div>
 
-      {/* VENDEDORES & BOTÓN BUSCAR + SINCRONIZAR */}
+      {/* VENDEDORES & BOTÓN BUSCAR */}
       <div className="p-3 border-b border-slate-800/80 bg-slate-950/60 flex flex-wrap items-center justify-between gap-3 shrink-0">
         <div className="flex items-center gap-2 flex-wrap">
           <span className="text-xs font-semibold text-slate-400 flex items-center gap-1.5 mr-1">

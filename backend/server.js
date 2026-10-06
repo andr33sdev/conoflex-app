@@ -3526,14 +3526,7 @@ app.get("/api/estado-pedidos/vendedores", async (req, res) => {
     const [rows] = await db.query(
       "SELECT DISTINCT vendedor FROM estado_pedidos WHERE vendedor IS NOT NULL AND TRIM(vendedor) != '' AND vendedor != '-' ORDER BY vendedor ASC",
     );
-    const [reglaRows] = await db.query(
-      "SELECT valor FROM reglas WHERE clave = 'ultima_sincronizacion_pedidos'",
-    );
-
-    res.json({
-      vendedores: rows.map((r) => r.vendedor),
-      ultimaSincronizacion: reglaRows[0]?.valor || null,
-    });
+    res.json(rows.map((r) => r.vendedor));
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
