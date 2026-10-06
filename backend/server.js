@@ -3579,14 +3579,27 @@ app.get("/api/estado-pedidos/pendientes-despacho", async (req, res) => {
 // 2. Sincronizar desde Sheets guardando fecha y hora exacta de ejecución
 app.post("/api/estado-pedidos/sincronizar", async (req, res) => {
   try {
-    const csvUrl = process.env.GOOGLE_SHEETS_PEDIDOS_URL || VENTAS_CSV_URL;
+    let csvUrl = process.env.GOOGLE_SHEETS_PEDIDOS_URL || VENTAS_CSV_URL;
+
     if (!csvUrl) {
       return res
         .status(400)
-        .json({ error: "No se configuró GOOGLE_SHEETS_PEDIDOS_URL" });
+        .json({ error: "No se configuró GOOGLE_SHEETS_PEDIDOS_URL en .env" });
     }
 
-    const response = await fetch(csvUrl);
+    // AGREGAR CACHE-BUSTER PARA FORZAR DATOS FRESCOS DE GOOGLE
+    const cacheBusterParam = `_t=${Date.now()}`;
+    const urlConAntiCache = csvUrl.includes("?")
+      ? `${csvUrl}&${cacheBusterParam}`
+      : `${csvUrl}?${cacheBusterParam}`;
+
+    const response = await fetch(urlConAntiCache, {
+      headers: {
+        "Cache-Control": "no-cache, no-store, must-revalidate",
+        Pragma: "no-cache",
+      },
+    });
+
     const csvText = await response.text();
 
     const parseMonto = (val) => {

@@ -17,7 +17,7 @@ import {
 export default function DespacharPedidos({ usuarioActual }) {
   const [vendedoresDisponibles, setVendedoresDisponibles] = useState([]);
 
-  // AUTOTILDAR AL CARGAR: Si el usuario tiene vendedores asignados en su perfil, se marcan automáticamente
+  // AUTOTILDAR AL CARGAR: Si el usuario tiene vendedores asignados en su perfil
   const [vendedoresSeleccionados, setVendedoresSeleccionados] = useState(() => {
     return Array.isArray(usuarioActual?.vendedores) &&
       usuarioActual.vendedores.length > 0
@@ -30,7 +30,6 @@ export default function DespacharPedidos({ usuarioActual }) {
   const [pedidos, setPedidos] = useState([]);
   const [buscado, setBuscado] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [isSyncing, setIsSyncing] = useState(false);
   const [busqueda, setBusqueda] = useState("");
   const [toast, setToast] = useState(null);
 
@@ -101,6 +100,7 @@ export default function DespacharPedidos({ usuarioActual }) {
     }
   };
 
+  // BOTÓN ÚNICO: SINCRONIZA Y BUSCA EN UN SOLO PASO
   const handleBuscar = async () => {
     if (vendedoresSeleccionados.length === 0) {
       showToast("Seleccione al menos un vendedor", "error");
@@ -112,6 +112,22 @@ export default function DespacharPedidos({ usuarioActual }) {
     setCurrentPage(1);
 
     try {
+      // 1. Sincronización automática previa con Google Sheets
+      const syncRes = await fetch("/api/estado-pedidos/sincronizar", {
+        method: "POST",
+      });
+      const syncData = await syncRes.json();
+
+      if (syncRes.ok && syncData.success) {
+        if (syncData.ultimaSincronizacion) {
+          setUltimaSinc(syncData.ultimaSincronizacion);
+        }
+        await fetchVendedores();
+      } else {
+        console.warn("Aviso al sincronizar:", syncData.error);
+      }
+
+      // 2. Consulta de los pedidos de los vendedores seleccionados
       const paramVendedores = vendedoresSeleccionados.join(",");
       const res = await fetch(
         `/api/estado-pedidos/pendientes-despacho?vendedores=${encodeURIComponent(paramVendedores)}`,
@@ -124,34 +140,10 @@ export default function DespacharPedidos({ usuarioActual }) {
         showToast("Error al obtener pedidos", "error");
       }
     } catch (err) {
-      console.error("Error buscando pedidos:", err);
-      showToast("Error de conexión al buscar", "error");
+      console.error("Error buscando y sincronizando pedidos:", err);
+      showToast("Error de conexión al procesar la búsqueda", "error");
     } finally {
       setLoading(false);
-    }
-  };
-
-  const handleSincronizar = async () => {
-    setIsSyncing(true);
-    try {
-      const res = await fetch("/api/estado-pedidos/sincronizar", {
-        method: "POST",
-      });
-      const data = await res.json();
-      if (res.ok && data.success) {
-        showToast("Sincronización exitosa");
-        if (data.ultimaSincronizacion) {
-          setUltimaSinc(data.ultimaSincronizacion);
-        }
-        await fetchVendedores();
-        if (buscado) await handleBuscar();
-      } else {
-        showToast(data.error || "Error al sincronizar", "error");
-      }
-    } catch (err) {
-      showToast("Error de conexión al sincronizar", "error");
-    } finally {
-      setIsSyncing(false);
     }
   };
 
@@ -260,7 +252,7 @@ export default function DespacharPedidos({ usuarioActual }) {
 
           {/* ÚLTIMA SINCRONIZACIÓN */}
           {ultimaSinc && (
-            <div className="hidden sm:flex flex-col items-end text-right px-2">
+            <div className="flex flex-col items-end text-right px-2">
               <span className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider flex items-center gap-1">
                 <Clock size={10} className="text-amber-400" /> Última Sinc.
               </span>
@@ -269,20 +261,10 @@ export default function DespacharPedidos({ usuarioActual }) {
               </span>
             </div>
           )}
-
-          {/* BOTÓN SINCRONIZAR */}
-          <button
-            onClick={handleSincronizar}
-            disabled={isSyncing}
-            className="bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-300 font-semibold px-4 py-2 text-xs rounded-xl transition-all flex items-center gap-2 disabled:opacity-50 cursor-pointer shrink-0"
-          >
-            <RefreshCw size={14} className={isSyncing ? "animate-spin" : ""} />
-            {isSyncing ? "Sincronizando..." : "Sincronizar"}
-          </button>
         </div>
       </div>
 
-      {/* VENDEDORES & BUSCAR */}
+      {/* VENDEDORES & BOTÓN BUSCAR + SINCRONIZAR */}
       <div className="p-3 border-b border-slate-800/80 bg-slate-950/60 flex flex-wrap items-center justify-between gap-3 shrink-0">
         <div className="flex items-center gap-2 flex-wrap">
           <span className="text-xs font-semibold text-slate-400 flex items-center gap-1.5 mr-1">
@@ -317,8 +299,12 @@ export default function DespacharPedidos({ usuarioActual }) {
           disabled={loading}
           className="bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold px-5 py-2 text-xs rounded-xl shadow-[0_0_15px_rgba(245,158,11,0.25)] transition-all flex items-center gap-2 cursor-pointer active:scale-95 disabled:opacity-50"
         >
-          <Search size={14} />
-          {loading ? "Buscando..." : "BUSCAR"}
+          {loading ? (
+            <RefreshCw size={14} className="animate-spin" />
+          ) : (
+            <Search size={14} />
+          )}
+          {loading ? "Sincronizando y buscando..." : "BUSCAR"}
         </button>
       </div>
 
@@ -337,7 +323,9 @@ export default function DespacharPedidos({ usuarioActual }) {
         ) : loading ? (
           <div className="h-full flex flex-col items-center justify-center text-slate-500 gap-3">
             <RefreshCw size={28} className="animate-spin text-amber-400" />
-            <span className="text-xs">Consultando pedidos preparados...</span>
+            <span className="text-xs">
+              Sincronizando datos y consultando pedidos...
+            </span>
           </div>
         ) : currentItems.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center text-slate-500 gap-3 border border-dashed border-slate-800/80 rounded-2xl p-8">
