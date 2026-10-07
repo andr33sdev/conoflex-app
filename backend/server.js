@@ -3011,6 +3011,38 @@ app.delete("/api/ingenierias/:id", async (req, res) => {
   }
 });
 
+// OBTENER PLANIFICACIÓN OT
+app.get("/api/planificacion-produccion", async (req, res) => {
+  try {
+    const [rows] = await db.query("SELECT * FROM planificacion_ot");
+    const planMap = {};
+    rows.forEach((r) => {
+      planMap[r.fecha] =
+        typeof r.items === "string" ? JSON.parse(r.items) : r.items;
+    });
+    res.json(planMap);
+  } catch (err) {
+    res.status(500).json({ error: "Error al obtener planificación OT" });
+  }
+});
+
+// GUARDAR / ACTUALIZAR PLANIFICACIÓN OT POR DÍA
+app.post("/api/planificacion-produccion", async (req, res) => {
+  const planData = req.body; // { "2026-10-07": [...] }
+  try {
+    for (const [fecha, items] of Object.entries(planData)) {
+      await db.query(
+        `INSERT INTO planificacion_ot (fecha, items) VALUES (?, ?) 
+         ON DUPLICATE KEY UPDATE items = ?`,
+        [fecha, JSON.stringify(items), JSON.stringify(items)],
+      );
+    }
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: "Error al guardar planificación OT" });
+  }
+});
+
 // ==========================================
 // MÓDULO 6: REGISTRO DE PRODUCCIÓN (MÉTRICAS & CARGAS)
 // ==========================================

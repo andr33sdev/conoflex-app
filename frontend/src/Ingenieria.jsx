@@ -10,7 +10,6 @@ import {
   ChevronsLeft,
   ChevronsRight,
   X,
-  FlaskConical,
   Plus,
   Trash2,
   Edit2,
@@ -54,12 +53,13 @@ export default function Ingenieria() {
   const [builderCatalogType, setBuilderCatalogType] = useState("MP");
   const [builderCatalogSearch, setBuilderCatalogSearch] = useState("");
 
+  // CÁLCULO DE FILAS EXACTAS (48px DE ALTURA)
   useEffect(() => {
     const updatePageSize = () => {
       if (!tableContainerRef.current) return;
       const containerHeight = tableContainerRef.current.clientHeight;
-      const headerHeight = 36;
-      const rowHeight = 38;
+      const headerHeight = 48;
+      const rowHeight = 48;
       const availableHeight = containerHeight - headerHeight;
       const calculatedCount = Math.floor(availableHeight / rowHeight);
 
@@ -97,7 +97,6 @@ export default function Ingenieria() {
     fetchBaseData();
   }, []);
 
-  // SINCRONIZACIÓN DE VENTAS PARA PRODUCTOS TERMINADOS
   const handleSyncPT = async () => {
     setIsSyncingPT(true);
     try {
@@ -108,16 +107,14 @@ export default function Ingenieria() {
 
       if (res.ok && data.success) {
         alert(
-          `🎉 ¡Sincronización exitosa! Se procesaron ${data.count} modelos de productos terminados.`,
+          `¡Sincronización exitosa! Se procesaron ${data.count} modelos de productos terminados.`,
         );
         fetchBaseData();
       } else {
-        alert(
-          "❌ Error: " + (data.error || "No se pudo sincronizar las ventas."),
-        );
+        alert("Error: " + (data.error || "No se pudo sincronizar las ventas."));
       }
     } catch (error) {
-      alert("❌ Error de conexión al sincronizar Ventas.");
+      alert("Error de conexión al sincronizar Ventas.");
     } finally {
       setIsSyncingPT(false);
     }
@@ -223,7 +220,8 @@ export default function Ingenieria() {
       item_codigo: item.codigo,
       item_nombre: item.nombre,
       cantidad: 1,
-      unidad_medida: item.unidad_medida || (type === "MP" ? "Kg" : "Unidades"),
+      unidad_medida:
+        item.unidad_medida || (type === "MP" ? "KILOS" : "UNIDADES"),
     };
 
     setRecipeForm({
@@ -297,10 +295,11 @@ export default function Ingenieria() {
         let aVal = a[sortColumn];
         let bVal = b[sortColumn];
 
-        if (typeof aVal === "string") {
-          aVal = aVal.toLowerCase();
-          bVal = bVal.toLowerCase();
-        }
+        if (aVal == null) aVal = "";
+        if (bVal == null) bVal = "";
+
+        if (typeof aVal === "string") aVal = aVal.toLowerCase();
+        if (typeof bVal === "string") bVal = bVal.toLowerCase();
 
         if (aVal < bVal) return sortDirection === "asc" ? -1 : 1;
         if (aVal > bVal) return sortDirection === "asc" ? 1 : -1;
@@ -338,76 +337,80 @@ export default function Ingenieria() {
     return processedItems.slice(start, start + itemsPerPage);
   }, [processedItems, currentPage, itemsPerPage]);
 
-  const emptySlotsCount = Math.max(0, itemsPerPage - paginatedItems.length);
-
   return (
-    <div className="flex-1 flex flex-col h-full min-h-0 bg-[#070a12] border border-slate-800/80 rounded-2xl font-sans text-slate-200 shadow-2xl overflow-hidden backdrop-blur-2xl p-5 space-y-4">
-      {/* 1. HEADER DE MÓDULO */}
-      <div className="bg-[#0f172a]/70 border-b border-slate-800/80 p-4 flex flex-wrap items-center justify-between gap-4 shrink-0 backdrop-blur-xl rounded-2xl">
-        <div className="flex items-center gap-3.5">
-          <div className="p-2.5 bg-cyan-500/10 border border-cyan-500/20 rounded-xl shadow-[0_0_15px_rgba(56,189,248,0.15)]">
-            <FlaskConical size={20} className="text-cyan-400" />
-          </div>
-          <div>
-            <div className="flex items-center gap-2.5">
-              <h2 className="text-xs font-bold text-white tracking-widest uppercase font-mono">
-                LABORATORIO DE INGENIERÍAS
-              </h2>
-              <span className="text-[10px] bg-cyan-500/10 text-cyan-300 border border-cyan-500/20 px-2.5 py-0.5 rounded-full font-mono flex items-center gap-1.5 shadow-[0_0_10px_rgba(56,189,248,0.1)]">
-                <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 shadow-[0_0_8px_#38bdf8]" />{" "}
-                FORMULACIÓN TÉCNICA
-              </span>
-            </div>
-            <p className="text-[11px] text-slate-400 mt-0.5">
-              Listas de materiales (BOM), componentes y control de recetas
-              activas.
-            </p>
-          </div>
+    <div className="flex-1 flex flex-col h-full min-h-0 bg-black font-sans text-zinc-200 overflow-hidden relative selection:bg-[#FF5A00]/30">
+      {/* 1. HEADER HERO */}
+      <div className="border-b border-zinc-800/50 p-6 md:p-10 flex flex-col md:flex-row md:items-end justify-between gap-6 shrink-0 bg-[#050505] relative overflow-hidden">
+        <div className="z-10">
+          <h1 className="text-4xl md:text-5xl font-extrabold italic tracking-tighter text-white uppercase leading-none">
+            Ingeniería <span className="text-[#FF5A00]">& BOM</span>
+          </h1>
+          <p className="text-zinc-500 text-sm mt-2 max-w-md uppercase tracking-widest font-bold flex items-center gap-2">
+            LABORATORIO DE FÓRMULAS TÉCNICAS Y RECETAS
+          </p>
         </div>
 
-        <div className="flex items-center gap-2">
-          {/* BOTÓN SINCRONIZAR VENTAS (Solo en Productos Terminados) */}
+        <div className="flex items-center gap-3 z-10 w-full md:w-auto">
           {activeTab === "PT" && (
             <button
               onClick={handleSyncPT}
               disabled={isSyncingPT}
-              className="p-2 px-3 bg-emerald-500/10 border border-emerald-500/40 hover:bg-emerald-500/20 text-emerald-400 rounded-xl transition-all shadow-md cursor-pointer shrink-0 font-mono text-xs font-bold flex items-center gap-2 disabled:opacity-50"
-              title="Extraer productos desde Sheets de Ventas"
+              className="flex items-center justify-between gap-3 px-6 py-3 font-bold text-xs uppercase tracking-widest transition-all bg-[#FFD700] hover:bg-white text-black active:scale-95 disabled:opacity-50 cursor-pointer"
             >
               <DownloadCloud
-                size={14}
-                className={isSyncingPT ? "animate-bounce text-emerald-300" : ""}
+                size={16}
+                className={isSyncingPT ? "animate-bounce" : ""}
+                strokeWidth={3}
               />
-              <span>SINCRONIZAR VENTAS</span>
+              SINCRONIZAR VENTAS
             </button>
           )}
 
           <button
             onClick={fetchBaseData}
-            className="p-2 bg-slate-900 border border-slate-700 hover:border-amber-400 text-slate-300 hover:text-amber-400 rounded-xl transition-all shadow-md cursor-pointer shrink-0"
+            className="p-3 bg-black border border-zinc-800 text-zinc-400 hover:text-white hover:border-zinc-700 transition-colors cursor-pointer"
             title="Recargar catálogo"
           >
             <RefreshCw
-              size={15}
-              className={loading ? "animate-spin text-amber-400" : ""}
+              size={16}
+              className={loading ? "animate-spin text-[#FF5A00]" : ""}
             />
           </button>
         </div>
       </div>
 
-      {/* 2. BARRA DE HERRAMIENTAS Y PESTAÑAS */}
-      <div className="bg-[#0e1422] border border-slate-800/80 p-3.5 rounded-2xl space-y-3 shrink-0 shadow-xl">
-        <div className="flex items-center justify-between gap-3 flex-wrap">
-          <div className="flex items-center gap-2 font-mono text-xs overflow-x-auto pb-0.5">
+      {/* 2. PANEL DE FILTROS & BÚSQUEDA */}
+      <div className="px-4 py-4 md:px-8 border-b border-zinc-800/50 flex flex-col sm:flex-row items-center justify-between gap-4 shrink-0 bg-black relative z-20">
+        <div className="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto flex-1">
+          {/* BUSCADOR */}
+          <div className="relative w-full sm:w-80">
+            <Search
+              size={14}
+              className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-600"
+            />
+            <input
+              type="text"
+              placeholder="Buscar por código o artículo..."
+              value={search}
+              onChange={(e) => {
+                setSearch(e.target.value);
+                setCurrentPage(1);
+              }}
+              className="w-full bg-transparent border border-zinc-800 focus:border-[#FF5A00] text-white pl-10 pr-4 py-2.5 text-xs transition-colors outline-none"
+            />
+          </div>
+
+          {/* TABS DE MÓDULO */}
+          <div className="flex items-center gap-0 w-full sm:w-auto border border-zinc-800 bg-[#050505]">
             <button
               onClick={() => {
                 setActiveTab("SE");
                 setCurrentPage(1);
               }}
-              className={`px-3.5 py-1.5 rounded-xl border transition-all cursor-pointer whitespace-nowrap ${
+              className={`px-5 py-2.5 text-xs font-bold transition-all cursor-pointer whitespace-nowrap uppercase tracking-widest border-r border-zinc-800 ${
                 activeTab === "SE"
-                  ? "bg-amber-500/10 text-amber-400 border-amber-500/40 font-bold shadow-[0_0_10px_rgba(245,158,11,0.15)]"
-                  : "bg-[#070a12] border-slate-800 text-slate-400 hover:text-slate-200"
+                  ? "bg-[#FF5A00] text-black"
+                  : "text-zinc-500 hover:text-white hover:bg-zinc-900"
               }`}
             >
               SEMIELABORADOS ({itemsSE.length})
@@ -418,357 +421,382 @@ export default function Ingenieria() {
                 setActiveTab("PT");
                 setCurrentPage(1);
               }}
-              className={`px-3.5 py-1.5 rounded-xl border transition-all cursor-pointer whitespace-nowrap ${
+              className={`px-5 py-2.5 text-xs font-bold transition-all cursor-pointer whitespace-nowrap uppercase tracking-widest ${
                 activeTab === "PT"
-                  ? "bg-cyan-500/10 text-cyan-400 border-cyan-500/40 font-bold shadow-[0_0_10px_rgba(56,189,248,0.15)]"
-                  : "bg-[#070a12] border-slate-800 text-slate-400 hover:text-slate-200"
+                  ? "bg-[#FF5A00] text-black"
+                  : "text-zinc-500 hover:text-white hover:bg-zinc-900"
               }`}
             >
               PRODUCTOS TERMINADOS ({itemsPT.length})
             </button>
           </div>
-
-          <div className="bg-[#070a12] border border-slate-800 px-3 py-1.5 text-xs font-mono text-slate-400 shrink-0 rounded-xl flex items-center gap-2">
-            <span>ITEMS:</span>
-            <strong className="text-emerald-400 font-bold">
-              {processedItems.length} / {currentList.length}
-            </strong>
-          </div>
         </div>
 
-        <div className="relative w-full max-w-md">
-          <Search
-            size={15}
-            className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500"
-          />
-          <input
-            type="text"
-            placeholder="Buscar por código o artículo..."
-            value={search}
-            onChange={(e) => {
-              setSearch(e.target.value);
-              setCurrentPage(1);
-            }}
-            className="w-full bg-[#070a12] border border-slate-800 text-xs text-slate-100 pl-10 pr-4 py-2 focus:border-amber-500/50 outline-none rounded-xl font-sans"
-          />
+        {/* CONTADOR TOTAL */}
+        <div className="border border-zinc-800 px-4 py-2.5 text-[10px] md:text-xs text-zinc-500 font-mono tracking-widest flex items-center gap-2 bg-[#050505] uppercase font-bold w-full sm:w-auto justify-between shrink-0">
+          <span className="flex items-center gap-1.5">TOTAL REGISTROS:</span>
+          <strong className="text-white">
+            {processedItems.length} / {currentList.length}
+          </strong>
         </div>
       </div>
 
-      {/* 3. TABLA PRINCIPAL CYBER-INDUSTRIAL */}
-      <div className="flex-1 min-h-0 bg-[#0e1422] border border-slate-800/80 rounded-2xl p-4 flex flex-col shadow-xl space-y-3">
+      {/* 3. VISTA ESCRITORIO (GRILLA 48px) */}
+      <div className="hidden md:flex flex-1 flex-col p-4 md:p-8 bg-black min-h-0 justify-between overflow-hidden">
         <div
           ref={tableContainerRef}
-          className="hidden md:flex flex-1 border border-slate-800 bg-[#070a12] min-h-0 flex-col overflow-hidden rounded-xl"
+          className="flex-1 min-h-0 w-full flex flex-col justify-start"
         >
-          <table className="w-full text-left text-xs border-collapse table-fixed">
-            <thead>
-              <tr className="text-slate-400 border-b border-slate-800 font-mono text-[10px] uppercase tracking-wider bg-[#0e1422] sticky top-0 z-10 h-[36px]">
-                <th
-                  onClick={() => handleSort("codigo")}
-                  className="w-[20%] px-3 font-semibold cursor-pointer hover:bg-slate-800/80 hover:text-amber-400 transition-colors select-none"
-                >
-                  <div className="flex items-center justify-between pr-1">
-                    <span>CÓDIGO</span>
-                    <span className="w-3 flex justify-center shrink-0">
-                      {sortColumn === "codigo" ? (
-                        sortDirection === "asc" ? (
-                          <ArrowUp size={12} className="text-amber-400" />
-                        ) : (
-                          <ArrowDown size={12} className="text-amber-400" />
-                        )
-                      ) : (
-                        <ArrowUpDown size={11} className="text-slate-600" />
-                      )}
-                    </span>
-                  </div>
-                </th>
+          <div className="w-full border border-zinc-800/90 bg-[#030303] flex flex-col overflow-hidden shadow-2xl h-fit">
+            {/* CABECERA INDUSTRIAL (h-12) */}
+            <div className="grid grid-cols-[220px_1fr_180px_180px] h-12 bg-[#080808] border-b border-zinc-800/90 items-center text-zinc-400 font-mono text-[10px] font-extrabold uppercase tracking-widest shrink-0 select-none">
+              <div
+                onClick={() => handleSort("codigo")}
+                className="px-4 flex items-center justify-between cursor-pointer hover:text-[#FF5A00] transition-colors"
+              >
+                <span>CÓDIGO</span>
+                {sortColumn === "codigo" ? (
+                  sortDirection === "asc" ? (
+                    <ArrowUp size={12} className="text-[#FF5A00]" />
+                  ) : (
+                    <ArrowDown size={12} className="text-[#FF5A00]" />
+                  )
+                ) : (
+                  <ArrowUpDown size={10} className="text-zinc-700" />
+                )}
+              </div>
 
-                <th
-                  onClick={() => handleSort("nombre")}
-                  className="w-[50%] px-3 font-semibold cursor-pointer hover:bg-slate-800/80 hover:text-amber-400 transition-colors select-none"
-                >
-                  <div className="flex items-center justify-between pr-1">
-                    <span>ARTÍCULO / PRODUCTO</span>
-                    <span className="w-3 flex justify-center shrink-0">
-                      {sortColumn === "nombre" ? (
-                        sortDirection === "asc" ? (
-                          <ArrowUp size={12} className="text-amber-400" />
-                        ) : (
-                          <ArrowDown size={12} className="text-amber-400" />
-                        )
-                      ) : (
-                        <ArrowUpDown size={11} className="text-slate-600" />
-                      )}
-                    </span>
-                  </div>
-                </th>
+              <div
+                onClick={() => handleSort("nombre")}
+                className="px-4 flex items-center justify-between cursor-pointer hover:text-[#FF5A00] transition-colors"
+              >
+                <span>ARTÍCULO / PRODUCTO</span>
+                {sortColumn === "nombre" ? (
+                  sortDirection === "asc" ? (
+                    <ArrowUp size={12} className="text-[#FF5A00]" />
+                  ) : (
+                    <ArrowDown size={12} className="text-[#FF5A00]" />
+                  )
+                ) : (
+                  <ArrowUpDown size={10} className="text-zinc-700" />
+                )}
+              </div>
 
-                <th
-                  onClick={() => handleSort("recetas_count")}
-                  className="w-[15%] px-3 font-semibold text-center cursor-pointer hover:bg-slate-800/80 hover:text-amber-400 transition-colors select-none"
-                >
-                  <div className="flex items-center justify-center gap-1">
-                    <span>FÓRMULAS</span>
-                    <span className="w-3 flex justify-center shrink-0">
-                      {sortColumn === "recetas_count" ? (
-                        sortDirection === "asc" ? (
-                          <ArrowUp size={12} className="text-amber-400" />
-                        ) : (
-                          <ArrowDown size={12} className="text-amber-400" />
-                        )
-                      ) : (
-                        <ArrowUpDown size={11} className="text-slate-600" />
-                      )}
-                    </span>
-                  </div>
-                </th>
+              <div
+                onClick={() => handleSort("recetas_count")}
+                className="px-3 flex items-center justify-center gap-1 cursor-pointer hover:text-[#FF5A00] transition-colors"
+              >
+                <span>FÓRMULAS</span>
+                {sortColumn === "recetas_count" ? (
+                  sortDirection === "asc" ? (
+                    <ArrowUp size={12} className="text-[#FF5A00]" />
+                  ) : (
+                    <ArrowDown size={12} className="text-[#FF5A00]" />
+                  )
+                ) : (
+                  <ArrowUpDown size={10} className="text-zinc-700" />
+                )}
+              </div>
 
-                <th className="w-[15%] px-3 font-semibold text-center">
-                  INGENIERÍA
-                </th>
-              </tr>
-            </thead>
+              <div className="px-4 flex justify-center text-center">
+                INGENIERÍA
+              </div>
+            </div>
 
-            <tbody
-              key={currentPage}
-              className="divide-y divide-slate-800/50 bg-[#070a12] animate-in fade-in duration-200"
-            >
+            {/* FILAS DE LA TABLA */}
+            <div className="flex flex-col bg-black">
               {loading ? (
-                <tr>
-                  <td
-                    colSpan="4"
-                    className="py-16 text-center font-mono text-xs text-amber-400 animate-pulse"
-                  >
-                    Consultando libro de ingenierías...
-                  </td>
-                </tr>
+                <div className="py-12 flex justify-center text-[#FF5A00]">
+                  <RefreshCw className="animate-spin" size={28} />
+                </div>
               ) : paginatedItems.length === 0 ? (
-                <tr>
-                  <td
-                    colSpan="4"
-                    className="py-16 text-center font-mono text-xs text-slate-500"
-                  >
-                    No se encontraron registros.
-                  </td>
-                </tr>
+                <div className="py-12 text-center text-zinc-600 font-bold uppercase tracking-widest text-xs">
+                  No se encontraron registros.
+                </div>
               ) : (
-                <>
-                  {paginatedItems.map((item) => (
-                    <tr
-                      key={item.id}
-                      onClick={() => handleOpenParentModal(item, activeTab)}
-                      className="h-[38px] hover:bg-[#121824]/80 transition-colors group align-middle cursor-pointer"
-                    >
-                      <td className="px-3 font-mono font-bold text-amber-400 truncate align-middle group-hover:underline">
+                paginatedItems.map((item) => (
+                  <div
+                    key={item.id}
+                    onClick={() => handleOpenParentModal(item, activeTab)}
+                    className="grid grid-cols-[220px_1fr_180px_180px] h-12 items-center border-b border-zinc-900/80 last:border-b-0 hover:bg-[#0a0a0a] transition-colors duration-150 group cursor-pointer text-xs shrink-0"
+                  >
+                    <div className="px-4 font-mono font-bold truncate">
+                      <span className="text-[#FF5A00] bg-[#FF5A00]/10 border border-[#FF5A00]/25 px-2 py-0.5 text-xs group-hover:bg-[#FF5A00] group-hover:text-black transition-colors inline-block max-w-full truncate">
                         {item.codigo}
-                      </td>
+                      </span>
+                    </div>
 
-                      <td className="px-3 text-slate-100 font-bold truncate align-middle">
-                        {item.nombre}
-                      </td>
+                    <div className="px-4 text-white font-bold text-xs truncate pr-2">
+                      {item.nombre}
+                    </div>
 
-                      <td className="px-3 text-center align-middle whitespace-nowrap font-mono">
-                        <span
-                          className={`inline-block px-2.5 py-0.5 border rounded-full text-[10px] font-bold ${
-                            item.recetas_count > 0
-                              ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400"
-                              : "bg-slate-900 border-slate-800 text-slate-500"
-                          }`}
-                        >
-                          {item.recetas_count || 0} Versiones
-                        </span>
-                      </td>
+                    <div className="px-3 flex justify-center font-mono text-[10px] uppercase font-bold tracking-widest">
+                      <span
+                        className={`px-2.5 py-0.5 border ${
+                          item.recetas_count > 0
+                            ? "text-emerald-400 border-emerald-500/30 bg-emerald-500/10"
+                            : "text-zinc-500 border-zinc-800 bg-black"
+                        }`}
+                      >
+                        {item.recetas_count || 0} Versiones
+                      </span>
+                    </div>
 
-                      <td className="px-3 text-center align-middle">
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleOpenParentModal(item, activeTab);
-                          }}
-                          className="px-2.5 py-1 bg-slate-900 border border-slate-700 text-cyan-400 font-mono text-[11px] font-bold hover:border-cyan-400 hover:bg-slate-800 transition-all rounded-lg cursor-pointer inline-flex items-center gap-1 shadow-sm"
-                        >
-                          <FileCode2 size={12} /> ABRIR FÓRMULAS
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-
-                  {/* RANURAS VACÍAS */}
-                  {Array.from({ length: emptySlotsCount }).map((_, idx) => (
-                    <tr
-                      key={`empty-${idx}`}
-                      className="h-[38px] opacity-20 pointer-events-none"
-                    >
-                      <td className="px-3 text-slate-700 font-mono text-[10px]">
-                        --
-                      </td>
-                      <td className="px-3 text-slate-700 font-mono text-[10px]">
-                        -- RANURA VACÍA --
-                      </td>
-                      <td className="px-3 text-center text-slate-700 text-[10px]">
-                        --
-                      </td>
-                      <td className="px-3 text-center text-slate-700 text-[10px]">
-                        --
-                      </td>
-                    </tr>
-                  ))}
-                </>
+                    <div className="px-4 flex justify-center">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleOpenParentModal(item, activeTab);
+                        }}
+                        className="px-3 py-1 bg-black border border-zinc-800 hover:border-[#FF5A00] text-zinc-300 hover:text-[#FF5A00] font-mono text-[10px] font-bold uppercase tracking-widest transition-colors flex items-center gap-1.5 cursor-pointer"
+                      >
+                        <FileCode2 size={13} /> ABRIR FÓRMULAS
+                      </button>
+                    </div>
+                  </div>
+                ))
               )}
-            </tbody>
-          </table>
-        </div>
-
-        {/* PAGINACIÓN */}
-        <div className="flex flex-col sm:flex-row items-center justify-between pt-2 border-t border-slate-800 shrink-0 text-xs font-mono text-slate-400 gap-2">
-          <span>
-            Página <strong className="text-white">{currentPage}</strong> de{" "}
-            <strong className="text-white">{totalPages}</strong>
-          </span>
-
-          <div className="flex items-center gap-1.5">
-            <button
-              onClick={() => setCurrentPage(1)}
-              disabled={currentPage === 1}
-              className="p-1.5 bg-slate-900 border border-slate-800 text-slate-400 hover:text-white disabled:opacity-30 rounded-lg cursor-pointer transition"
-            >
-              <ChevronsLeft size={14} />
-            </button>
-            <button
-              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-              disabled={currentPage === 1}
-              className="px-3 py-1.5 bg-slate-900 border border-slate-800 text-slate-400 hover:text-white disabled:opacity-30 flex items-center gap-1 text-xs rounded-lg cursor-pointer transition"
-            >
-              <ChevronLeft size={14} /> ANT
-            </button>
-
-            <span className="px-3 py-1 bg-[#070a12] border border-slate-800 text-amber-400 font-bold text-xs rounded-lg">
-              {currentPage} / {totalPages}
-            </span>
-
-            <button
-              onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-              disabled={currentPage === totalPages}
-              className="px-3 py-1.5 bg-slate-900 border border-slate-800 text-slate-400 hover:text-white disabled:opacity-30 flex items-center gap-1 text-xs rounded-lg cursor-pointer transition"
-            >
-              SIG <ChevronRight size={14} />
-            </button>
-            <button
-              onClick={() => setCurrentPage(totalPages)}
-              disabled={currentPage === totalPages}
-              className="p-1.5 bg-slate-900 border border-slate-800 text-slate-400 hover:text-white disabled:opacity-30 rounded-lg cursor-pointer transition"
-            >
-              <ChevronsRight size={14} />
-            </button>
+            </div>
           </div>
         </div>
+
+        {/* PAGINACIÓN DESKTOP */}
+        {processedItems.length > 0 && (
+          <div className="mt-4 flex items-center justify-between font-mono text-xs text-zinc-500 shrink-0">
+            <span className="uppercase text-[10px] font-bold tracking-widest text-zinc-400">
+              Página <strong className="text-white">{currentPage}</strong> de{" "}
+              <strong className="text-white">{totalPages}</strong> (
+              {processedItems.length} registros)
+            </span>
+
+            <div className="flex items-center gap-1.5">
+              <button
+                onClick={() => setCurrentPage(1)}
+                disabled={currentPage === 1}
+                className="w-8 h-8 flex items-center justify-center border border-zinc-800 bg-[#050505] text-zinc-300 hover:border-[#FF5A00] hover:text-[#FF5A00] disabled:opacity-20 transition-all cursor-pointer"
+              >
+                <ChevronsLeft size={16} />
+              </button>
+              <button
+                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                disabled={currentPage === 1}
+                className="w-8 h-8 flex items-center justify-center border border-zinc-800 bg-[#050505] text-zinc-300 hover:border-[#FF5A00] hover:text-[#FF5A00] disabled:opacity-20 transition-all cursor-pointer"
+              >
+                <ChevronLeft size={16} />
+              </button>
+
+              <span className="px-3 h-8 flex items-center bg-[#FF5A00]/10 border border-[#FF5A00]/30 text-[#FF5A00] font-bold text-xs">
+                {currentPage} / {totalPages}
+              </span>
+
+              <button
+                onClick={() =>
+                  setCurrentPage((p) => Math.min(totalPages, p + 1))
+                }
+                disabled={currentPage === totalPages}
+                className="w-8 h-8 flex items-center justify-center border border-zinc-800 bg-[#050505] text-zinc-300 hover:border-[#FF5A00] hover:text-[#FF5A00] disabled:opacity-20 transition-all cursor-pointer"
+              >
+                <ChevronRight size={16} />
+              </button>
+              <button
+                onClick={() => setCurrentPage(totalPages)}
+                disabled={currentPage === totalPages}
+                className="w-8 h-8 flex items-center justify-center border border-zinc-800 bg-[#050505] text-zinc-300 hover:border-[#FF5A00] hover:text-[#FF5A00] disabled:opacity-20 transition-all cursor-pointer"
+              >
+                <ChevronsRight size={16} />
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* 4. VISTA MOBILE */}
+      <div className="flex md:hidden flex-1 flex-col overflow-y-auto min-h-0 p-4 space-y-3 bg-black">
+        {loading ? (
+          <div className="py-12 flex justify-center text-[#FF5A00]">
+            <RefreshCw className="animate-spin" size={28} />
+          </div>
+        ) : paginatedItems.length === 0 ? (
+          <div className="py-12 text-center font-bold tracking-widest text-xs uppercase text-zinc-600">
+            Sin registros.
+          </div>
+        ) : (
+          paginatedItems.map((item) => (
+            <div
+              key={item.id}
+              onClick={() => handleOpenParentModal(item, activeTab)}
+              className="bg-[#050505] border border-zinc-800/80 p-4 space-y-3 shrink-0 cursor-pointer active:scale-[0.99] transition-transform shadow-md"
+            >
+              <div className="flex justify-between items-start">
+                <span className="bg-[#FF5A00]/10 border border-[#FF5A00]/20 text-[#FF5A00] px-1.5 py-0.5 text-[10px] font-mono font-bold tracking-widest">
+                  {item.codigo}
+                </span>
+
+                <span
+                  className={`text-[9px] font-mono border px-2 py-0.5 font-bold uppercase tracking-widest ${
+                    item.recetas_count > 0
+                      ? "text-emerald-400 border-emerald-500/30 bg-emerald-500/10"
+                      : "text-zinc-600 border-zinc-800 bg-black"
+                  }`}
+                >
+                  {item.recetas_count || 0} Versiones
+                </span>
+              </div>
+
+              <div className="text-white font-bold text-sm leading-snug">
+                {item.nombre}
+              </div>
+
+              <div className="flex justify-end pt-2 border-t border-zinc-800/50">
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleOpenParentModal(item, activeTab);
+                  }}
+                  className="px-3 py-1.5 border border-zinc-800 text-zinc-300 hover:text-[#FF5A00] font-mono text-[9px] font-bold uppercase tracking-widest flex items-center gap-1.5"
+                >
+                  <FileCode2 size={12} /> ABRIR FÓRMULAS
+                </button>
+              </div>
+            </div>
+          ))
+        )}
+
+        {/* PAGINACIÓN MOBILE */}
+        {processedItems.length > 0 && (
+          <div className="flex flex-col items-center justify-center pt-4 mt-2 border-t border-zinc-800/50 gap-3">
+            <div className="flex items-center gap-1.5">
+              <button
+                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                disabled={currentPage === 1}
+                className="w-8 h-8 flex items-center justify-center border border-zinc-800 bg-[#050505] text-zinc-300 hover:border-[#FF5A00] hover:text-[#FF5A00] disabled:opacity-20 transition-all cursor-pointer"
+              >
+                <ChevronLeft size={16} />
+              </button>
+
+              <span className="px-3 h-8 flex items-center bg-[#FF5A00]/10 border border-[#FF5A00]/30 text-[#FF5A00] font-bold text-xs font-mono">
+                {currentPage} / {totalPages}
+              </span>
+
+              <button
+                onClick={() =>
+                  setCurrentPage((p) => Math.min(totalPages, p + 1))
+                }
+                disabled={currentPage === totalPages}
+                className="w-8 h-8 flex items-center justify-center border border-zinc-800 bg-[#050505] text-zinc-300 hover:border-[#FF5A00] hover:text-[#FF5A00] disabled:opacity-20 transition-all cursor-pointer"
+              >
+                <ChevronRight size={16} />
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* =========================================================
           MODAL 1: LISTADO DE RECETAS POR PRODUCTO
       ========================================================= */}
       {selectedParent && !isBuilderOpen && (
-        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-xs z-[100] flex items-center justify-center p-4 animate-in fade-in duration-200 font-sans">
-          <div className="bg-[#0e1422] border border-slate-800 w-full max-w-2xl p-6 rounded-2xl shadow-2xl space-y-4 relative max-h-[90vh] flex flex-col text-xs">
+        <div className="fixed inset-0 bg-black/90 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+          <div className="bg-[#050505] border border-zinc-800 w-full max-w-2xl p-8 shadow-2xl relative max-h-[90vh] flex flex-col gap-5 text-xs">
             <button
               onClick={() => setSelectedParent(null)}
-              className="absolute top-4 right-4 text-slate-400 hover:text-white cursor-pointer"
+              className="absolute top-6 right-6 text-zinc-500 hover:text-white cursor-pointer z-10"
             >
-              <X size={18} />
+              <X size={20} />
             </button>
 
-            <div className="border-b border-slate-800 pb-3 shrink-0 flex justify-between items-start pr-6">
-              <div>
-                <span className="text-[10px] font-mono font-bold text-amber-400 bg-amber-500/10 px-2.5 py-0.5 border border-amber-500/20 rounded-full">
+            <div className="border-b border-zinc-800/80 pb-4 shrink-0 flex justify-between items-start pr-8">
+              <div className="space-y-1">
+                <span className="text-[10px] font-mono font-bold text-[#FF5A00] bg-[#FF5A00]/10 px-2 py-0.5 border border-[#FF5A00]/20 tracking-widest uppercase">
                   LIBRO DE RECETAS TÉCNICAS
                 </span>
-                <h3 className="font-mono text-base text-white font-bold mt-1.5 flex items-center gap-2">
-                  <Boxes size={18} className="text-cyan-400" /> [
-                  {selectedParent.codigo}]
+                <h3 className="text-2xl text-white font-extrabold italic uppercase tracking-tighter flex items-center gap-2">
+                  <Boxes size={24} className="text-[#FF5A00]" />
+                  {selectedParent.codigo}
                 </h3>
-                <p className="text-xs text-slate-300 font-bold mt-0.5">
+                <p className="text-xs text-zinc-400 font-medium">
                   {selectedParent.nombre}
                 </p>
               </div>
 
               <button
                 onClick={() => handleOpenBuilder(null)}
-                className="px-3.5 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-mono text-xs font-bold rounded-xl transition cursor-pointer shadow-md flex items-center gap-1.5 shrink-0"
+                className="px-5 py-2.5 bg-[#FFD700] hover:bg-white text-black font-mono text-xs font-bold uppercase tracking-widest transition cursor-pointer flex items-center gap-1.5 shrink-0"
               >
-                <Plus size={15} /> CRAFTEAR RECETA
+                <Plus size={16} strokeWidth={3} /> CRAFTEAR RECETA
               </button>
             </div>
 
-            <div className="flex-1 overflow-y-auto space-y-3 pr-1 font-sans text-xs min-h-0">
+            <div className="flex-1 overflow-y-auto space-y-3 pr-1 font-mono text-xs min-h-0 custom-scrollbar">
               {loadingRecipes ? (
-                <div className="py-12 text-center text-amber-400 font-mono animate-pulse">
-                  Consultando fórmulas técnicas...
+                <div className="py-12 flex justify-center text-[#FF5A00] my-auto">
+                  <RefreshCw className="animate-spin" size={28} />
                 </div>
               ) : parentRecipes.length === 0 ? (
-                <div className="py-12 text-center text-slate-500 font-mono space-y-2">
-                  <p>Este producto no tiene ninguna versión registrada.</p>
+                <div className="py-12 text-center text-zinc-600 font-bold uppercase tracking-widest text-xs my-auto">
+                  Este producto no tiene ninguna versión registrada.
                 </div>
               ) : (
                 parentRecipes.map((recipe) => (
                   <div
                     key={recipe.id}
-                    className={`bg-[#070a12] border p-4 rounded-xl space-y-3 transition-all shadow-md ${
+                    className={`bg-black border p-5 space-y-4 transition-all shadow-md ${
                       recipe.es_activa
-                        ? "border-emerald-500/50 shadow-[0_0_15px_rgba(16,185,129,0.1)]"
-                        : "border-slate-800"
+                        ? "border-emerald-500/50 bg-emerald-500/5"
+                        : "border-zinc-800"
                     }`}
                   >
-                    <div className="flex justify-between items-center border-b border-slate-800 pb-2">
-                      <div className="flex items-center gap-2.5">
-                        <strong className="text-white text-sm font-mono">
+                    <div className="flex justify-between items-center border-b border-zinc-800/80 pb-3">
+                      <div className="flex items-center gap-3">
+                        <strong className="text-white text-sm italic font-extrabold uppercase tracking-tight">
                           {recipe.nombre_version}
                         </strong>
                         {recipe.es_activa ? (
-                          <span className="text-[10px] bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 px-2.5 py-0.5 rounded-full font-mono font-bold flex items-center gap-1">
-                            <CheckCircle2 size={11} /> ACTIVA EN PLANTA
+                          <span className="text-[10px] bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 px-2.5 py-0.5 font-bold tracking-widest uppercase flex items-center gap-1">
+                            <CheckCircle2 size={12} /> ACTIVA EN PLANTA
                           </span>
                         ) : (
                           <button
                             onClick={() => handleSetActiveRecipe(recipe.id)}
-                            className="text-[10px] bg-slate-900 border border-slate-700 text-slate-300 hover:text-amber-400 hover:border-amber-400/60 px-2.5 py-0.5 rounded-lg font-mono transition-colors cursor-pointer"
+                            className="text-[10px] bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-[#FF5A00] hover:border-[#FF5A00]/50 px-2.5 py-0.5 uppercase tracking-widest font-bold transition-colors cursor-pointer"
                           >
                             ACTIVAR FÓRMULA
                           </button>
                         )}
                       </div>
 
-                      <div className="flex items-center gap-1.5">
+                      <div className="flex items-center gap-2">
                         <button
                           onClick={() => handleOpenBuilder(recipe)}
-                          className="p-1.5 bg-slate-900 border border-slate-800 text-slate-400 hover:text-emerald-400 hover:border-emerald-500/40 rounded-lg transition cursor-pointer"
+                          className="p-1.5 text-zinc-500 hover:text-white transition-colors cursor-pointer"
                           title="Editar Ficha"
                         >
-                          <Edit2 size={13} />
+                          <Edit2 size={14} />
                         </button>
                         <button
                           onClick={() => handleDeleteRecipe(recipe.id)}
-                          className="p-1.5 bg-slate-900 border border-slate-800 text-slate-400 hover:text-rose-400 hover:border-rose-500/40 rounded-lg transition cursor-pointer"
+                          className="p-1.5 text-zinc-500 hover:text-[#FF0055] transition-colors cursor-pointer"
                           title="Eliminar Ficha"
                         >
-                          <Trash2 size={13} />
+                          <Trash2 size={14} />
                         </button>
                       </div>
                     </div>
 
-                    <div className="space-y-1.5 pt-1">
-                      <span className="text-[10px] text-slate-400 block font-mono">
+                    <div className="space-y-2">
+                      <span className="text-[9px] text-zinc-500 font-bold uppercase tracking-widest block">
                         COMPOSICIÓN POR UNIDAD PRODUCIDA:
                       </span>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1 font-mono">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                         {recipe.ingredientes?.map((ing, iIdx) => (
                           <div
                             key={iIdx}
-                            className="bg-[#0e1422] border border-slate-800 p-2.5 flex justify-between items-center rounded-lg text-[11px]"
+                            className="bg-[#050505] border border-zinc-800/80 p-3 flex justify-between items-center text-xs"
                           >
-                            <span className="text-cyan-400 font-bold truncate">
+                            <span className="text-[#FF5A00] font-bold truncate pr-2">
                               [{ing.item_codigo}] {ing.item_nombre}
                             </span>
-                            <span className="text-amber-400 font-bold bg-[#070a12] px-2 py-0.5 border border-slate-800 rounded-md shrink-0 ml-2">
+                            <span className="text-zinc-200 font-bold bg-black px-2 py-0.5 border border-zinc-800 shrink-0 text-[11px]">
                               {ing.cantidad} {ing.unidad_medida || "Kg"}
                             </span>
                           </div>
@@ -780,10 +808,10 @@ export default function Ingenieria() {
               )}
             </div>
 
-            <div className="pt-3 border-t border-slate-800 flex justify-end font-mono shrink-0">
+            <div className="pt-4 border-t border-zinc-800 flex justify-end font-mono shrink-0">
               <button
                 onClick={() => setSelectedParent(null)}
-                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs rounded-xl transition cursor-pointer"
+                className="px-5 py-2.5 border border-zinc-800 text-zinc-500 hover:text-white text-[10px] font-bold uppercase tracking-widest transition cursor-pointer"
               >
                 CERRAR
               </button>
@@ -796,54 +824,54 @@ export default function Ingenieria() {
           MODAL 2: MESA DE CRAFTEO / EDITOR DE FORMULACIÓN
       ========================================================= */}
       {isBuilderOpen && (
-        <div className="fixed inset-0 bg-slate-950/85 backdrop-blur-xs z-[110] flex items-center justify-center p-2 sm:p-4 animate-in fade-in duration-200 font-sans">
-          <div className="bg-[#0e1422] border border-slate-800 w-full max-w-5xl h-[85vh] p-6 shadow-2xl space-y-4 relative rounded-2xl flex flex-col text-xs">
+        <div className="fixed inset-0 bg-black/90 backdrop-blur-sm z-[110] flex items-center justify-center p-2 sm:p-4">
+          <div className="bg-[#050505] border border-zinc-800 w-full max-w-5xl h-[88vh] p-6 shadow-2xl relative flex flex-col gap-4 text-xs">
             <button
               onClick={() => setIsFormBuilderOpen(false)}
-              className="absolute top-4 right-4 text-slate-400 hover:text-white cursor-pointer"
+              className="absolute top-4 right-4 text-zinc-500 hover:text-white cursor-pointer"
             >
-              <X size={18} />
+              <X size={20} />
             </button>
 
-            <div className="border-b border-slate-800 pb-3 shrink-0 flex justify-between items-center pr-6">
-              <div>
-                <span className="text-[10px] font-mono font-bold text-cyan-400 bg-cyan-500/10 px-2.5 py-0.5 border border-cyan-500/20 rounded-full">
-                  MESA DE CRAFTEO & ALQUIMIA TÉCNICA
-                </span>
-                <h3 className="font-mono text-sm text-white font-bold mt-1.5 flex items-center gap-2">
-                  <Anvil size={16} className="text-amber-400" /> [
-                  {selectedParent.codigo}] {selectedParent.nombre}
-                </h3>
-              </div>
+            <div className="border-b border-zinc-800/80 pb-3 shrink-0 pr-8">
+              <span className="text-[10px] font-mono font-bold text-[#FF5A00] bg-[#FF5A00]/10 px-2 py-0.5 border border-[#FF5A00]/20 tracking-widest uppercase">
+                MESA DE CRAFTEO & ALQUIMIA TÉCNICA
+              </span>
+              <h3 className="font-extrabold italic text-xl text-white mt-2 uppercase tracking-tighter flex items-center gap-2">
+                <Anvil size={20} className="text-[#FF5A00]" /> [
+                {selectedParent.codigo}] {selectedParent.nombre}
+              </h3>
             </div>
 
             {/* CONTENEDOR MESA DE CRAFTEO */}
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 flex-1 min-h-0 overflow-hidden font-sans text-xs">
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 flex-1 min-h-0 overflow-hidden text-xs">
               {/* COLUMNA IZQUIERDA: INVENTARIO */}
-              <div className="lg:col-span-5 bg-[#070a12] border border-slate-800 p-3.5 flex flex-col space-y-2.5 rounded-xl h-full min-h-0">
-                <div className="flex items-center justify-between border-b border-slate-800 pb-2 shrink-0 font-mono">
-                  <span className="text-amber-400 font-bold text-[11px] flex items-center gap-1.5">
-                    <Package size={14} className="text-cyan-400" /> INVENTARIO
+              <div className="lg:col-span-5 bg-black border border-zinc-800 p-4 flex flex-col space-y-3 h-full min-h-0">
+                <div className="flex items-center justify-between border-b border-zinc-800/80 pb-2.5 shrink-0 font-mono">
+                  <span className="text-white font-bold text-[10px] uppercase tracking-widest flex items-center gap-1.5">
+                    <Package size={14} className="text-[#FF5A00]" /> INVENTARIO
                     DE INSUMOS
                   </span>
 
-                  <div className="flex items-center gap-1">
+                  <div className="flex items-center gap-0 border border-zinc-800 bg-[#050505]">
                     <button
+                      type="button"
                       onClick={() => setBuilderCatalogType("MP")}
-                      className={`px-2.5 py-1 text-[10px] font-mono font-bold rounded-lg border cursor-pointer ${
+                      className={`px-3 py-1 text-[10px] font-mono font-bold cursor-pointer uppercase tracking-widest ${
                         builderCatalogType === "MP"
-                          ? "bg-amber-500/10 border-amber-500/40 text-amber-400"
-                          : "bg-[#0e1422] border-slate-800 text-slate-400"
+                          ? "bg-[#FF5A00] text-black"
+                          : "text-zinc-500 hover:text-white"
                       }`}
                     >
                       MP
                     </button>
                     <button
+                      type="button"
                       onClick={() => setBuilderCatalogType("SE")}
-                      className={`px-2.5 py-1 text-[10px] font-mono font-bold rounded-lg border cursor-pointer ${
+                      className={`px-3 py-1 text-[10px] font-mono font-bold cursor-pointer uppercase tracking-widest ${
                         builderCatalogType === "SE"
-                          ? "bg-cyan-500/10 border-cyan-500/40 text-cyan-400"
-                          : "bg-[#0e1422] border-slate-800 text-slate-400"
+                          ? "bg-[#FF5A00] text-black"
+                          : "text-zinc-500 hover:text-white"
                       }`}
                     >
                       SE
@@ -851,23 +879,23 @@ export default function Ingenieria() {
                   </div>
                 </div>
 
-                <div className="relative shrink-0">
+                <div className="relative shrink-0 font-mono">
                   <Search
                     size={13}
-                    className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500"
+                    className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-600"
                   />
                   <input
                     type="text"
                     placeholder="Filtrar materiales..."
                     value={builderCatalogSearch}
                     onChange={(e) => setBuilderCatalogSearch(e.target.value)}
-                    className="w-full bg-[#0e1422] border border-slate-800 text-xs text-white pl-8 pr-3 py-1.5 focus:outline-none focus:border-cyan-500/50 rounded-xl font-mono"
+                    className="w-full bg-[#050505] border border-zinc-800 text-xs text-white pl-8 pr-3 py-2 focus:outline-none focus:border-[#FF5A00] uppercase font-bold"
                   />
                 </div>
 
-                <div className="flex-1 overflow-y-auto space-y-1.5 pr-1 h-full min-h-0">
+                <div className="flex-1 overflow-y-auto space-y-1.5 pr-1 h-full min-h-0 custom-scrollbar font-mono">
                   {availableCatalogItems.length === 0 ? (
-                    <div className="h-full flex items-center justify-center text-slate-500 text-[11px] font-mono">
+                    <div className="h-full flex items-center justify-center text-zinc-600 text-[10px] uppercase tracking-widest font-bold">
                       Sin insumos encontrados.
                     </div>
                   ) : (
@@ -886,31 +914,32 @@ export default function Ingenieria() {
                           onClick={() =>
                             handleQuickAddMaterial(item, builderCatalogType)
                           }
-                          className={`p-2.5 border flex items-center justify-between transition-all rounded-xl cursor-pointer shadow-sm ${
+                          className={`p-2.5 border flex items-center justify-between transition-colors cursor-pointer ${
                             isAlreadyInRecipe
-                              ? "bg-[#0e1422]/40 border-slate-800/50 text-slate-600 opacity-50 cursor-not-allowed"
-                              : "bg-[#0e1422] border-slate-800 hover:border-amber-500/50 text-white"
+                              ? "bg-[#050505] border-zinc-800/40 text-zinc-600 opacity-40 cursor-not-allowed"
+                              : "bg-[#050505] border-zinc-800 hover:border-zinc-700 text-white"
                           }`}
                         >
-                          <div className="truncate pr-2 font-mono">
-                            <span className="text-amber-400 font-bold block truncate text-[11px]">
-                              [{item.codigo}]
+                          <div className="truncate pr-2">
+                            <span className="text-[#FF5A00] font-bold block truncate text-[10px] tracking-widest">
+                              {item.codigo}
                             </span>
-                            <span className="text-[11px] text-slate-300 block truncate font-sans">
+                            <span className="text-xs text-zinc-300 block truncate font-sans font-bold">
                               {item.nombre}
                             </span>
                           </div>
 
                           <button
+                            type="button"
                             disabled={isAlreadyInRecipe}
-                            className={`px-2.5 py-1 text-[10px] font-mono font-bold border shrink-0 rounded-lg flex items-center gap-1 cursor-pointer ${
+                            className={`px-2.5 py-1 text-[9px] font-mono font-bold uppercase tracking-widest border shrink-0 flex items-center gap-1 cursor-pointer ${
                               isAlreadyInRecipe
-                                ? "bg-slate-900 border-slate-800 text-slate-600"
-                                : "bg-amber-500 hover:bg-amber-400 text-slate-950 border-amber-500 shadow"
+                                ? "bg-black border-zinc-800 text-zinc-600"
+                                : "bg-[#FFD700] hover:bg-white text-black border-[#FFD700]"
                             }`}
                           >
-                            <Plus size={11} />{" "}
-                            {isAlreadyInRecipe ? "EN MESA" : "CRAFTEAR"}
+                            <Plus size={11} strokeWidth={3} />
+                            {isAlreadyInRecipe ? "EN MESA" : "SUMAR"}
                           </button>
                         </div>
                       );
@@ -920,10 +949,10 @@ export default function Ingenieria() {
               </div>
 
               {/* COLUMNA DERECHA: FÓRMULA MAESTRA */}
-              <div className="lg:col-span-7 bg-[#070a12] border border-slate-800 p-3.5 flex flex-col space-y-2.5 rounded-xl h-full min-h-0">
-                <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 bg-[#0e1422] p-3 border border-slate-800 rounded-xl shrink-0 font-mono">
+              <div className="lg:col-span-7 bg-black border border-zinc-800 p-4 flex flex-col space-y-3 h-full min-h-0">
+                <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 bg-[#050505] p-3 border border-zinc-800 shrink-0 font-mono">
                   <div className="sm:col-span-8 space-y-1">
-                    <label className="text-slate-400 text-[10px] block">
+                    <label className="text-zinc-500 text-[9px] font-bold uppercase tracking-widest block">
                       VERSIÓN DE FÓRMULA:
                     </label>
                     <input
@@ -936,12 +965,12 @@ export default function Ingenieria() {
                           nombre_version: e.target.value,
                         })
                       }
-                      className="w-full bg-[#070a12] border border-slate-800 text-xs text-white px-3 py-1.5 font-bold focus:outline-none focus:border-cyan-500/50 rounded-xl"
+                      className="w-full bg-black border border-zinc-800 text-xs text-white px-3 py-2 font-bold focus:outline-none focus:border-[#FF5A00] uppercase"
                     />
                   </div>
 
                   <div className="sm:col-span-4 flex items-center pt-3 justify-end">
-                    <label className="flex items-center gap-2 cursor-pointer text-emerald-400 font-bold text-[11px]">
+                    <label className="flex items-center gap-2 cursor-pointer text-emerald-400 font-bold text-[10px] uppercase tracking-widest">
                       <input
                         type="checkbox"
                         checked={recipeForm.es_activa}
@@ -951,43 +980,40 @@ export default function Ingenieria() {
                             es_activa: e.target.checked,
                           })
                         }
-                        className="w-4 h-4 accent-emerald-500 cursor-pointer rounded"
+                        className="w-4 h-4 accent-emerald-500 cursor-pointer rounded-none bg-black border-zinc-800"
                       />
                       <span>ACTIVAR FÓRMULA</span>
                     </label>
                   </div>
                 </div>
 
-                <div className="flex justify-between items-center border-b border-slate-800 pb-1.5 shrink-0 font-mono">
-                  <span className="text-cyan-400 font-bold text-[11px] flex items-center gap-1.5">
-                    <Sparkle size={13} className="text-amber-400" /> MATERIALES
+                <div className="flex justify-between items-center border-b border-zinc-800/80 pb-2 shrink-0 font-mono">
+                  <span className="text-[#FF5A00] font-bold text-[10px] uppercase tracking-widest flex items-center gap-1.5">
+                    <Sparkle size={13} className="text-[#FFD700]" /> MATERIALES
                     EN MESA ({recipeForm.ingredientes.length})
                   </span>
-                  <span className="text-[10px] text-slate-500">
-                    Ajustá cantidades por unidad producida
+                  <span className="text-[9px] text-zinc-500 uppercase tracking-widest font-bold">
+                    Ajustá cantidades por unidad
                   </span>
                 </div>
 
-                <div className="flex-1 overflow-y-auto space-y-2 pr-1 h-full min-h-0 font-mono">
+                <div className="flex-1 overflow-y-auto space-y-2 pr-1 h-full min-h-0 font-mono custom-scrollbar">
                   {recipeForm.ingredientes.length === 0 ? (
-                    <div className="h-full flex flex-col items-center justify-center text-slate-500 space-y-1 my-auto">
-                      <p className="text-xs font-bold">
-                        Mesa de crafteo vacía.
-                      </p>
-                      <p className="text-[10px] text-slate-600">
-                        Hacé clic en los insumos del panel izquierdo para
-                        sumarlos.
+                    <div className="h-full flex flex-col items-center justify-center text-zinc-600 space-y-1 my-auto uppercase font-bold tracking-widest text-[10px]">
+                      <p>Mesa de crafteo vacía.</p>
+                      <p className="text-[9px] text-zinc-700">
+                        Hacé clic en los insumos del panel izquierdo.
                       </p>
                     </div>
                   ) : (
                     recipeForm.ingredientes.map((ing, idx) => (
                       <div
                         key={idx}
-                        className="bg-[#0e1422] border border-slate-800 p-2.5 flex items-center justify-between rounded-xl shadow-sm"
+                        className="bg-[#050505] border border-zinc-800/80 p-3 flex items-center justify-between text-xs"
                       >
                         <div className="truncate pr-2 flex-1">
                           <div className="flex items-center gap-2">
-                            <span className="text-[9px] font-bold px-2 py-0.5 border rounded-md bg-[#070a12] text-amber-400 border-slate-800">
+                            <span className="text-[9px] font-bold px-1.5 py-0.5 border bg-black text-[#FF5A00] border-[#FF5A00]/20 tracking-widest uppercase">
                               {ing.item_type}
                             </span>
                             <strong className="text-white text-xs truncate">
@@ -997,7 +1023,7 @@ export default function Ingenieria() {
                         </div>
 
                         <div className="flex items-center gap-2 shrink-0">
-                          <span className="text-[10px] text-slate-400">
+                          <span className="text-[9px] text-zinc-500 uppercase font-bold tracking-widest">
                             Cant:
                           </span>
                           <input
@@ -1007,16 +1033,17 @@ export default function Ingenieria() {
                             onChange={(e) =>
                               handleUpdateIngredientQty(idx, e.target.value)
                             }
-                            className="w-20 bg-[#070a12] border border-slate-800 text-xs text-emerald-400 font-bold px-2 py-1 text-right focus:outline-none focus:border-amber-500/50 rounded-lg font-mono"
+                            className="w-20 bg-black border border-zinc-800 text-xs text-white font-bold px-2 py-1 text-right focus:outline-none focus:border-[#FF5A00]"
                           />
-                          <span className="text-[10px] text-slate-400 w-8">
+                          <span className="text-[10px] text-zinc-500 w-10 uppercase font-bold tracking-widest">
                             {ing.unidad_medida || "Kg"}
                           </span>
 
                           <button
+                            type="button"
                             onClick={() => handleRemoveIngredient(idx)}
-                            className="text-rose-400 hover:text-rose-300 p-1.5 cursor-pointer rounded-lg hover:bg-slate-900 transition"
-                            title="Quitar"
+                            className="text-zinc-600 hover:text-[#FF0055] p-1.5 cursor-pointer transition-colors"
+                            title="Quitar Insumo"
                           >
                             <Trash2 size={14} />
                           </button>
@@ -1028,18 +1055,20 @@ export default function Ingenieria() {
               </div>
             </div>
 
-            <div className="pt-3 border-t border-slate-800 flex justify-end gap-2 font-mono shrink-0">
+            <div className="pt-4 border-t border-zinc-800 flex justify-end gap-3 font-mono shrink-0">
               <button
+                type="button"
                 onClick={() => setIsFormBuilderOpen(false)}
-                className="px-4 py-2 border border-slate-800 text-slate-400 hover:text-white text-xs rounded-xl cursor-pointer transition"
+                className="px-5 py-2.5 border border-zinc-800 text-zinc-500 hover:text-white text-[10px] font-bold uppercase tracking-widest transition cursor-pointer"
               >
                 CANCELAR
               </button>
               <button
+                type="button"
                 onClick={handleSaveRecipe}
-                className="px-5 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs rounded-xl shadow-md transition cursor-pointer flex items-center gap-1.5"
+                className="px-6 py-2.5 bg-[#FF5A00] hover:bg-white text-black font-bold text-[10px] uppercase tracking-widest transition cursor-pointer flex items-center gap-1.5"
               >
-                <CheckCircle2 size={15} /> GUARDAR FÓRMULA MAESTRA
+                <CheckCircle2 size={16} /> GUARDAR FÓRMULA MAESTRA
               </button>
             </div>
           </div>
