@@ -300,23 +300,6 @@ export default function Layout({
             )}
           </div>
 
-          {/* BOTÓN SINC. DE ESCRITORIO FLOTANTE */}
-          <div className="hidden md:block absolute top-6 right-8 z-30">
-            {activeModule === "semielaborados" && (
-              <button
-                onClick={onReloadSheets}
-                disabled={isReloading}
-                className="bg-[#FFD700] hover:bg-white text-black px-4 py-2 text-xs font-bold uppercase tracking-widest transition-all flex items-center gap-2 cursor-pointer active:scale-95 disabled:opacity-50"
-              >
-                <RefreshCw
-                  size={14}
-                  className={isReloading ? "animate-spin" : ""}
-                />
-                Sincronizar Sheets
-              </button>
-            )}
-          </div>
-
           <main className="flex-1 overflow-y-auto overflow-x-hidden p-0 min-h-0 relative bg-black">
             <div className="h-full transition-all duration-300 ease-out">
               {children}

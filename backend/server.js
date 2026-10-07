@@ -2305,6 +2305,9 @@ app.put("/api/materias-primas/:id/stock", async (req, res) => {
 // ==========================================
 app.get("/api/semielaborados", async (req, res) => {
   try {
+    // 1. Tomamos la cantidad de meses que eligió el usuario en el frontend. Por defecto 3.
+    const meses = parseInt(req.query.meses) || 3;
+
     const [semielaborados] = await db.query(`
       SELECT s.*, 
              c.nombre as pegado_nombre,
@@ -2324,12 +2327,51 @@ app.get("/api/semielaborados", async (req, res) => {
       ORDER BY s.orden ASC, s.id ASC
     `);
 
-    const [pts] = await db.query(
-      "SELECT id, promedio_ventas_mensual FROM productos_terminados",
-    );
+    let pts = [];
+
+    // 2. Intento de cálculo de Demanda Mensual Histórica Dinámica
+    try {
+      /* 
+         ATENCIÓN: Asumo que tenés tablas "pedidos" y "pedidos_detalles".
+         Si tus tablas de despachos o ventas se llaman diferente, solo tenés que
+         cambiar el nombre acá adentro. 
+      */
+      [pts] = await db.query(
+        `
+        SELECT 
+          pt.id, 
+          COALESCE(
+            (
+              SELECT SUM(pd.cantidad)
+              FROM pedidos_detalles pd
+              INNER JOIN pedidos p ON p.id = pd.pedido_id
+              WHERE pd.producto_terminado_id = pt.id 
+                AND p.fecha >= DATE_SUB(NOW(), INTERVAL ? MONTH)
+            ) / ?, 
+            pt.promedio_ventas_mensual, 
+            0
+          ) as promedio_ventas_mensual
+        FROM productos_terminados pt
+      `,
+        [meses, meses],
+      );
+    } catch (dbError) {
+      // 🛡️ FALLBACK DE SEGURIDAD (ANTI-CRASH)
+      // Si la tabla de pedidos no existe todavía, MySQL tiraría error y rompería la app.
+      // Acá lo atajamos y usamos el valor estático que ya tenías para que todo siga andando.
+      console.warn(
+        `[Aviso] Tabla de pedidos no encontrada. Usando promedio_ventas_mensual estático. Detalle: ${dbError.message}`,
+      );
+
+      [pts] = await db.query(
+        "SELECT id, promedio_ventas_mensual FROM productos_terminados",
+      );
+    }
+
     const [activeRecipesPT] = await db.query(
       "SELECT id, producto_terminado_id FROM ingenierias WHERE es_activa = 1 AND producto_terminado_id IS NOT NULL",
     );
+
     const [recipeDetailsPT] = await db.query(
       "SELECT ingenieria_id, semielaborado_id, cantidad FROM ingenieria_detalles WHERE semielaborado_id IS NOT NULL",
     );
