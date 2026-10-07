@@ -11,7 +11,6 @@ import {
   ChevronsLeft,
   ChevronsRight,
   X,
-  Sparkles,
   CheckCircle2,
   TrendingUp,
   TrendingDown,
@@ -21,18 +20,24 @@ import {
   Filter,
   ChevronDown,
   Building2,
+  AlertTriangle,
+  History,
+  Calendar,
 } from "lucide-react";
 
 export default function Inventory() {
   const [items, setItems] = useState([]);
   const [recipesList, setRecipesList] = useState([]);
+  const [proveedoresDB, setProveedoresDB] = useState([]);
+
   const [loading, setLoading] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
   const [search, setSearch] = useState("");
 
-  // FILTRO DE PLANTA (EMBUDO)
+  // FILTROS (PLANTA Y FALTANTES)
   const [filtroPlanta, setFiltroPlanta] = useState("TODAS");
   const [isPlantaMenuOpen, setIsPlantaMenuOpen] = useState(false);
+  const [verFaltantes, setVerFaltantes] = useState(false);
 
   // AUDITORÍA GOOGLE SHEETS
   const [previewData, setPreviewData] = useState(null);
@@ -45,29 +50,35 @@ export default function Inventory() {
   const [sortColumn, setSortColumn] = useState("codigo");
   const [sortDirection, setSortDirection] = useState("asc");
 
-  // REF Y CÁLCULO DINÁMICO DE FILAS (EXCLUSIVO DE LA TABLA)
+  // PAGINACIÓN EXACTA
   const tableAreaRef = useRef(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(10);
 
-  // MODALES
+  // MODAL EDICIÓN Y PROVEEDORES
   const [editingItem, setEditingItem] = useState(null);
   const [newStockValue, setNewStockValue] = useState("");
+  const [newStockMinimo, setNewStockMinimo] = useState("");
   const [newUnidadValue, setNewUnidadValue] = useState("KILOS");
   const [newPlantaValue, setNewPlantaValue] = useState("Argentina");
 
-  // NUEVOS ESTADOS PARA PROVEEDOR
-  const [proveedoresDB, setProveedoresDB] = useState([]);
   const [newProveedorId, setNewProveedorId] = useState("");
   const [proveedorSearch, setProveedorSearch] = useState("");
   const [isProveedorDropdownOpen, setIsProveedorDropdownOpen] = useState(false);
   const dropdownRef = useRef(null);
 
+  // MODAL DETALLE Y VINCULADOS
   const [detailItem, setDetailItem] = useState(null);
   const [usageModalOpen, setUsageModalOpen] = useState(false);
   const [usageSearch, setUsageSearch] = useState("");
 
-  // CERRAR DROPDOWN PROVEEDOR AL HACER CLIC AFUERA
+  // MODAL AUDITORÍA (HISTORIAL)
+  const [auditModalOpen, setAuditModalOpen] = useState(false);
+  const [auditData, setAuditData] = useState([]);
+  const [auditDateFrom, setAuditDateFrom] = useState("");
+  const [auditDateTo, setAuditDateTo] = useState("");
+  const [loadingAudit, setLoadingAudit] = useState(false);
+
   useEffect(() => {
     const handleClickOutside = (event) => {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
@@ -78,13 +89,12 @@ export default function Inventory() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  // CÁLCULO MATEMÁTICO EXACTO DE FILAS (EXCLUYE LA PAGINACIÓN DEL CÁLCULO)
   useEffect(() => {
     const updatePageSize = () => {
       if (!tableAreaRef.current) return;
       const containerHeight = tableAreaRef.current.clientHeight;
-      const headerHeight = 44; // Alto de cabecera
-      const rowHeight = 44; // Alto de cada fila
+      const headerHeight = 48;
+      const rowHeight = 48;
       const availableHeight = containerHeight - headerHeight;
       const calculatedCount = Math.floor(availableHeight / rowHeight);
 
@@ -118,17 +128,37 @@ export default function Inventory() {
     }
   };
 
-  // FILTRADO DE PROVEEDORES EN TIEMPO REAL
+  const fetchAuditoria = async (id, desde = "", hasta = "") => {
+    setLoadingAudit(true);
+    try {
+      let url = `/api/materias-primas/${id}/auditoria`;
+      if (desde && hasta) {
+        url += `?desde=${desde}&hasta=${hasta}`;
+      }
+      const res = await fetch(url);
+      if (res.ok) {
+        setAuditData(await res.json());
+      } else {
+        setAuditData([]);
+      }
+    } catch (err) {
+      console.error(err);
+      setAuditData([]);
+    } finally {
+      setLoadingAudit(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchItems();
+  }, []);
+
   const filteredProveedores = useMemo(() => {
     if (!proveedorSearch) return proveedoresDB;
     return proveedoresDB.filter((p) =>
       p.nombre.toLowerCase().includes(proveedorSearch.toLowerCase()),
     );
   }, [proveedoresDB, proveedorSearch]);
-
-  useEffect(() => {
-    fetchItems();
-  }, []);
 
   const handleStartSync = async () => {
     setIsSyncing(true);
@@ -222,16 +252,26 @@ export default function Inventory() {
       const matchPlanta =
         filtroPlanta === "TODAS" ? true : itemPlanta === filtroPlanta;
 
-      return matchSearch && matchPlanta;
+      // FILTRO FALTANTES
+      const isFaltante = item.stock_actual <= (item.stock_minimo || 0);
+      const matchFaltante = verFaltantes ? isFaltante : true;
+
+      return matchSearch && matchPlanta && matchFaltante;
     });
 
     if (sortColumn) {
       result.sort((a, b) => {
-        let aVal = a[sortColumn] || "";
-        let bVal = b[sortColumn] || "";
+        let aVal = a[sortColumn];
+        let bVal = b[sortColumn];
 
+        if (aVal == null) aVal = "";
+        if (bVal == null) bVal = "";
+
+        // SOLO aplicamos toLowerCase si realmente es un string (esto soluciona el error)
         if (typeof aVal === "string") {
           aVal = aVal.toLowerCase();
+        }
+        if (typeof bVal === "string") {
           bVal = bVal.toLowerCase();
         }
 
@@ -242,7 +282,7 @@ export default function Inventory() {
     }
 
     return result;
-  }, [items, search, filtroPlanta, sortColumn, sortDirection]);
+  }, [items, search, filtroPlanta, verFaltantes, sortColumn, sortDirection]);
 
   const totalPages = Math.ceil(processedItems.length / itemsPerPage) || 1;
   const paginatedItems = useMemo(() => {
@@ -271,15 +311,18 @@ export default function Inventory() {
 
   const handleSaveStock = async () => {
     if (!editingItem) return;
-    const val = parseFloat(newStockValue);
-    if (isNaN(val)) return alert("Ingresá un número válido de stock");
+    const valStock = parseFloat(newStockValue);
+    const valMinimo = parseFloat(newStockMinimo) || 0;
+
+    if (isNaN(valStock)) return alert("Ingresá un número válido de stock");
 
     try {
       const res = await fetch(`/api/materias-primas/${editingItem.id}/stock`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          stock: val,
+          stock: valStock,
+          stock_minimo: valMinimo,
           unidad_medida: newUnidadValue,
           planta: newPlantaValue,
           proveedor_id: newProveedorId || null,
@@ -294,6 +337,12 @@ export default function Inventory() {
       }
     } catch (err) {
       alert("Error al conectar con el servidor.");
+    }
+  };
+
+  const handleApplyAuditFilter = () => {
+    if (detailItem) {
+      fetchAuditoria(detailItem.id, auditDateFrom, auditDateTo);
     }
   };
 
@@ -345,47 +394,64 @@ export default function Inventory() {
             />
           </div>
 
-          {/* BOTÓN EMBUDO FILTRO DE PLANTA */}
-          <div className="relative w-full sm:w-auto">
-            <button
-              onClick={() => setIsPlantaMenuOpen(!isPlantaMenuOpen)}
-              className="w-full sm:w-auto flex items-center justify-between gap-2.5 bg-[#050505] border border-zinc-800 hover:border-zinc-700 px-4 py-2.5 text-xs font-bold tracking-widest uppercase text-white transition-colors cursor-pointer"
-            >
-              <Filter size={14} className="text-[#FF5A00]" />
-              <span className="text-zinc-500">PLANTA:</span>
-              <span className="text-[#FF5A00]">{filtroPlanta}</span>
-              <ChevronDown
-                size={14}
-                className={`text-zinc-500 transition-transform ${isPlantaMenuOpen ? "rotate-180" : ""}`}
-              />
-            </button>
+          <div className="flex items-center gap-3 w-full sm:w-auto">
+            {/* BOTÓN EMBUDO FILTRO DE PLANTA */}
+            <div className="relative w-full sm:w-auto">
+              <button
+                onClick={() => setIsPlantaMenuOpen(!isPlantaMenuOpen)}
+                className="w-full sm:w-auto flex items-center justify-between gap-2.5 bg-[#050505] border border-zinc-800 hover:border-zinc-700 px-4 py-2.5 text-xs font-bold tracking-widest uppercase text-white transition-colors cursor-pointer"
+              >
+                <Filter size={14} className="text-[#FF5A00]" />
+                <span className="text-zinc-500">PLANTA:</span>
+                <span className="text-[#FF5A00]">{filtroPlanta}</span>
+                <ChevronDown
+                  size={14}
+                  className={`text-zinc-500 transition-transform ${isPlantaMenuOpen ? "rotate-180" : ""}`}
+                />
+              </button>
 
-            {isPlantaMenuOpen && (
-              <div className="absolute top-full left-0 w-full sm:w-48 mt-1 bg-[#050505] border border-zinc-800 shadow-2xl z-50 flex flex-col">
-                {["TODAS", "ARGENTINA", "PARAGUAY"].map((p) => (
-                  <button
-                    key={p}
-                    onClick={() => {
-                      setFiltroPlanta(p);
-                      setIsPlantaMenuOpen(false);
-                      setCurrentPage(1);
-                    }}
-                    className={`text-left px-4 py-3 text-xs font-bold tracking-widest uppercase transition-colors border-l-2 ${
-                      filtroPlanta === p
-                        ? "border-[#FF5A00] text-[#FF5A00] bg-[#FF5A00]/5"
-                        : "border-transparent text-zinc-500 hover:text-white hover:bg-zinc-900/50"
-                    }`}
-                  >
-                    {p === "TODAS" ? "MOSTRAR AMBAS" : p}
-                  </button>
-                ))}
-              </div>
-            )}
+              {isPlantaMenuOpen && (
+                <div className="absolute top-full left-0 w-full sm:w-48 mt-1 bg-[#050505] border border-zinc-800 shadow-2xl z-50 flex flex-col">
+                  {["TODAS", "ARGENTINA", "PARAGUAY"].map((p) => (
+                    <button
+                      key={p}
+                      onClick={() => {
+                        setFiltroPlanta(p);
+                        setIsPlantaMenuOpen(false);
+                        setCurrentPage(1);
+                      }}
+                      className={`text-left px-4 py-3 text-xs font-bold tracking-widest uppercase transition-colors border-l-2 ${
+                        filtroPlanta === p
+                          ? "border-[#FF5A00] text-[#FF5A00] bg-[#FF5A00]/5"
+                          : "border-transparent text-zinc-500 hover:text-white hover:bg-zinc-900/50"
+                      }`}
+                    >
+                      {p === "TODAS" ? "MOSTRAR AMBAS" : p}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* BOTÓN FALTANTES */}
+            <button
+              onClick={() => {
+                setVerFaltantes(!verFaltantes);
+                setCurrentPage(1);
+              }}
+              className={`flex items-center gap-2.5 px-4 py-2.5 text-xs font-bold tracking-widest uppercase transition-colors cursor-pointer border ${
+                verFaltantes
+                  ? "bg-[#FF0055]/10 border-[#FF0055] text-[#FF0055]"
+                  : "bg-[#050505] border-zinc-800 text-zinc-500 hover:border-zinc-700 hover:text-white"
+              }`}
+            >
+              <AlertTriangle size={14} /> FALTANTES
+            </button>
           </div>
         </div>
 
-        {/* CONTADOR TOTAL (SIN SPARKLES) */}
-        <div className="border border-zinc-800 px-4 py-2 text-[10px] md:text-xs text-zinc-500 font-mono tracking-widest flex items-center gap-2 bg-[#050505] uppercase font-bold w-full sm:w-auto justify-between">
+        {/* CONTADOR TOTAL */}
+        <div className="border border-zinc-800 px-4 py-2 text-[10px] md:text-xs text-zinc-500 font-mono tracking-widest flex items-center gap-2 bg-[#050505] uppercase font-bold w-full sm:w-auto justify-between shrink-0">
           <span className="flex items-center gap-1.5">TOTAL INSUMOS:</span>
           <strong className="text-white">
             {processedItems.length} / {items.length}
@@ -395,15 +461,13 @@ export default function Inventory() {
 
       {/* 3. VISTA ESCRITORIO */}
       <div className="hidden md:flex flex-1 flex-col p-4 md:p-8 bg-black min-h-0 justify-between overflow-hidden">
-        {/* ÁREA DE TABLA EXCLUSIVA PARA EL REF DE ALTURA */}
         <div
           ref={tableAreaRef}
           className="flex-1 min-h-0 w-full flex flex-col justify-start"
         >
-          {/* RECUADRO CON BORDES QUE SE ADAPTA EXACTAMENTE AL CONTENIDO SIN ESPACIOS SOBRANTES */}
           <div className="w-full border border-zinc-800/90 bg-[#030303] flex flex-col overflow-hidden shadow-2xl h-fit">
-            {/* CABECERA INDUSTRIAL (h-11) */}
-            <div className="grid grid-cols-[250px_1fr_120px_100px_120px_70px] h-11 bg-[#080808] border-b border-zinc-800/90 items-center text-zinc-400 font-mono text-[10px] font-extrabold uppercase tracking-widest shrink-0 select-none">
+            {/* CABECERA (48px) */}
+            <div className="grid grid-cols-[250px_1fr_120px_100px_120px_70px] h-12 bg-[#080808] border-b border-zinc-800/90 items-center text-zinc-400 font-mono text-[10px] font-extrabold uppercase tracking-widest shrink-0 select-none">
               <div
                 onClick={() => handleSort("codigo")}
                 className="px-4 flex items-center justify-between cursor-pointer hover:text-[#FF5A00] transition-colors"
@@ -482,7 +546,7 @@ export default function Inventory() {
               <div className="px-2 flex justify-center text-center">EDITAR</div>
             </div>
 
-            {/* FILAS DE LA TABLA (SIN DIVIDE-Y, USAMOS LAST:BORDER-B-0) */}
+            {/* FILAS (48px) SIN DIVIDE-Y */}
             <div className="flex flex-col bg-black">
               {loading ? (
                 <div className="py-12 flex justify-center text-[#FF5A00]">
@@ -493,70 +557,75 @@ export default function Inventory() {
                   No hay insumos registrados.
                 </div>
               ) : (
-                paginatedItems.map((item) => (
-                  <div
-                    key={item.id}
-                    onClick={() => setDetailItem(item)}
-                    className="grid grid-cols-[250px_1fr_120px_100px_120px_70px] h-11 items-center border-b border-zinc-900/80 last:border-b-0 hover:bg-[#0a0a0a] transition-colors duration-150 group cursor-pointer text-xs shrink-0"
-                  >
-                    <div className="px-4 font-mono font-bold truncate">
-                      <span className="text-[#FF5A00] bg-[#FF5A00]/10 border border-[#FF5A00]/25 px-2 py-0.5 text-xs group-hover:bg-[#FF5A00] group-hover:text-black transition-colors inline-block max-w-full truncate">
-                        {item.codigo}
-                      </span>
-                    </div>
+                paginatedItems.map((item) => {
+                  const enFalta = item.stock_actual <= (item.stock_minimo || 0);
 
-                    <div className="px-4 text-white font-bold text-xs truncate pr-2">
-                      {item.nombre}
-                    </div>
+                  return (
+                    <div
+                      key={item.id}
+                      onClick={() => setDetailItem(item)}
+                      className="grid grid-cols-[250px_1fr_120px_100px_120px_70px] h-12 items-center border-b border-zinc-800/80 last:border-b-0 hover:bg-[#0a0a0a] transition-colors duration-150 group cursor-pointer text-xs shrink-0"
+                    >
+                      <div className="px-4 font-mono font-bold truncate">
+                        <span className="text-[#FF5A00] bg-[#FF5A00]/10 border border-[#FF5A00]/25 px-2 py-0.5 text-xs group-hover:bg-[#FF5A00] group-hover:text-black transition-colors inline-block max-w-full truncate">
+                          {item.codigo}
+                        </span>
+                      </div>
 
-                    <div className="px-3 flex justify-center font-mono font-bold tracking-widest uppercase text-[10px]">
-                      <span className="text-zinc-400 bg-[#050505] border border-zinc-800/80 px-2 py-0.5 rounded-sm">
-                        {(item.planta || "ARGENTINA").toUpperCase()}
-                      </span>
-                    </div>
+                      <div className="px-4 text-white font-bold text-xs truncate pr-2">
+                        {item.nombre}
+                      </div>
 
-                    <div className="px-3 flex justify-center text-zinc-500 font-mono font-bold tracking-widest uppercase text-[10px]">
-                      {item.unidad_medida || "KILOS"}
-                    </div>
+                      <div className="px-3 flex justify-center font-mono font-bold tracking-widest uppercase text-[10px]">
+                        <span className="text-zinc-400 bg-[#050505] border border-zinc-800/80 px-2 py-0.5">
+                          {(item.planta || "ARGENTINA").toUpperCase()}
+                        </span>
+                      </div>
 
-                    <div className="px-4 flex justify-end font-mono">
-                      <span
-                        className={`font-bold text-xs px-2.5 py-0.5 border ${
-                          item.stock_actual <= 0
-                            ? "text-[#FF0055] bg-[#FF0055]/10 border-[#FF0055]/30"
-                            : "text-zinc-200 border-zinc-800 bg-black"
-                        }`}
-                      >
-                        {item.stock_actual.toLocaleString(undefined, {
-                          maximumFractionDigits: 2,
-                        })}
-                      </span>
-                    </div>
+                      <div className="px-3 flex justify-center text-zinc-500 font-mono font-bold tracking-widest uppercase text-[10px]">
+                        {item.unidad_medida || "KILOS"}
+                      </div>
 
-                    <div className="px-2 flex justify-center">
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setEditingItem(item);
-                          setNewStockValue(item.stock_actual);
-                          setNewUnidadValue(item.unidad_medida || "KILOS");
-                          setNewPlantaValue(item.planta || "Argentina");
+                      <div className="px-4 flex justify-end font-mono">
+                        <span
+                          className={`font-bold text-xs px-2.5 py-0.5 border ${
+                            enFalta
+                              ? "text-[#FF0055] bg-[#FF0055]/10 border-[#FF0055]/30"
+                              : "text-zinc-200 border-zinc-800 bg-black"
+                          }`}
+                        >
+                          {item.stock_actual.toLocaleString(undefined, {
+                            maximumFractionDigits: 2,
+                          })}
+                        </span>
+                      </div>
 
-                          const prov = proveedoresDB.find(
-                            (p) => p.id === item.proveedor_id,
-                          );
-                          setProveedorSearch(prov ? prov.nombre : "");
-                          setNewProveedorId(item.proveedor_id || "");
-                          setIsProveedorDropdownOpen(false);
-                        }}
-                        className="p-1.5 text-zinc-500 hover:text-white transition-colors cursor-pointer"
-                        title="Editar Insumo"
-                      >
-                        <Edit2 size={14} />
-                      </button>
+                      <div className="px-2 flex justify-center">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setEditingItem(item);
+                            setNewStockValue(item.stock_actual);
+                            setNewStockMinimo(item.stock_minimo || 0);
+                            setNewUnidadValue(item.unidad_medida || "KILOS");
+                            setNewPlantaValue(item.planta || "Argentina");
+                            setNewProveedorId(item.proveedor_id || "");
+
+                            const prov = proveedoresDB.find(
+                              (p) => p.id === item.proveedor_id,
+                            );
+                            setProveedorSearch(prov ? prov.nombre : "");
+                            setIsProveedorDropdownOpen(false);
+                          }}
+                          className="p-1.5 text-zinc-500 hover:text-white transition-colors cursor-pointer"
+                          title="Editar Insumo"
+                        >
+                          <Edit2 size={14} />
+                        </button>
+                      </div>
                     </div>
-                  </div>
-                ))
+                  );
+                })
               )}
             </div>
           </div>
@@ -623,70 +692,69 @@ export default function Inventory() {
             Sin materias primas.
           </div>
         ) : (
-          paginatedItems.map((item) => (
-            <div
-              key={item.id}
-              onClick={() => setDetailItem(item)}
-              className="bg-[#050505] border border-zinc-800/80 p-4 space-y-3 shrink-0 cursor-pointer active:scale-[0.99] transition-transform shadow-md"
-            >
-              <div className="flex justify-between items-start">
-                <span className="bg-[#FF5A00]/10 border border-[#FF5A00]/20 text-[#FF5A00] px-1.5 py-0.5 text-[10px] font-mono font-bold tracking-widest">
-                  {item.codigo}
-                </span>
+          paginatedItems.map((item) => {
+            const enFalta = item.stock_actual <= (item.stock_minimo || 0);
+            return (
+              <div
+                key={item.id}
+                onClick={() => setDetailItem(item)}
+                className="bg-[#050505] border border-zinc-800/80 p-4 space-y-3 shrink-0 cursor-pointer active:scale-[0.99] transition-transform shadow-md"
+              >
+                <div className="flex justify-between items-start">
+                  <span className="bg-[#FF5A00]/10 border border-[#FF5A00]/20 text-[#FF5A00] px-1.5 py-0.5 text-[10px] font-mono font-bold tracking-widest">
+                    {item.codigo}
+                  </span>
 
-                <div className="flex items-center gap-1.5 font-mono text-[9px] font-bold tracking-widest uppercase">
-                  <span className="text-zinc-400 bg-[#050505] border border-zinc-800/80 px-2 py-0.5 rounded-sm">
-                    {(item.planta || "ARGENTINA").toUpperCase()}
+                  <div className="flex items-center gap-1.5 font-mono text-[9px] font-bold tracking-widest uppercase">
+                    <span className="text-zinc-400 bg-[#050505] border border-zinc-800/80 px-2 py-0.5">
+                      {(item.planta || "ARGENTINA").toUpperCase()}
+                    </span>
+                    <span className="text-zinc-600">|</span>
+                    <span className="text-zinc-400">
+                      {item.unidad_medida || "KILOS"}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="text-white font-bold text-sm leading-snug">
+                  {item.nombre}
+                </div>
+
+                <div className="flex justify-between items-center pt-3 border-t border-zinc-800/50">
+                  <span className="text-[10px] font-mono text-zinc-500 uppercase font-bold tracking-widest">
+                    Stock:{" "}
+                    <strong
+                      className={enFalta ? "text-[#FF0055]" : "text-zinc-200"}
+                    >
+                      {item.stock_actual.toLocaleString(undefined, {
+                        maximumFractionDigits: 2,
+                      })}
+                    </strong>
                   </span>
-                  <span className="text-zinc-600">|</span>
-                  <span className="text-zinc-400">
-                    {item.unidad_medida || "KILOS"}
-                  </span>
+
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setEditingItem(item);
+                      setNewStockValue(item.stock_actual);
+                      setNewStockMinimo(item.stock_minimo || 0);
+                      setNewUnidadValue(item.unidad_medida || "KILOS");
+                      setNewPlantaValue(item.planta || "Argentina");
+                      setNewProveedorId(item.proveedor_id || "");
+                      const prov = proveedoresDB.find(
+                        (p) => p.id === item.proveedor_id,
+                      );
+                      setProveedorSearch(prov ? prov.nombre : "");
+                      setIsProveedorDropdownOpen(false);
+                    }}
+                    className="px-3 py-1.5 border border-zinc-800 text-zinc-400 hover:text-white font-mono text-[9px] font-bold uppercase tracking-widest flex items-center gap-1.5"
+                  >
+                    <Edit2 size={10} /> EDITAR
+                  </button>
                 </div>
               </div>
-
-              <div className="text-white font-bold text-sm leading-snug">
-                {item.nombre}
-              </div>
-
-              <div className="flex justify-between items-center pt-3 border-t border-zinc-800/50">
-                <span className="text-[10px] font-mono text-zinc-500 uppercase font-bold tracking-widest">
-                  Stock:{" "}
-                  <strong
-                    className={
-                      item.stock_actual <= 0
-                        ? "text-[#FF0055]"
-                        : "text-zinc-200"
-                    }
-                  >
-                    {item.stock_actual.toLocaleString(undefined, {
-                      maximumFractionDigits: 2,
-                    })}
-                  </strong>
-                </span>
-
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setEditingItem(item);
-                    setNewStockValue(item.stock_actual);
-                    setNewUnidadValue(item.unidad_medida || "KILOS");
-                    setNewPlantaValue(item.planta || "Argentina");
-
-                    const prov = proveedoresDB.find(
-                      (p) => p.id === item.proveedor_id,
-                    );
-                    setProveedorSearch(prov ? prov.nombre : "");
-                    setNewProveedorId(item.proveedor_id || "");
-                    setIsProveedorDropdownOpen(false);
-                  }}
-                  className="px-3 py-1.5 border border-zinc-800 text-zinc-400 hover:text-white font-mono text-[9px] font-bold uppercase tracking-widest flex items-center gap-1.5"
-                >
-                  <Edit2 size={10} /> EDITAR
-                </button>
-              </div>
-            </div>
-          ))
+            );
+          })
         )}
 
         {/* PAGINACIÓN MOBILE */}
@@ -723,100 +791,241 @@ export default function Inventory() {
           MODALES
       ========================================================= */}
 
-      {/* MODAL 1: FICHA PRINCIPAL */}
+      {/* MODAL 1: FICHA PRINCIPAL REDISEÑADA (ESTÉTICA INDUSTRIAL) */}
       {detailItem && (
         <div className="fixed inset-0 bg-black/90 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
-          <div className="bg-[#050505] border border-zinc-800 w-full max-w-md p-6 shadow-2xl space-y-6 relative text-xs">
+          <div className="bg-[#050505] border border-zinc-800 w-full max-w-lg p-8 shadow-2xl relative flex flex-col gap-6">
             <button
               onClick={() => setDetailItem(null)}
-              className="absolute top-4 right-4 text-zinc-500 hover:text-white cursor-pointer"
+              className="absolute top-6 right-6 text-zinc-500 hover:text-white cursor-pointer z-10"
             >
               <X size={20} />
             </button>
 
-            <div className="border-b border-zinc-800/80 pb-4">
-              <div className="flex items-center justify-between">
+            <div className="flex flex-col gap-4">
+              <div className="flex items-center justify-between pr-8">
                 <span className="text-[10px] font-mono font-bold text-[#FF5A00] bg-[#FF5A00]/10 px-2 py-0.5 border border-[#FF5A00]/20 tracking-widest uppercase">
                   FICHA DE MATERIA PRIMA
                 </span>
-                <span className="text-zinc-400 bg-black border border-zinc-800/80 px-2 py-0.5 text-[9px] font-mono tracking-widest uppercase font-bold">
-                  {detailItem.planta || "ARGENTINA"}
+                <span
+                  className={`text-[10px] font-mono tracking-widest uppercase font-bold border border-zinc-800 px-2 py-0.5 ${
+                    (detailItem.planta || "Argentina").toLowerCase() ===
+                    "paraguay"
+                      ? "text-cyan-500 bg-cyan-500/10 border-cyan-500/20"
+                      : "text-zinc-400 bg-black"
+                  }`}
+                >
+                  {(detailItem.planta || "ARGENTINA").toUpperCase()}
                 </span>
               </div>
-              <h3 className="text-xl text-white font-extrabold italic mt-3 uppercase tracking-tighter flex items-center gap-2">
-                <Package size={20} className="text-[#FF5A00]" />
-                {detailItem.codigo}
-              </h3>
-              <p className="text-sm text-zinc-400 font-medium mt-1">
-                {detailItem.nombre}
-              </p>
 
-              {/* Mostrar proveedor si tiene */}
-              {detailItem.proveedor_id && (
-                <div className="mt-3 flex items-center gap-1.5 text-zinc-500 font-mono text-[10px] uppercase font-bold tracking-widest">
-                  <Building2 size={12} /> PROVEEDOR:{" "}
-                  <span className="text-zinc-300">
+              <div>
+                <h3 className="text-3xl text-white font-extrabold italic uppercase tracking-tighter flex items-center gap-2.5">
+                  <Package size={28} className="text-[#FF5A00]" />
+                  {detailItem.codigo}
+                </h3>
+                <p className="text-sm text-zinc-300 font-medium mt-1.5">
+                  {detailItem.nombre}
+                </p>
+              </div>
+
+              {detailItem.proveedor_id ? (
+                <div className="flex items-center gap-2 text-zinc-500 font-mono text-[10px] uppercase font-bold tracking-widest">
+                  <Building2 size={14} /> PROVEEDOR:{" "}
+                  <span className="text-white">
                     {proveedoresDB.find((p) => p.id === detailItem.proveedor_id)
                       ?.nombre || "Desconocido"}
                   </span>
                 </div>
+              ) : (
+                <div className="flex items-center gap-2 text-zinc-600 font-mono text-[10px] uppercase font-bold tracking-widest">
+                  <Building2 size={14} /> PROVEEDOR: NO ASIGNADO
+                </div>
               )}
             </div>
 
+            <div className="w-full h-px bg-zinc-800/80"></div>
+
             <div className="grid grid-cols-2 gap-4 font-mono text-xs uppercase tracking-widest font-bold">
-              <div className="bg-black p-4 border border-zinc-800 flex flex-col gap-1.5">
-                <span className="text-[9px] text-zinc-500">STOCK ACTUAL:</span>
+              <div className="bg-black p-5 border border-zinc-800 flex flex-col gap-2 relative overflow-hidden">
+                <span className="text-[10px] text-zinc-500">STOCK ACTUAL:</span>
                 <strong
-                  className={`text-lg leading-none ${
-                    detailItem.stock_actual <= 0
+                  className={`text-2xl leading-none z-10 flex items-baseline gap-1.5 ${
+                    detailItem.stock_actual <= (detailItem.stock_minimo || 0)
                       ? "text-[#FF0055]"
-                      : "text-zinc-200"
+                      : "text-white"
                   }`}
                 >
-                  {detailItem.stock_actual.toLocaleString()}{" "}
-                  <span className="text-xs text-zinc-600">
+                  {detailItem.stock_actual.toLocaleString(undefined, {
+                    maximumFractionDigits: 2,
+                  })}
+                  <span className="text-xs text-zinc-600 font-medium">
                     {detailItem.unidad_medida || "KILOS"}
                   </span>
                 </strong>
+                {detailItem.stock_actual <= (detailItem.stock_minimo || 0) && (
+                  <div className="absolute inset-0 bg-[#FF0055]/5 pointer-events-none" />
+                )}
               </div>
 
-              <div className="bg-black p-4 border border-zinc-800 flex flex-col gap-1.5">
-                <span className="text-[9px] text-zinc-500">PRESENTE EN:</span>
-                <strong className="text-[#FFD700] text-lg leading-none flex items-center gap-1.5">
-                  {detailItemUsage.length}{" "}
-                  <span className="text-xs text-zinc-600">Recetas</span>
+              <div className="bg-black p-5 border border-zinc-800 flex flex-col gap-2">
+                <span className="text-[10px] text-zinc-500">PUNTO PEDIDO:</span>
+                <strong className="text-zinc-400 text-2xl leading-none flex items-baseline gap-1.5">
+                  {(detailItem.stock_minimo || 0).toLocaleString(undefined, {
+                    maximumFractionDigits: 2,
+                  })}
+                  <span className="text-xs text-zinc-600 font-medium">MIN</span>
                 </strong>
               </div>
             </div>
 
-            <div className="bg-black border border-zinc-800 p-4 space-y-3">
-              <div className="flex justify-between items-center font-mono font-bold uppercase tracking-widest">
-                <span className="text-[9px] text-zinc-500 flex items-center gap-1.5">
-                  <Layers size={12} className="text-[#FFD700]" /> USO EN
-                  PRODUCTOS:
-                </span>
-                <span className="text-xs text-white">
-                  {detailItemUsage.length}
-                </span>
-              </div>
-
+            <div className="grid grid-cols-2 gap-4 mt-2">
               <button
                 onClick={() => {
                   setUsageSearch("");
                   setUsageModalOpen(true);
                 }}
                 disabled={detailItemUsage.length === 0}
-                className="w-full py-3 bg-[#FFD700] hover:bg-white text-black font-bold uppercase tracking-widest text-[10px] transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-30"
+                className="w-full py-4 bg-zinc-900 border border-zinc-800 hover:border-zinc-600 hover:text-white hover:bg-zinc-800 text-zinc-400 font-bold uppercase tracking-widest text-[10px] transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-30 disabled:hover:border-zinc-800 disabled:hover:text-zinc-400 disabled:hover:bg-zinc-900"
               >
-                <Search size={14} strokeWidth={3} />
-                VER LISTADO Y FILTRAR
+                <Layers size={16} /> USO ({detailItemUsage.length})
+              </button>
+
+              <button
+                onClick={() => {
+                  setAuditDateFrom("");
+                  setAuditDateTo("");
+                  fetchAuditoria(detailItem.id);
+                  setAuditModalOpen(true);
+                }}
+                className="w-full py-4 bg-zinc-900 border border-zinc-800 hover:border-zinc-600 hover:text-white hover:bg-zinc-800 text-zinc-400 font-bold uppercase tracking-widest text-[10px] transition-all flex items-center justify-center gap-2 cursor-pointer"
+              >
+                <History size={16} /> VER AUDITORÍA
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* MODAL 2: BÚSQUEDA DE RECETAS */}
+      {/* MODAL AUDITORÍA (HISTORIAL DE MOVIMIENTOS) */}
+      {auditModalOpen && detailItem && (
+        <div className="fixed inset-0 bg-black/90 backdrop-blur-sm z-[110] flex items-center justify-center p-4">
+          <div className="bg-[#050505] border border-zinc-800 w-full max-w-2xl h-[85vh] p-6 shadow-2xl space-y-4 relative flex flex-col">
+            <button
+              onClick={() => setAuditModalOpen(false)}
+              className="absolute top-4 right-4 text-zinc-500 hover:text-white cursor-pointer"
+            >
+              <X size={20} />
+            </button>
+
+            <div className="border-b border-zinc-800/80 pb-3 shrink-0">
+              <span className="text-[10px] font-mono font-bold text-[#FF5A00] bg-[#FF5A00]/10 px-2 py-0.5 border border-[#FF5A00]/20 tracking-widest uppercase">
+                HISTORIAL DE MOVIMIENTOS
+              </span>
+              <h3 className="font-extrabold italic text-xl text-white mt-2 uppercase tracking-tighter">
+                {detailItem.codigo}
+              </h3>
+            </div>
+
+            {/* BARRA DE FILTROS DE FECHA */}
+            <div className="flex items-center gap-3 shrink-0 font-mono text-xs">
+              <div className="flex items-center gap-2 bg-black border border-zinc-800 px-3 py-2 flex-1">
+                <Calendar size={14} className="text-zinc-500" />
+                <input
+                  type="date"
+                  value={auditDateFrom}
+                  onChange={(e) => setAuditDateFrom(e.target.value)}
+                  className="bg-transparent text-zinc-300 outline-none w-full uppercase"
+                  style={{ colorScheme: "dark" }}
+                />
+              </div>
+              <span className="text-zinc-600 font-bold">AL</span>
+              <div className="flex items-center gap-2 bg-black border border-zinc-800 px-3 py-2 flex-1">
+                <Calendar size={14} className="text-zinc-500" />
+                <input
+                  type="date"
+                  value={auditDateTo}
+                  onChange={(e) => setAuditDateTo(e.target.value)}
+                  className="bg-transparent text-zinc-300 outline-none w-full uppercase"
+                  style={{ colorScheme: "dark" }}
+                />
+              </div>
+              <button
+                onClick={handleApplyAuditFilter}
+                className="bg-[#FF5A00] text-black font-bold px-4 py-2 hover:bg-white transition-colors cursor-pointer"
+              >
+                FILTRAR
+              </button>
+            </div>
+
+            {/* TABLA DE AUDITORÍA */}
+            <div className="flex-1 overflow-hidden flex flex-col border border-zinc-800 bg-[#030303]">
+              <div className="grid grid-cols-[140px_1fr_100px_100px_100px] h-10 bg-[#080808] border-b border-zinc-800 items-center text-zinc-500 font-mono text-[9px] font-bold uppercase tracking-widest shrink-0 px-4">
+                <div>FECHA / HORA</div>
+                <div>USUARIO</div>
+                <div className="text-center">TIPO</div>
+                <div className="text-right">CANTIDAD</div>
+                <div className="text-right">STOCK FINAL</div>
+              </div>
+
+              <div className="flex-1 overflow-y-auto custom-scrollbar flex flex-col bg-black">
+                {loadingAudit ? (
+                  <div className="py-12 flex justify-center text-[#FF5A00] my-auto">
+                    <RefreshCw className="animate-spin" size={24} />
+                  </div>
+                ) : auditData.length === 0 ? (
+                  <div className="py-12 text-center text-zinc-600 font-bold uppercase tracking-widest text-xs my-auto">
+                    No hay movimientos registrados.
+                  </div>
+                ) : (
+                  auditData.map((mov) => (
+                    <div
+                      key={mov.id}
+                      className="grid grid-cols-[140px_1fr_100px_100px_100px] items-center p-4 border-b border-zinc-900/80 last:border-b-0 text-xs hover:bg-[#0a0a0a] transition-colors"
+                    >
+                      <div className="font-mono text-zinc-400">
+                        {new Date(mov.fecha).toLocaleString("es-AR", {
+                          dateStyle: "short",
+                          timeStyle: "short",
+                        })}
+                      </div>
+                      <div className="font-bold text-white truncate pr-2">
+                        {mov.usuario}
+                      </div>
+                      <div className="flex justify-center font-mono font-bold tracking-widest text-[9px]">
+                        <span
+                          className={`px-2 py-0.5 border ${
+                            mov.tipo_movimiento === "INGRESO"
+                              ? "text-emerald-400 border-emerald-500/30 bg-emerald-500/10"
+                              : mov.tipo_movimiento === "EGRESO"
+                                ? "text-rose-400 border-rose-500/30 bg-rose-500/10"
+                                : "text-zinc-400 border-zinc-700 bg-zinc-900"
+                          }`}
+                        >
+                          {mov.tipo_movimiento}
+                        </span>
+                      </div>
+                      <div
+                        className={`font-mono font-bold text-right ${mov.cantidad > 0 ? "text-emerald-400" : "text-rose-400"}`}
+                      >
+                        {mov.cantidad > 0 ? "+" : ""}
+                        {parseFloat(mov.cantidad).toLocaleString(undefined, {
+                          maximumFractionDigits: 2,
+                        })}
+                      </div>
+                      <div className="font-mono font-bold text-zinc-200 text-right">
+                        {parseFloat(mov.stock_resultante).toLocaleString()}
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL VINCULADOS A RECETAS */}
       {usageModalOpen && detailItem && (
         <div className="fixed inset-0 bg-black/90 backdrop-blur-sm z-[110] flex items-center justify-center p-4">
           <div className="bg-[#050505] border border-zinc-800 w-full max-w-lg h-[80vh] min-h-[480px] p-6 shadow-2xl space-y-5 relative flex flex-col">
@@ -923,22 +1132,38 @@ export default function Inventory() {
             </div>
 
             <div className="space-y-4 font-mono">
-              {/* CAMPO STOCK */}
-              <div className="space-y-1.5">
-                <label className="text-zinc-500 block text-[10px] font-bold uppercase tracking-widest">
-                  VALOR EN STOCK:
-                </label>
-                <input
-                  type="number"
-                  step="0.01"
-                  value={newStockValue}
-                  onChange={(e) => setNewStockValue(e.target.value)}
-                  className="w-full bg-black border border-zinc-800 p-3 text-white font-bold text-right focus:outline-none focus:border-[#FF5A00] text-sm"
-                  autoFocus
-                />
+              <div className="grid grid-cols-2 gap-3">
+                {/* CAMPO STOCK */}
+                <div className="space-y-1.5">
+                  <label className="text-zinc-500 block text-[10px] font-bold uppercase tracking-widest">
+                    STOCK ACTUAL:
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={newStockValue}
+                    onChange={(e) => setNewStockValue(e.target.value)}
+                    className="w-full bg-black border border-zinc-800 p-3 text-white font-bold text-right focus:outline-none focus:border-[#FF5A00] text-sm"
+                    autoFocus
+                  />
+                </div>
+
+                {/* CAMPO STOCK MINIMO */}
+                <div className="space-y-1.5">
+                  <label className="text-zinc-500 block text-[10px] font-bold uppercase tracking-widest">
+                    PUNTO PEDIDO:
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={newStockMinimo}
+                    onChange={(e) => setNewStockMinimo(e.target.value)}
+                    className="w-full bg-[#050505] border border-zinc-800 p-3 text-zinc-400 font-bold text-right focus:outline-none focus:border-[#FF5A00] text-sm"
+                  />
+                </div>
               </div>
 
-              {/* CAMPO UNIDAD DE MEDIDA (SELECT CERRADO) */}
+              {/* CAMPO UNIDAD DE MEDIDA */}
               <div className="space-y-1.5 relative">
                 <label className="text-zinc-500 block text-[10px] font-bold uppercase tracking-widest">
                   UNIDAD DE MEDIDA:
@@ -983,7 +1208,7 @@ export default function Inventory() {
                 </div>
               </div>
 
-              {/* CAMPO BUSCADOR DE PROVEEDORES */}
+              {/* BUSCADOR PROVEEDOR */}
               <div className="space-y-1.5 relative" ref={dropdownRef}>
                 <label className="text-zinc-500 block text-[10px] font-bold uppercase tracking-widest">
                   PROVEEDOR:
@@ -999,7 +1224,7 @@ export default function Inventory() {
                     onChange={(e) => {
                       setProveedorSearch(e.target.value);
                       setIsProveedorDropdownOpen(true);
-                      setNewProveedorId(""); // Resetea si el usuario empieza a tipear manualmente
+                      setNewProveedorId("");
                     }}
                     onFocus={() => setIsProveedorDropdownOpen(true)}
                     placeholder="Escribí para buscar..."

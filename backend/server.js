@@ -1925,33 +1925,26 @@ app.get("/api/materias-primas", async (req, res) => {
   }
 });
 
-// ==========================================
-// 2. ACTUALIZAR EL ENDPOINT DE STOCK (Reemplazá el que tenés)
-// ==========================================
-app.put("/api/materias-primas/:id/stock", async (req, res) => {
+// 2. NUEVO ENDPOINT: OBTENER AUDITORÍA POR RANGO DE FECHAS
+app.get("/api/materias-primas/:id/auditoria", async (req, res) => {
   const { id } = req.params;
-  const { stock, unidad_medida, planta, proveedor_id } = req.body;
+  const { desde, hasta } = req.query; // Formato YYYY-MM-DD
 
   try {
-    await db.query(
-      `UPDATE materias_primas 
-       SET stock_actual = ?, 
-           unidad_medida = ?, 
-           planta = ?, 
-           proveedor_id = ? 
-       WHERE id = ?`,
-      [
-        stock,
-        unidad_medida || "KILOS",
-        planta || "Argentina",
-        proveedor_id || null,
-        id,
-      ],
-    );
-    res.json({ success: true });
+    let query = "SELECT * FROM movimientos_stock WHERE materia_prima_id = ?";
+    let params = [id];
+
+    if (desde && hasta) {
+      query += " AND DATE(fecha) BETWEEN ? AND ?";
+      params.push(desde, hasta);
+    }
+    query += " ORDER BY fecha DESC LIMIT 100"; // Límite de seguridad
+
+    const [movimientos] = await db.query(query, params);
+    res.json(movimientos);
   } catch (error) {
-    console.error("Error actualizando materia prima:", error);
-    res.status(500).json({ error: "Error al actualizar la materia prima" });
+    console.error("Error obteniendo auditoria:", error);
+    res.status(500).json({ error: "Error al obtener historial" });
   }
 });
 
@@ -2209,32 +2202,52 @@ app.get("/api/proveedores", async (req, res) => {
   }
 });
 
+// 1. ENDPOINT DE GUARDADO ACTUALIZADO (Con historial y stock_minimo)
 app.put("/api/materias-primas/:id/stock", async (req, res) => {
   const { id } = req.params;
-  const { stock, unidad_medida, planta, proveedor_id } = req.body;
+  const { stock, unidad_medida, planta, proveedor_id, stock_minimo, usuario } =
+    req.body;
 
   try {
+    // a. Obtener stock anterior para calcular la diferencia
+    const [oldData] = await db.query(
+      "SELECT stock_actual FROM materias_primas WHERE id = ?",
+      [id],
+    );
+    const stockAnterior =
+      oldData.length > 0 ? parseFloat(oldData[0].stock_actual) : 0;
+    const nuevoStock = parseFloat(stock);
+    const diferencia = nuevoStock - stockAnterior;
+
+    // b. Actualizar la materia prima
     await db.query(
       `UPDATE materias_primas 
-       SET stock_actual = ?, 
-           unidad_medida = ?, 
-           planta = ?, 
-           proveedor_id = ? 
+       SET stock_actual = ?, unidad_medida = ?, planta = ?, proveedor_id = ?, stock_minimo = ? 
        WHERE id = ?`,
       [
-        stock,
-        unidad_medida || "KILOS",
-        planta || "Argentina",
-        proveedor_id ? parseInt(proveedor_id) : null,
+        nuevoStock,
+        unidad_medida,
+        planta,
+        proveedor_id || null,
+        stock_minimo || 0,
         id,
       ],
     );
+
+    // c. Registrar en el historial si hubo un cambio real en el stock
+    if (diferencia !== 0) {
+      const tipo = diferencia > 0 ? "INGRESO" : "EGRESO";
+      await db.query(
+        `INSERT INTO movimientos_stock (materia_prima_id, usuario, tipo_movimiento, cantidad, stock_resultante) 
+         VALUES (?, ?, ?, ?, ?)`,
+        [id, usuario || "Admin", tipo, diferencia, nuevoStock],
+      );
+    }
+
     res.json({ success: true });
   } catch (error) {
-    console.error("ERROR DETALLADO EN PUT STOCK:", error);
-    res
-      .status(500)
-      .json({ error: error.message || "Error al actualizar la materia prima" });
+    console.error("Error actualizando materia prima:", error);
+    res.status(500).json({ error: "Error al actualizar la materia prima" });
   }
 });
 
