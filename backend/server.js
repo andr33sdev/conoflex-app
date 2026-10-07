@@ -1925,21 +1925,32 @@ app.get("/api/materias-primas", async (req, res) => {
   }
 });
 
+// ==========================================
+// 2. ACTUALIZAR EL ENDPOINT DE STOCK (Reemplazá el que tenés)
+// ==========================================
 app.put("/api/materias-primas/:id/stock", async (req, res) => {
   const { id } = req.params;
-  const { stock, unidad_medida, planta } = req.body;
+  const { stock, unidad_medida, planta, proveedor_id } = req.body;
 
   try {
-    // Ejemplo si usás PostgreSQL / MySQL / SQLite:
     await db.query(
       `UPDATE materias_primas 
-       SET stock_actual = $1, unidad_medida = $2, planta = $3 
-       WHERE id = $4`,
-      [stock, unidad_medida, planta, id],
+       SET stock_actual = ?, 
+           unidad_medida = ?, 
+           planta = ?, 
+           proveedor_id = ? 
+       WHERE id = ?`,
+      [
+        stock,
+        unidad_medida || "KILOS",
+        planta || "Argentina",
+        proveedor_id || null,
+        id,
+      ],
     );
     res.json({ success: true });
-  } catch (err) {
-    console.error(err);
+  } catch (error) {
+    console.error("Error actualizando materia prima:", error);
     res.status(500).json({ error: "Error al actualizar la materia prima" });
   }
 });
@@ -2182,16 +2193,18 @@ app.post("/api/semielaborados/bulk-enlazar-pegado", async (req, res) => {
   }
 });
 
-// 1. Endpoint para traer los proveedores
+// ==========================================
+// 1. NUEVO ENDPOINT: OBTENER PROVEEDORES
+// ==========================================
 app.get("/api/proveedores", async (req, res) => {
   try {
-    // Ejemplo genérico, adaptalo a tu sintaxis de BD:
-    const proveedores = await db.query(
-      "SELECT id, nombre FROM proveedores WHERE estado = $1",
-      ["ACTIVO"],
+    // Si usás mysql2 con promesas:
+    const [proveedores] = await db.query(
+      "SELECT id, nombre FROM proveedores WHERE estado = 'ACTIVO'",
     );
-    res.json(proveedores.rows || proveedores);
-  } catch (err) {
+    res.json(proveedores);
+  } catch (error) {
+    console.error("Error obteniendo proveedores:", error);
     res.status(500).json({ error: "Error al obtener proveedores" });
   }
 });
