@@ -17,6 +17,7 @@ import {
   LogOut,
   UserCircle,
   Truck,
+  Building2, // <-- AGREGADO
 } from "lucide-react";
 
 import logo from "./assets/logo.svg";
@@ -34,6 +35,7 @@ export default function Layout({
 
   const ALL_MENU_ITEMS = [
     { id: "materias-primas", label: "Materias Primas", icon: Boxes },
+    { id: "proveedores", label: "Proveedores", icon: Building2 }, // <-- AGREGADO
     { id: "semielaborados", label: "Semielaborados", icon: Layers },
     { id: "reflectivas", label: "Reflectivas & Pegado", icon: Sparkles },
     { id: "ingenieria", label: "Ingeniería & BOM", icon: Cpu },
@@ -105,8 +107,7 @@ export default function Layout({
             {/* BRANDING */}
             <div className="flex items-center gap-3 px-2 py-3 border-b border-zinc-800/60">
               <div className="w-10 h-10 flex items-center justify-center rounded-xl shadow-[0_0_15px_rgba(255,90,0,0.2)] shrink-0">
-                {/* Si usas logo, reemplazá este span por la etiqueta img */}
-                <img src={logo} alt="Logo"/>
+                <img src={logo} alt="Logo" />
               </div>
               <div>
                 <h1 className="font-extrabold italic text-base tracking-tighter text-white uppercase leading-none">
@@ -183,7 +184,6 @@ export default function Layout({
         {/* DRAWER MOBILE CON ANIMACIÓN DESLIZABLE IZQUIERDA */}
         {mobileMenuOpen && (
           <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[100] md:hidden">
-            {/* Animación: animate-in slide-in-from-left-4 */}
             <div className="w-72 max-w-[85vw] h-full bg-[#050505] p-5 flex flex-col justify-between border-r border-zinc-800 shadow-2xl relative animate-in slide-in-from-left-8 duration-300 ease-out">
               <button
                 onClick={() => setMobileMenuOpen(false)}
@@ -195,7 +195,7 @@ export default function Layout({
               <div className="space-y-6 pt-2">
                 <div className="flex items-center gap-3 px-2 py-3 border-b border-zinc-800/60 pr-8">
                   <div className="w-9 h-9 flex items-center justify-center rounded-xl shrink-0">
-                    <img src={logo} alt="Logo"/>
+                    <img src={logo} alt="Logo" />
                   </div>
                   <div className="min-w-0">
                     <h1 className="font-extrabold italic text-sm tracking-tighter text-white uppercase truncate">
@@ -267,7 +267,7 @@ export default function Layout({
 
         {/* ÁREA PRINCIPAL CONTENEDORA */}
         <div className="flex-1 flex flex-col min-w-0 bg-black overflow-hidden relative">
-          {/* HEADER MOBILE ULTRA FINO (SOLO VISIBLE EN CELULARES) */}
+          {/* HEADER MOBILE ULTRA FINO */}
           <div className="md:hidden flex items-center justify-between p-3 border-b border-zinc-800/50 bg-[#050505] shrink-0 z-30">
             <div className="flex items-center gap-3 min-w-0">
               <button
@@ -300,7 +300,7 @@ export default function Layout({
             )}
           </div>
 
-          {/* BOTÓN SINC. DE ESCRITORIO FLOTANTE (Opcional, si es necesario en escritorio) */}
+          {/* BOTÓN SINC. DE ESCRITORIO FLOTANTE */}
           <div className="hidden md:block absolute top-6 right-8 z-30">
             {activeModule === "semielaborados" && (
               <button

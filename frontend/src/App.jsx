@@ -3,6 +3,7 @@ import Layout from "./Layout";
 import Login from "./Login";
 import AdminUsuarios from "./AdminUsuarios";
 import Inventory from "./Inventory";
+import Proveedores from "./Proveedores"; // <-- AGREGADO
 import Semielaborados from "./Semielaborados";
 import Reflectivas from "./Reflectivas";
 import Metricas from "./Metricas";
@@ -147,15 +148,20 @@ function App() {
 
       {hasAccess("materias-primas") && activeModule === "materias-primas" && (
         <Inventory
-          key={reloadKey}
+          key={`mp-${reloadKey}`}
           isUploadModalOpen={isUploadModalOpen}
           onCloseUploadModal={() => setIsUploadModalOpen(false)}
         />
       )}
 
+      {/* <-- MÓDULO AGREGADO --> */}
+      {hasAccess("proveedores") && activeModule === "proveedores" && (
+        <Proveedores />
+      )}
+
       {hasAccess("semielaborados") && activeModule === "semielaborados" && (
         <Semielaborados
-          key={reloadKey}
+          key={`se-${reloadKey}`}
           isUploadModalOpen={isUploadModalOpen}
           onCloseUploadModal={() => setIsUploadModalOpen(false)}
         />

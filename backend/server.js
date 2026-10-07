@@ -2189,16 +2189,65 @@ app.post("/api/semielaborados/bulk-enlazar-pegado", async (req, res) => {
 // ==========================================
 // 1. NUEVO ENDPOINT: OBTENER PROVEEDORES
 // ==========================================
+// OBTENER TODOS LOS PROVEEDORES
 app.get("/api/proveedores", async (req, res) => {
   try {
-    // Si usás mysql2 con promesas:
-    const [proveedores] = await db.query(
-      "SELECT id, nombre FROM proveedores WHERE estado = 'ACTIVO'",
+    const [rows] = await db.query(
+      "SELECT * FROM proveedores ORDER BY nombre ASC",
     );
-    res.json(proveedores);
-  } catch (error) {
-    console.error("Error obteniendo proveedores:", error);
+    res.json(rows);
+  } catch (err) {
     res.status(500).json({ error: "Error al obtener proveedores" });
+  }
+});
+
+// CREAR PROVEEDOR
+app.post("/api/proveedores", async (req, res) => {
+  const { nombre, cuit, contacto, telefono, email, direccion, estado } =
+    req.body;
+  try {
+    const [result] = await db.query(
+      `INSERT INTO proveedores (nombre, cuit, contacto, telefono, email, direccion, estado) 
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [nombre, cuit, contacto, telefono, email, direccion, estado || "ACTIVO"],
+    );
+    res.json({ id: result.insertId, ...req.body });
+  } catch (err) {
+    console.error("Error CREAR PROVEEDOR:", err);
+    res.status(500).json({ error: "Error al crear proveedor" });
+  }
+});
+
+// ACTUALIZAR PROVEEDOR
+app.put("/api/proveedores/:id", async (req, res) => {
+  const { id } = req.params;
+  const { nombre, cuit, contacto, telefono, email, direccion, estado } =
+    req.body;
+  try {
+    await db.query(
+      `UPDATE proveedores 
+       SET nombre = ?, cuit = ?, contacto = ?, telefono = ?, email = ?, direccion = ?, estado = ? 
+       WHERE id = ?`,
+      [nombre, cuit, contacto, telefono, email, direccion, estado, id],
+    );
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Error ACTUALIZAR PROVEEDOR:", err);
+    res.status(500).json({ error: "Error al actualizar proveedor" });
+  }
+});
+
+// OBTENER MATERIAS PRIMAS ASOCIADAS A UN PROVEEDOR
+app.get("/api/proveedores/:id/materias-primas", async (req, res) => {
+  const { id } = req.params;
+  try {
+    const [rows] = await db.query(
+      "SELECT id, codigo, nombre, stock_actual, unidad_medida, planta FROM materias_primas WHERE proveedor_id = ?",
+      [id],
+    );
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: "Error al obtener insumos del proveedor" });
   }
 });
 
