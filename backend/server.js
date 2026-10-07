@@ -2301,13 +2301,14 @@ app.put("/api/materias-primas/:id/stock", async (req, res) => {
 });
 
 // ==========================================
-// MÓDULO 3: SEMIELABORADOS Y CRUCE DE DÍAS DE STOCK
+// MÓDULO 3: SEMIELABORADOS Y CRUCE DE DÍAS DE STOCK (DINÁMICO CON ESTADO_PEDIDOS)
 // ==========================================
 app.get("/api/semielaborados", async (req, res) => {
   try {
-    // 1. Tomamos la cantidad de meses que eligió el usuario en el frontend. Por defecto 3.
+    // 1. Obtener la cantidad de meses recibida por query (ej: ?meses=4). Por defecto 3.
     const meses = parseInt(req.query.meses) || 3;
 
+    // 2. Consultar semielaborados con sus configuraciones de pegado
     const [semielaborados] = await db.query(`
       SELECT s.*, 
              c.nombre as pegado_nombre,
@@ -2327,47 +2328,28 @@ app.get("/api/semielaborados", async (req, res) => {
       ORDER BY s.orden ASC, s.id ASC
     `);
 
-    let pts = [];
+    // 3. Calcular la demanda mensual dinámica de Productos Terminados basada en `estado_pedidos`
+    // Suma la cantidad vendida en los últimos X meses hacia atrás desde la fecha actual
+    const [pts] = await db.query(
+      `
+      SELECT 
+        pt.id, 
+        COALESCE(
+          (
+            SELECT SUM(ep.cantidad)
+            FROM estado_pedidos ep
+            WHERE (UPPER(ep.modelo) = UPPER(pt.codigo) OR UPPER(ep.modelo) = UPPER(pt.nombre))
+              AND ep.fecha >= DATE_SUB(CURDATE(), INTERVAL ? MONTH)
+          ) / ?, 
+          pt.promedio_ventas_mensual, 
+          0
+        ) as promedio_ventas_mensual
+      FROM productos_terminados pt
+    `,
+      [meses, meses],
+    );
 
-    // 2. Intento de cálculo de Demanda Mensual Histórica Dinámica
-    try {
-      /* 
-         ATENCIÓN: Asumo que tenés tablas "pedidos" y "pedidos_detalles".
-         Si tus tablas de despachos o ventas se llaman diferente, solo tenés que
-         cambiar el nombre acá adentro. 
-      */
-      [pts] = await db.query(
-        `
-        SELECT 
-          pt.id, 
-          COALESCE(
-            (
-              SELECT SUM(pd.cantidad)
-              FROM pedidos_detalles pd
-              INNER JOIN pedidos p ON p.id = pd.pedido_id
-              WHERE pd.producto_terminado_id = pt.id 
-                AND p.fecha >= DATE_SUB(NOW(), INTERVAL ? MONTH)
-            ) / ?, 
-            pt.promedio_ventas_mensual, 
-            0
-          ) as promedio_ventas_mensual
-        FROM productos_terminados pt
-      `,
-        [meses, meses],
-      );
-    } catch (dbError) {
-      // 🛡️ FALLBACK DE SEGURIDAD (ANTI-CRASH)
-      // Si la tabla de pedidos no existe todavía, MySQL tiraría error y rompería la app.
-      // Acá lo atajamos y usamos el valor estático que ya tenías para que todo siga andando.
-      console.warn(
-        `[Aviso] Tabla de pedidos no encontrada. Usando promedio_ventas_mensual estático. Detalle: ${dbError.message}`,
-      );
-
-      [pts] = await db.query(
-        "SELECT id, promedio_ventas_mensual FROM productos_terminados",
-      );
-    }
-
+    // 4. Traer recetas activas y detalles de ingeniería para hacer el desglose BOM
     const [activeRecipesPT] = await db.query(
       "SELECT id, producto_terminado_id FROM ingenierias WHERE es_activa = 1 AND producto_terminado_id IS NOT NULL",
     );
@@ -2376,9 +2358,12 @@ app.get("/api/semielaborados", async (req, res) => {
       "SELECT ingenieria_id, semielaborado_id, cantidad FROM ingenieria_detalles WHERE semielaborado_id IS NOT NULL",
     );
 
+    // 5. Mapear la demanda calculada de PTs a cada Semielaborado que lo compone
     const seDemandMap = {};
     pts.forEach((pt) => {
-      if (!pt.promedio_ventas_mensual) return;
+      const ventaMensual = parseFloat(pt.promedio_ventas_mensual) || 0;
+      if (ventaMensual === 0) return;
+
       const activeRecipe = activeRecipesPT.find(
         (r) => r.producto_terminado_id === pt.id,
       );
@@ -2387,14 +2372,17 @@ app.get("/api/semielaborados", async (req, res) => {
       const details = recipeDetailsPT.filter(
         (d) => d.ingenieria_id === activeRecipe.id,
       );
+
       details.forEach((det) => {
-        if (!seDemandMap[det.semielaborado_id])
+        if (!seDemandMap[det.semielaborado_id]) {
           seDemandMap[det.semielaborado_id] = 0;
+        }
         seDemandMap[det.semielaborado_id] +=
-          pt.promedio_ventas_mensual * det.cantidad;
+          ventaMensual * parseFloat(det.cantidad || 0);
       });
     });
 
+    // 6. Generar el resultado final de semielaborados con stock total, demanda y días de stock
     const result = semielaborados.map((se) => {
       const rawStock =
         (se.stock_33 || 0) +
@@ -2403,8 +2391,11 @@ app.get("/api/semielaborados", async (req, res) => {
         (se.stock_37 || 0);
       const totalStock = Math.max(0, rawStock);
       const demand = seDemandMap[se.id] || 0;
+
+      // Cálculo de Días de Stock: (Stock Total / Demanda Mensual) * 30 días
       let dias_stock =
         demand > 0 ? Math.round((totalStock / demand) * 30) : null;
+
       return {
         ...se,
         stock_total: totalStock,
@@ -2415,6 +2406,7 @@ app.get("/api/semielaborados", async (req, res) => {
 
     res.json(result);
   } catch (error) {
+    console.error("Error en /api/semielaborados:", error);
     res.status(500).json({ error: error.message });
   }
 });
