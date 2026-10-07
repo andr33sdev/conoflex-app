@@ -1926,14 +1926,21 @@ app.get("/api/materias-primas", async (req, res) => {
 });
 
 app.put("/api/materias-primas/:id/stock", async (req, res) => {
+  const { id } = req.params;
+  const { stock, unidad_medida, planta } = req.body;
+
   try {
-    await db.query("UPDATE materias_primas SET stock_actual = ? WHERE id = ?", [
-      req.body.stock,
-      req.params.id,
-    ]);
+    // Ejemplo si usás PostgreSQL / MySQL / SQLite:
+    await db.query(
+      `UPDATE materias_primas 
+       SET stock_actual = $1, unidad_medida = $2, planta = $3 
+       WHERE id = $4`,
+      [stock, unidad_medida, planta, id],
+    );
     res.json({ success: true });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Error al actualizar la materia prima" });
   }
 });
 
@@ -2172,6 +2179,37 @@ app.post("/api/semielaborados/bulk-enlazar-pegado", async (req, res) => {
     res.status(500).json({ error: error.message });
   } finally {
     conn.release();
+  }
+});
+
+// 1. Endpoint para traer los proveedores
+app.get("/api/proveedores", async (req, res) => {
+  try {
+    // Ejemplo genérico, adaptalo a tu sintaxis de BD:
+    const proveedores = await db.query(
+      "SELECT id, nombre FROM proveedores WHERE estado = $1",
+      ["ACTIVO"],
+    );
+    res.json(proveedores.rows || proveedores);
+  } catch (err) {
+    res.status(500).json({ error: "Error al obtener proveedores" });
+  }
+});
+
+// 2. Actualizar tu endpoint PUT existente para guardar el proveedor
+app.put("/api/materias-primas/:id/stock", async (req, res) => {
+  const { id } = req.params;
+  const { stock, unidad_medida, planta, proveedor_id } = req.body;
+  try {
+    await db.query(
+      `UPDATE materias_primas 
+       SET stock_actual = $1, unidad_medida = $2, planta = $3, proveedor_id = $4 
+       WHERE id = $5`,
+      [stock, unidad_medida, planta, proveedor_id || null, id],
+    );
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: "Error al actualizar" });
   }
 });
 
