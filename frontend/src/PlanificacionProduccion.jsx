@@ -4,6 +4,8 @@ import {
   ChevronRight,
   Plus,
   Trash2,
+  Edit2,
+  Check,
   Calendar as CalendarIcon,
   X,
   CheckCircle2,
@@ -13,14 +15,26 @@ import {
 } from "lucide-react";
 
 export default function PlanificacionProduccion() {
+  // OBTENER LA FECHA REAL DE HOY EN TIEMPO REAL
+  const today = new Date();
+  const year = today.getFullYear();
+  const month = String(today.getMonth() + 1).padStart(2, "0");
+  const day = String(today.getDate()).padStart(2, "0");
+  const todayStr = `${year}-${month}-${day}`; // Formato "YYYY-MM-DD"
+
+  // ESTADOS DINÁMICOS BASADOS EN EL DÍA ACTUAL
   const [currentMonthDate, setCurrentMonthDate] = useState(
-    new Date(2026, 9, 1),
-  ); // Octubre 2026 por defecto
-  const [selectedDateStr, setSelectedDateStr] = useState("2026-10-07"); // YYYY-MM-DD
+    new Date(today.getFullYear(), today.getMonth(), 1),
+  );
+  const [selectedDateStr, setSelectedDateStr] = useState(todayStr);
 
   const [planificaciones, setPlanificaciones] = useState({});
   const [semielaborados, setSemielaborados] = useState([]);
   const [loading, setLoading] = useState(true);
+
+  // EDICIÓN EN LÍNEA DE CANTIDAD PREVISTA
+  const [editingItemId, setEditingItemId] = useState(null);
+  const [editingQty, setEditingQty] = useState(0);
 
   // MODAL ASIGNAR SEMIELABORADO
   const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
@@ -184,6 +198,31 @@ export default function PlanificacionProduccion() {
     savePlanificacionesState(newPlan);
   };
 
+  // FUNCIONES PARA EDITAR CANTIDAD EN LÍNEA
+  const handleStartEdit = (item) => {
+    setEditingItemId(item.id);
+    setEditingQty(item.cantidad_prevista);
+  };
+
+  const handleSaveEdit = (itemId) => {
+    if (editingQty <= 0) return alert("Ingresá una cantidad válida.");
+
+    const updatedDayList = currentDayItems.map((item) => {
+      if (item.id === itemId) {
+        return { ...item, cantidad_prevista: Number(editingQty) };
+      }
+      return item;
+    });
+
+    const newPlan = { ...planificaciones, [selectedDateStr]: updatedDayList };
+    savePlanificacionesState(newPlan);
+    setEditingItemId(null);
+  };
+
+  const handleCancelEdit = () => {
+    setEditingItemId(null);
+  };
+
   const filteredSemielaborados = useMemo(() => {
     const q = assignSearch.toLowerCase();
     return semielaborados.filter(
@@ -231,9 +270,9 @@ export default function PlanificacionProduccion() {
         </button>
       </div>
 
-      {/* 2. ÁREA DE TRABAJO (2 COLUMNAS SIN SCROLLS GENERALES) */}
+      {/* 2. ÁREA DE TRABAJO (2 COLUMNAS HERMÉTICAS SIN SCROLLS GENERALES) */}
       <div className="flex-1 min-h-0 p-4 md:p-6 grid grid-cols-1 lg:grid-cols-12 gap-4 bg-black overflow-hidden">
-        {/* PANEL IZQUIERDO: DETALLE DEL DÍA SELECCIONADO */}
+        {/* PANEL IZQUIERDO: DETALLE Y EDICIÓN DEL DÍA SELECCIONADO */}
         <div className="lg:col-span-4 bg-[#050505] border border-zinc-800 p-5 flex flex-col justify-between h-full min-h-0 shadow-2xl">
           <div className="flex flex-col min-h-0 h-full justify-between space-y-4">
             <div className="border-b border-zinc-800/80 pb-3 shrink-0">
@@ -245,7 +284,7 @@ export default function PlanificacionProduccion() {
               </h2>
             </div>
 
-            {/* LISTA DE ÍTEMS CON SCROLL INTERNO SILENCIOSO */}
+            {/* LISTA DE ÍTEMS CON EDICIÓN EN LÍNEA */}
             <div className="flex-1 min-h-0 overflow-y-auto space-y-2 pr-1 custom-scrollbar">
               <div className="flex justify-between items-center font-mono text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-2">
                 <span>SEMIELABORADOS PREVISTOS</span>
@@ -259,35 +298,87 @@ export default function PlanificacionProduccion() {
                   Sin producción asignada para este día.
                 </div>
               ) : (
-                currentDayItems.map((item) => (
-                  <div
-                    key={item.id}
-                    className="bg-black border border-zinc-800 p-3.5 flex items-center justify-between gap-3 group hover:border-zinc-700 transition-colors"
-                  >
-                    <div className="space-y-1 min-w-0 flex-1">
-                      <span className="text-[10px] font-mono font-bold text-[#FF5A00] bg-[#FF5A00]/10 border border-[#FF5A00]/20 px-1.5 py-0.5 inline-block">
-                        {item.codigo}
-                      </span>
-                      <h4 className="text-xs font-bold text-white uppercase truncate">
-                        {item.nombre}
-                      </h4>
-                      <div className="flex items-center gap-2 font-mono text-[10px]">
-                        <span className="text-zinc-500">PREVISTO:</span>
-                        <strong className="text-[#FFD700]">
-                          {item.cantidad_prevista.toLocaleString()} u.
-                        </strong>
+                currentDayItems.map((item) => {
+                  const isEditingThis = editingItemId === item.id;
+
+                  return (
+                    <div
+                      key={item.id}
+                      className="bg-black border border-zinc-800 p-3.5 flex items-center justify-between gap-3 group hover:border-zinc-700 transition-colors"
+                    >
+                      <div className="space-y-1 min-w-0 flex-1">
+                        <span className="text-[10px] font-mono font-bold text-[#FF5A00] bg-[#FF5A00]/10 border border-[#FF5A00]/20 px-1.5 py-0.5 inline-block">
+                          {item.codigo}
+                        </span>
+                        <h4 className="text-xs font-bold text-white uppercase truncate">
+                          {item.nombre}
+                        </h4>
+
+                        <div className="flex items-center gap-2 font-mono text-[10px]">
+                          <span className="text-zinc-500">PREVISTO:</span>
+
+                          {/* MODO EDICIÓN vs MODO LECTURA */}
+                          {isEditingThis ? (
+                            <div className="flex items-center gap-1.5">
+                              <input
+                                type="number"
+                                min="1"
+                                value={editingQty}
+                                onChange={(e) => setEditingQty(e.target.value)}
+                                className="w-20 bg-[#050505] border border-[#FF5A00] text-[#FFD700] font-bold px-2 py-0.5 text-xs outline-none"
+                                autoFocus
+                              />
+                              <span className="text-zinc-500">u.</span>
+                            </div>
+                          ) : (
+                            <strong className="text-[#FFD700]">
+                              {item.cantidad_prevista.toLocaleString()} u.
+                            </strong>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* BOTONES DE ACCIÓN (EDITAR / GUARDAR / BORRAR) */}
+                      <div className="flex items-center gap-1 shrink-0">
+                        {isEditingThis ? (
+                          <>
+                            <button
+                              onClick={() => handleSaveEdit(item.id)}
+                              className="p-1.5 bg-[#FF5A00] text-black hover:bg-white transition-colors cursor-pointer"
+                              title="Guardar cambio"
+                            >
+                              <Check size={14} strokeWidth={3} />
+                            </button>
+                            <button
+                              onClick={handleCancelEdit}
+                              className="p-1.5 border border-zinc-800 text-zinc-400 hover:text-white transition-colors cursor-pointer"
+                              title="Cancelar"
+                            >
+                              <X size={14} />
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            <button
+                              onClick={() => handleStartEdit(item)}
+                              className="text-zinc-500 hover:text-white p-1.5 transition-colors cursor-pointer"
+                              title="Editar cantidad"
+                            >
+                              <Edit2 size={14} />
+                            </button>
+                            <button
+                              onClick={() => handleRemoveAssignment(item.id)}
+                              className="text-zinc-600 hover:text-[#FF0055] p-1.5 transition-colors cursor-pointer"
+                              title="Quitar ítem"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </>
+                        )}
                       </div>
                     </div>
-
-                    <button
-                      onClick={() => handleRemoveAssignment(item.id)}
-                      className="text-zinc-600 hover:text-[#FF0055] p-2 transition-colors cursor-pointer shrink-0"
-                      title="Quitar"
-                    >
-                      <Trash2 size={16} />
-                    </button>
-                  </div>
-                ))
+                  );
+                })
               )}
             </div>
 
@@ -300,7 +391,7 @@ export default function PlanificacionProduccion() {
           </div>
         </div>
 
-        {/* PANEL DERECHO: CALENDARIO ULTRA CLEAN SIN TEXTOS EN LOS CUADRADOS */}
+        {/* PANEL DERECHO: CALENDARIO ULTRA CLEAN (SOLO NÚMEROS Y INDICADOR PUNTO) */}
         <div className="lg:col-span-8 bg-[#050505] border border-zinc-800 p-5 flex flex-col h-full min-h-0 shadow-2xl justify-between">
           {/* NAVEGACIÓN MES */}
           <div className="flex items-center justify-between border-b border-zinc-800/80 pb-3 shrink-0">
@@ -335,7 +426,7 @@ export default function PlanificacionProduccion() {
             <div>DO</div>
           </div>
 
-          {/* GRILLA CALENDARIO PERFECTA (5 FILAS RIGIDAS, CASILLEROS TOTALMENTE CLEAN) */}
+          {/* GRILLA CALENDARIO PERFECTA (5 FILAS RÍGIDAS, CASILLEROS TOTALMENTE CLEAN) */}
           <div className="flex-1 grid grid-cols-7 grid-rows-5 gap-2 pt-2 min-h-0">
             {calendarGrid.map((cell, idx) => {
               if (!cell) {
@@ -363,7 +454,7 @@ export default function PlanificacionProduccion() {
                         : "border-zinc-800/80 bg-black hover:border-zinc-700"
                   }`}
                 >
-                  {/* CABECERA CON NÚMERO DE DÍA E INDICADOR NEÓN ULTRA DISCRETO */}
+                  {/* NÚMERO DE DÍA Y PUNTO NEÓN SI TIENEN PROGRAMACIÓN */}
                   <div className="flex justify-between items-start font-mono">
                     <span
                       className={`text-sm font-extrabold ${
@@ -373,7 +464,6 @@ export default function PlanificacionProduccion() {
                       {cell.day}
                     </span>
 
-                    {/* PUNTO INDICADOR SI TIENE PRODUCCIÓN (SIN TEXTOS NI CARTELES) */}
                     {hasPlans && (
                       <span className="w-1.5 h-1.5 rounded-full bg-[#FF5A00] shadow-[0_0_6px_#FF5A00]" />
                     )}
