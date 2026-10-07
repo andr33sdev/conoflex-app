@@ -2209,20 +2209,32 @@ app.get("/api/proveedores", async (req, res) => {
   }
 });
 
-// 2. Actualizar tu endpoint PUT existente para guardar el proveedor
 app.put("/api/materias-primas/:id/stock", async (req, res) => {
   const { id } = req.params;
   const { stock, unidad_medida, planta, proveedor_id } = req.body;
+
   try {
     await db.query(
       `UPDATE materias_primas 
-       SET stock_actual = $1, unidad_medida = $2, planta = $3, proveedor_id = $4 
-       WHERE id = $5`,
-      [stock, unidad_medida, planta, proveedor_id || null, id],
+       SET stock_actual = ?, 
+           unidad_medida = ?, 
+           planta = ?, 
+           proveedor_id = ? 
+       WHERE id = ?`,
+      [
+        stock,
+        unidad_medida || "KILOS",
+        planta || "Argentina",
+        proveedor_id ? parseInt(proveedor_id) : null,
+        id,
+      ],
     );
     res.json({ success: true });
-  } catch (err) {
-    res.status(500).json({ error: "Error al actualizar" });
+  } catch (error) {
+    console.error("ERROR DETALLADO EN PUT STOCK:", error);
+    res
+      .status(500)
+      .json({ error: error.message || "Error al actualizar la materia prima" });
   }
 });
 
