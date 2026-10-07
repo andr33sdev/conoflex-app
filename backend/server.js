@@ -2301,67 +2301,92 @@ app.put("/api/materias-primas/:id/stock", async (req, res) => {
 });
 
 // ==========================================
-// MÓDULO 3: SEMIELABORADOS Y CRUCE DE DÍAS DE STOCK (DINÁMICO CON ESTADO_PEDIDOS)
+// MÓDULO 3: SEMIELABORADOS Y CRUCE DE DÍAS DE STOCK (ULTRA OPTIMIZADO)
 // ==========================================
 app.get("/api/semielaborados", async (req, res) => {
   try {
-    // 1. Obtener la cantidad de meses recibida por query (ej: ?meses=4). Por defecto 3.
     const meses = parseInt(req.query.meses) || 3;
 
-    // 2. Consultar semielaborados con sus configuraciones de pegado
-    const [semielaborados] = await db.query(`
-      SELECT s.*, 
-             c.nombre as pegado_nombre,
-             c.reflectiva,
-             c.protector_orajet,
-             c.aplicacion_protector,
-             (
-               SELECT MAX(rp.fecha) 
-               FROM registro_produccion rp 
-               WHERE UPPER(rp.codigo) = UPPER(s.codigo) OR UPPER(rp.articulo) = UPPER(s.nombre)
-             ) as ultima_produccion_fecha,
-             COUNT(i.id) as recetas_count 
-      FROM semielaborados s 
-      LEFT JOIN configuraciones_pegado c ON s.configuracion_pegado_id = c.id
-      LEFT JOIN ingenierias i ON s.id = i.semielaborado_id 
-      GROUP BY s.id 
-      ORDER BY s.orden ASC, s.id ASC
-    `);
+    // 1. Ejecutamos todas las consultas principales en PARALELO para máxima velocidad
+    const [
+      [semielaborados],
+      [pts],
+      [ventasAgrupadas],
+      [activeRecipesPT],
+      [recipeDetailsPT],
+    ] = await Promise.all([
+      db.query(`
+        SELECT s.*, 
+               c.nombre as pegado_nombre,
+               c.reflectiva,
+               c.protector_orajet,
+               c.aplicacion_protector,
+               (
+                 SELECT MAX(rp.fecha) 
+                 FROM registro_produccion rp 
+                 WHERE UPPER(rp.codigo) = UPPER(s.codigo) OR UPPER(rp.articulo) = UPPER(s.nombre)
+               ) as ultima_produccion_fecha,
+               COUNT(i.id) as recetas_count 
+        FROM semielaborados s 
+        LEFT JOIN configuraciones_pegado c ON s.configuracion_pegado_id = c.id
+        LEFT JOIN ingenierias i ON s.id = i.semielaborado_id 
+        GROUP BY s.id 
+        ORDER BY s.orden ASC, s.id ASC
+      `),
+      db.query(
+        "SELECT id, codigo, nombre, promedio_ventas_mensual FROM productos_terminados",
+      ),
+      // 🚀 Consulta única ultra rápida: agrupa todas las ventas del período en 1 solo paso
+      db.query(
+        `
+        SELECT UPPER(TRIM(modelo)) as modelo, SUM(cantidad) as total_vendido
+        FROM estado_pedidos
+        WHERE fecha >= DATE_SUB(CURDATE(), INTERVAL ? MONTH)
+        GROUP BY UPPER(TRIM(modelo))
+      `,
+        [meses],
+      ),
+      db.query(
+        "SELECT id, producto_terminado_id FROM ingenierias WHERE es_activa = 1 AND producto_terminado_id IS NOT NULL",
+      ),
+      db.query(
+        "SELECT ingenieria_id, semielaborado_id, cantidad FROM ingenieria_detalles WHERE semielaborado_id IS NOT NULL",
+      ),
+    ]);
 
-    // 3. Calcular la demanda mensual dinámica de Productos Terminados basada en `estado_pedidos`
-    // Suma la cantidad vendida en los últimos X meses hacia atrás desde la fecha actual
-    const [pts] = await db.query(
-      `
-      SELECT 
-        pt.id, 
-        COALESCE(
-          (
-            SELECT SUM(ep.cantidad)
-            FROM estado_pedidos ep
-            WHERE (UPPER(ep.modelo) = UPPER(pt.codigo) OR UPPER(ep.modelo) = UPPER(pt.nombre))
-              AND ep.fecha >= DATE_SUB(CURDATE(), INTERVAL ? MONTH)
-          ) / ?, 
-          pt.promedio_ventas_mensual, 
-          0
-        ) as promedio_ventas_mensual
-      FROM productos_terminados pt
-    `,
-      [meses, meses],
-    );
+    // 2. Mapeamos las ventas en un Map de JS (Búsqueda en 0.001 ms)
+    const ventasMap = new Map();
+    ventasAgrupadas.forEach((v) => {
+      if (v.modelo) {
+        ventasMap.set(v.modelo, parseFloat(v.total_vendido) || 0);
+      }
+    });
 
-    // 4. Traer recetas activas y detalles de ingeniería para hacer el desglose BOM
-    const [activeRecipesPT] = await db.query(
-      "SELECT id, producto_terminado_id FROM ingenierias WHERE es_activa = 1 AND producto_terminado_id IS NOT NULL",
-    );
+    // 3. Calculamos el promedio mensual por Producto Terminado
+    const ptDemandMap = new Map();
+    pts.forEach((pt) => {
+      const keyCodigo = pt.codigo ? pt.codigo.trim().toUpperCase() : "";
+      const keyNombre = pt.nombre ? pt.nombre.trim().toUpperCase() : "";
 
-    const [recipeDetailsPT] = await db.query(
-      "SELECT ingenieria_id, semielaborado_id, cantidad FROM ingenieria_detalles WHERE semielaborado_id IS NOT NULL",
-    );
+      let totalVendido = ventasMap.get(keyCodigo);
+      if (totalVendido === undefined && keyNombre) {
+        totalVendido = ventasMap.get(keyNombre);
+      }
 
-    // 5. Mapear la demanda calculada de PTs a cada Semielaborado que lo compone
+      let promedioMensual = 0;
+      if (totalVendido !== undefined) {
+        promedioMensual = totalVendido / meses;
+      } else {
+        promedioMensual = parseFloat(pt.promedio_ventas_mensual) || 0;
+      }
+
+      ptDemandMap.set(pt.id, promedioMensual);
+    });
+
+    // 4. Trasladamos la demanda a Semielaborados vía Recetas (BOM)
     const seDemandMap = {};
     pts.forEach((pt) => {
-      const ventaMensual = parseFloat(pt.promedio_ventas_mensual) || 0;
+      const ventaMensual = ptDemandMap.get(pt.id) || 0;
       if (ventaMensual === 0) return;
 
       const activeRecipe = activeRecipesPT.find(
@@ -2382,7 +2407,7 @@ app.get("/api/semielaborados", async (req, res) => {
       });
     });
 
-    // 6. Generar el resultado final de semielaborados con stock total, demanda y días de stock
+    // 5. Resultado final con Stock Total, Demanda y Días de Stock
     const result = semielaborados.map((se) => {
       const rawStock =
         (se.stock_33 || 0) +
@@ -2392,7 +2417,6 @@ app.get("/api/semielaborados", async (req, res) => {
       const totalStock = Math.max(0, rawStock);
       const demand = seDemandMap[se.id] || 0;
 
-      // Cálculo de Días de Stock: (Stock Total / Demanda Mensual) * 30 días
       let dias_stock =
         demand > 0 ? Math.round((totalStock / demand) * 30) : null;
 

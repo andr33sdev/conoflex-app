@@ -15,6 +15,8 @@ import {
   Layers,
   Box,
   Sparkle,
+  Calendar,
+  ChevronDown,
 } from "lucide-react";
 
 export default function Semielaborados() {
@@ -31,6 +33,8 @@ export default function Semielaborados() {
     const saved = localStorage.getItem("conoflex_meses_historial");
     return saved ? parseInt(saved, 10) : 3; // 3 meses por defecto
   });
+  const [isMesesMenuOpen, setIsMesesMenuOpen] = useState(false);
+  const mesesMenuRef = useRef(null);
 
   // PREVISUALIZACIÓN Y AUDITORÍA SHEETS
   const [previewData, setPreviewData] = useState(null);
@@ -50,6 +54,20 @@ export default function Semielaborados() {
 
   // MODAL DE FICHA
   const [detailItem, setDetailItem] = useState(null);
+
+  // DETECTOR DE CLIC AFUERA PARA CERRAR EL MENÚ DE MESES
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (
+        mesesMenuRef.current &&
+        !mesesMenuRef.current.contains(event.target)
+      ) {
+        setIsMesesMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   // AJUSTE DE FILAS EN TIEMPO REAL (48px exactos)
   useEffect(() => {
@@ -251,10 +269,10 @@ export default function Semielaborados() {
       </div>
 
       {/* 2. PANEL DE FILTROS & BÚSQUEDA */}
-      <div className="px-4 py-4 md:px-8 border-b border-zinc-800/50 flex flex-col md:flex-row items-center justify-between gap-4 shrink-0 bg-black relative z-20">
-        <div className="flex flex-col sm:flex-row items-center gap-4 w-full md:w-auto flex-1">
-          {/* BUSCADOR */}
-          <div className="relative w-full sm:w-80">
+      <div className="px-4 py-4 md:px-8 border-b border-zinc-800/50 flex flex-col md:flex-row items-center justify-between gap-3 shrink-0 bg-black relative z-20">
+        <div className="flex flex-col sm:flex-row items-center gap-3 w-full md:w-auto flex-1 min-w-0">
+          {/* BUSCADOR (Ancho optimizado) */}
+          <div className="relative w-full sm:w-64 shrink-0">
             <Search
               size={14}
               className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-600"
@@ -267,12 +285,12 @@ export default function Semielaborados() {
                 setSearch(e.target.value);
                 setCurrentPage(1);
               }}
-              className="w-full bg-transparent border border-zinc-800 focus:border-[#FF5A00] text-white pl-10 pr-4 py-2.5 text-xs transition-colors outline-none"
+              className="w-full bg-transparent border border-zinc-800 focus:border-[#FF5A00] text-white pl-10 pr-4 py-2 text-xs transition-colors outline-none"
             />
           </div>
 
-          {/* TABS DE DEPÓSITOS */}
-          <div className="flex items-center gap-0 w-full sm:w-auto overflow-x-auto border border-zinc-800 bg-[#050505]">
+          {/* TABS DE DEPÓSITOS (Con shrink-0 para evitar cortes) */}
+          <div className="flex items-center gap-0 w-full sm:w-auto overflow-x-auto border border-zinc-800 bg-[#050505] shrink-0">
             {["GENERAL", "33", "26", "AYOLAS", "37"].map((dep) => {
               const isSelected = activeTab === dep;
               return (
@@ -282,7 +300,7 @@ export default function Semielaborados() {
                     setActiveTab(dep);
                     setCurrentPage(1);
                   }}
-                  className={`px-4 py-2.5 text-xs font-bold transition-all cursor-pointer whitespace-nowrap uppercase tracking-widest border-r border-zinc-800 last:border-r-0 ${
+                  className={`px-3.5 py-2 text-xs font-bold transition-all cursor-pointer whitespace-nowrap uppercase tracking-widest border-r border-zinc-800 last:border-r-0 ${
                     isSelected
                       ? "bg-[#FF5A00] text-black"
                       : "text-zinc-500 hover:text-white hover:bg-zinc-900"
@@ -294,32 +312,54 @@ export default function Semielaborados() {
             })}
           </div>
 
-          {/* SELECTOR DE MESES HISTORIAL PARA DEMANDA */}
-          <div className="flex items-center gap-2 text-[10px] font-mono text-zinc-400 bg-[#050505] border border-zinc-800 px-4 py-1.5 shrink-0 uppercase w-full sm:w-auto overflow-x-auto">
-            <span className="text-zinc-500 font-bold tracking-widest mr-1">
-              HISTORIAL DEMANDA:
-            </span>
-            <div className="flex items-center gap-1">
-              {[1, 2, 3, 4, 5, 6].map((m) => (
-                <button
-                  key={m}
-                  onClick={() => setMesesHistorial(m)}
-                  className={`w-6 h-6 flex items-center justify-center font-bold transition-colors cursor-pointer ${
-                    mesesHistorial === m
-                      ? "bg-[#FF5A00] text-black"
-                      : "bg-black border border-zinc-800 text-zinc-500 hover:text-white hover:border-zinc-600"
-                  }`}
-                >
-                  {m}
-                </button>
-              ))}
-            </div>
-            <span className="text-zinc-600 ml-1 font-bold">MESES</span>
+          {/* DESPLEGABLE CON ANCHO FIJO (w-[195px]) */}
+          <div
+            className="relative shrink-0 w-full sm:w-[195px]"
+            ref={mesesMenuRef}
+          >
+            <button
+              onClick={() => setIsMesesMenuOpen(!isMesesMenuOpen)}
+              className="w-full flex items-center justify-between gap-1.5 bg-[#050505] border border-zinc-800 hover:border-zinc-700 px-3 py-2 text-xs font-bold tracking-widest uppercase text-white transition-colors cursor-pointer"
+            >
+              <Calendar size={14} className="text-[#FF5A00] shrink-0" />
+              <span className="text-zinc-500 text-[10px] shrink-0">
+                HISTORIAL:
+              </span>
+              <span className="text-[#FF5A00] shrink-0">
+                {mesesHistorial} {mesesHistorial === 1 ? "MES" : "MESES"}
+              </span>
+              <ChevronDown
+                size={14}
+                className={`text-zinc-500 shrink-0 transition-transform ${isMesesMenuOpen ? "rotate-180" : ""}`}
+              />
+            </button>
+
+            {isMesesMenuOpen && (
+              <div className="absolute top-full left-0 w-full mt-1 bg-[#050505] border border-zinc-800 shadow-2xl z-50 flex flex-col py-1">
+                {[1, 2, 3, 4, 5, 6].map((m) => (
+                  <button
+                    key={m}
+                    onClick={() => {
+                      setMesesHistorial(m);
+                      setIsMesesMenuOpen(false);
+                      setCurrentPage(1);
+                    }}
+                    className={`text-left px-4 py-2 font-mono text-xs font-bold tracking-widest uppercase transition-colors border-l-2 ${
+                      mesesHistorial === m
+                        ? "border-[#FF5A00] text-[#FF5A00] bg-[#FF5A00]/10"
+                        : "border-transparent text-zinc-400 hover:text-white hover:bg-zinc-900"
+                    }`}
+                  >
+                    {m} {m === 1 ? "MES ATRÁS" : "MESES ATRÁS"}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         </div>
 
         {/* CONTADOR TOTAL */}
-        <div className="border border-zinc-800 px-4 py-2.5 text-[10px] md:text-xs text-zinc-500 font-mono tracking-widest flex items-center gap-2 bg-[#050505] uppercase font-bold w-full md:w-auto justify-between shrink-0">
+        <div className="border border-zinc-800 px-4 py-2 text-[10px] md:text-xs text-zinc-500 font-mono tracking-widest flex items-center gap-2 bg-[#050505] uppercase font-bold w-full md:w-auto justify-between shrink-0">
           <span className="flex items-center gap-1.5">TOTAL ITEMS:</span>
           <strong className="text-white">
             {processedItems.length} / {items.length}
@@ -413,7 +453,7 @@ export default function Semielaborados() {
               </div>
             </div>
 
-            {/* FILAS DE LA TABLA (Sin divide-y, usando border-b) */}
+            {/* FILAS DE LA TABLA */}
             <div className="flex flex-col bg-black">
               {loading ? (
                 <div className="py-12 flex justify-center text-[#FF5A00]">
