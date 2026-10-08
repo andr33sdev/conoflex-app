@@ -312,7 +312,7 @@ export default function Proveedores() {
         </div>
 
         {/* CONTADOR TOTAL */}
-        <div className="border border-zinc-800 px-4 py-2 text-[10px] md:text-xs text-zinc-500 font-mono tracking-widest flex items-center gap-2 bg-[#050505] uppercase font-bold w-full sm:w-auto justify-between shrink-0">
+        <div className="border border-zinc-800 px-4 py-2 text-[10px] md:text-xs text-zinc-500   tracking-widest flex items-center gap-2 bg-[#050505] uppercase font-bold w-full sm:w-auto justify-between shrink-0">
           <span className="flex items-center gap-1.5">TOTAL REGISTROS:</span>
           <strong className="text-white">
             {processedProveedores.length} / {proveedores.length}
@@ -328,7 +328,7 @@ export default function Proveedores() {
         >
           <div className="w-full border border-zinc-800/90 bg-[#030303] flex flex-col overflow-hidden shadow-2xl h-fit">
             {/* CABECERA INDUSTRIAL (160px | 1fr | 180px | 200px | 110px | 70px) */}
-            <div className="grid grid-cols-[160px_1fr_180px_200px_110px_70px] h-12 bg-[#080808] border-b border-zinc-800/90 items-center text-zinc-400 font-mono text-[10px] font-extrabold uppercase tracking-widest shrink-0 select-none">
+            <div className="grid grid-cols-[160px_1fr_180px_200px_110px_70px] h-12 bg-[#080808] border-b border-zinc-800/90 items-center text-zinc-400   text-[10px] font-extrabold uppercase tracking-widest shrink-0 select-none">
               <div
                 onClick={() => handleSort("cuit")}
                 className="px-4 flex items-center justify-between cursor-pointer hover:text-[#FF5A00] transition-colors"
@@ -427,7 +427,7 @@ export default function Proveedores() {
                     }}
                     className="grid grid-cols-[160px_1fr_180px_200px_110px_70px] h-12 items-center border-b border-zinc-800/80 last:border-b-0 hover:bg-[#0a0a0a] transition-colors duration-150 group cursor-pointer text-xs shrink-0"
                   >
-                    <div className="px-4 font-mono font-bold truncate">
+                    <div className="px-4   font-bold truncate">
                       <span className="text-[#FF5A00] bg-[#FF5A00]/10 border border-[#FF5A00]/25 px-2 py-0.5 text-xs group-hover:bg-[#FF5A00] group-hover:text-black transition-colors inline-block max-w-full truncate">
                         {p.cuit || "S/D"}
                       </span>
@@ -437,7 +437,7 @@ export default function Proveedores() {
                       {p.nombre}
                     </div>
 
-                    <div className="px-3 flex flex-col text-zinc-400 font-mono text-[10px] truncate">
+                    <div className="px-3 flex flex-col text-zinc-400   text-[10px] truncate">
                       <span className="truncate text-white font-medium">
                         {p.contacto || "--"}
                       </span>
@@ -446,11 +446,11 @@ export default function Proveedores() {
                       </span>
                     </div>
 
-                    <div className="px-3 text-zinc-400 font-mono text-[10px] truncate">
+                    <div className="px-3 text-zinc-400   text-[10px] truncate">
                       {p.email || "--"}
                     </div>
 
-                    <div className="px-4 flex justify-center font-mono font-bold tracking-widest uppercase text-[10px]">
+                    <div className="px-4 flex justify-center   font-bold tracking-widest uppercase text-[10px]">
                       <span
                         className={`px-2 py-0.5 border ${
                           (p.estado || "ACTIVO") === "ACTIVO"
@@ -480,7 +480,7 @@ export default function Proveedores() {
 
         {/* 5. PAGINACIÓN DESKTOP */}
         {processedProveedores.length > 0 && (
-          <div className="mt-4 flex items-center justify-between font-mono text-xs text-zinc-500 shrink-0">
+          <div className="mt-4 flex items-center justify-between   text-xs text-zinc-500 shrink-0">
             <span className="uppercase text-[10px] font-bold tracking-widest text-zinc-400">
               Página <strong className="text-white">{currentPage}</strong> de{" "}
               <strong className="text-white">{totalPages}</strong> (
@@ -549,12 +549,12 @@ export default function Proveedores() {
               className="bg-[#050505] border border-zinc-800/80 p-4 space-y-3 shrink-0 cursor-pointer active:scale-[0.99] transition-transform shadow-md"
             >
               <div className="flex justify-between items-start">
-                <span className="bg-[#FF5A00]/10 border border-[#FF5A00]/20 text-[#FF5A00] px-1.5 py-0.5 text-[10px] font-mono font-bold tracking-widest">
+                <span className="bg-[#FF5A00]/10 border border-[#FF5A00]/20 text-[#FF5A00] px-1.5 py-0.5 text-[10px]   font-bold tracking-widest">
                   {p.cuit || "S/D"}
                 </span>
 
                 <span
-                  className={`text-[9px] font-mono border px-2 py-0.5 font-bold uppercase tracking-widest ${
+                  className={`text-[9px]   border px-2 py-0.5 font-bold uppercase tracking-widest ${
                     (p.estado || "ACTIVO") === "ACTIVO"
                       ? "text-emerald-400 border-emerald-500/30 bg-emerald-500/10"
                       : "text-zinc-600 border-zinc-800 bg-zinc-900"
@@ -568,7 +568,7 @@ export default function Proveedores() {
                 {p.nombre}
               </div>
 
-              <div className="grid grid-cols-2 gap-2 pt-3 border-t border-zinc-800/50 text-[10px] font-mono text-zinc-400">
+              <div className="grid grid-cols-2 gap-2 pt-3 border-t border-zinc-800/50 text-[10px]   text-zinc-400">
                 <div>
                   <span className="text-zinc-600 block">CONTACTO:</span>
                   <strong className="text-zinc-200">
@@ -586,7 +586,7 @@ export default function Proveedores() {
               <div className="flex justify-end pt-2">
                 <button
                   onClick={(e) => handleOpenEditar(p, e)}
-                  className="px-3 py-1.5 border border-zinc-800 text-zinc-400 hover:text-white font-mono text-[9px] font-bold uppercase tracking-widest flex items-center gap-1.5"
+                  className="px-3 py-1.5 border border-zinc-800 text-zinc-400 hover:text-white   text-[9px] font-bold uppercase tracking-widest flex items-center gap-1.5"
                 >
                   <Edit2 size={10} /> EDITAR
                 </button>
@@ -607,7 +607,7 @@ export default function Proveedores() {
                 <ChevronLeft size={16} />
               </button>
 
-              <span className="px-3 h-8 flex items-center bg-[#FF5A00]/10 border border-[#FF5A00]/30 text-[#FF5A00] font-bold text-xs font-mono">
+              <span className="px-3 h-8 flex items-center bg-[#FF5A00]/10 border border-[#FF5A00]/30 text-[#FF5A00] font-bold text-xs  ">
                 {currentPage} / {totalPages}
               </span>
 
@@ -642,11 +642,11 @@ export default function Proveedores() {
 
             <div className="flex flex-col gap-4">
               <div className="flex items-center justify-between pr-8">
-                <span className="text-[10px] font-mono font-bold text-[#FF5A00] bg-[#FF5A00]/10 px-2 py-0.5 border border-[#FF5A00]/20 tracking-widest uppercase">
+                <span className="text-[10px]   font-bold text-[#FF5A00] bg-[#FF5A00]/10 px-2 py-0.5 border border-[#FF5A00]/20 tracking-widest uppercase">
                   FICHA DE PROVEEDOR
                 </span>
                 <span
-                  className={`text-[10px] font-mono tracking-widest uppercase font-bold border px-2 py-0.5 ${
+                  className={`text-[10px]   tracking-widest uppercase font-bold border px-2 py-0.5 ${
                     (detailProveedor.estado || "ACTIVO") === "ACTIVO"
                       ? "text-emerald-400 border-emerald-500/30 bg-emerald-500/10"
                       : "text-zinc-600 border-zinc-800 bg-zinc-900"
@@ -661,7 +661,7 @@ export default function Proveedores() {
                   <Building2 size={28} className="text-[#FF5A00]" />
                   {detailProveedor.nombre}
                 </h3>
-                <p className="text-xs font-mono text-zinc-500 font-bold mt-1 tracking-widest">
+                <p className="text-xs   text-zinc-500 font-bold mt-1 tracking-widest">
                   CUIT: {detailProveedor.cuit || "NO REGISTRADO"}
                 </p>
               </div>
@@ -670,7 +670,7 @@ export default function Proveedores() {
             <div className="w-full h-px bg-zinc-800/80"></div>
 
             {/* DATOS DE CONTACTO */}
-            <div className="grid grid-cols-2 gap-4 font-mono text-xs">
+            <div className="grid grid-cols-2 gap-4   text-xs">
               <div className="bg-black p-4 border border-zinc-800 flex flex-col gap-1">
                 <span className="text-[9px] text-zinc-500 flex items-center gap-1 font-bold">
                   <User size={12} /> PERSONA DE CONTACTO
@@ -710,7 +710,7 @@ export default function Proveedores() {
 
             {/* INSUMOS PROVEÍDOS */}
             <div className="bg-black border border-zinc-800 p-4 space-y-3">
-              <div className="flex justify-between items-center font-mono font-bold uppercase tracking-widest text-[10px]">
+              <div className="flex justify-between items-center   font-bold uppercase tracking-widest text-[10px]">
                 <span className="text-zinc-500 flex items-center gap-1.5">
                   <Package size={14} className="text-[#FFD700]" /> MATERIAS
                   PRIMAS PROVEÍDAS
@@ -726,14 +726,14 @@ export default function Proveedores() {
                     <RefreshCw className="animate-spin mx-auto" size={18} />
                   </div>
                 ) : linkedInsumos.length === 0 ? (
-                  <p className="text-[10px] text-zinc-600 font-mono italic">
+                  <p className="text-[10px] text-zinc-600   italic">
                     Este proveedor no tiene materias primas vinculadas.
                   </p>
                 ) : (
                   linkedInsumos.map((item) => (
                     <div
                       key={item.id}
-                      className="p-2.5 bg-[#050505] border border-zinc-800/80 flex items-center justify-between text-xs font-mono"
+                      className="p-2.5 bg-[#050505] border border-zinc-800/80 flex items-center justify-between text-xs  "
                     >
                       <div className="flex items-center gap-2 truncate pr-2">
                         <span className="text-[#FF5A00] font-bold text-[10px]">
@@ -768,7 +768,7 @@ export default function Proveedores() {
 
             <div className="flex flex-col gap-2 border-b border-zinc-800/80 pb-4">
               <div className="flex items-center justify-between pr-8">
-                <span className="text-[10px] font-mono font-bold text-zinc-400 bg-zinc-900 border border-zinc-800 px-2 py-0.5 tracking-widest uppercase">
+                <span className="text-[10px]   font-bold text-zinc-400 bg-zinc-900 border border-zinc-800 px-2 py-0.5 tracking-widest uppercase">
                   {editingProveedor ? "EDITAR PROVEEDOR" : "NUEVO PROVEEDOR"}
                 </span>
               </div>
@@ -781,7 +781,7 @@ export default function Proveedores() {
 
             <form
               onSubmit={handleSaveForm}
-              className="flex flex-col gap-4 font-mono text-xs"
+              className="flex flex-col gap-4   text-xs"
             >
               {/* RAZÓN SOCIAL */}
               <div className="flex flex-col gap-1.5">

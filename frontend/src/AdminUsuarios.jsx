@@ -376,11 +376,11 @@ export default function AdminUsuarios() {
                   >
                     <td className="py-3 px-4 font-semibold text-slate-200">
                       {u.nombre}
-                      <span className="block text-[10px] text-slate-500 font-mono">
+                      <span className="block text-[10px] text-slate-500  ">
                         ID: #{u.id}
                       </span>
                     </td>
-                    <td className="py-3 px-4 text-slate-300 font-mono">
+                    <td className="py-3 px-4 text-slate-300  ">
                       {u.email}
                     </td>
                     <td className="py-3 px-4">
@@ -401,7 +401,7 @@ export default function AdminUsuarios() {
                     <td className="py-3 px-4">
                       <button
                         onClick={() => handleAbrirEditarVendedores(u)}
-                        className="bg-slate-900 border border-slate-800 hover:border-slate-700 text-amber-300 font-mono px-2.5 py-1 rounded-lg text-xs transition-all flex items-center gap-1.5 cursor-pointer"
+                        className="bg-slate-900 border border-slate-800 hover:border-slate-700 text-amber-300   px-2.5 py-1 rounded-lg text-xs transition-all flex items-center gap-1.5 cursor-pointer"
                       >
                         <Briefcase size={12} className="text-amber-400" />
                         {u.vendedores && u.vendedores.length > 0
@@ -636,7 +636,7 @@ export default function AdminUsuarios() {
                               vendedores: nuevaLista,
                             });
                           }}
-                          className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-mono transition-all cursor-pointer ${
+                          className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs   transition-all cursor-pointer ${
                             checked
                               ? "bg-amber-500/20 border border-amber-500/50 text-amber-300 font-bold"
                               : "bg-slate-900 border border-slate-800 text-slate-400"
@@ -710,7 +710,7 @@ export default function AdminUsuarios() {
                           vendedores: nuevaLista,
                         });
                       }}
-                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-mono transition-all cursor-pointer ${
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs   transition-all cursor-pointer ${
                         checked
                           ? "bg-amber-500/20 border border-amber-500/50 text-amber-300 font-bold"
                           : "bg-slate-900 border border-slate-800 text-slate-400"
@@ -766,7 +766,7 @@ export default function AdminUsuarios() {
                   value={nuevoRolNombre}
                   onChange={(e) => setNuevoRolNombre(e.target.value)}
                   placeholder="Ej: SUPERVISOR, LOGISTICA..."
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-slate-200 focus:outline-none focus:border-cyan-500 uppercase font-mono"
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-slate-200 focus:outline-none focus:border-cyan-500 uppercase  "
                 />
               </div>
 

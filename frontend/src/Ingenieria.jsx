@@ -433,7 +433,7 @@ export default function Ingenieria() {
         </div>
 
         {/* CONTADOR TOTAL */}
-        <div className="border border-zinc-800 px-4 py-2.5 text-[10px] md:text-xs text-zinc-500 font-mono tracking-widest flex items-center gap-2 bg-[#050505] uppercase font-bold w-full sm:w-auto justify-between shrink-0">
+        <div className="border border-zinc-800 px-4 py-2.5 text-[10px] md:text-xs text-zinc-500   tracking-widest flex items-center gap-2 bg-[#050505] uppercase font-bold w-full sm:w-auto justify-between shrink-0">
           <span className="flex items-center gap-1.5">TOTAL REGISTROS:</span>
           <strong className="text-white">
             {processedItems.length} / {currentList.length}
@@ -449,7 +449,7 @@ export default function Ingenieria() {
         >
           <div className="w-full border border-zinc-800/90 bg-[#030303] flex flex-col overflow-hidden shadow-2xl h-fit">
             {/* CABECERA INDUSTRIAL (h-12) */}
-            <div className="grid grid-cols-[220px_1fr_180px_180px] h-12 bg-[#080808] border-b border-zinc-800/90 items-center text-zinc-400 font-mono text-[10px] font-extrabold uppercase tracking-widest shrink-0 select-none">
+            <div className="grid grid-cols-[220px_1fr_180px_180px] h-12 bg-[#080808] border-b border-zinc-800/90 items-center text-zinc-400   text-[10px] font-extrabold uppercase tracking-widest shrink-0 select-none">
               <div
                 onClick={() => handleSort("codigo")}
                 className="px-4 flex items-center justify-between cursor-pointer hover:text-[#FF5A00] transition-colors"
@@ -520,7 +520,7 @@ export default function Ingenieria() {
                     onClick={() => handleOpenParentModal(item, activeTab)}
                     className="grid grid-cols-[220px_1fr_180px_180px] h-12 items-center border-b border-zinc-900/80 last:border-b-0 hover:bg-[#0a0a0a] transition-colors duration-150 group cursor-pointer text-xs shrink-0"
                   >
-                    <div className="px-4 font-mono font-bold truncate">
+                    <div className="px-4   font-bold truncate">
                       <span className="text-[#FF5A00] bg-[#FF5A00]/10 border border-[#FF5A00]/25 px-2 py-0.5 text-xs group-hover:bg-[#FF5A00] group-hover:text-black transition-colors inline-block max-w-full truncate">
                         {item.codigo}
                       </span>
@@ -530,7 +530,7 @@ export default function Ingenieria() {
                       {item.nombre}
                     </div>
 
-                    <div className="px-3 flex justify-center font-mono text-[10px] uppercase font-bold tracking-widest">
+                    <div className="px-3 flex justify-center   text-[10px] uppercase font-bold tracking-widest">
                       <span
                         className={`px-2.5 py-0.5 border ${
                           item.recetas_count > 0
@@ -548,7 +548,7 @@ export default function Ingenieria() {
                           e.stopPropagation();
                           handleOpenParentModal(item, activeTab);
                         }}
-                        className="px-3 py-1 bg-black border border-zinc-800 hover:border-[#FF5A00] text-zinc-300 hover:text-[#FF5A00] font-mono text-[10px] font-bold uppercase tracking-widest transition-colors flex items-center gap-1.5 cursor-pointer"
+                        className="px-3 py-1 bg-black border border-zinc-800 hover:border-[#FF5A00] text-zinc-300 hover:text-[#FF5A00]   text-[10px] font-bold uppercase tracking-widest transition-colors flex items-center gap-1.5 cursor-pointer"
                       >
                         <FileCode2 size={13} /> ABRIR FÓRMULAS
                       </button>
@@ -562,7 +562,7 @@ export default function Ingenieria() {
 
         {/* PAGINACIÓN DESKTOP */}
         {processedItems.length > 0 && (
-          <div className="mt-4 flex items-center justify-between font-mono text-xs text-zinc-500 shrink-0">
+          <div className="mt-4 flex items-center justify-between   text-xs text-zinc-500 shrink-0">
             <span className="uppercase text-[10px] font-bold tracking-widest text-zinc-400">
               Página <strong className="text-white">{currentPage}</strong> de{" "}
               <strong className="text-white">{totalPages}</strong> (
@@ -628,12 +628,12 @@ export default function Ingenieria() {
               className="bg-[#050505] border border-zinc-800/80 p-4 space-y-3 shrink-0 cursor-pointer active:scale-[0.99] transition-transform shadow-md"
             >
               <div className="flex justify-between items-start">
-                <span className="bg-[#FF5A00]/10 border border-[#FF5A00]/20 text-[#FF5A00] px-1.5 py-0.5 text-[10px] font-mono font-bold tracking-widest">
+                <span className="bg-[#FF5A00]/10 border border-[#FF5A00]/20 text-[#FF5A00] px-1.5 py-0.5 text-[10px]   font-bold tracking-widest">
                   {item.codigo}
                 </span>
 
                 <span
-                  className={`text-[9px] font-mono border px-2 py-0.5 font-bold uppercase tracking-widest ${
+                  className={`text-[9px]   border px-2 py-0.5 font-bold uppercase tracking-widest ${
                     item.recetas_count > 0
                       ? "text-emerald-400 border-emerald-500/30 bg-emerald-500/10"
                       : "text-zinc-600 border-zinc-800 bg-black"
@@ -653,7 +653,7 @@ export default function Ingenieria() {
                     e.stopPropagation();
                     handleOpenParentModal(item, activeTab);
                   }}
-                  className="px-3 py-1.5 border border-zinc-800 text-zinc-300 hover:text-[#FF5A00] font-mono text-[9px] font-bold uppercase tracking-widest flex items-center gap-1.5"
+                  className="px-3 py-1.5 border border-zinc-800 text-zinc-300 hover:text-[#FF5A00]   text-[9px] font-bold uppercase tracking-widest flex items-center gap-1.5"
                 >
                   <FileCode2 size={12} /> ABRIR FÓRMULAS
                 </button>
@@ -674,7 +674,7 @@ export default function Ingenieria() {
                 <ChevronLeft size={16} />
               </button>
 
-              <span className="px-3 h-8 flex items-center bg-[#FF5A00]/10 border border-[#FF5A00]/30 text-[#FF5A00] font-bold text-xs font-mono">
+              <span className="px-3 h-8 flex items-center bg-[#FF5A00]/10 border border-[#FF5A00]/30 text-[#FF5A00] font-bold text-xs  ">
                 {currentPage} / {totalPages}
               </span>
 
@@ -707,7 +707,7 @@ export default function Ingenieria() {
 
             <div className="border-b border-zinc-800/80 pb-4 shrink-0 flex justify-between items-start pr-8">
               <div className="space-y-1">
-                <span className="text-[10px] font-mono font-bold text-[#FF5A00] bg-[#FF5A00]/10 px-2 py-0.5 border border-[#FF5A00]/20 tracking-widest uppercase">
+                <span className="text-[10px]   font-bold text-[#FF5A00] bg-[#FF5A00]/10 px-2 py-0.5 border border-[#FF5A00]/20 tracking-widest uppercase">
                   LIBRO DE RECETAS TÉCNICAS
                 </span>
                 <h3 className="text-2xl text-white font-extrabold italic uppercase tracking-tighter flex items-center gap-2">
@@ -721,13 +721,13 @@ export default function Ingenieria() {
 
               <button
                 onClick={() => handleOpenBuilder(null)}
-                className="px-5 py-2.5 bg-[#FFD700] hover:bg-white text-black font-mono text-xs font-bold uppercase tracking-widest transition cursor-pointer flex items-center gap-1.5 shrink-0"
+                className="px-5 py-2.5 bg-[#FFD700] hover:bg-white text-black   text-xs font-bold uppercase tracking-widest transition cursor-pointer flex items-center gap-1.5 shrink-0"
               >
                 <Plus size={16} strokeWidth={3} /> CRAFTEAR RECETA
               </button>
             </div>
 
-            <div className="flex-1 overflow-y-auto space-y-3 pr-1 font-mono text-xs min-h-0 custom-scrollbar">
+            <div className="flex-1 overflow-y-auto space-y-3 pr-1   text-xs min-h-0 custom-scrollbar">
               {loadingRecipes ? (
                 <div className="py-12 flex justify-center text-[#FF5A00] my-auto">
                   <RefreshCw className="animate-spin" size={28} />
@@ -808,7 +808,7 @@ export default function Ingenieria() {
               )}
             </div>
 
-            <div className="pt-4 border-t border-zinc-800 flex justify-end font-mono shrink-0">
+            <div className="pt-4 border-t border-zinc-800 flex justify-end   shrink-0">
               <button
                 onClick={() => setSelectedParent(null)}
                 className="px-5 py-2.5 border border-zinc-800 text-zinc-500 hover:text-white text-[10px] font-bold uppercase tracking-widest transition cursor-pointer"
@@ -834,7 +834,7 @@ export default function Ingenieria() {
             </button>
 
             <div className="border-b border-zinc-800/80 pb-3 shrink-0 pr-8">
-              <span className="text-[10px] font-mono font-bold text-[#FF5A00] bg-[#FF5A00]/10 px-2 py-0.5 border border-[#FF5A00]/20 tracking-widest uppercase">
+              <span className="text-[10px]   font-bold text-[#FF5A00] bg-[#FF5A00]/10 px-2 py-0.5 border border-[#FF5A00]/20 tracking-widest uppercase">
                 MESA DE CRAFTEO & ALQUIMIA TÉCNICA
               </span>
               <h3 className="font-extrabold italic text-xl text-white mt-2 uppercase tracking-tighter flex items-center gap-2">
@@ -847,7 +847,7 @@ export default function Ingenieria() {
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 flex-1 min-h-0 overflow-hidden text-xs">
               {/* COLUMNA IZQUIERDA: INVENTARIO */}
               <div className="lg:col-span-5 bg-black border border-zinc-800 p-4 flex flex-col space-y-3 h-full min-h-0">
-                <div className="flex items-center justify-between border-b border-zinc-800/80 pb-2.5 shrink-0 font-mono">
+                <div className="flex items-center justify-between border-b border-zinc-800/80 pb-2.5 shrink-0  ">
                   <span className="text-white font-bold text-[10px] uppercase tracking-widest flex items-center gap-1.5">
                     <Package size={14} className="text-[#FF5A00]" /> INVENTARIO
                     DE INSUMOS
@@ -857,7 +857,7 @@ export default function Ingenieria() {
                     <button
                       type="button"
                       onClick={() => setBuilderCatalogType("MP")}
-                      className={`px-3 py-1 text-[10px] font-mono font-bold cursor-pointer uppercase tracking-widest ${
+                      className={`px-3 py-1 text-[10px]   font-bold cursor-pointer uppercase tracking-widest ${
                         builderCatalogType === "MP"
                           ? "bg-[#FF5A00] text-black"
                           : "text-zinc-500 hover:text-white"
@@ -868,7 +868,7 @@ export default function Ingenieria() {
                     <button
                       type="button"
                       onClick={() => setBuilderCatalogType("SE")}
-                      className={`px-3 py-1 text-[10px] font-mono font-bold cursor-pointer uppercase tracking-widest ${
+                      className={`px-3 py-1 text-[10px]   font-bold cursor-pointer uppercase tracking-widest ${
                         builderCatalogType === "SE"
                           ? "bg-[#FF5A00] text-black"
                           : "text-zinc-500 hover:text-white"
@@ -879,7 +879,7 @@ export default function Ingenieria() {
                   </div>
                 </div>
 
-                <div className="relative shrink-0 font-mono">
+                <div className="relative shrink-0  ">
                   <Search
                     size={13}
                     className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-600"
@@ -893,7 +893,7 @@ export default function Ingenieria() {
                   />
                 </div>
 
-                <div className="flex-1 overflow-y-auto space-y-1.5 pr-1 h-full min-h-0 custom-scrollbar font-mono">
+                <div className="flex-1 overflow-y-auto space-y-1.5 pr-1 h-full min-h-0 custom-scrollbar  ">
                   {availableCatalogItems.length === 0 ? (
                     <div className="h-full flex items-center justify-center text-zinc-600 text-[10px] uppercase tracking-widest font-bold">
                       Sin insumos encontrados.
@@ -932,7 +932,7 @@ export default function Ingenieria() {
                           <button
                             type="button"
                             disabled={isAlreadyInRecipe}
-                            className={`px-2.5 py-1 text-[9px] font-mono font-bold uppercase tracking-widest border shrink-0 flex items-center gap-1 cursor-pointer ${
+                            className={`px-2.5 py-1 text-[9px]   font-bold uppercase tracking-widest border shrink-0 flex items-center gap-1 cursor-pointer ${
                               isAlreadyInRecipe
                                 ? "bg-black border-zinc-800 text-zinc-600"
                                 : "bg-[#FFD700] hover:bg-white text-black border-[#FFD700]"
@@ -950,7 +950,7 @@ export default function Ingenieria() {
 
               {/* COLUMNA DERECHA: FÓRMULA MAESTRA */}
               <div className="lg:col-span-7 bg-black border border-zinc-800 p-4 flex flex-col space-y-3 h-full min-h-0">
-                <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 bg-[#050505] p-3 border border-zinc-800 shrink-0 font-mono">
+                <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 bg-[#050505] p-3 border border-zinc-800 shrink-0  ">
                   <div className="sm:col-span-8 space-y-1">
                     <label className="text-zinc-500 text-[9px] font-bold uppercase tracking-widest block">
                       VERSIÓN DE FÓRMULA:
@@ -987,7 +987,7 @@ export default function Ingenieria() {
                   </div>
                 </div>
 
-                <div className="flex justify-between items-center border-b border-zinc-800/80 pb-2 shrink-0 font-mono">
+                <div className="flex justify-between items-center border-b border-zinc-800/80 pb-2 shrink-0  ">
                   <span className="text-[#FF5A00] font-bold text-[10px] uppercase tracking-widest flex items-center gap-1.5">
                     <Sparkle size={13} className="text-[#FFD700]" /> MATERIALES
                     EN MESA ({recipeForm.ingredientes.length})
@@ -997,7 +997,7 @@ export default function Ingenieria() {
                   </span>
                 </div>
 
-                <div className="flex-1 overflow-y-auto space-y-2 pr-1 h-full min-h-0 font-mono custom-scrollbar">
+                <div className="flex-1 overflow-y-auto space-y-2 pr-1 h-full min-h-0   custom-scrollbar">
                   {recipeForm.ingredientes.length === 0 ? (
                     <div className="h-full flex flex-col items-center justify-center text-zinc-600 space-y-1 my-auto uppercase font-bold tracking-widest text-[10px]">
                       <p>Mesa de crafteo vacía.</p>
@@ -1055,7 +1055,7 @@ export default function Ingenieria() {
               </div>
             </div>
 
-            <div className="pt-4 border-t border-zinc-800 flex justify-end gap-3 font-mono shrink-0">
+            <div className="pt-4 border-t border-zinc-800 flex justify-end gap-3   shrink-0">
               <button
                 type="button"
                 onClick={() => setIsFormBuilderOpen(false)}

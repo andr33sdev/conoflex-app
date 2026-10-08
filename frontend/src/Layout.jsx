@@ -113,7 +113,7 @@ export default function Layout({
                 <h1 className="font-extrabold italic text-base tracking-tighter text-white uppercase leading-none">
                   CONOFLEX
                 </h1>
-                <p className="text-[9px] text-[#FF5A00] font-mono font-bold tracking-widest flex items-center gap-1.5 mt-1 uppercase">
+                <p className="text-[9px] text-[#FF5A00]   font-bold tracking-widest flex items-center gap-1.5 mt-1 uppercase">
                   <span className="w-1.5 h-1.5 rounded-full bg-[#FF5A00] shadow-[0_0_8px_#FF5A00]" />
                   GESTIÓN INDUSTRIAL
                 </p>
@@ -122,7 +122,7 @@ export default function Layout({
 
             {/* NAVEGACIÓN */}
             <nav className="space-y-1">
-              <span className="px-2 text-[10px] font-mono font-bold uppercase text-zinc-600 tracking-widest block mb-2">
+              <span className="px-2 text-[10px]   font-bold uppercase text-zinc-600 tracking-widest block mb-2">
                 Módulos del Sistema
               </span>
               <div className="space-y-1 overflow-y-auto max-h-[52vh] pr-1 scrollbar-none">
@@ -165,7 +165,7 @@ export default function Layout({
                 <p className="text-xs font-bold text-white truncate">
                   {usuarioActual.nombre || usuarioActual.email || "Usuario"}
                 </p>
-                <p className="text-[9px] font-mono font-bold text-[#FF5A00] uppercase tracking-widest truncate">
+                <p className="text-[9px]   font-bold text-[#FF5A00] uppercase tracking-widest truncate">
                   {usuarioActual.rol}
                 </p>
               </div>
@@ -173,7 +173,7 @@ export default function Layout({
 
             <button
               onClick={onLogout}
-              className="w-full bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-400 text-[10px] font-mono font-bold py-2 rounded-xl flex items-center justify-center gap-2 transition-all cursor-pointer active:scale-95 uppercase tracking-wider"
+              className="w-full bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-400 text-[10px]   font-bold py-2 rounded-xl flex items-center justify-center gap-2 transition-all cursor-pointer active:scale-95 uppercase tracking-wider"
             >
               <LogOut size={13} />
               <span>Cerrar Sesión</span>
@@ -201,7 +201,7 @@ export default function Layout({
                     <h1 className="font-extrabold italic text-sm tracking-tighter text-white uppercase truncate">
                       CONOFLEX
                     </h1>
-                    <p className="text-[9px] text-[#FF5A00] font-mono font-bold tracking-widest flex items-center gap-1 mt-0.5 uppercase truncate">
+                    <p className="text-[9px] text-[#FF5A00]   font-bold tracking-widest flex items-center gap-1 mt-0.5 uppercase truncate">
                       <span className="w-1.5 h-1.5 rounded-full bg-[#FF5A00] shrink-0" />
                       GESTIÓN INDUSTRIAL
                     </p>
@@ -209,7 +209,7 @@ export default function Layout({
                 </div>
 
                 <nav className="space-y-1">
-                  <span className="px-2 text-[10px] font-mono uppercase text-zinc-600 font-bold tracking-widest block mb-2">
+                  <span className="px-2 text-[10px]   uppercase text-zinc-600 font-bold tracking-widest block mb-2">
                     Módulos del Sistema
                   </span>
                   <div className="space-y-1 max-h-[60vh] overflow-y-auto scrollbar-none pr-1">
@@ -247,7 +247,7 @@ export default function Layout({
                     <p className="text-xs font-bold text-white truncate">
                       {usuarioActual.nombre || usuarioActual.email || "Usuario"}
                     </p>
-                    <p className="text-[9px] font-mono text-[#FF5A00] uppercase tracking-widest truncate">
+                    <p className="text-[9px]   text-[#FF5A00] uppercase tracking-widest truncate">
                       {usuarioActual.rol}
                     </p>
                   </div>
@@ -255,7 +255,7 @@ export default function Layout({
 
                 <button
                   onClick={onLogout}
-                  className="w-full bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-400 text-[10px] font-mono font-bold py-2 rounded-xl flex items-center justify-center gap-2 transition"
+                  className="w-full bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-400 text-[10px]   font-bold py-2 rounded-xl flex items-center justify-center gap-2 transition"
                 >
                   <LogOut size={13} />
                   <span>Cerrar Sesión</span>
@@ -280,7 +280,7 @@ export default function Layout({
                 <span className="text-white font-extrabold italic text-sm uppercase tracking-tighter truncate">
                   {activeModule.replace("-", " ")}
                 </span>
-                <span className="text-[9px] text-[#FF5A00] font-mono tracking-widest font-bold uppercase truncate">
+                <span className="text-[9px] text-[#FF5A00]   tracking-widest font-bold uppercase truncate">
                   Conoflex App
                 </span>
               </div>

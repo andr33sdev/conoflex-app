@@ -3803,36 +3803,51 @@ app.post("/api/solicitudes-internas", async (req, res) => {
   }
 });
 
-// 3. CAMBIAR ESTADO DE UNA SOLICITUD
-app.put("/api/solicitudes-internas/:id/estado", async (req, res) => {
-  const { id } = req.params;
-  const { estado, atendidoAt, disponibleAt, entregadoAt } = req.body;
-
+// PUT: EDITAR SOLICITUD INTERNA
+app.put("/api/solicitudes-internas/:id", async (req, res) => {
   try {
-    let query = "UPDATE solicitudes_internas SET estado = ?";
-    const params = [estado];
+    const { id } = req.params;
+    const cantidad =
+      req.body.cantidadSolicitada || req.body.cantidad_solicitada;
+    const urgencia = req.body.urgencia;
+    const motivo =
+      req.body.motivoUso || req.body.motivo_uso || req.body.motivo || "";
 
-    if (atendidoAt) {
-      query += ", atendido_at = ?";
-      params.push(atendidoAt);
-    }
-    if (disponibleAt) {
-      query += ", disponible_at = ?";
-      params.push(disponibleAt);
-    }
-    if (entregadoAt) {
-      query += ", entregado_at = ?";
-      params.push(entregadoAt);
+    if (!id || id === "undefined") {
+      return res.status(400).json({ error: "ID de solicitud no válido." });
     }
 
-    query += " WHERE id = ?";
-    params.push(id);
+    // Acepta tanto "SOL-1" como "1"
+    const cleanNumId = String(id).replace(/^SOL-/i, "");
 
-    await db.query(query, params);
+    const query = `
+      UPDATE solicitudes_internas 
+      SET cantidad_solicitada = ?, 
+          urgencia = ?, 
+          motivo_uso = ? 
+      WHERE id = ? OR id = ?
+    `;
+
+    const [result] = await db.query(query, [
+      cantidad,
+      urgencia,
+      motivo,
+      id,
+      cleanNumId,
+    ]);
+
+    if (result.affectedRows === 0) {
+      return res
+        .status(404)
+        .json({ error: "No se encontró la solicitud para actualizar." });
+    }
+
     res.json({ success: true });
   } catch (error) {
-    console.error("Error al actualizar estado:", error);
-    res.status(500).json({ error: error.message });
+    console.error("Error al editar solicitud:", error);
+    res
+      .status(500)
+      .json({ error: "Error interno en el servidor al editar la solicitud." });
   }
 });
 

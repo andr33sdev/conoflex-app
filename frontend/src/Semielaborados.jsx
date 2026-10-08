@@ -344,7 +344,7 @@ export default function Semielaborados() {
                       setIsMesesMenuOpen(false);
                       setCurrentPage(1);
                     }}
-                    className={`text-left px-4 py-2 font-mono text-xs font-bold tracking-widest uppercase transition-colors border-l-2 ${
+                    className={`text-left px-4 py-2   text-xs font-bold tracking-widest uppercase transition-colors border-l-2 ${
                       mesesHistorial === m
                         ? "border-[#FF5A00] text-[#FF5A00] bg-[#FF5A00]/10"
                         : "border-transparent text-zinc-400 hover:text-white hover:bg-zinc-900"
@@ -359,7 +359,7 @@ export default function Semielaborados() {
         </div>
 
         {/* CONTADOR TOTAL */}
-        <div className="border border-zinc-800 px-4 py-2 text-[10px] md:text-xs text-zinc-500 font-mono tracking-widest flex items-center gap-2 bg-[#050505] uppercase font-bold w-full md:w-auto justify-between shrink-0">
+        <div className="border border-zinc-800 px-4 py-2 text-[10px] md:text-xs text-zinc-500   tracking-widest flex items-center gap-2 bg-[#050505] uppercase font-bold w-full md:w-auto justify-between shrink-0">
           <span className="flex items-center gap-1.5">TOTAL ITEMS:</span>
           <strong className="text-white">
             {processedItems.length} / {items.length}
@@ -375,7 +375,7 @@ export default function Semielaborados() {
         >
           <div className="w-full border border-zinc-800/90 bg-[#030303] flex flex-col overflow-hidden shadow-2xl h-fit">
             {/* CABECERA INDUSTRIAL (h-12) */}
-            <div className="grid grid-cols-[180px_1fr_130px_130px_130px] h-12 bg-[#080808] border-b border-zinc-800/90 items-center text-zinc-400 font-mono text-[10px] font-extrabold uppercase tracking-widest shrink-0 select-none">
+            <div className="grid grid-cols-[180px_1fr_130px_130px_130px] h-12 bg-[#080808] border-b border-zinc-800/90 items-center text-zinc-400   text-[10px] font-extrabold uppercase tracking-widest shrink-0 select-none">
               <div
                 onClick={() => handleSort("codigo")}
                 className="px-4 flex items-center justify-between cursor-pointer hover:text-[#FF5A00] transition-colors"
@@ -470,7 +470,7 @@ export default function Semielaborados() {
                     onClick={() => setDetailItem(item)}
                     className="grid grid-cols-[180px_1fr_130px_130px_130px] h-12 items-center border-b border-zinc-900/80 last:border-b-0 hover:bg-[#0a0a0a] transition-colors duration-150 group cursor-pointer text-xs shrink-0"
                   >
-                    <div className="px-4 font-mono font-bold truncate">
+                    <div className="px-4   font-bold truncate">
                       <span className="text-[#FF5A00] bg-[#FF5A00]/10 border border-[#FF5A00]/25 px-2 py-0.5 text-xs group-hover:bg-[#FF5A00] group-hover:text-black transition-colors inline-block max-w-full truncate">
                         {item.codigo}
                       </span>
@@ -480,13 +480,13 @@ export default function Semielaborados() {
                       {item.nombre}
                     </div>
 
-                    <div className="px-3 flex justify-center text-zinc-500 text-[11px] font-mono truncate">
+                    <div className="px-3 flex justify-center text-zinc-500 text-[11px]   truncate">
                       {item.demanda_mensual
                         ? `${item.demanda_mensual.toLocaleString()} u.`
                         : "--"}
                     </div>
 
-                    <div className="px-3 flex justify-center font-mono text-[11px] whitespace-nowrap">
+                    <div className="px-3 flex justify-center   text-[11px] whitespace-nowrap">
                       {item.dias_stock !== null ? (
                         <span
                           className={`inline-block font-bold px-2.5 py-0.5 border text-[10px] ${
@@ -504,7 +504,7 @@ export default function Semielaborados() {
                       )}
                     </div>
 
-                    <div className="px-4 flex justify-end font-mono">
+                    <div className="px-4 flex justify-end  ">
                       <span
                         className={`font-bold text-xs px-2.5 py-0.5 border ${
                           item.stockMostrado <= 0
@@ -526,7 +526,7 @@ export default function Semielaborados() {
 
         {/* PAGINACIÓN DESKTOP */}
         {processedItems.length > 0 && (
-          <div className="mt-4 flex items-center justify-between font-mono text-xs text-zinc-500 shrink-0">
+          <div className="mt-4 flex items-center justify-between   text-xs text-zinc-500 shrink-0">
             <span className="uppercase text-[10px] font-bold tracking-widest text-zinc-400">
               Página <strong className="text-white">{currentPage}</strong> de{" "}
               <strong className="text-white">{totalPages}</strong> (
@@ -592,11 +592,11 @@ export default function Semielaborados() {
               className="bg-[#050505] border border-zinc-800/80 p-4 space-y-3 shrink-0 cursor-pointer active:scale-[0.99] transition-transform shadow-md"
             >
               <div className="flex justify-between items-start">
-                <span className="bg-[#FF5A00]/10 border border-[#FF5A00]/20 text-[#FF5A00] px-1.5 py-0.5 text-[10px] font-mono font-bold tracking-widest">
+                <span className="bg-[#FF5A00]/10 border border-[#FF5A00]/20 text-[#FF5A00] px-1.5 py-0.5 text-[10px]   font-bold tracking-widest">
                   {item.codigo}
                 </span>
                 {item.dias_stock !== null && (
-                  <span className="text-[9px] font-mono text-[#FFD700] font-bold tracking-widest uppercase border border-zinc-800 px-1.5 py-0.5">
+                  <span className="text-[9px]   text-[#FFD700] font-bold tracking-widest uppercase border border-zinc-800 px-1.5 py-0.5">
                     {item.dias_stock} días
                   </span>
                 )}
@@ -606,7 +606,7 @@ export default function Semielaborados() {
                 {item.nombre}
               </div>
 
-              <div className="flex justify-between items-center pt-3 border-t border-zinc-800/80 font-mono text-[10px] font-bold tracking-widest uppercase">
+              <div className="flex justify-between items-center pt-3 border-t border-zinc-800/80   text-[10px] font-bold tracking-widest uppercase">
                 <span className="text-zinc-500">
                   Stock ({activeTab}):{" "}
                   <strong
@@ -640,7 +640,7 @@ export default function Semielaborados() {
                 <ChevronLeft size={16} />
               </button>
 
-              <span className="px-3 h-8 flex items-center bg-[#FF5A00]/10 border border-[#FF5A00]/30 text-[#FF5A00] font-bold text-xs font-mono">
+              <span className="px-3 h-8 flex items-center bg-[#FF5A00]/10 border border-[#FF5A00]/30 text-[#FF5A00] font-bold text-xs  ">
                 {currentPage} / {totalPages}
               </span>
 
@@ -675,7 +675,7 @@ export default function Semielaborados() {
 
             <div className="flex flex-col gap-4">
               <div className="flex items-center justify-between pr-8">
-                <span className="text-[10px] font-mono font-bold text-[#FF5A00] bg-[#FF5A00]/10 border border-[#FF5A00]/20 px-2 py-0.5 tracking-widest uppercase">
+                <span className="text-[10px]   font-bold text-[#FF5A00] bg-[#FF5A00]/10 border border-[#FF5A00]/20 px-2 py-0.5 tracking-widest uppercase">
                   FICHA DE SEMIELABORADO
                 </span>
               </div>
@@ -694,7 +694,7 @@ export default function Semielaborados() {
             <div className="w-full h-px bg-zinc-800/80"></div>
 
             {/* DESGLOSE POR DEPÓSITO */}
-            <div className="space-y-2 font-mono text-xs">
+            <div className="space-y-2   text-xs">
               <span className="text-zinc-500 text-[10px] font-bold tracking-widest uppercase block">
                 STOCK POR DEPÓSITO:
               </span>
@@ -720,7 +720,7 @@ export default function Semielaborados() {
 
             {/* ESPECIFICACIÓN TÉCNICA DEL PEGADO */}
             <div className="bg-black border border-zinc-800 p-4 space-y-3">
-              <div className="flex items-center justify-between border-b border-zinc-800/80 pb-2 font-mono">
+              <div className="flex items-center justify-between border-b border-zinc-800/80 pb-2  ">
                 <h4 className="text-[10px] text-[#FFD700] font-bold flex items-center gap-1.5 uppercase tracking-widest">
                   <Sparkle size={14} className="text-cyan-400" /> ESPECIFICACIÓN
                   DE PEGADO
@@ -731,7 +731,7 @@ export default function Semielaborados() {
               </div>
 
               {detailItem.pegado_nombre ? (
-                <div className="grid grid-cols-3 gap-3 font-mono text-xs">
+                <div className="grid grid-cols-3 gap-3   text-xs">
                   <div className="bg-[#050505] p-2.5 border border-zinc-800/80 flex flex-col gap-1">
                     <span className="text-[9px] text-zinc-500 font-bold uppercase tracking-widest">
                       REFLECTIVA:
@@ -768,7 +768,7 @@ export default function Semielaborados() {
                   </div>
                 </div>
               ) : (
-                <p className="text-[10px] text-zinc-500 font-mono py-2 text-center uppercase tracking-widest font-bold">
+                <p className="text-[10px] text-zinc-500   py-2 text-center uppercase tracking-widest font-bold">
                   NO REQUIERE PEGADO
                 </p>
               )}
@@ -789,7 +789,7 @@ export default function Semielaborados() {
             </button>
 
             <div className="border-b border-zinc-800/80 pb-3 shrink-0">
-              <span className="text-[10px] font-mono font-bold text-[#FFD700] bg-[#FFD700]/10 border border-[#FFD700]/20 px-2 py-0.5 tracking-widest uppercase">
+              <span className="text-[10px]   font-bold text-[#FFD700] bg-[#FFD700]/10 border border-[#FFD700]/20 px-2 py-0.5 tracking-widest uppercase">
                 AUDITORÍA DE DEPÓSITOS
               </span>
               <h3 className="font-extrabold italic text-xl text-white mt-3 uppercase tracking-tighter flex items-center gap-2">
@@ -800,7 +800,7 @@ export default function Semielaborados() {
 
             {previewData.nuevos.length === 0 &&
             previewData.modificados.length === 0 ? (
-              <div className="py-12 text-center space-y-3 font-mono my-auto">
+              <div className="py-12 text-center space-y-3   my-auto">
                 <CheckCircle2 size={40} className="mx-auto text-zinc-500" />
                 <p className="text-white text-xs font-bold uppercase tracking-widest">
                   ¡DEPÓSITOS AL DÍA!
@@ -810,7 +810,7 @@ export default function Semielaborados() {
                 </p>
               </div>
             ) : (
-              <div className="space-y-5 font-mono flex-1 overflow-y-auto pr-1 custom-scrollbar">
+              <div className="space-y-5   flex-1 overflow-y-auto pr-1 custom-scrollbar">
                 {/* 1. SECCIÓN NUEVOS */}
                 <div className="bg-black border border-zinc-800 p-4 space-y-3">
                   <div className="flex items-center justify-between border-b border-zinc-800/50 pb-3">
@@ -907,7 +907,7 @@ export default function Semielaborados() {
               </div>
             )}
 
-            <div className="pt-5 border-t border-zinc-800 flex justify-between items-center shrink-0 font-mono">
+            <div className="pt-5 border-t border-zinc-800 flex justify-between items-center shrink-0  ">
               <button
                 onClick={() => setPreviewData(null)}
                 className="px-5 py-2.5 text-zinc-500 hover:text-white text-[10px] font-bold uppercase tracking-widest transition cursor-pointer border border-zinc-800"

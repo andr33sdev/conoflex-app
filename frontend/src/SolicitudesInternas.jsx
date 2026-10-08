@@ -35,6 +35,47 @@ const getNowLocal = () => {
   return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
 };
 
+// HELPER DE FECHA EN HORARIO ARGENTINA (DD/MM/AAAA)
+const formatFechaArg = (fechaRaw) => {
+  if (!fechaRaw || fechaRaw === "--") return "--";
+  try {
+    const d = new Date(fechaRaw);
+    if (isNaN(d.getTime())) {
+      const parts = String(fechaRaw).split(" ")[0].split("T")[0].split("-");
+      return parts.length === 3
+        ? `${parts[2]}/${parts[1]}/${parts[0]}`
+        : fechaRaw;
+    }
+    return new Intl.DateTimeFormat("es-AR", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      timeZone: "America/Argentina/Buenos_Aires",
+    }).format(d);
+  } catch {
+    return String(fechaRaw);
+  }
+};
+
+// HELPER DE HORA EN HORARIO ARGENTINA (HH:mm)
+const formatHoraArg = (fechaRaw) => {
+  if (!fechaRaw || fechaRaw === "--") return "";
+  try {
+    const d = new Date(fechaRaw);
+    if (isNaN(d.getTime())) {
+      return String(fechaRaw).slice(11, 16);
+    }
+    return new Intl.DateTimeFormat("es-AR", {
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+      timeZone: "America/Argentina/Buenos_Aires",
+    }).format(d);
+  } catch {
+    return "";
+  }
+};
+
 export default function SolicitudesInternas({ usuarioActual }) {
   const rolUpper = (usuarioActual?.rol || "ADMIN").toUpperCase();
   const isAdmin = rolUpper === "ADMIN";
@@ -194,6 +235,15 @@ export default function SolicitudesInternas({ usuarioActual }) {
   );
   const limiteAlcanzado = solicitudesActivas.length >= 10;
 
+  // CONTEO DE SOLICITUDES POR ESTADO PARA LAS BADGES EN LOS FILTROS
+  const counts = useMemo(() => {
+    return {
+      SOLICITADO: solicitudes.filter((s) => s.estado === "SOLICITADO").length,
+      ATENDIDO: solicitudes.filter((s) => s.estado === "ATENDIDO").length,
+      DISPONIBLE: solicitudes.filter((s) => s.estado === "DISPONIBLE").length,
+    };
+  }, [solicitudes]);
+
   const handleCrearSolicitud = async (e) => {
     e.preventDefault();
     if (
@@ -295,13 +345,19 @@ export default function SolicitudesInternas({ usuarioActual }) {
     }
   };
 
-  const handleCambiarEstado = async (id, nuevoEstado) => {
+  const handleCambiarEstado = async (sol, nuevoEstado) => {
     if (nuevoEstado === "CANCELADO" && !isAdmin) return;
     if (
       (nuevoEstado === "ATENDIDO" || nuevoEstado === "DISPONIBLE") &&
       !isProduccion
     )
       return;
+
+    const targetId = typeof sol === "object" ? sol.id : sol;
+    if (targetId == null || targetId === "" || targetId === "SOL-") {
+      alert("Esta solicitud no posee un ID válido en la base de datos.");
+      return;
+    }
 
     const now = getNowLocal();
     const payload = { estado: nuevoEstado };
@@ -310,7 +366,9 @@ export default function SolicitudesInternas({ usuarioActual }) {
 
     try {
       const res = await fetch(
-        getApiUrl(`/api/solicitudes-internas/${id}/estado`),
+        getApiUrl(
+          `/api/solicitudes-internas/${encodeURIComponent(targetId)}/estado`,
+        ),
         {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
@@ -395,7 +453,7 @@ export default function SolicitudesInternas({ usuarioActual }) {
   const getUrgenciaStyle = (urgencia, isArchivedState) => {
     if (isArchivedState) return "text-zinc-600 border-zinc-800 bg-black";
     if (urgencia === "ALTA")
-      return "text-[#FF0055] border-[#FF0055]/30 bg-[#FF0055]/10";
+      return "text-[#FF0055] border-[#FF0055]/30 bg-[#FF0055]/10 animate-pulse";
     if (urgencia === "MEDIA")
       return "text-[#FFD700] border-[#FFD700]/30 bg-[#FFD700]/10";
     return "text-zinc-400 border-zinc-800 bg-black";
@@ -434,9 +492,9 @@ export default function SolicitudesInternas({ usuarioActual }) {
     <div className="flex-1 flex flex-col h-full min-h-0 bg-black font-sans text-zinc-200 overflow-hidden relative selection:bg-[#FF5A00]/30">
       {/* BANNER BLOQUEO DE 8HS */}
       {bloqueadoPor8hs && (
-        <div className="bg-[#FF0055]/10 border-b border-[#FF0055]/30 p-2.5 px-4 md:px-6 flex items-center gap-3 text-[#FF0055] text-xs z-20 shrink-0    ">
-          <AlertTriangle size={16} className="shrink-0" />
-          <span className="font-bold tracking-wide uppercase">
+        <div className="bg-[#FF0055]/10 border-b border-[#FF0055]/30 p-2.5 px-4 md:px-6 flex items-center gap-3 text-[#FF0055] text-xs z-20 shrink-0 font-bold">
+          <AlertTriangle size={16} className="animate-pulse shrink-0" />
+          <span className="tracking-wide uppercase">
             ATENCIÓN: TENÉS SOLICITUDES PENDIENTES HACE MÁS DE 8HS.
           </span>
         </div>
@@ -481,33 +539,49 @@ export default function SolicitudesInternas({ usuarioActual }) {
             value={busqueda}
             onChange={(e) => setBusqueda(e.target.value)}
             placeholder="Buscar por ID, artículo o destino..."
-            className="w-full bg-transparent border border-zinc-800 focus:border-[#FF5A00] text-white pl-10 pr-4 py-2.5 text-xs transition-colors outline-none    "
+            className="w-full bg-transparent border border-zinc-800 focus:border-[#FF5A00] text-white pl-10 pr-4 py-2.5 text-xs transition-colors outline-none"
           />
         </div>
 
         <div className="flex items-center gap-4 w-full md:w-auto justify-between md:justify-end">
+          {/* VISTA ESCRITORIO CON BADGES DE CONTEO */}
           <div className="hidden md:flex gap-1 border border-zinc-800 bg-[#050505]">
-            {ESTADOS_OPCIONES.map((est) => (
-              <button
-                key={est}
-                onClick={() => setFiltroEstado(est)}
-                className={`px-4 py-2 text-[10px]     font-bold tracking-widest uppercase transition-all whitespace-nowrap border-r border-zinc-800 last:border-r-0 cursor-pointer ${
-                  filtroEstado === est
-                    ? "bg-[#FF5A00] text-black"
-                    : "text-zinc-500 hover:text-white hover:bg-zinc-900"
-                }`}
-              >
-                {estadoLabel(est)}
-              </button>
-            ))}
+            {ESTADOS_OPCIONES.map((est) => {
+              const count = counts[est];
+              return (
+                <button
+                  key={est}
+                  onClick={() => setFiltroEstado(est)}
+                  className={`relative px-4 py-2 text-[10px] font-bold tracking-widest uppercase transition-all whitespace-nowrap border-r border-zinc-800 last:border-r-0 cursor-pointer ${
+                    filtroEstado === est
+                      ? "bg-[#FF5A00] text-[#050505]"
+                      : "text-zinc-500 hover:text-white hover:bg-zinc-900"
+                  }`}
+                >
+                  <span>{estadoLabel(est)}</span>
+                  {count !== undefined && (
+                    <span
+                      className={`absolute -top-1.5 -right-1 text-[8px] font-mono font-black px-1.5 py-0.5 rounded-full border text-center leading-none ${
+                        filtroEstado === est
+                          ? "bg-black text-[#FF5A00] border-[#FF5A00]"
+                          : "bg-[#FF5A00] text-black border-black shadow"
+                      }`}
+                    >
+                      {count}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
           </div>
 
+          {/* VISTA MOBILE */}
           <div className="md:hidden w-full relative">
             <button
               onClick={() => setIsFiltroMenuOpen(!isFiltroMenuOpen)}
               className="w-full flex items-center justify-between bg-[#050505] border border-zinc-800 px-4 py-2.5 text-xs font-bold tracking-widest uppercase text-white transition-colors"
             >
-              <div className="flex items-center gap-2.5    ">
+              <div className="flex items-center gap-2.5">
                 <Filter size={14} className="text-[#FF5A00]" />
                 <span className="text-zinc-500">ESTADO:</span>
                 <span className="text-[#FF5A00]">
@@ -521,28 +595,36 @@ export default function SolicitudesInternas({ usuarioActual }) {
             </button>
 
             {isFiltroMenuOpen && (
-              <div className="absolute top-full left-0 w-full mt-1 bg-[#050505] border border-zinc-800 shadow-2xl z-50 flex flex-col    ">
-                {ESTADOS_OPCIONES.map((est) => (
-                  <button
-                    key={est}
-                    onClick={() => {
-                      setFiltroEstado(est);
-                      setIsFiltroMenuOpen(false);
-                    }}
-                    className={`text-left px-4 py-3 text-xs font-bold tracking-widest uppercase border-l-2 ${
-                      filtroEstado === est
-                        ? "border-[#FF5A00] text-[#FF5A00] bg-[#FF5A00]/10"
-                        : "border-transparent text-zinc-400 hover:text-white hover:bg-zinc-900"
-                    }`}
-                  >
-                    {estadoLabel(est)}
-                  </button>
-                ))}
+              <div className="absolute top-full left-0 w-full mt-1 bg-[#050505] border border-zinc-800 shadow-2xl z-50 flex flex-col">
+                {ESTADOS_OPCIONES.map((est) => {
+                  const count = counts[est];
+                  return (
+                    <button
+                      key={est}
+                      onClick={() => {
+                        setFiltroEstado(est);
+                        setIsFiltroMenuOpen(false);
+                      }}
+                      className={`text-left px-4 py-3 text-xs font-bold tracking-widest uppercase border-l-2 flex justify-between items-center ${
+                        filtroEstado === est
+                          ? "border-[#FF5A00] text-[#FF5A00] bg-[#FF5A00]/10"
+                          : "border-transparent text-zinc-400 hover:text-white hover:bg-zinc-900"
+                      }`}
+                    >
+                      <span>{estadoLabel(est)}</span>
+                      {count !== undefined && (
+                        <span className="bg-[#FF5A00]/20 text-[#FF5A00] border border-[#FF5A00]/40 px-1.5 py-0.5 text-[9px] font-mono font-extrabold rounded">
+                          {count}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
               </div>
             )}
           </div>
 
-          <div className="flex items-center border border-zinc-800 bg-[#050505] shrink-0    ">
+          <div className="flex items-center border border-zinc-800 bg-[#050505] shrink-0">
             <button
               onClick={() => setVistaMode("TARJETAS")}
               title="Vista en Tarjetas"
@@ -578,7 +660,7 @@ export default function SolicitudesInternas({ usuarioActual }) {
             <RefreshCw className="animate-spin" size={28} />
           </div>
         ) : currentItems.length === 0 ? (
-          <div className="flex justify-center items-center flex-1 text-zinc-600    ">
+          <div className="flex justify-center items-center flex-1 text-zinc-600">
             <p className="uppercase tracking-widest text-xs font-bold">
               No hay solicitudes registradas en esta vista.
             </p>
@@ -605,7 +687,7 @@ export default function SolicitudesInternas({ usuarioActual }) {
                       : "border-zinc-800 bg-[#050505] hover:border-[#FF5A00]/50"
                   } ${activeActionMenuId === s.id ? "z-50" : "z-10"}`}
                 >
-                  <div className="flex justify-between items-start border-b border-zinc-800/80 pb-2.5    ">
+                  <div className="flex justify-between items-start border-b border-zinc-800/80 pb-2.5">
                     <div className="flex flex-col gap-1 min-w-0">
                       <div className="flex items-center gap-1.5 flex-wrap">
                         <span
@@ -625,14 +707,12 @@ export default function SolicitudesInternas({ usuarioActual }) {
                         </span>
                       </div>
 
-                      <div className="text-zinc-600 text-[9px] leading-tight">
+                      <div className="text-zinc-600 text-[9px] leading-tight font-bold">
                         <span>
-                          {s.solicitadoAt ? s.solicitadoAt.slice(0, 10) : ""}
+                          {formatFechaArg(s.solicitadoAt || s.solicitado_at)}
                         </span>
                         <span className="ml-1">
-                          {s.solicitadoAt
-                            ? s.solicitadoAt.slice(11, 16) + " HS"
-                            : ""}
+                          {formatHoraArg(s.solicitadoAt || s.solicitado_at)} HS
                         </span>
                       </div>
                     </div>
@@ -647,7 +727,7 @@ export default function SolicitudesInternas({ usuarioActual }) {
                   {/* CÓDIGO Y NOMBRE */}
                   <div className="flex items-center gap-2.5">
                     <span
-                      className={`px-1.5 py-0.5 text-[9px]     font-bold tracking-widest shrink-0 ${
+                      className={`px-1.5 py-0.5 text-[9px] font-bold tracking-widest shrink-0 ${
                         archived
                           ? "text-zinc-600 bg-zinc-900 border border-zinc-800"
                           : "text-[#FF5A00] bg-[#FF5A00]/10 border border-[#FF5A00]/20"
@@ -666,7 +746,7 @@ export default function SolicitudesInternas({ usuarioActual }) {
 
                   {/* BARRAS Y CANTIDADES */}
                   <div>
-                    <div className="flex justify-between text-[9px] text-zinc-500     mb-1.5 uppercase tracking-wider font-bold">
+                    <div className="flex justify-between text-[9px] text-zinc-500 mb-1.5 uppercase tracking-wider font-bold">
                       <span>
                         Retirado:{" "}
                         <strong
@@ -699,7 +779,7 @@ export default function SolicitudesInternas({ usuarioActual }) {
                   </div>
 
                   {/* BOTÓN DESPLEGABLE ACCIONES EN TARJETA */}
-                  <div className="pt-3 border-t border-zinc-800/80 flex justify-end items-center     relative">
+                  <div className="pt-3 border-t border-zinc-800/80 flex justify-end items-center relative">
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
@@ -707,7 +787,7 @@ export default function SolicitudesInternas({ usuarioActual }) {
                           activeActionMenuId === s.id ? null : s.id,
                         );
                       }}
-                      className={`px-3 py-1.5 border     text-[10px] font-bold uppercase tracking-widest flex items-center gap-2 transition-all cursor-pointer ${
+                      className={`px-3 py-1.5 border text-[10px] font-bold uppercase tracking-widest flex items-center gap-2 transition-all cursor-pointer ${
                         activeActionMenuId === s.id
                           ? "bg-[#050505] border-[#FF5A00] text-[#FF5A00]"
                           : "bg-[#050505] border-zinc-800 text-zinc-400 hover:border-[#FF5A00] hover:text-white"
@@ -724,11 +804,11 @@ export default function SolicitudesInternas({ usuarioActual }) {
                       />
                     </button>
 
-                    {/* POPUP DE OPCIONES SIEMPRE HACIA ABAJO Y POR ENCIMA */}
+                    {/* POPUP SIEMPRE HACIA ABAJO CON ANIMACIÓN */}
                     {activeActionMenuId === s.id && (
                       <div
                         onClick={(e) => e.stopPropagation()}
-                        className="absolute top-full right-0 mt-1.5 w-48 bg-[#050505] border border-zinc-700 shadow-[0_20px_50px_rgba(0,0,0,0.95)] z-[100] flex flex-col     text-[10px] animate-in fade-in slide-in-from-top-2 duration-150 origin-top-right"
+                        className="absolute top-full right-0 mt-1.5 w-48 bg-[#050505] border border-zinc-700 shadow-[0_20px_50px_rgba(0,0,0,0.95)] z-[100] flex flex-col text-[10px] animate-in fade-in slide-in-from-top-2 duration-150 origin-top-right"
                       >
                         <button
                           onClick={() => {
@@ -758,7 +838,7 @@ export default function SolicitudesInternas({ usuarioActual }) {
                           <button
                             onClick={() => {
                               setActiveActionMenuId(null);
-                              handleCambiarEstado(s.id, "ATENDIDO");
+                              handleCambiarEstado(s, "ATENDIDO");
                             }}
                             className="px-4 py-3 text-left font-bold uppercase tracking-widest text-[#FF5A00] hover:text-white hover:bg-[#FF5A00]/15 transition-colors border-b border-zinc-900 cursor-pointer flex items-center gap-2"
                           >
@@ -771,7 +851,7 @@ export default function SolicitudesInternas({ usuarioActual }) {
                           <button
                             onClick={() => {
                               setActiveActionMenuId(null);
-                              handleCambiarEstado(s.id, "DISPONIBLE");
+                              handleCambiarEstado(s, "DISPONIBLE");
                             }}
                             className="px-4 py-3 text-left font-bold uppercase tracking-widest text-[#FFD700] hover:text-white hover:bg-[#FFD700]/15 transition-colors border-b border-zinc-900 cursor-pointer flex items-center gap-2"
                           >
@@ -798,7 +878,7 @@ export default function SolicitudesInternas({ usuarioActual }) {
                           <button
                             onClick={() => {
                               setActiveActionMenuId(null);
-                              handleCambiarEstado(s.id, "CANCELADO");
+                              handleCambiarEstado(s, "CANCELADO");
                             }}
                             className="px-4 py-3 text-left font-bold uppercase tracking-widest text-rose-500 hover:text-white hover:bg-rose-950/40 transition-colors cursor-pointer flex items-center gap-2"
                           >
@@ -815,7 +895,7 @@ export default function SolicitudesInternas({ usuarioActual }) {
           </div>
         ) : (
           /* =========================================================
-             VISTA 2: MODO TABLA INDUSTRIAL CON VISIBILIDAD TOTAL
+             VISTA 2: MODO TABLA INDUSTRIAL AUTO-AJUSTABLE
              ========================================================= */
           <div
             ref={tableContainerRef}
@@ -823,7 +903,7 @@ export default function SolicitudesInternas({ usuarioActual }) {
           >
             <div className="w-full border border-zinc-800/90 bg-[#030303] flex flex-col overflow-visible shadow-2xl h-fit">
               {/* CABECERA TABLA (48px) */}
-              <div className="grid grid-cols-[120px_140px_1fr_200px_130px_100px_110px_130px] h-12 bg-[#080808] border-b border-zinc-800/90 items-center text-zinc-500     text-[9px] font-extrabold uppercase tracking-widest shrink-0 px-4 select-none">
+              <div className="grid grid-cols-[120px_140px_1fr_200px_130px_100px_110px_130px] h-12 bg-[#080808] border-b border-zinc-800/90 items-center text-zinc-500 text-[9px] font-extrabold uppercase tracking-widest shrink-0 px-4 select-none">
                 <div>ID SOL.</div>
                 <div>CÓDIGO</div>
                 <div>SEMIELABORADO</div>
@@ -834,7 +914,7 @@ export default function SolicitudesInternas({ usuarioActual }) {
                 <div className="text-right">ACCIONES</div>
               </div>
 
-              {/* FILAS DE LA TABLA CON OVERFLOW VISIBLE Y SUBMENÚ QUE FLOTA SIEMPRE HACIA ABAJO */}
+              {/* FILAS DE LA TABLA */}
               <div className="flex flex-col bg-black flex-1 overflow-visible">
                 {currentItems.map((s) => {
                   const archived = isArchived(s.estado);
@@ -845,9 +925,9 @@ export default function SolicitudesInternas({ usuarioActual }) {
                   return (
                     <div
                       key={s.id}
-                      className={`grid grid-cols-[120px_140px_1fr_200px_130px_100px_110px_130px] h-12 items-center px-4 border-b border-zinc-900/80 last:border-b-0 text-xs hover:bg-[#0a0a0a] transition-colors     shrink-0 relative ${
+                      className={`grid grid-cols-[120px_140px_1fr_200px_130px_100px_110px_130px] h-12 items-center px-4 border-b border-zinc-900/80 last:border-b-0 text-xs hover:bg-[#0a0a0a] transition-colors shrink-0 relative ${
                         archived ? "opacity-60" : ""
-                      } ${activeActionMenuId === s.id ? "z-[100]" : "z-10"}`}
+                      } ${activeActionMenuId === s.id ? "z-[60]" : "z-10"}`}
                     >
                       <div className="font-extrabold text-white truncate">
                         {solIdStr}
@@ -890,7 +970,7 @@ export default function SolicitudesInternas({ usuarioActual }) {
                         </span>
                       </div>
 
-                      {/* BOTÓN DESPLEGABLE DE ACCIONES SIEMPRE HACIA ABAJO Y POR SOBRE LA TABLA */}
+                      {/* BOTÓN Y MENÚ DE ACCIONES */}
                       <div className="flex justify-end relative">
                         <button
                           onClick={(e) => {
@@ -899,7 +979,7 @@ export default function SolicitudesInternas({ usuarioActual }) {
                               activeActionMenuId === s.id ? null : s.id,
                             );
                           }}
-                          className={`px-3 py-1.5 border     text-[9px] font-bold uppercase tracking-widest flex items-center gap-1.5 transition-all cursor-pointer ${
+                          className={`px-3 py-1.5 border text-[9px] font-bold uppercase tracking-widest flex items-center gap-1.5 transition-all cursor-pointer ${
                             activeActionMenuId === s.id
                               ? "bg-[#050505] border-[#FF5A00] text-[#FF5A00]"
                               : "bg-[#050505] border-zinc-800 text-zinc-400 hover:border-[#FF5A00] hover:text-white"
@@ -916,11 +996,11 @@ export default function SolicitudesInternas({ usuarioActual }) {
                           />
                         </button>
 
-                        {/* SUBMENÚ QUE ABRE SIEMPRE HACIA ABAJO (TOP-FULL MT-1.5) CON Z-100 */}
+                        {/* SUBMENÚ SIEMPRE HACIA ABAJO CON ANIMACIÓN */}
                         {activeActionMenuId === s.id && (
                           <div
                             onClick={(e) => e.stopPropagation()}
-                            className="absolute top-full right-0 mt-1.5 w-48 bg-[#050505] border border-zinc-700 shadow-[0_20px_50px_rgba(0,0,0,0.95)] z-[100] flex flex-col     text-[10px] animate-in fade-in slide-in-from-top-2 duration-150 origin-top-right"
+                            className="absolute top-full right-0 mt-1.5 w-48 bg-[#050505] border border-zinc-700 shadow-[0_20px_50px_rgba(0,0,0,0.95)] z-[100] flex flex-col text-[10px] animate-in fade-in slide-in-from-top-2 duration-150 origin-top-right"
                           >
                             <button
                               onClick={() => {
@@ -950,7 +1030,7 @@ export default function SolicitudesInternas({ usuarioActual }) {
                               <button
                                 onClick={() => {
                                   setActiveActionMenuId(null);
-                                  handleCambiarEstado(s.id, "ATENDIDO");
+                                  handleCambiarEstado(s, "ATENDIDO");
                                 }}
                                 className="px-4 py-3 text-left font-bold uppercase tracking-widest text-[#FF5A00] hover:text-white hover:bg-[#FF5A00]/15 transition-colors border-b border-zinc-900 cursor-pointer flex items-center gap-2"
                               >
@@ -963,7 +1043,7 @@ export default function SolicitudesInternas({ usuarioActual }) {
                               <button
                                 onClick={() => {
                                   setActiveActionMenuId(null);
-                                  handleCambiarEstado(s.id, "DISPONIBLE");
+                                  handleCambiarEstado(s, "DISPONIBLE");
                                 }}
                                 className="px-4 py-3 text-left font-bold uppercase tracking-widest text-[#FFD700] hover:text-white hover:bg-[#FFD700]/15 transition-colors border-b border-zinc-900 cursor-pointer flex items-center gap-2"
                               >
@@ -990,7 +1070,7 @@ export default function SolicitudesInternas({ usuarioActual }) {
                               <button
                                 onClick={() => {
                                   setActiveActionMenuId(null);
-                                  handleCambiarEstado(s.id, "CANCELADO");
+                                  handleCambiarEstado(s, "CANCELADO");
                                 }}
                                 className="px-4 py-3 text-left font-bold uppercase tracking-widest text-rose-500 hover:text-white hover:bg-rose-950/40 transition-colors cursor-pointer flex items-center gap-2"
                               >
@@ -1011,7 +1091,7 @@ export default function SolicitudesInternas({ usuarioActual }) {
 
         {/* PIE DE PAGINACIÓN */}
         {solicitudesFiltradas.length > 0 && (
-          <div className="mt-4 pt-4 border-t border-zinc-800/60 flex items-center justify-between     text-xs text-zinc-500 shrink-0">
+          <div className="mt-4 pt-4 border-t border-zinc-800/60 flex items-center justify-between text-xs text-zinc-500 shrink-0">
             <span className="uppercase text-[10px] font-bold tracking-widest text-zinc-400">
               Página <strong className="text-white">{currentPage}</strong> de{" "}
               <strong className="text-white">{totalPages}</strong> (
@@ -1066,7 +1146,7 @@ export default function SolicitudesInternas({ usuarioActual }) {
               className="p-6 overflow-y-auto flex flex-col gap-5 custom-scrollbar"
             >
               <div>
-                <label className="block text-xs uppercase tracking-widest text-zinc-500 mb-2     font-bold">
+                <label className="block text-xs uppercase tracking-widest text-zinc-500 mb-2 font-bold">
                   1. Material / Semielaborado *
                 </label>
                 <div className="relative">
@@ -1077,11 +1157,11 @@ export default function SolicitudesInternas({ usuarioActual }) {
                       setSearchSemiText(e.target.value);
                       setSemiSeleccionado(null);
                     }}
-                    className="w-full bg-black border border-zinc-800 text-white p-4 text-sm focus:border-[#FF5A00] outline-none     font-bold uppercase transition-colors"
+                    className="w-full bg-black border border-zinc-800 text-white p-4 text-sm focus:border-[#FF5A00] outline-none font-bold uppercase transition-colors"
                     placeholder="Buscar por código o nombre..."
                   />
                   {searchSemiText && !semiSeleccionado && (
-                    <div className="absolute top-full left-0 w-full bg-[#0a0a0a] border border-zinc-800 mt-1 max-h-48 overflow-y-auto z-50 shadow-2xl custom-scrollbar    ">
+                    <div className="absolute top-full left-0 w-full bg-[#0a0a0a] border border-zinc-800 mt-1 max-h-48 overflow-y-auto z-50 shadow-2xl custom-scrollbar">
                       {semielaboradosFiltrados.map((item, i) => (
                         <div
                           key={i}
@@ -1104,7 +1184,7 @@ export default function SolicitudesInternas({ usuarioActual }) {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-4    ">
+              <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs uppercase tracking-widest text-zinc-500 mb-2 font-bold">
                     2. Unidades *
@@ -1134,7 +1214,7 @@ export default function SolicitudesInternas({ usuarioActual }) {
                 </div>
               </div>
 
-              <div className="space-y-2    ">
+              <div className="space-y-2">
                 <div className="flex justify-between items-center">
                   <label className="block text-xs uppercase tracking-widest text-zinc-500 font-bold">
                     4. Destino / Motivo de Solicitud *
@@ -1156,7 +1236,7 @@ export default function SolicitudesInternas({ usuarioActual }) {
               </div>
 
               {errorDuplicado && (
-                <div className="p-3 bg-[#FF0055]/10 border border-[#FF0055]/30 text-[#FF0055] text-xs     font-bold uppercase">
+                <div className="p-3 bg-[#FF0055]/10 border border-[#FF0055]/30 text-[#FF0055] text-xs font-bold uppercase">
                   Ya existe una solicitud activa para este semielaborado.
                 </div>
               )}
@@ -1192,7 +1272,7 @@ export default function SolicitudesInternas({ usuarioActual }) {
               </button>
             </div>
 
-            <form onSubmit={handleGuardarEdicion} className="p-6 space-y-5    ">
+            <form onSubmit={handleGuardarEdicion} className="p-6 space-y-5">
               <div>
                 <span className="bg-[#FF5A00]/10 border border-[#FF5A00]/20 text-[#FF5A00] px-2 py-0.5 text-[10px] font-bold tracking-widest mb-1 inline-block">
                   {modalEditarOpen.semielaboradoCodigo}
@@ -1287,7 +1367,7 @@ export default function SolicitudesInternas({ usuarioActual }) {
                 <X size={24} />
               </button>
             </div>
-            <div className="p-6 space-y-5    ">
+            <div className="p-6 space-y-5">
               <div>
                 <span className="bg-[#FF5A00]/10 border border-[#FF5A00]/20 text-[#FF5A00] px-1.5 py-0.5 text-[10px] font-bold tracking-widest mb-2 inline-block">
                   {modalRetiroOpen.semielaboradoCodigo}
@@ -1347,7 +1427,7 @@ export default function SolicitudesInternas({ usuarioActual }) {
         </div>
       )}
 
-      {/* MODAL HISTORIAL / AUDITORÍA */}
+      {/* MODAL HISTORIAL / AUDITORÍA CON FORMATO DE HORA Y FECHA ARGENTINA */}
       {modalHistorialOpen && (
         <div className="fixed inset-0 bg-black/90 backdrop-blur-sm z-[100] flex flex-col items-center justify-center p-4 font-sans">
           <div className="bg-[#050505] border border-zinc-800 w-full max-w-md max-h-[85vh] flex flex-col relative shadow-2xl">
@@ -1366,15 +1446,23 @@ export default function SolicitudesInternas({ usuarioActual }) {
               </button>
             </div>
 
-            <div className="p-6 overflow-y-auto space-y-6     custom-scrollbar">
-              <div className="space-y-4 border-l border-zinc-800 pl-5 ml-2">
+            <div className="p-6 overflow-y-auto space-y-6 custom-scrollbar">
+              <div className="space-y-4 border-l border-zinc-800 pl-5 ml-2 font-mono">
                 <div className="relative">
                   <div className="w-2.5 h-2.5 rounded-full bg-zinc-600 absolute -left-[26px] top-1" />
                   <p className="text-[10px] font-bold uppercase text-white tracking-wider">
                     Solicitado
                   </p>
                   <p className="text-[10px] text-zinc-500 mt-0.5">
-                    {modalHistorialOpen.solicitadoAt}
+                    {formatFechaArg(
+                      modalHistorialOpen.solicitadoAt ||
+                        modalHistorialOpen.solicitado_at,
+                    )}{" "}
+                    {formatHoraArg(
+                      modalHistorialOpen.solicitadoAt ||
+                        modalHistorialOpen.solicitado_at,
+                    )}{" "}
+                    HS
                   </p>
                   {getMotivo(modalHistorialOpen) !== "--" && (
                     <p className="text-[10px] text-[#FFD700] mt-1 font-bold uppercase">
@@ -1383,32 +1471,50 @@ export default function SolicitudesInternas({ usuarioActual }) {
                   )}
                 </div>
 
-                {modalHistorialOpen.atendidoAt && (
+                {(modalHistorialOpen.atendidoAt ||
+                  modalHistorialOpen.atendido_at) && (
                   <div className="relative">
                     <div className="w-2.5 h-2.5 rounded-full bg-[#FF5A00] absolute -left-[26px] top-1" />
                     <p className="text-[10px] font-bold uppercase text-[#FF5A00] tracking-wider">
                       En Proceso
                     </p>
                     <p className="text-[10px] text-zinc-500 mt-0.5">
-                      {modalHistorialOpen.atendidoAt}
+                      {formatFechaArg(
+                        modalHistorialOpen.atendidoAt ||
+                          modalHistorialOpen.atendido_at,
+                      )}{" "}
+                      {formatHoraArg(
+                        modalHistorialOpen.atendidoAt ||
+                          modalHistorialOpen.atendido_at,
+                      )}{" "}
+                      HS
                     </p>
                   </div>
                 )}
 
-                {modalHistorialOpen.disponibleAt && (
+                {(modalHistorialOpen.disponibleAt ||
+                  modalHistorialOpen.disponible_at) && (
                   <div className="relative">
                     <div className="w-2.5 h-2.5 rounded-full bg-[#FFD700] absolute -left-[26px] top-1" />
                     <p className="text-[10px] font-bold uppercase text-[#FFD700] tracking-wider">
                       Disponible
                     </p>
                     <p className="text-[10px] text-zinc-500 mt-0.5">
-                      {modalHistorialOpen.disponibleAt}
+                      {formatFechaArg(
+                        modalHistorialOpen.disponibleAt ||
+                          modalHistorialOpen.disponible_at,
+                      )}{" "}
+                      {formatHoraArg(
+                        modalHistorialOpen.disponibleAt ||
+                          modalHistorialOpen.disponible_at,
+                      )}{" "}
+                      HS
                     </p>
                   </div>
                 )}
               </div>
 
-              <div className="pt-5 border-t border-zinc-800">
+              <div className="pt-5 border-t border-zinc-800 font-mono">
                 <p className="text-[10px] uppercase tracking-widest text-zinc-500 mb-3 font-bold">
                   Movimientos de Extracción
                 </p>
@@ -1428,7 +1534,7 @@ export default function SolicitudesInternas({ usuarioActual }) {
                           </p>
                         </div>
                         <p className="text-zinc-500 text-[10px]">
-                          {r.fecha.slice(11, 16)}hs
+                          {formatFechaArg(r.fecha)} {formatHoraArg(r.fecha)} HS
                         </p>
                       </div>
                     ))}
