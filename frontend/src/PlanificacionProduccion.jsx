@@ -276,7 +276,7 @@ export default function PlanificacionProduccion() {
         <div className="lg:col-span-4 bg-[#050505] border border-zinc-800 p-5 flex flex-col justify-between h-full min-h-0 shadow-2xl">
           <div className="flex flex-col min-h-0 h-full justify-between space-y-4">
             <div className="border-b border-zinc-800/80 pb-3 shrink-0">
-              <span className="text-[10px] font-mono font-bold text-[#FF5A00] bg-[#FF5A00]/10 px-2 py-0.5 border border-[#FF5A00]/20 tracking-widest uppercase">
+              <span className="text-[10px]   font-bold text-[#FF5A00] bg-[#FF5A00]/10 px-2 py-0.5 border border-[#FF5A00]/20 tracking-widest uppercase">
                 DETALLE DEL DÍA
               </span>
               <h2 className="text-xl font-extrabold italic text-white uppercase tracking-tighter mt-2 truncate">
@@ -286,7 +286,7 @@ export default function PlanificacionProduccion() {
 
             {/* LISTA DE ÍTEMS CON EDICIÓN EN LÍNEA */}
             <div className="flex-1 min-h-0 overflow-y-auto space-y-2 pr-1 custom-scrollbar">
-              <div className="flex justify-between items-center font-mono text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-2">
+              <div className="flex justify-between items-center   text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-2">
                 <span>SEMIELABORADOS PREVISTOS</span>
                 <span className="text-white">
                   {currentDayItems.length} ASIGNADOS
@@ -294,7 +294,7 @@ export default function PlanificacionProduccion() {
               </div>
 
               {currentDayItems.length === 0 ? (
-                <div className="h-44 border border-dashed border-zinc-800/80 p-6 flex items-center justify-center text-center text-zinc-600 font-mono text-xs uppercase tracking-widest font-bold">
+                <div className="h-44 border border-dashed border-zinc-800/80 p-6 flex items-center justify-center text-center text-zinc-600   text-xs uppercase tracking-widest font-bold">
                   Sin producción asignada para este día.
                 </div>
               ) : (
@@ -307,14 +307,14 @@ export default function PlanificacionProduccion() {
                       className="bg-black border border-zinc-800 p-3.5 flex items-center justify-between gap-3 group hover:border-zinc-700 transition-colors"
                     >
                       <div className="space-y-1 min-w-0 flex-1">
-                        <span className="text-[10px] font-mono font-bold text-[#FF5A00] bg-[#FF5A00]/10 border border-[#FF5A00]/20 px-1.5 py-0.5 inline-block">
+                        <span className="text-[10px]   font-bold text-[#FF5A00] bg-[#FF5A00]/10 border border-[#FF5A00]/20 px-1.5 py-0.5 inline-block">
                           {item.codigo}
                         </span>
                         <h4 className="text-xs font-bold text-white uppercase truncate">
                           {item.nombre}
                         </h4>
 
-                        <div className="flex items-center gap-2 font-mono text-[10px]">
+                        <div className="flex items-center gap-2   text-[10px]">
                           <span className="text-zinc-500">PREVISTO:</span>
 
                           {/* MODO EDICIÓN vs MODO LECTURA */}
@@ -384,7 +384,7 @@ export default function PlanificacionProduccion() {
 
             <button
               onClick={handleOpenAssignModal}
-              className="w-full bg-black hover:bg-zinc-900 border border-zinc-800 text-[#FF5A00] hover:text-white py-3 text-xs font-bold uppercase tracking-widest transition cursor-pointer flex items-center justify-center gap-2 font-mono shrink-0"
+              className="w-full bg-black hover:bg-zinc-900 border border-zinc-800 text-[#FF5A00] hover:text-white py-3 text-xs font-bold uppercase tracking-widest transition cursor-pointer flex items-center justify-center gap-2   shrink-0"
             >
               <Plus size={14} /> SUMAR A ESTE DÍA
             </button>
@@ -399,7 +399,7 @@ export default function PlanificacionProduccion() {
               {monthName}
             </h2>
 
-            <div className="flex items-center gap-1.5 font-mono">
+            <div className="flex items-center gap-1.5  ">
               <button
                 onClick={handlePrevMonth}
                 className="w-8 h-8 flex items-center justify-center bg-black border border-zinc-800 hover:border-[#FF5A00] text-white transition-colors cursor-pointer"
@@ -416,7 +416,7 @@ export default function PlanificacionProduccion() {
           </div>
 
           {/* CABECERA DÍAS DE LA SEMANA */}
-          <div className="grid grid-cols-7 text-center font-mono text-[10px] font-bold text-zinc-500 uppercase tracking-widest py-2 border-b border-zinc-800/50 shrink-0">
+          <div className="grid grid-cols-7 text-center   text-[10px] font-bold text-zinc-500 uppercase tracking-widest py-2 border-b border-zinc-800/50 shrink-0">
             <div>LU</div>
             <div>MA</div>
             <div>MI</div>
@@ -455,7 +455,7 @@ export default function PlanificacionProduccion() {
                   }`}
                 >
                   {/* NÚMERO DE DÍA Y PUNTO NEÓN SI TIENEN PROGRAMACIÓN */}
-                  <div className="flex justify-between items-start font-mono">
+                  <div className="flex justify-between items-start  ">
                     <span
                       className={`text-sm font-extrabold ${
                         isSelected ? "text-[#FF5A00]" : "text-white"
@@ -478,7 +478,7 @@ export default function PlanificacionProduccion() {
       {/* MODAL DE ASIGNACIÓN */}
       {isAssignModalOpen && (
         <div className="fixed inset-0 bg-black/90 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
-          <div className="bg-[#050505] border border-zinc-800 w-full max-w-md p-6 shadow-2xl space-y-4 font-mono text-xs relative">
+          <div className="bg-[#050505] border border-zinc-800 w-full max-w-md p-6 shadow-2xl space-y-4   text-xs relative">
             <button
               onClick={() => setIsAssignModalOpen(false)}
               className="absolute top-4 right-4 text-zinc-500 hover:text-white cursor-pointer"

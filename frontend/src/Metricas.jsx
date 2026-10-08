@@ -793,7 +793,7 @@ export default function Metricas() {
                     handleSyncEstadoPedidos();
                   }}
                   disabled={isSyncingPedidos}
-                  className="w-full text-left p-3.5 bg-black hover:bg-zinc-900 border border-zinc-800 hover:border-[#FF5A00] text-white font-mono text-xs font-bold uppercase tracking-widest transition-colors flex items-center justify-between cursor-pointer disabled:opacity-50"
+                  className="w-full text-left p-3.5 bg-black hover:bg-zinc-900 border border-zinc-800 hover:border-[#FF5A00] text-white   text-xs font-bold uppercase tracking-widest transition-colors flex items-center justify-between cursor-pointer disabled:opacity-50"
                 >
                   <span>SINCRONIZAR PEDIDOS</span>
                   <DownloadCloud size={16} className="text-[#FF5A00]" />
@@ -805,7 +805,7 @@ export default function Metricas() {
                     handleSyncSheets();
                   }}
                   disabled={isSyncing}
-                  className="w-full text-left p-3.5 bg-black hover:bg-zinc-900 border border-zinc-800 hover:border-[#FFD700] text-white font-mono text-xs font-bold uppercase tracking-widest transition-colors flex items-center justify-between cursor-pointer disabled:opacity-50"
+                  className="w-full text-left p-3.5 bg-black hover:bg-zinc-900 border border-zinc-800 hover:border-[#FFD700] text-white   text-xs font-bold uppercase tracking-widest transition-colors flex items-center justify-between cursor-pointer disabled:opacity-50"
                 >
                   <span>SINCRONIZAR PRODUCCIÓN</span>
                   <RefreshCw size={16} className="text-[#FFD700]" />
@@ -815,7 +815,7 @@ export default function Metricas() {
           </div>
 
           {/* RANGO DE FECHAS */}
-          <div className="flex items-center gap-2 bg-[#050505] border border-zinc-800 px-3 py-2 shrink-0 font-mono w-full sm:w-auto">
+          <div className="flex items-center gap-2 bg-[#050505] border border-zinc-800 px-3 py-2 shrink-0   w-full sm:w-auto">
             <Calendar size={13} className="text-[#FF5A00]" />
             <input
               type="date"
@@ -878,7 +878,7 @@ export default function Metricas() {
                   {loading
                     ? "..."
                     : globalStats.totalPiezasProcesadas.toLocaleString()}{" "}
-                  <span className="text-sm text-zinc-600 font-medium font-mono not-italic tracking-normal">
+                  <span className="text-sm text-zinc-600 font-medium   not-italic tracking-normal">
                     u.
                   </span>
                 </div>
@@ -897,7 +897,7 @@ export default function Metricas() {
                   {loading
                     ? "..."
                     : globalStats.totalPiezasBuenas.toLocaleString()}{" "}
-                  <span className="text-sm text-zinc-600 font-medium font-mono not-italic tracking-normal">
+                  <span className="text-sm text-zinc-600 font-medium   not-italic tracking-normal">
                     u.
                   </span>
                 </div>
@@ -916,7 +916,7 @@ export default function Metricas() {
                   {loading
                     ? "..."
                     : globalStats.totalPiezasMalas.toLocaleString()}{" "}
-                  <span className="text-sm text-zinc-600 font-medium font-mono not-italic tracking-normal">
+                  <span className="text-sm text-zinc-600 font-medium   not-italic tracking-normal">
                     u.
                   </span>
                 </div>
@@ -959,7 +959,7 @@ export default function Metricas() {
                   {loading
                     ? "..."
                     : globalStats.cantidadKgTotal.toLocaleString()}{" "}
-                  <span className="text-sm text-zinc-600 font-medium font-mono not-italic tracking-normal">
+                  <span className="text-sm text-zinc-600 font-medium   not-italic tracking-normal">
                     Kg
                   </span>
                 </div>
@@ -978,7 +978,7 @@ export default function Metricas() {
                   {loading
                     ? "..."
                     : globalStats.cantidadKgBuenas.toLocaleString()}{" "}
-                  <span className="text-sm text-zinc-600 font-medium font-mono not-italic tracking-normal">
+                  <span className="text-sm text-zinc-600 font-medium   not-italic tracking-normal">
                     Kg
                   </span>
                 </div>
@@ -997,7 +997,7 @@ export default function Metricas() {
                   {loading
                     ? "..."
                     : globalStats.cantidadKgFallas.toLocaleString()}{" "}
-                  <span className="text-sm text-zinc-600 font-medium font-mono not-italic tracking-normal">
+                  <span className="text-sm text-zinc-600 font-medium   not-italic tracking-normal">
                     Kg
                   </span>
                 </div>
@@ -1152,7 +1152,7 @@ export default function Metricas() {
                   </div>
 
                   {m.rol === "user" && (
-                    <div className="w-10 h-10 border border-[#FF5A00] bg-[#FF5A00]/10 flex items-center justify-center text-[#FF5A00] font-mono text-sm font-bold shrink-0 mt-1">
+                    <div className="w-10 h-10 border border-[#FF5A00] bg-[#FF5A00]/10 flex items-center justify-center text-[#FF5A00]   text-sm font-bold shrink-0 mt-1">
                       U
                     </div>
                   )}
@@ -1197,7 +1197,7 @@ export default function Metricas() {
             </button>
 
             <div className="border-b border-zinc-800/80 pb-3 shrink-0 pr-8">
-              <span className="text-[10px] font-mono font-bold text-[#FF5A00] bg-[#FF5A00]/10 border border-[#FF5A00]/20 px-2 py-0.5 tracking-widest uppercase">
+              <span className="text-[10px]   font-bold text-[#FF5A00] bg-[#FF5A00]/10 border border-[#FF5A00]/20 px-2 py-0.5 tracking-widest uppercase">
                 ANÁLISIS EVOLUTIVO
               </span>
               <h3 className="text-xl font-extrabold italic text-white uppercase tracking-tighter mt-2 flex items-center gap-2">
@@ -1207,12 +1207,12 @@ export default function Metricas() {
             </div>
 
             <div className="bg-black border border-zinc-800 p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shrink-0 my-4">
-              <div className="flex items-center gap-2 text-[10px] font-mono text-zinc-500 font-bold tracking-widest uppercase">
+              <div className="flex items-center gap-2 text-[10px]   text-zinc-500 font-bold tracking-widest uppercase">
                 <GripVertical size={14} className="text-[#FF5A00]" />
                 <span>SELECCIONÁ CATEGORÍA PARA TRAZAR:</span>
               </div>
 
-              <div className="flex items-center gap-2 font-mono text-[10px] flex-wrap uppercase font-bold tracking-widest">
+              <div className="flex items-center gap-2   text-[10px] flex-wrap uppercase font-bold tracking-widest">
                 {["EXTRUSIÓN", "INYECCIÓN", "ROTOMOLDEO"].map((cat) => {
                   const isAlreadyActive = activeCategories.includes(cat);
                   const color = CATEGORY_COLORS[cat].stroke;
@@ -1391,7 +1391,7 @@ export default function Metricas() {
                   </g>
                 </svg>
 
-                <div className="flex justify-between items-center pt-3 text-[10px] font-mono text-zinc-500 border-t border-zinc-800/80 overflow-x-auto mt-2 tracking-widest font-bold">
+                <div className="flex justify-between items-center pt-3 text-[10px]   text-zinc-500 border-t border-zinc-800/80 overflow-x-auto mt-2 tracking-widest font-bold">
                   {evolutionaryData.mesesLista.map((mes) => (
                     <span key={mes} className="shrink-0 px-1">
                       {mes}
@@ -1404,7 +1404,7 @@ export default function Metricas() {
             <div className="pt-4 flex justify-end shrink-0">
               <button
                 onClick={() => setIsChartModalOpen(false)}
-                className="border border-zinc-800 text-zinc-400 hover:text-white font-mono text-[10px] font-bold uppercase tracking-widest px-6 py-2.5 transition cursor-pointer"
+                className="border border-zinc-800 text-zinc-400 hover:text-white   text-[10px] font-bold uppercase tracking-widest px-6 py-2.5 transition cursor-pointer"
               >
                 Cerrar
               </button>
@@ -1426,7 +1426,7 @@ export default function Metricas() {
 
             <div className="border-b border-zinc-800/80 pb-4 shrink-0 flex flex-col md:flex-row justify-between items-start md:items-end pr-8 gap-4">
               <div>
-                <span className="text-[10px] font-mono font-bold text-[#FFD700] bg-[#FFD700]/10 border border-[#FFD700]/20 px-2 py-0.5 tracking-widest uppercase">
+                <span className="text-[10px]   font-bold text-[#FFD700] bg-[#FFD700]/10 border border-[#FFD700]/20 px-2 py-0.5 tracking-widest uppercase">
                   PLANIFICACIÓN DE DEPOSITOS
                 </span>
                 <h3 className="text-2xl font-extrabold italic text-white uppercase tracking-tighter mt-2 flex items-center gap-2">
@@ -1435,7 +1435,7 @@ export default function Metricas() {
                 </h3>
               </div>
 
-              <div className="flex items-center gap-2 font-mono text-xs bg-black border border-zinc-800 px-3 py-2 shrink-0">
+              <div className="flex items-center gap-2   text-xs bg-black border border-zinc-800 px-3 py-2 shrink-0">
                 <span className="text-zinc-500 text-[10px] font-bold uppercase tracking-widest">
                   Grupo:
                 </span>
@@ -1498,7 +1498,7 @@ export default function Metricas() {
                 />
               </div>
 
-              <div className="flex items-center gap-1 overflow-x-auto text-[10px] font-mono border border-zinc-800 bg-black shrink-0">
+              <div className="flex items-center gap-1 overflow-x-auto text-[10px]   border border-zinc-800 bg-black shrink-0">
                 {[
                   { id: "TODOS", label: "TODOS" },
                   { id: "CRITICO", label: `CRÍTICO` },
@@ -1529,7 +1529,7 @@ export default function Metricas() {
             >
               <div
                 ref={tableHeaderRef}
-                className="grid grid-cols-[180px_1fr_120px_120px_100px_100px] h-12 bg-[#080808] border-b border-zinc-800/90 items-center text-zinc-500 font-mono text-[9px] font-bold uppercase tracking-widest shrink-0 px-4"
+                className="grid grid-cols-[180px_1fr_120px_120px_100px_100px] h-12 bg-[#080808] border-b border-zinc-800/90 items-center text-zinc-500   text-[9px] font-bold uppercase tracking-widest shrink-0 px-4"
               >
                 <div>CÓDIGO</div>
                 <div>SEMIELABORADO</div>
@@ -1560,21 +1560,21 @@ export default function Metricas() {
                       key={item.id}
                       className="grid grid-cols-[180px_1fr_120px_120px_100px_100px] h-12 items-center px-4 border-b border-zinc-900/80 last:border-b-0 hover:bg-[#0a0a0a] transition-colors text-xs shrink-0"
                     >
-                      <div className="font-mono font-bold text-[#FFD700] truncate pr-2">
+                      <div className="  font-bold text-[#FFD700] truncate pr-2">
                         {item.codigo}
                       </div>
                       <div className="text-white font-bold truncate pr-4">
                         {item.nombre}
                       </div>
-                      <div className="text-right font-mono font-bold text-emerald-400">
+                      <div className="text-right   font-bold text-emerald-400">
                         {item.stock_total.toLocaleString()}
                       </div>
-                      <div className="text-right font-mono text-zinc-300">
+                      <div className="text-right   text-zinc-300">
                         {item.demanda_mensual > 0
                           ? item.demanda_mensual.toLocaleString()
                           : "--"}
                       </div>
-                      <div className="flex justify-center font-mono">
+                      <div className="flex justify-center  ">
                         {item.dias_stock !== null ? (
                           <span
                             className={`inline-block px-2 py-0.5 border font-bold text-[10px] tracking-widest ${badgeStyle}`}
@@ -1608,7 +1608,7 @@ export default function Metricas() {
               </div>
             </div>
 
-            <div className="flex justify-between items-center pt-4 border-t border-zinc-800 text-xs font-mono text-zinc-500 shrink-0 uppercase font-bold tracking-widest">
+            <div className="flex justify-between items-center pt-4 border-t border-zinc-800 text-xs   text-zinc-500 shrink-0 uppercase font-bold tracking-widest">
               <span>
                 Pág. <strong className="text-white">{currentPageSE}</strong> de{" "}
                 <strong className="text-white">{totalPagesSE}</strong>
@@ -1648,19 +1648,19 @@ export default function Metricas() {
             </button>
 
             <div className="border-b border-zinc-800/80 pb-3 pr-6">
-              <span className="text-[10px] font-mono font-bold text-[#FFD700] bg-[#FFD700]/10 px-2 py-0.5 border border-[#FFD700]/20 tracking-widest uppercase">
+              <span className="text-[10px]   font-bold text-[#FFD700] bg-[#FFD700]/10 px-2 py-0.5 border border-[#FFD700]/20 tracking-widest uppercase">
                 SIMULADOR OPERATIVO
               </span>
               <h3 className="text-lg font-extrabold italic text-white uppercase tracking-tighter mt-2 flex items-center gap-2">
                 <Zap size={18} className="text-[#FFD700]" /> PROYECTAR LOTE
               </h3>
-              <p className="text-[10px] text-zinc-400 font-mono mt-1 font-bold uppercase tracking-widest truncate">
+              <p className="text-[10px] text-zinc-400   mt-1 font-bold uppercase tracking-widest truncate">
                 [{simulatedItem.codigo}] {simulatedItem.nombre}
               </p>
             </div>
 
             <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-3 font-mono">
+              <div className="grid grid-cols-2 gap-3  ">
                 <div className="bg-black p-3 border border-zinc-800">
                   <span className="text-[9px] text-zinc-500 block uppercase font-bold tracking-widest mb-1">
                     STOCK ACTUAL:
@@ -1681,7 +1681,7 @@ export default function Metricas() {
                 </div>
               </div>
 
-              <div className="space-y-3 font-mono">
+              <div className="space-y-3  ">
                 <div>
                   <label className="text-[10px] text-zinc-400 uppercase tracking-widest font-bold block mb-1.5">
                     FECHA DE ARRIBO PROYECTADA:
@@ -1715,7 +1715,7 @@ export default function Metricas() {
             <div className="flex justify-end pt-3 border-t border-zinc-800">
               <button
                 onClick={() => setSimulatedItem(null)}
-                className="border border-zinc-800 text-zinc-400 hover:text-white font-mono text-[10px] font-bold uppercase tracking-widest px-5 py-2 transition cursor-pointer"
+                className="border border-zinc-800 text-zinc-400 hover:text-white   text-[10px] font-bold uppercase tracking-widest px-5 py-2 transition cursor-pointer"
               >
                 CERRAR
               </button>
@@ -1742,7 +1742,7 @@ export default function Metricas() {
               </h3>
             </div>
 
-            <div className="space-y-4 font-mono">
+            <div className="space-y-4  ">
               <div>
                 <label className="text-[10px] text-zinc-500 uppercase tracking-widest font-bold block mb-1.5">
                   NOMBRE DEL GRUPO / REGIÓN:
@@ -1813,7 +1813,7 @@ export default function Metricas() {
                     alert("Error al guardar grupo.");
                   }
                 }}
-                className="w-full bg-[#FF5A00] hover:bg-white text-black font-bold uppercase tracking-widest font-mono py-3 text-xs shadow-md transition cursor-pointer"
+                className="w-full bg-[#FF5A00] hover:bg-white text-black font-bold uppercase tracking-widest   py-3 text-xs shadow-md transition cursor-pointer"
               >
                 GUARDAR UMBRALES
               </button>

@@ -53,14 +53,14 @@ export default function AIAvatar({
       {/* INFORMACIÓN Y ESTADO UBICADOS A LA DERECHA */}
       <div className="flex flex-col gap-1 min-w-0">
         <div className="flex items-center gap-2 flex-wrap">
-          <h4 className="text-sm font-bold text-white font-mono uppercase tracking-wider">
+          <h4 className="text-sm font-bold text-white   uppercase tracking-wider">
             {nombre}
           </h4>
         </div>
 
         <div>
           <span
-            className={`text-[10px] font-mono px-2.5 py-0.5 rounded-full border inline-flex items-center gap-1.5 transition-all ${
+            className={`text-[10px]   px-2.5 py-0.5 rounded-full border inline-flex items-center gap-1.5 transition-all ${
               estaPensando
                 ? "bg-amber-500/10 text-amber-300 border-amber-500/30"
                 : "bg-emerald-500/10 text-emerald-300 border-emerald-500/30"

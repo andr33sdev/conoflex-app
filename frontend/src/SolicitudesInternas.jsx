@@ -267,6 +267,7 @@ export default function SolicitudesInternas({ usuarioActual }) {
 
     const motivoFormateado = motivoUso.trim().slice(0, 20).toUpperCase();
 
+    // Payload compatible con ambos estándares de backend (camelCase y snake_case)
     const nueva = {
       semielaboradoCodigo: semiSeleccionado.codigo || "S/C",
       semielaborado_codigo: semiSeleccionado.codigo || "S/C",
@@ -453,7 +454,7 @@ export default function SolicitudesInternas({ usuarioActual }) {
   const getUrgenciaStyle = (urgencia, isArchivedState) => {
     if (isArchivedState) return "text-zinc-600 border-zinc-800 bg-black";
     if (urgencia === "ALTA")
-      return "text-[#FF0055] border-[#FF0055]/30 bg-[#FF0055]/10 animate-pulse";
+      return "text-[#FF0055] border-[#FF0055]/30 bg-[#FF0055]/10";
     if (urgencia === "MEDIA")
       return "text-[#FFD700] border-[#FFD700]/30 bg-[#FFD700]/10";
     return "text-zinc-400 border-zinc-800 bg-black";
@@ -492,21 +493,21 @@ export default function SolicitudesInternas({ usuarioActual }) {
     <div className="flex-1 flex flex-col h-full min-h-0 bg-black font-sans text-zinc-200 overflow-hidden relative selection:bg-[#FF5A00]/30">
       {/* BANNER BLOQUEO DE 8HS */}
       {bloqueadoPor8hs && (
-        <div className="bg-[#FF0055]/10 border-b border-[#FF0055]/30 p-2.5 px-4 md:px-6 flex items-center gap-3 text-[#FF0055] text-xs z-20 shrink-0 font-bold">
-          <AlertTriangle size={16} className="animate-pulse shrink-0" />
-          <span className="tracking-wide uppercase">
+        <div className="bg-[#FF0055]/10 border-b border-[#FF0055]/30 p-2 sm:p-2.5 px-3 sm:px-6 flex items-center gap-2.5 sm:gap-3 text-[#FF0055] text-[11px] sm:text-xs z-20 shrink-0 font-bold">
+          <AlertTriangle size={15} className="shrink-0" />
+          <span className="tracking-wide uppercase truncate">
             ATENCIÓN: TENÉS SOLICITUDES PENDIENTES HACE MÁS DE 8HS.
           </span>
         </div>
       )}
 
-      {/* HEADER HERO */}
-      <div className="border-b border-zinc-800/50 p-6 md:p-10 flex flex-col md:flex-row md:items-end justify-between gap-6 shrink-0 bg-[#050505] relative overflow-hidden">
+      {/* HEADER HERO OPTIMIZADO PARA MÓVIL Y TABLET */}
+      <div className="border-b border-zinc-800/50 p-4 sm:p-6 md:p-10 flex flex-col sm:flex-row sm:items-end justify-between gap-4 md:gap-6 shrink-0 bg-[#050505] relative overflow-hidden">
         <div className="z-10">
-          <h1 className="text-4xl md:text-5xl font-extrabold italic tracking-tighter text-white uppercase leading-none">
+          <h1 className="text-2xl sm:text-3xl md:text-5xl font-extrabold italic tracking-tighter text-white uppercase leading-none">
             Solicitudes <span className="text-[#FF5A00]">Internas</span>
           </h1>
-          <p className="text-zinc-500 text-sm mt-2 max-w-md uppercase tracking-widest font-bold">
+          <p className="text-zinc-500 text-xs sm:text-sm mt-1.5 sm:mt-2 max-w-md uppercase tracking-widest font-bold">
             ROL DE VISUALIZACIÓN: <span className="text-white">{rolUpper}</span>
           </p>
         </div>
@@ -515,10 +516,10 @@ export default function SolicitudesInternas({ usuarioActual }) {
           <button
             onClick={() => setModalNuevoOpen(true)}
             disabled={limiteAlcanzado || bloqueadoPor8hs}
-            className={`flex items-center justify-between gap-4 px-6 py-3 font-bold text-xs uppercase tracking-widest transition-all z-10 w-full md:w-auto ${
+            className={`flex items-center justify-between gap-3 px-5 py-3 font-bold text-xs uppercase tracking-widest transition-all z-10 w-full sm:w-auto shrink-0 ${
               limiteAlcanzado || bloqueadoPor8hs
                 ? "bg-zinc-900 text-zinc-600 cursor-not-allowed border border-zinc-800"
-                : "bg-[#FFD700] hover:bg-white text-black active:scale-95 cursor-pointer"
+                : "bg-[#FFD700] hover:bg-white text-black active:scale-95 cursor-pointer shadow-lg shadow-[#FFD700]/10"
             }`}
           >
             <span>NUEVA SOLICITUD</span>
@@ -527,23 +528,23 @@ export default function SolicitudesInternas({ usuarioActual }) {
         )}
       </div>
 
-      {/* BARRA DE HERRAMIENTAS */}
-      <div className="px-4 py-3 md:px-8 border-b border-zinc-800/50 flex flex-col md:flex-row items-center justify-between gap-3 shrink-0 bg-black relative z-20">
+      {/* BARRA DE HERRAMIENTAS ADAPTATIVA */}
+      <div className="px-3 sm:px-6 md:px-8 py-3 border-b border-zinc-800/50 flex flex-col md:flex-row items-center justify-between gap-3 shrink-0 bg-black relative z-20">
         <div className="relative w-full md:w-80">
           <Search
             size={14}
-            className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-600"
+            className="absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-600"
           />
           <input
             type="text"
             value={busqueda}
             onChange={(e) => setBusqueda(e.target.value)}
             placeholder="Buscar por ID, artículo o destino..."
-            className="w-full bg-transparent border border-zinc-800 focus:border-[#FF5A00] text-white pl-10 pr-4 py-2.5 text-xs transition-colors outline-none"
+            className="w-full bg-transparent border border-zinc-800 focus:border-[#FF5A00] text-white pl-9 pr-4 py-2 sm:py-2.5 text-xs transition-colors outline-none  "
           />
         </div>
 
-        <div className="flex items-center gap-4 w-full md:w-auto justify-between md:justify-end">
+        <div className="flex flex-col sm:flex-row items-center gap-3 sm:gap-4 w-full md:w-auto justify-between md:justify-end">
           {/* VISTA ESCRITORIO CON BADGES DE CONTEO */}
           <div className="hidden md:flex gap-1 border border-zinc-800 bg-[#050505]">
             {ESTADOS_OPCIONES.map((est) => {
@@ -561,7 +562,7 @@ export default function SolicitudesInternas({ usuarioActual }) {
                   <span>{estadoLabel(est)}</span>
                   {count !== undefined && (
                     <span
-                      className={`absolute -top-1.5 -right-1 text-[8px] font-mono font-black px-1.5 py-0.5 rounded-full border text-center leading-none ${
+                      className={`absolute -top-1.5 -right-1 text-[8px]   font-black px-1.5 py-0.5 rounded-full border text-center leading-none ${
                         filtroEstado === est
                           ? "bg-black text-[#FF5A00] border-[#FF5A00]"
                           : "bg-[#FF5A00] text-black border-black shadow"
@@ -575,11 +576,11 @@ export default function SolicitudesInternas({ usuarioActual }) {
             })}
           </div>
 
-          {/* VISTA MOBILE */}
+          {/* VISTA MÓVIL Y TABLET */}
           <div className="md:hidden w-full relative">
             <button
               onClick={() => setIsFiltroMenuOpen(!isFiltroMenuOpen)}
-              className="w-full flex items-center justify-between bg-[#050505] border border-zinc-800 px-4 py-2.5 text-xs font-bold tracking-widest uppercase text-white transition-colors"
+              className="w-full flex items-center justify-between bg-[#050505] border border-zinc-800 px-3.5 py-2.5 text-xs font-bold tracking-widest uppercase text-white transition-colors"
             >
               <div className="flex items-center gap-2.5">
                 <Filter size={14} className="text-[#FF5A00]" />
@@ -613,7 +614,7 @@ export default function SolicitudesInternas({ usuarioActual }) {
                     >
                       <span>{estadoLabel(est)}</span>
                       {count !== undefined && (
-                        <span className="bg-[#FF5A00]/20 text-[#FF5A00] border border-[#FF5A00]/40 px-1.5 py-0.5 text-[9px] font-mono font-extrabold rounded">
+                        <span className="bg-[#FF5A00]/20 text-[#FF5A00] border border-[#FF5A00]/40 px-1.5 py-0.5 text-[9px]   font-extrabold rounded">
                           {count}
                         </span>
                       )}
@@ -624,43 +625,43 @@ export default function SolicitudesInternas({ usuarioActual }) {
             )}
           </div>
 
-          <div className="flex items-center border border-zinc-800 bg-[#050505] shrink-0">
+          <div className="flex items-center border border-zinc-800 bg-[#050505] shrink-0   w-full sm:w-auto justify-center sm:justify-start">
             <button
               onClick={() => setVistaMode("TARJETAS")}
               title="Vista en Tarjetas"
-              className={`p-2.5 transition-colors cursor-pointer flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest ${
+              className={`flex-1 sm:flex-initial px-4 py-2 sm:p-2.5 transition-colors cursor-pointer flex items-center justify-center gap-1.5 text-[10px] font-bold uppercase tracking-widest ${
                 vistaMode === "TARJETAS"
                   ? "bg-[#FFD700] text-black"
                   : "text-zinc-500 hover:text-white"
               }`}
             >
               <LayoutGrid size={15} />
-              <span className="hidden sm:inline">TARJETAS</span>
+              <span>TARJETAS</span>
             </button>
             <button
               onClick={() => setVistaMode("TABLA")}
               title="Vista en Tabla Industrial"
-              className={`p-2.5 transition-colors cursor-pointer flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest border-l border-zinc-800 ${
+              className={`flex-1 sm:flex-initial px-4 py-2 sm:p-2.5 transition-colors cursor-pointer flex items-center justify-center gap-1.5 text-[10px] font-bold uppercase tracking-widest border-l border-zinc-800 ${
                 vistaMode === "TABLA"
                   ? "bg-[#FFD700] text-black"
                   : "text-zinc-500 hover:text-white"
               }`}
             >
               <TableIcon size={15} />
-              <span className="hidden sm:inline">TABLA</span>
+              <span>TABLA</span>
             </button>
           </div>
         </div>
       </div>
 
-      {/* ÁREA DE CONTENIDO */}
-      <div className="flex-1 flex flex-col justify-between overflow-hidden p-4 md:p-8 bg-black min-h-0 relative z-10">
+      {/* ÁREA DE CONTENIDO PRINCIPAL */}
+      <div className="flex-1 flex flex-col justify-between overflow-hidden p-3 sm:p-6 md:p-8 bg-black min-h-0 relative z-10">
         {loading ? (
           <div className="flex justify-center items-center flex-1 text-[#FF5A00]">
             <RefreshCw className="animate-spin" size={28} />
           </div>
         ) : currentItems.length === 0 ? (
-          <div className="flex justify-center items-center flex-1 text-zinc-600">
+          <div className="flex justify-center items-center flex-1 text-zinc-600 text-center px-4">
             <p className="uppercase tracking-widest text-xs font-bold">
               No hay solicitudes registradas en esta vista.
             </p>
@@ -669,19 +670,20 @@ export default function SolicitudesInternas({ usuarioActual }) {
           /* =========================================================
              VISTA 1: MODO TARJETAS
              ========================================================= */
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 items-start content-start flex-1 overflow-y-auto pr-1 custom-scrollbar">
-            {currentItems.map((s) => {
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4 items-start content-start flex-1 overflow-y-auto pr-1 custom-scrollbar">
+            {currentItems.map((s, idx) => {
               const archived = isArchived(s.estado);
               const styleEst = getEstadoStyle(s.estado, archived);
               const pct = Math.round(
                 (s.cantidadRetirada / s.cantidadSolicitada) * 100,
               );
               const solIdStr = getSolId(s);
+              const isNearBottom = idx >= Math.max(1, currentItems.length - 2);
 
               return (
                 <div
                   key={s.id}
-                  className={`border transition-colors duration-200 p-5 flex flex-col justify-between gap-3.5 relative ${
+                  className={`border transition-colors duration-200 p-4 sm:p-5 flex flex-col justify-between gap-3.5 relative ${
                     archived
                       ? "border-zinc-900 bg-[#030303] opacity-80"
                       : "border-zinc-800 bg-[#050505] hover:border-[#FF5A00]/50"
@@ -707,7 +709,7 @@ export default function SolicitudesInternas({ usuarioActual }) {
                         </span>
                       </div>
 
-                      <div className="text-zinc-600 text-[9px] leading-tight font-bold">
+                      <div className="text-zinc-600 text-[9px] leading-tight  ">
                         <span>
                           {formatFechaArg(s.solicitadoAt || s.solicitado_at)}
                         </span>
@@ -727,7 +729,7 @@ export default function SolicitudesInternas({ usuarioActual }) {
                   {/* CÓDIGO Y NOMBRE */}
                   <div className="flex items-center gap-2.5">
                     <span
-                      className={`px-1.5 py-0.5 text-[9px] font-bold tracking-widest shrink-0 ${
+                      className={`px-1.5 py-0.5 text-[9px]   font-bold tracking-widest shrink-0 ${
                         archived
                           ? "text-zinc-600 bg-zinc-900 border border-zinc-800"
                           : "text-[#FF5A00] bg-[#FF5A00]/10 border border-[#FF5A00]/20"
@@ -736,7 +738,7 @@ export default function SolicitudesInternas({ usuarioActual }) {
                       {s.semielaboradoCodigo}
                     </span>
                     <h3
-                      className={`text-sm font-bold leading-none truncate flex-1 ${
+                      className={`text-xs sm:text-sm font-bold leading-tight truncate flex-1 ${
                         archived ? "text-zinc-500" : "text-white"
                       }`}
                     >
@@ -746,7 +748,7 @@ export default function SolicitudesInternas({ usuarioActual }) {
 
                   {/* BARRAS Y CANTIDADES */}
                   <div>
-                    <div className="flex justify-between text-[9px] text-zinc-500 mb-1.5 uppercase tracking-wider font-bold">
+                    <div className="flex justify-between text-[9px] text-zinc-500 mb-1.5 uppercase tracking-wider font-bold  ">
                       <span>
                         Retirado:{" "}
                         <strong
@@ -779,7 +781,7 @@ export default function SolicitudesInternas({ usuarioActual }) {
                   </div>
 
                   {/* BOTÓN DESPLEGABLE ACCIONES EN TARJETA */}
-                  <div className="pt-3 border-t border-zinc-800/80 flex justify-end items-center relative">
+                  <div className="pt-3 border-t border-zinc-800/80 flex justify-end items-center relative  ">
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
@@ -808,7 +810,11 @@ export default function SolicitudesInternas({ usuarioActual }) {
                     {activeActionMenuId === s.id && (
                       <div
                         onClick={(e) => e.stopPropagation()}
-                        className="absolute top-full right-0 mt-1.5 w-48 bg-[#050505] border border-zinc-700 shadow-[0_20px_50px_rgba(0,0,0,0.95)] z-[100] flex flex-col text-[10px] animate-in fade-in slide-in-from-top-2 duration-150 origin-top-right"
+                        className={`absolute right-0 w-48 bg-[#050505] border border-zinc-700 shadow-[0_20px_50px_rgba(0,0,0,0.95)] z-[100] flex flex-col text-[10px] animate-in fade-in duration-150 ${
+                          isNearBottom
+                            ? "bottom-full mb-1.5 slide-in-from-bottom-2 origin-bottom-right"
+                            : "top-full mt-1.5 slide-in-from-top-2 origin-top-right"
+                        }`}
                       >
                         <button
                           onClick={() => {
@@ -870,7 +876,7 @@ export default function SolicitudesInternas({ usuarioActual }) {
                             className="px-4 py-3 text-left font-bold uppercase tracking-widest text-black bg-[#FFD700] hover:bg-white transition-colors border-b border-zinc-900 cursor-pointer flex items-center gap-2"
                           >
                             <Plus size={13} />
-                            EXTRAER MATERIAL
+                            Retirar Productos
                           </button>
                         )}
 
@@ -895,15 +901,15 @@ export default function SolicitudesInternas({ usuarioActual }) {
           </div>
         ) : (
           /* =========================================================
-             VISTA 2: MODO TABLA INDUSTRIAL AUTO-AJUSTABLE
+             VISTA 2: MODO TABLA INDUSTRIAL CON HORIZONTAL SCROLL EN MÓVIL
              ========================================================= */
           <div
             ref={tableContainerRef}
-            className="flex-1 min-h-0 w-full flex flex-col justify-start overflow-visible"
+            className="flex-1 min-h-0 w-full flex flex-col justify-start overflow-x-auto overflow-y-visible custom-scrollbar"
           >
-            <div className="w-full border border-zinc-800/90 bg-[#030303] flex flex-col overflow-visible shadow-2xl h-fit">
+            <div className="w-full border border-zinc-800/90 bg-[#030303] flex flex-col overflow-visible shadow-2xl h-fit min-w-[980px]">
               {/* CABECERA TABLA (48px) */}
-              <div className="grid grid-cols-[120px_140px_1fr_200px_130px_100px_110px_130px] h-12 bg-[#080808] border-b border-zinc-800/90 items-center text-zinc-500 text-[9px] font-extrabold uppercase tracking-widest shrink-0 px-4 select-none">
+              <div className="grid grid-cols-[120px_140px_1fr_200px_130px_100px_110px_130px] h-12 bg-[#080808] border-b border-zinc-800/90 items-center text-zinc-500   text-[9px] font-extrabold uppercase tracking-widest shrink-0 px-4 select-none">
                 <div>ID SOL.</div>
                 <div>CÓDIGO</div>
                 <div>SEMIELABORADO</div>
@@ -914,13 +920,15 @@ export default function SolicitudesInternas({ usuarioActual }) {
                 <div className="text-right">ACCIONES</div>
               </div>
 
-              {/* FILAS DE LA TABLA */}
-              <div className="flex flex-col bg-black flex-1 overflow-visible">
-                {currentItems.map((s) => {
+              {/* FILAS DE LA TABLA CON Z-INDEX Y SUBMENÚ SIEMPRE HACIA ABAJO */}
+              <div className="flex flex-col bg-black flex-1 overflow-visible  ">
+                {currentItems.map((s, idx) => {
                   const archived = isArchived(s.estado);
                   const styleEst = getEstadoStyle(s.estado, archived);
                   const solIdStr = getSolId(s);
                   const motivoText = getMotivo(s);
+                  const isNearBottom =
+                    idx >= Math.max(0, currentItems.length - 3);
 
                   return (
                     <div
@@ -996,11 +1004,15 @@ export default function SolicitudesInternas({ usuarioActual }) {
                           />
                         </button>
 
-                        {/* SUBMENÚ SIEMPRE HACIA ABAJO CON ANIMACIÓN */}
+                        {/* SUBMENÚ ESTILO MATERIAS PRIMAS SIN CORTAR CON DROPUP INTELIGENTE */}
                         {activeActionMenuId === s.id && (
                           <div
                             onClick={(e) => e.stopPropagation()}
-                            className="absolute top-full right-0 mt-1.5 w-48 bg-[#050505] border border-zinc-700 shadow-[0_20px_50px_rgba(0,0,0,0.95)] z-[100] flex flex-col text-[10px] animate-in fade-in slide-in-from-top-2 duration-150 origin-top-right"
+                            className={`absolute right-0 w-48 bg-[#050505] border border-zinc-700 shadow-[0_20px_50px_rgba(0,0,0,0.95)] z-[100] flex flex-col text-[10px] animate-in fade-in duration-150 ${
+                              isNearBottom
+                                ? "bottom-full mb-1.5 slide-in-from-bottom-2 origin-bottom-right"
+                                : "top-full mt-1.5 slide-in-from-top-2 origin-top-right"
+                            }`}
                           >
                             <button
                               onClick={() => {
@@ -1062,7 +1074,7 @@ export default function SolicitudesInternas({ usuarioActual }) {
                                 className="px-4 py-3 text-left font-bold uppercase tracking-widest text-black bg-[#FFD700] hover:bg-white transition-colors border-b border-zinc-900 cursor-pointer flex items-center gap-2"
                               >
                                 <Plus size={13} />
-                                EXTRAER MATERIAL
+                                RETIRAR PRODUCTOS
                               </button>
                             )}
 
@@ -1089,10 +1101,10 @@ export default function SolicitudesInternas({ usuarioActual }) {
           </div>
         )}
 
-        {/* PIE DE PAGINACIÓN */}
+        {/* PIE DE PAGINACIÓN ADAPTATIVO */}
         {solicitudesFiltradas.length > 0 && (
-          <div className="mt-4 pt-4 border-t border-zinc-800/60 flex items-center justify-between text-xs text-zinc-500 shrink-0">
-            <span className="uppercase text-[10px] font-bold tracking-widest text-zinc-400">
+          <div className="mt-3 sm:mt-4 pt-3 sm:pt-4 border-t border-zinc-800/60 flex flex-col sm:flex-row items-center justify-between gap-2 sm:gap-0   text-xs text-zinc-500 shrink-0">
+            <span className="uppercase text-[10px] font-bold tracking-widest text-zinc-400 text-center sm:text-left">
               Página <strong className="text-white">{currentPage}</strong> de{" "}
               <strong className="text-white">{totalPages}</strong> (
               {solicitudesFiltradas.length} registros)
@@ -1122,31 +1134,31 @@ export default function SolicitudesInternas({ usuarioActual }) {
       </div>
 
       {/* =========================================
-          MODALES
+          MODALES CON TAMAÑO RESPONSIVO TÁCTIL
       ========================================= */}
 
       {/* MODAL NUEVA SOLICITUD */}
       {modalNuevoOpen && (
-        <div className="fixed inset-0 bg-black/90 backdrop-blur-sm z-[100] flex items-center justify-center p-4 font-sans">
-          <div className="bg-[#050505] border border-zinc-800 w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col relative shadow-2xl">
-            <div className="p-6 border-b border-zinc-800 flex justify-between items-center bg-[#020202]">
-              <h3 className="text-xl md:text-2xl font-extrabold italic uppercase tracking-tighter text-white">
+        <div className="fixed inset-0 bg-black/90 backdrop-blur-sm z-[100] flex items-center justify-center p-2 sm:p-4 font-sans">
+          <div className="bg-[#050505] border border-zinc-800 w-full max-w-2xl max-h-[92vh] sm:max-h-[90vh] overflow-hidden flex flex-col relative shadow-2xl">
+            <div className="p-4 sm:p-6 border-b border-zinc-800 flex justify-between items-center bg-[#020202]">
+              <h3 className="text-lg sm:text-2xl font-extrabold italic uppercase tracking-tighter text-white">
                 Nueva <span className="text-[#FF5A00]">Solicitud</span>
               </h3>
               <button
                 onClick={() => setModalNuevoOpen(false)}
-                className="text-zinc-500 hover:text-[#FF5A00] transition-colors cursor-pointer"
+                className="text-zinc-500 hover:text-[#FF5A00] transition-colors cursor-pointer p-1"
               >
-                <X size={24} />
+                <X size={22} />
               </button>
             </div>
 
             <form
               onSubmit={handleCrearSolicitud}
-              className="p-6 overflow-y-auto flex flex-col gap-5 custom-scrollbar"
+              className="p-4 sm:p-6 overflow-y-auto flex flex-col gap-4 sm:gap-5 custom-scrollbar"
             >
               <div>
-                <label className="block text-xs uppercase tracking-widest text-zinc-500 mb-2 font-bold">
+                <label className="block text-xs uppercase tracking-widest text-zinc-500 mb-2 font-bold  ">
                   1. Material / Semielaborado *
                 </label>
                 <div className="relative">
@@ -1157,11 +1169,11 @@ export default function SolicitudesInternas({ usuarioActual }) {
                       setSearchSemiText(e.target.value);
                       setSemiSeleccionado(null);
                     }}
-                    className="w-full bg-black border border-zinc-800 text-white p-4 text-sm focus:border-[#FF5A00] outline-none font-bold uppercase transition-colors"
+                    className="w-full bg-black border border-zinc-800 text-white p-3 sm:p-4 text-xs sm:text-sm focus:border-[#FF5A00] outline-none font-bold uppercase transition-colors  "
                     placeholder="Buscar por código o nombre..."
                   />
                   {searchSemiText && !semiSeleccionado && (
-                    <div className="absolute top-full left-0 w-full bg-[#0a0a0a] border border-zinc-800 mt-1 max-h-48 overflow-y-auto z-50 shadow-2xl custom-scrollbar">
+                    <div className="absolute top-full left-0 w-full bg-[#0a0a0a] border border-zinc-800 mt-1 max-h-48 overflow-y-auto z-50 shadow-2xl custom-scrollbar  ">
                       {semielaboradosFiltrados.map((item, i) => (
                         <div
                           key={i}
@@ -1169,7 +1181,7 @@ export default function SolicitudesInternas({ usuarioActual }) {
                             setSemiSeleccionado(item);
                             setSearchSemiText(item.nombre);
                           }}
-                          className="p-4 border-b border-zinc-800 hover:bg-zinc-900 cursor-pointer flex items-center gap-3 transition-colors"
+                          className="p-3 sm:p-4 border-b border-zinc-800 hover:bg-zinc-900 cursor-pointer flex items-center gap-3 transition-colors"
                         >
                           <span className="bg-[#FF5A00]/10 border border-[#FF5A00]/30 text-[#FF5A00] px-2 py-0.5 text-[10px] font-bold shrink-0">
                             {item.codigo}
@@ -1184,7 +1196,7 @@ export default function SolicitudesInternas({ usuarioActual }) {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4  ">
                 <div>
                   <label className="block text-xs uppercase tracking-widest text-zinc-500 mb-2 font-bold">
                     2. Unidades *
@@ -1195,7 +1207,7 @@ export default function SolicitudesInternas({ usuarioActual }) {
                     min="1"
                     value={cantidadPedir}
                     onChange={(e) => setCantidadPedir(e.target.value)}
-                    className="w-full bg-black border border-zinc-800 text-white p-4 focus:border-[#FF5A00] outline-none font-bold text-sm"
+                    className="w-full bg-black border border-zinc-800 text-white p-3 sm:p-4 focus:border-[#FF5A00] outline-none font-bold text-xs sm:text-sm"
                   />
                 </div>
                 <div>
@@ -1205,7 +1217,7 @@ export default function SolicitudesInternas({ usuarioActual }) {
                   <select
                     value={urgenciaPedir}
                     onChange={(e) => setUrgenciaPedir(e.target.value)}
-                    className="w-full bg-black border border-zinc-800 text-white p-4 focus:border-[#FF5A00] outline-none font-bold tracking-wider cursor-pointer text-xs"
+                    className="w-full bg-black border border-zinc-800 text-white p-3 sm:p-4 focus:border-[#FF5A00] outline-none font-bold tracking-wider cursor-pointer text-xs"
                   >
                     <option value="BAJA">BAJA</option>
                     <option value="MEDIA">MEDIA</option>
@@ -1214,7 +1226,7 @@ export default function SolicitudesInternas({ usuarioActual }) {
                 </div>
               </div>
 
-              <div className="space-y-2">
+              <div className="space-y-2  ">
                 <div className="flex justify-between items-center">
                   <label className="block text-xs uppercase tracking-widest text-zinc-500 font-bold">
                     4. Destino / Motivo de Solicitud *
@@ -1230,13 +1242,13 @@ export default function SolicitudesInternas({ usuarioActual }) {
                   maxLength={20}
                   value={motivoUso}
                   onChange={(e) => setMotivoUso(e.target.value.slice(0, 20))}
-                  placeholder="EJ: OP-6043 / INY 02..."
-                  className="w-full bg-black border border-zinc-800 text-white p-4 text-xs font-bold focus:border-[#FF5A00] outline-none uppercase tracking-wider"
+                  placeholder="EJ: OP 1500 / Stock..."
+                  className="w-full bg-black border border-zinc-800 text-white p-3 sm:p-4 text-xs font-bold focus:border-[#FF5A00] outline-none uppercase tracking-wider"
                 />
               </div>
 
               {errorDuplicado && (
-                <div className="p-3 bg-[#FF0055]/10 border border-[#FF0055]/30 text-[#FF0055] text-xs font-bold uppercase">
+                <div className="p-3 bg-[#FF0055]/10 border border-[#FF0055]/30 text-[#FF0055] text-xs font-bold uppercase  ">
                   Ya existe una solicitud activa para este semielaborado.
                 </div>
               )}
@@ -1246,7 +1258,7 @@ export default function SolicitudesInternas({ usuarioActual }) {
                 disabled={
                   !semiSeleccionado || !cantidadPedir || !motivoUso.trim()
                 }
-                className="mt-2 w-full bg-[#FFD700] hover:bg-white text-black font-extrabold italic uppercase tracking-tighter text-xl p-4 transition-all disabled:opacity-30 flex justify-center items-center gap-2 cursor-pointer"
+                className="mt-2 w-full bg-[#FFD700] hover:bg-white text-black font-extrabold italic uppercase tracking-tighter text-lg sm:text-xl p-3.5 sm:p-4 transition-all disabled:opacity-30 flex justify-center items-center gap-2 cursor-pointer"
               >
                 Confirmar Solicitud <ChevronRight size={20} strokeWidth={3} />
               </button>
@@ -1257,32 +1269,35 @@ export default function SolicitudesInternas({ usuarioActual }) {
 
       {/* MODAL EDITAR SOLICITUD */}
       {modalEditarOpen && (
-        <div className="fixed inset-0 bg-black/90 backdrop-blur-sm z-[100] flex items-center justify-center p-4 font-sans">
+        <div className="fixed inset-0 bg-black/90 backdrop-blur-sm z-[100] flex items-center justify-center p-2 sm:p-4 font-sans">
           <div className="bg-[#050505] border border-zinc-800 w-full max-w-lg flex flex-col relative shadow-2xl">
-            <div className="p-6 border-b border-zinc-800 flex justify-between items-center bg-[#020202]">
-              <h3 className="text-xl font-extrabold italic uppercase tracking-tighter text-[#FF5A00]">
+            <div className="p-4 sm:p-6 border-b border-zinc-800 flex justify-between items-center bg-[#020202]">
+              <h3 className="text-lg sm:text-xl font-extrabold italic uppercase tracking-tighter text-[#FF5A00]">
                 Editar{" "}
                 <span className="text-white">{getSolId(modalEditarOpen)}</span>
               </h3>
               <button
                 onClick={() => setModalEditarOpen(null)}
-                className="text-zinc-500 hover:text-white transition-colors cursor-pointer"
+                className="text-zinc-500 hover:text-white transition-colors cursor-pointer p-1"
               >
-                <X size={24} />
+                <X size={22} />
               </button>
             </div>
 
-            <form onSubmit={handleGuardarEdicion} className="p-6 space-y-5">
+            <form
+              onSubmit={handleGuardarEdicion}
+              className="p-4 sm:p-6 space-y-4 sm:space-y-5  "
+            >
               <div>
                 <span className="bg-[#FF5A00]/10 border border-[#FF5A00]/20 text-[#FF5A00] px-2 py-0.5 text-[10px] font-bold tracking-widest mb-1 inline-block">
                   {modalEditarOpen.semielaboradoCodigo}
                 </span>
-                <h4 className="text-white font-bold text-base font-sans">
+                <h4 className="text-white font-bold text-sm sm:text-base font-sans">
                   {modalEditarOpen.semielaboradoNombre}
                 </h4>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                 <div>
                   <label className="block text-[10px] uppercase tracking-widest text-zinc-500 mb-1.5 font-bold">
                     Unidades Solicitadas:
@@ -1293,7 +1308,7 @@ export default function SolicitudesInternas({ usuarioActual }) {
                     min="1"
                     value={editCantidad}
                     onChange={(e) => setEditCantidad(e.target.value)}
-                    className="w-full bg-black border border-zinc-800 text-white p-3 text-sm font-bold focus:border-[#FF5A00] outline-none"
+                    className="w-full bg-black border border-zinc-800 text-white p-3 text-xs sm:text-sm font-bold focus:border-[#FF5A00] outline-none"
                   />
                 </div>
 
@@ -1342,7 +1357,7 @@ export default function SolicitudesInternas({ usuarioActual }) {
                 </button>
                 <button
                   type="submit"
-                  className="px-6 py-2.5 bg-[#FF5A00] hover:bg-white text-black font-extrabold text-[10px] uppercase tracking-widest transition cursor-pointer"
+                  className="px-5 sm:px-6 py-2.5 bg-[#FF5A00] hover:bg-white text-black font-extrabold text-[10px] uppercase tracking-widest transition cursor-pointer"
                 >
                   GUARDAR CAMBIOS
                 </button>
@@ -1352,61 +1367,89 @@ export default function SolicitudesInternas({ usuarioActual }) {
         </div>
       )}
 
-      {/* MODAL RETIRO PARCIAL */}
+      {/* MODAL RETIRO PARCIAL (REDISEÑADO) */}
       {modalRetiroOpen && (
-        <div className="fixed inset-0 bg-black/90 backdrop-blur-sm z-[100] flex items-center justify-center p-4 font-sans">
-          <div className="bg-[#050505] border border-zinc-800 w-full max-w-md flex flex-col relative shadow-2xl">
-            <div className="p-6 border-b border-zinc-800 flex justify-between items-center bg-[#020202]">
-              <h3 className="text-xl font-extrabold italic uppercase tracking-tighter text-[#FFD700]">
-                Extraer Material
+        <div className="fixed inset-0 bg-black/90 backdrop-blur-sm z-[100] flex items-center justify-center p-2 sm:p-4 font-sans animate-in fade-in duration-200">
+          <div className="bg-[#050505] border border-zinc-800 w-full max-w-lg flex flex-col relative shadow-[0_0_50px_rgba(0,0,0,0.8)] animate-in zoom-in-95 duration-200">
+            <div className="p-4 sm:p-6 border-b border-zinc-800 flex justify-between items-center bg-[#020202]">
+              <h3 className="text-lg sm:text-2xl font-extrabold italic uppercase tracking-tighter text-[#FFD700]">
+                Retirar Productos
               </h3>
               <button
                 onClick={() => setModalRetiroOpen(null)}
-                className="text-zinc-500 hover:text-white transition-colors cursor-pointer"
+                className="text-zinc-500 hover:text-white transition-colors cursor-pointer p-1"
               >
                 <X size={24} />
               </button>
             </div>
-            <div className="p-6 space-y-5">
-              <div>
-                <span className="bg-[#FF5A00]/10 border border-[#FF5A00]/20 text-[#FF5A00] px-1.5 py-0.5 text-[10px] font-bold tracking-widest mb-2 inline-block">
-                  {modalRetiroOpen.semielaboradoCodigo}
-                </span>
-                <p className="text-zinc-300 text-sm mb-2 font-bold font-sans">
-                  {modalRetiroOpen.semielaboradoNombre}
-                </p>
-                <p className="text-3xl font-extrabold text-white">
-                  {modalRetiroOpen.cantidadSolicitada -
-                    modalRetiroOpen.cantidadRetirada}{" "}
-                  <span className="text-xs font-normal text-zinc-500">
-                    u. disp.
+
+            <div className="p-4 sm:p-6 space-y-6  ">
+              <div className="flex justify-between items-start">
+                <div className="min-w-0 pr-4">
+                  <span className="bg-[#FF5A00]/10 border border-[#FF5A00]/20 text-[#FF5A00] px-1.5 py-0.5 text-[10px] font-bold tracking-widest mb-2 inline-block">
+                    {modalRetiroOpen.semielaboradoCodigo}
                   </span>
-                </p>
+                  <p className="text-zinc-300 text-sm sm:text-base font-bold font-sans truncate">
+                    {modalRetiroOpen.semielaboradoNombre}
+                  </p>
+                </div>
+                <div className="text-right shrink-0">
+                  <p className="text-[9px] uppercase tracking-widest text-zinc-500 font-bold mb-1">
+                    Disponible
+                  </p>
+                  <p className="text-3xl sm:text-4xl font-extrabold text-[#FFD700] leading-none">
+                    {modalRetiroOpen.cantidadSolicitada -
+                      modalRetiroOpen.cantidadRetirada}
+                  </p>
+                </div>
               </div>
 
-              <div>
-                <label className="block text-xs uppercase tracking-widest text-zinc-500 mb-2 font-bold">
-                  Retiro Parcial
-                </label>
-                <div className="flex">
+              <div className="space-y-3 bg-zinc-900/30 p-4 border border-zinc-800/50">
+                <div className="flex justify-between items-end">
+                  <label className="block text-xs uppercase tracking-widest text-zinc-400 font-bold">
+                    Cantidad a retirar
+                  </label>
+                  <span className="text-[10px] text-zinc-600 font-bold">
+                    UNIDADES
+                  </span>
+                </div>
+
+                <div className="relative group">
                   <input
                     type="number"
+                    min="1"
+                    max={
+                      modalRetiroOpen.cantidadSolicitada -
+                      modalRetiroOpen.cantidadRetirada
+                    }
                     value={cantidadRetiroManual}
                     onChange={(e) => setCantidadRetiroManual(e.target.value)}
-                    className="w-full bg-black border border-zinc-800 border-r-0 text-white p-4 focus:border-[#FFD700] outline-none font-bold"
-                    placeholder="Ingresar cant..."
+                    className="w-full bg-black border-2 border-zinc-800 text-white p-4 pr-20 text-xl font-bold focus:border-[#FFD700] focus:ring-4 focus:ring-[#FFD700]/10 outline-none transition-all text-center sm:text-left"
+                    placeholder="0"
+                    autoFocus
                   />
                   <button
+                    type="button"
                     onClick={() =>
-                      handleRegistrarRetiro(
-                        modalRetiroOpen.id,
-                        cantidadRetiroManual,
+                      setCantidadRetiroManual(
+                        modalRetiroOpen.cantidadSolicitada -
+                          modalRetiroOpen.cantidadRetirada,
                       )
                     }
-                    className="bg-zinc-800 text-white px-6 font-bold uppercase text-xs tracking-wider hover:bg-[#FFD700] hover:text-black transition-colors cursor-pointer"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 bg-[#FFD700]/10 text-[#FFD700] hover:bg-[#FFD700] hover:text-black border border-[#FFD700]/20 px-3 py-2 text-[10px] font-bold uppercase tracking-widest transition-colors cursor-pointer"
                   >
-                    OK
+                    MAX
                   </button>
+                </div>
+
+                {/* BARRA DE PROGRESO DE RETIRO VISUAL */}
+                <div className="h-1.5 w-full bg-black border border-zinc-800 overflow-hidden mt-2">
+                  <div
+                    className="h-full bg-[#FFD700] transition-all duration-300 ease-out"
+                    style={{
+                      width: `${Math.min(100, Math.max(0, (Number(cantidadRetiroManual) / (modalRetiroOpen.cantidadSolicitada - modalRetiroOpen.cantidadRetirada)) * 100))}%`,
+                    }}
+                  />
                 </div>
               </div>
 
@@ -1414,25 +1457,36 @@ export default function SolicitudesInternas({ usuarioActual }) {
                 onClick={() =>
                   handleRegistrarRetiro(
                     modalRetiroOpen.id,
-                    modalRetiroOpen.cantidadSolicitada -
-                      modalRetiroOpen.cantidadRetirada,
+                    cantidadRetiroManual,
                   )
                 }
-                className="w-full bg-transparent border border-[#FFD700] text-[#FFD700] hover:bg-[#FFD700] hover:text-black font-bold uppercase tracking-widest text-xs p-4 transition-colors cursor-pointer mt-2"
+                disabled={
+                  !cantidadRetiroManual ||
+                  Number(cantidadRetiroManual) <= 0 ||
+                  Number(cantidadRetiroManual) >
+                    modalRetiroOpen.cantidadSolicitada -
+                      modalRetiroOpen.cantidadRetirada
+                }
+                className="w-full bg-[#FFD700] hover:bg-white text-black font-extrabold italic uppercase tracking-tighter text-lg sm:text-xl p-4 transition-all disabled:opacity-30 disabled:cursor-not-allowed flex justify-center items-center gap-2 cursor-pointer shadow-[0_0_20px_rgba(255,215,0,0.15)] group"
               >
-                Extraer Todo
+                Confirmar Retiro{" "}
+                <ChevronRight
+                  size={20}
+                  strokeWidth={3}
+                  className="transition-transform group-hover:translate-x-1"
+                />
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* MODAL HISTORIAL / AUDITORÍA CON FORMATO DE HORA Y FECHA ARGENTINA */}
+      {/* MODAL HISTORIAL / AUDITORÍA */}
       {modalHistorialOpen && (
-        <div className="fixed inset-0 bg-black/90 backdrop-blur-sm z-[100] flex flex-col items-center justify-center p-4 font-sans">
-          <div className="bg-[#050505] border border-zinc-800 w-full max-w-md max-h-[85vh] flex flex-col relative shadow-2xl">
-            <div className="p-6 border-b border-zinc-800 flex justify-between items-center bg-[#020202] shrink-0">
-              <h3 className="text-xl font-extrabold italic uppercase tracking-tighter text-white">
+        <div className="fixed inset-0 bg-black/90 backdrop-blur-sm z-[100] flex flex-col items-center justify-center p-2 sm:p-4 font-sans">
+          <div className="bg-[#050505] border border-zinc-800 w-full max-w-md max-h-[88vh] sm:max-h-[85vh] flex flex-col relative shadow-2xl">
+            <div className="p-4 sm:p-6 border-b border-zinc-800 flex justify-between items-center bg-[#020202] shrink-0">
+              <h3 className="text-lg sm:text-xl font-extrabold italic uppercase tracking-tighter text-white">
                 Auditoría{" "}
                 <span className="text-[#FF5A00]">
                   {getSolId(modalHistorialOpen)}
@@ -1440,14 +1494,14 @@ export default function SolicitudesInternas({ usuarioActual }) {
               </h3>
               <button
                 onClick={() => setModalHistorialOpen(null)}
-                className="text-zinc-500 hover:text-white transition-colors cursor-pointer"
+                className="text-zinc-500 hover:text-white transition-colors cursor-pointer p-1"
               >
-                <X size={24} />
+                <X size={22} />
               </button>
             </div>
 
-            <div className="p-6 overflow-y-auto space-y-6 custom-scrollbar">
-              <div className="space-y-4 border-l border-zinc-800 pl-5 ml-2 font-mono">
+            <div className="p-4 sm:p-6 overflow-y-auto space-y-6 custom-scrollbar  ">
+              <div className="space-y-4 border-l border-zinc-800 pl-5 ml-2">
                 <div className="relative">
                   <div className="w-2.5 h-2.5 rounded-full bg-zinc-600 absolute -left-[26px] top-1" />
                   <p className="text-[10px] font-bold uppercase text-white tracking-wider">
@@ -1514,9 +1568,9 @@ export default function SolicitudesInternas({ usuarioActual }) {
                 )}
               </div>
 
-              <div className="pt-5 border-t border-zinc-800 font-mono">
+              <div className="pt-5 border-t border-zinc-800">
                 <p className="text-[10px] uppercase tracking-widest text-zinc-500 mb-3 font-bold">
-                  Movimientos de Extracción
+                  Movimientos de Retiro
                 </p>
                 {modalHistorialOpen.retirosHistorial?.length > 0 ? (
                   <div className="space-y-2">
