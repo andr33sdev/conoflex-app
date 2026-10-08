@@ -3803,6 +3803,54 @@ app.post("/api/solicitudes-internas", async (req, res) => {
   }
 });
 
+// PUT: EDITAR SOLICITUD INTERNA
+app.put("/api/solicitudes-internas/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const cantidad =
+      req.body.cantidadSolicitada || req.body.cantidad_solicitada;
+    const urgencia = req.body.urgencia;
+    const motivo =
+      req.body.motivoUso || req.body.motivo_uso || req.body.motivo || "";
+
+    if (!id || id === "undefined") {
+      return res.status(400).json({ error: "ID de solicitud no válido." });
+    }
+
+    // Acepta tanto "SOL-1" como "1"
+    const cleanNumId = String(id).replace(/^SOL-/i, "");
+
+    const query = `
+      UPDATE solicitudes_internas 
+      SET cantidad_solicitada = ?, 
+          urgencia = ?, 
+          motivo_uso = ? 
+      WHERE id = ? OR id = ?
+    `;
+
+    const [result] = await db.query(query, [
+      cantidad,
+      urgencia,
+      motivo,
+      id,
+      cleanNumId,
+    ]);
+
+    if (result.affectedRows === 0) {
+      return res
+        .status(404)
+        .json({ error: "No se encontró la solicitud para actualizar." });
+    }
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error("Error al editar solicitud:", error);
+    res
+      .status(500)
+      .json({ error: "Error interno en el servidor al editar la solicitud." });
+  }
+});
+
 // PUT: CAMBIAR ESTADO DE SOLICITUD
 app.put("/api/solicitudes-internas/:id/estado", async (req, res) => {
   try {
