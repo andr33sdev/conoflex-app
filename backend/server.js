@@ -3738,35 +3738,68 @@ app.get("/api/solicitudes-internas", async (req, res) => {
 // 2. CREAR NUEVA SOLICITUD
 app.post("/api/solicitudes-internas", async (req, res) => {
   try {
-    // Acepta tanto camelCase como snake_case para compatibilidad total
-    const codigo =
-      req.body.semielaboradoCodigo || req.body.semielaborado_codigo;
-    const nombre =
-      req.body.semielaboradoNombre || req.body.semielaborado_nombre;
-    const cantidad =
-      req.body.cantidadSolicitada || req.body.cantidad_solicitada;
-    const urgencia = req.body.urgencia || "MEDIA";
-    const motivo =
-      req.body.motivoUso || req.body.motivo_uso || req.body.motivo || "";
-    const estado = req.body.estado || "SOLICITADO";
-    const solicitadoAt =
-      req.body.solicitadoAt || req.body.solicitado_at || new Date();
+    const {
+      id,
+      semielaboradoCodigo,
+      semielaborado_codigo,
+      semielaboradoNombre,
+      semielaborado_nombre,
+      cantidadSolicitada,
+      cantidad_solicitada,
+      urgencia,
+      motivoUso,
+      motivo_uso,
+      motivo,
+      estado,
+      solicitadoAt,
+      solicitado_at,
+    } = req.body;
+
+    // 1. Normalización de campos (acepta camelCase y snake_case)
+    const codigo = semielaboradoCodigo || semielaborado_codigo;
+    const nombre = semielaboradoNombre || semielaborado_nombre;
+    const cantidad = cantidadSolicitada || cantidad_solicitada;
+    const motivoFinal = motivoUso || motivo_uso || motivo || null;
+    const urg = urgencia || "MEDIA";
+    const est = estado || "SOLICITADO";
+    const fecha = solicitadoAt || solicitado_at || new Date();
+
+    // 2. ID de respaldo si la BD exige VARCHAR(20) y no recibe ID del frontend
+    const solId = id || `SOL-${Date.now().toString().slice(-5)}`;
 
     if (!codigo || !cantidad) {
-      return res.status(400).json({ error: "Faltan datos requeridos." });
+      return res
+        .status(400)
+        .json({ error: "Faltan datos requeridos (código o cantidad)." });
     }
 
-    const [result] = await db.query(
-      `INSERT INTO solicitudes_internas 
-      (semielaborado_codigo, semielaborado_nombre, cantidad_solicitada, urgencia, motivo_uso, estado, solicitado_at) 
-      VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      [codigo, nombre, cantidad, urgencia, motivo, estado, solicitadoAt],
-    );
+    // 3. Consulta SQL ajustada a la estructura real de tu tabla MySQL
+    const query = `
+      INSERT INTO solicitudes_internas 
+      (id, semielaborado_codigo, semielaborado_nombre, cantidad_solicitada, urgencia, motivo_uso, estado, solicitado_at) 
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `;
 
-    res.json({ success: true, id: result.insertId });
+    await db.query(query, [
+      solId,
+      codigo,
+      nombre,
+      cantidad,
+      urg,
+      motivoFinal,
+      est,
+      fecha,
+    ]);
+
+    return res.json({ success: true, id: solId });
   } catch (error) {
-    console.error("Error al crear solicitud:", error);
-    res.status(500).json({ error: "Error interno en el servidor." });
+    // Imprime el error real de MySQL en la terminal de Node para diagnóstico inmediato
+    console.error("=== ERROR MYSQL AL CREAR SOLICITUD ===");
+    console.error(error);
+    return res.status(500).json({
+      error: "Error interno en el servidor.",
+      detalle: error.message,
+    });
   }
 });
 

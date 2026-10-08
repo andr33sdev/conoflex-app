@@ -15,9 +15,6 @@ import {
   Plus,
   CheckCircle2,
   Edit2,
-  ArrowUp,
-  ArrowDown,
-  ArrowUpDown,
 } from "lucide-react";
 
 const API_BASE_URL = import.meta.env?.VITE_API_URL || "";
@@ -38,17 +35,6 @@ const getNowLocal = () => {
   return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
 };
 
-// FORMATO DE FECHA DD/MM/AAAA
-const formatFechaDDMMAAAA = (fechaRaw) => {
-  if (!fechaRaw || fechaRaw === "--") return "--";
-  const datePart = String(fechaRaw).split(" ")[0].split("T")[0];
-  const parts = datePart.split("-");
-  if (parts.length === 3) {
-    return `${parts[2]}/${parts[1]}/${parts[0]}`;
-  }
-  return fechaRaw;
-};
-
 export default function SolicitudesInternas({ usuarioActual }) {
   const rolUpper = (usuarioActual?.rol || "ADMIN").toUpperCase();
   const isAdmin = rolUpper === "ADMIN";
@@ -62,10 +48,6 @@ export default function SolicitudesInternas({ usuarioActual }) {
 
   // MODO DE VISTA: "TARJETAS" | "TABLA"
   const [vistaMode, setVistaMode] = useState("TABLA");
-
-  // ESTADO DE ORDENAMIENTO EN TABLA
-  const [sortColumn, setSortColumn] = useState("id");
-  const [sortDirection, setSortDirection] = useState("desc");
 
   // ESTADOS DE MENÚS Y DROPDOWNS
   const [isFiltroMenuOpen, setIsFiltroMenuOpen] = useState(false);
@@ -166,11 +148,11 @@ export default function SolicitudesInternas({ usuarioActual }) {
     setCurrentPage(1);
   }, [filtroEstado, busqueda, vistaMode]);
 
-  // ID FORMATEADO USANDO EL ID NUMÉRICO REAL DE LA BASE DE DATOS
+  // ID FORMATEADO "SOL-" + ID DE BASE DE DATOS
   const getSolId = (s) => {
-    if (!s || s.id == null) return "SOL-";
-    const rawId = String(s.id).replace(/^SOL-/i, "");
-    return `SOL-${rawId}`;
+    if (!s) return "";
+    const rawId = String(s.id);
+    return rawId.startsWith("SOL-") ? rawId : `SOL-${rawId}`;
   };
 
   // OBTENER MOTIVO DESDE CUALQUIER FORMATO DE ATRIBUTO DE LA BD
@@ -385,65 +367,21 @@ export default function SolicitudesInternas({ usuarioActual }) {
     }
   };
 
-  // MANEJADOR DE ORDENAMIENTO POR CABECERA
-  const handleSort = (colKey) => {
-    if (sortColumn === colKey) {
-      setSortDirection((prev) => (prev === "asc" ? "desc" : "asc"));
-    } else {
-      setSortColumn(colKey);
-      setSortDirection("asc");
-    }
-    setCurrentPage(1);
-  };
-
-  // FILTRADO Y ORDENAMIENTO DE SOLICITUDES
-  const solicitudesFiltradas = useMemo(() => {
-    let result = solicitudes.filter((s) => {
-      const solId = getSolId(s);
-      const motivoText = getMotivo(s);
-      const match =
-        solId.toLowerCase().includes(busqueda.toLowerCase()) ||
-        s.semielaboradoNombre.toLowerCase().includes(busqueda.toLowerCase()) ||
-        s.semielaboradoCodigo.toLowerCase().includes(busqueda.toLowerCase()) ||
-        motivoText.toLowerCase().includes(busqueda.toLowerCase());
-      if (!match) return false;
-      if (filtroEstado === "TODOS")
-        return s.estado !== "ENTREGADO" && s.estado !== "CANCELADO";
-      if (filtroEstado === "AUDITORIA")
-        return s.estado === "ENTREGADO" || s.estado === "CANCELADO";
-      return s.estado === filtroEstado;
-    });
-
-    if (sortColumn) {
-      result.sort((a, b) => {
-        let aVal = a[sortColumn];
-        let bVal = b[sortColumn];
-
-        if (sortColumn === "id") {
-          aVal = Number(String(a.id).replace(/\D/g, "")) || 0;
-          bVal = Number(String(b.id).replace(/\D/g, "")) || 0;
-        } else if (sortColumn === "motivoUso") {
-          aVal = getMotivo(a);
-          bVal = getMotivo(b);
-        } else if (sortColumn === "solicitadoAt") {
-          aVal = a.solicitadoAt || "";
-          bVal = b.solicitadoAt || "";
-        }
-
-        if (aVal == null) aVal = "";
-        if (bVal == null) bVal = "";
-
-        if (typeof aVal === "string") aVal = aVal.toLowerCase();
-        if (typeof bVal === "string") bVal = bVal.toLowerCase();
-
-        if (aVal < bVal) return sortDirection === "asc" ? -1 : 1;
-        if (aVal > bVal) return sortDirection === "asc" ? 1 : -1;
-        return 0;
-      });
-    }
-
-    return result;
-  }, [solicitudes, busqueda, filtroEstado, sortColumn, sortDirection]);
+  const solicitudesFiltradas = solicitudes.filter((s) => {
+    const solId = getSolId(s);
+    const motivoText = getMotivo(s);
+    const match =
+      solId.toLowerCase().includes(busqueda.toLowerCase()) ||
+      s.semielaboradoNombre.toLowerCase().includes(busqueda.toLowerCase()) ||
+      s.semielaboradoCodigo.toLowerCase().includes(busqueda.toLowerCase()) ||
+      motivoText.toLowerCase().includes(busqueda.toLowerCase());
+    if (!match) return false;
+    if (filtroEstado === "TODOS")
+      return s.estado !== "ENTREGADO" && s.estado !== "CANCELADO";
+    if (filtroEstado === "AUDITORIA")
+      return s.estado === "ENTREGADO" || s.estado === "CANCELADO";
+    return s.estado === filtroEstado;
+  });
 
   const totalPages = Math.ceil(solicitudesFiltradas.length / itemsPerPage) || 1;
   const currentItems = useMemo(() => {
@@ -494,24 +432,11 @@ export default function SolicitudesInternas({ usuarioActual }) {
 
   return (
     <div className="flex-1 flex flex-col h-full min-h-0 bg-black font-sans text-zinc-200 overflow-hidden relative selection:bg-[#FF5A00]/30">
-      {/* ESTILOS DE ANIMACIÓN DE BOTÓN GLOW IZQUIERDA A DERECHA / DERECHA A IZQUIERDA */}
-      <style>{`
-        .btn-glow-fill {
-          transform-origin: right;
-          transform: scaleX(0);
-          transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1);
-        }
-        .group:hover .btn-glow-fill {
-          transform-origin: left;
-          transform: scaleX(1);
-        }
-      `}</style>
-
       {/* BANNER BLOQUEO DE 8HS */}
       {bloqueadoPor8hs && (
-        <div className="bg-[#FF0055]/10 border-b border-[#FF0055]/30 p-2.5 px-4 md:px-6 flex items-center gap-3 text-[#FF0055] text-xs z-20 shrink-0   font-bold">
+        <div className="bg-[#FF0055]/10 border-b border-[#FF0055]/30 p-2.5 px-4 md:px-6 flex items-center gap-3 text-[#FF0055] text-xs z-20 shrink-0    ">
           <AlertTriangle size={16} className="shrink-0" />
-          <span className="tracking-wide uppercase">
+          <span className="font-bold tracking-wide uppercase">
             ATENCIÓN: TENÉS SOLICITUDES PENDIENTES HACE MÁS DE 8HS.
           </span>
         </div>
@@ -528,26 +453,18 @@ export default function SolicitudesInternas({ usuarioActual }) {
           </p>
         </div>
 
-        {/* BOTÓN NUEVA SOLICITUD MÁS GRANDE CON ANIMACIÓN GLOW IZQ-DER / DER-IZQ */}
         {isDeposito && (
           <button
             onClick={() => setModalNuevoOpen(true)}
             disabled={limiteAlcanzado || bloqueadoPor8hs}
-            className={`group relative overflow-hidden flex items-center justify-between gap-4 px-8 py-4 font-black text-sm md:text-base uppercase tracking-widest transition-all z-10 w-full md:w-auto ${
+            className={`flex items-center justify-between gap-4 px-6 py-3 font-bold text-xs uppercase tracking-widest transition-all z-10 w-full md:w-auto ${
               limiteAlcanzado || bloqueadoPor8hs
                 ? "bg-zinc-900 text-zinc-600 cursor-not-allowed border border-zinc-800"
-                : "bg-[#FFD700] text-black border border-[#FFD700] cursor-pointer shadow-[0_0_20px_rgba(255,215,0,0.25)]"
+                : "bg-[#FFD700] hover:bg-white text-black active:scale-95 cursor-pointer"
             }`}
           >
-            {!limiteAlcanzado && !bloqueadoPor8hs && (
-              <span className="btn-glow-fill absolute inset-0 bg-gradient-to-r from-[#FFD700] via-white to-[#FFD700] opacity-90 shadow-[0_0_35px_#FFD700] pointer-events-none" />
-            )}
-            <span className="relative z-10">NUEVA SOLICITUD</span>
-            <ChevronRight
-              size={22}
-              strokeWidth={3.5}
-              className="relative z-10 transition-transform group-hover:translate-x-1"
-            />
+            <span>NUEVA SOLICITUD</span>
+            <ChevronRight size={18} strokeWidth={3} />
           </button>
         )}
       </div>
@@ -564,7 +481,7 @@ export default function SolicitudesInternas({ usuarioActual }) {
             value={busqueda}
             onChange={(e) => setBusqueda(e.target.value)}
             placeholder="Buscar por ID, artículo o destino..."
-            className="w-full bg-transparent border border-zinc-800 focus:border-[#FF5A00] text-white pl-10 pr-4 py-2.5 text-xs transition-colors outline-none  "
+            className="w-full bg-transparent border border-zinc-800 focus:border-[#FF5A00] text-white pl-10 pr-4 py-2.5 text-xs transition-colors outline-none    "
           />
         </div>
 
@@ -574,9 +491,9 @@ export default function SolicitudesInternas({ usuarioActual }) {
               <button
                 key={est}
                 onClick={() => setFiltroEstado(est)}
-                className={`px-4 py-2 text-[10px]   font-bold tracking-widest uppercase transition-all whitespace-nowrap border-r border-zinc-800 last:border-r-0 cursor-pointer ${
+                className={`px-4 py-2 text-[10px]     font-bold tracking-widest uppercase transition-all whitespace-nowrap border-r border-zinc-800 last:border-r-0 cursor-pointer ${
                   filtroEstado === est
-                    ? "bg-[#FF5A00] text-[#050505]"
+                    ? "bg-[#FF5A00] text-black"
                     : "text-zinc-500 hover:text-white hover:bg-zinc-900"
                 }`}
               >
@@ -590,7 +507,7 @@ export default function SolicitudesInternas({ usuarioActual }) {
               onClick={() => setIsFiltroMenuOpen(!isFiltroMenuOpen)}
               className="w-full flex items-center justify-between bg-[#050505] border border-zinc-800 px-4 py-2.5 text-xs font-bold tracking-widest uppercase text-white transition-colors"
             >
-              <div className="flex items-center gap-2.5  ">
+              <div className="flex items-center gap-2.5    ">
                 <Filter size={14} className="text-[#FF5A00]" />
                 <span className="text-zinc-500">ESTADO:</span>
                 <span className="text-[#FF5A00]">
@@ -604,7 +521,7 @@ export default function SolicitudesInternas({ usuarioActual }) {
             </button>
 
             {isFiltroMenuOpen && (
-              <div className="absolute top-full left-0 w-full mt-1 bg-[#050505] border border-zinc-800 shadow-2xl z-50 flex flex-col  ">
+              <div className="absolute top-full left-0 w-full mt-1 bg-[#050505] border border-zinc-800 shadow-2xl z-50 flex flex-col    ">
                 {ESTADOS_OPCIONES.map((est) => (
                   <button
                     key={est}
@@ -625,7 +542,7 @@ export default function SolicitudesInternas({ usuarioActual }) {
             )}
           </div>
 
-          <div className="flex items-center border border-zinc-800 bg-[#050505] shrink-0  ">
+          <div className="flex items-center border border-zinc-800 bg-[#050505] shrink-0    ">
             <button
               onClick={() => setVistaMode("TARJETAS")}
               title="Vista en Tarjetas"
@@ -661,7 +578,7 @@ export default function SolicitudesInternas({ usuarioActual }) {
             <RefreshCw className="animate-spin" size={28} />
           </div>
         ) : currentItems.length === 0 ? (
-          <div className="flex justify-center items-center flex-1 text-zinc-600  ">
+          <div className="flex justify-center items-center flex-1 text-zinc-600    ">
             <p className="uppercase tracking-widest text-xs font-bold">
               No hay solicitudes registradas en esta vista.
             </p>
@@ -678,7 +595,6 @@ export default function SolicitudesInternas({ usuarioActual }) {
                 (s.cantidadRetirada / s.cantidadSolicitada) * 100,
               );
               const solIdStr = getSolId(s);
-              const fechaStrFormatted = formatFechaDDMMAAAA(s.solicitadoAt);
 
               return (
                 <div
@@ -689,7 +605,7 @@ export default function SolicitudesInternas({ usuarioActual }) {
                       : "border-zinc-800 bg-[#050505] hover:border-[#FF5A00]/50"
                   } ${activeActionMenuId === s.id ? "z-50" : "z-10"}`}
                 >
-                  <div className="flex justify-between items-start border-b border-zinc-800/80 pb-2.5  ">
+                  <div className="flex justify-between items-start border-b border-zinc-800/80 pb-2.5    ">
                     <div className="flex flex-col gap-1 min-w-0">
                       <div className="flex items-center gap-1.5 flex-wrap">
                         <span
@@ -709,8 +625,10 @@ export default function SolicitudesInternas({ usuarioActual }) {
                         </span>
                       </div>
 
-                      <div className="text-zinc-600 text-[9px] leading-tight font-bold">
-                        <span>{fechaStrFormatted}</span>
+                      <div className="text-zinc-600 text-[9px] leading-tight">
+                        <span>
+                          {s.solicitadoAt ? s.solicitadoAt.slice(0, 10) : ""}
+                        </span>
                         <span className="ml-1">
                           {s.solicitadoAt
                             ? s.solicitadoAt.slice(11, 16) + " HS"
@@ -729,7 +647,7 @@ export default function SolicitudesInternas({ usuarioActual }) {
                   {/* CÓDIGO Y NOMBRE */}
                   <div className="flex items-center gap-2.5">
                     <span
-                      className={`px-1.5 py-0.5 text-[9px]   font-bold tracking-widest shrink-0 ${
+                      className={`px-1.5 py-0.5 text-[9px]     font-bold tracking-widest shrink-0 ${
                         archived
                           ? "text-zinc-600 bg-zinc-900 border border-zinc-800"
                           : "text-[#FF5A00] bg-[#FF5A00]/10 border border-[#FF5A00]/20"
@@ -748,7 +666,7 @@ export default function SolicitudesInternas({ usuarioActual }) {
 
                   {/* BARRAS Y CANTIDADES */}
                   <div>
-                    <div className="flex justify-between text-[9px] text-zinc-500   mb-1.5 uppercase tracking-wider font-bold">
+                    <div className="flex justify-between text-[9px] text-zinc-500     mb-1.5 uppercase tracking-wider font-bold">
                       <span>
                         Retirado:{" "}
                         <strong
@@ -781,7 +699,7 @@ export default function SolicitudesInternas({ usuarioActual }) {
                   </div>
 
                   {/* BOTÓN DESPLEGABLE ACCIONES EN TARJETA */}
-                  <div className="pt-3 border-t border-zinc-800/80 flex justify-end items-center   relative">
+                  <div className="pt-3 border-t border-zinc-800/80 flex justify-end items-center     relative">
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
@@ -789,7 +707,7 @@ export default function SolicitudesInternas({ usuarioActual }) {
                           activeActionMenuId === s.id ? null : s.id,
                         );
                       }}
-                      className={`px-3 py-1.5 border   text-[10px] font-bold uppercase tracking-widest flex items-center gap-2 transition-all cursor-pointer ${
+                      className={`px-3 py-1.5 border     text-[10px] font-bold uppercase tracking-widest flex items-center gap-2 transition-all cursor-pointer ${
                         activeActionMenuId === s.id
                           ? "bg-[#050505] border-[#FF5A00] text-[#FF5A00]"
                           : "bg-[#050505] border-zinc-800 text-zinc-400 hover:border-[#FF5A00] hover:text-white"
@@ -806,11 +724,11 @@ export default function SolicitudesInternas({ usuarioActual }) {
                       />
                     </button>
 
-                    {/* POPUP DE OPCIONES EN TARJETA */}
+                    {/* POPUP DE OPCIONES SIEMPRE HACIA ABAJO Y POR ENCIMA */}
                     {activeActionMenuId === s.id && (
                       <div
                         onClick={(e) => e.stopPropagation()}
-                        className="absolute top-full right-0 mt-1.5 w-48 bg-[#050505] border border-zinc-700 shadow-[0_20px_50px_rgba(0,0,0,0.95)] z-[100] flex flex-col   text-[10px] animate-in fade-in slide-in-from-top-2 duration-150 origin-top-right"
+                        className="absolute top-full right-0 mt-1.5 w-48 bg-[#050505] border border-zinc-700 shadow-[0_20px_50px_rgba(0,0,0,0.95)] z-[100] flex flex-col     text-[10px] animate-in fade-in slide-in-from-top-2 duration-150 origin-top-right"
                       >
                         <button
                           onClick={() => {
@@ -897,176 +815,42 @@ export default function SolicitudesInternas({ usuarioActual }) {
           </div>
         ) : (
           /* =========================================================
-             VISTA 2: MODO TABLA INDUSTRIAL AUTO-AJUSTABLE
+             VISTA 2: MODO TABLA INDUSTRIAL CON VISIBILIDAD TOTAL
              ========================================================= */
           <div
             ref={tableContainerRef}
             className="flex-1 min-h-0 w-full flex flex-col justify-start overflow-visible"
           >
             <div className="w-full border border-zinc-800/90 bg-[#030303] flex flex-col overflow-visible shadow-2xl h-fit">
-              {/* CABECERA TABLA CON CLICK TOTAL EN CADA COLUMNA */}
-              <div className="grid grid-cols-[100px_110px_130px_1fr_180px_120px_100px_110px_130px] h-12 bg-[#080808] border-b border-zinc-800/90 items-center text-zinc-500   text-[9px] font-extrabold uppercase tracking-widest shrink-0 px-4 select-none min-w-[1100px]">
-                {/* ID SOL. */}
-                <button
-                  onClick={() => handleSort("id")}
-                  className="w-full h-full flex items-center justify-between text-left hover:text-[#FF5A00] transition-colors pr-2 cursor-pointer outline-none"
-                >
-                  <span>ID SOL.</span>
-                  {sortColumn === "id" ? (
-                    sortDirection === "asc" ? (
-                      <ArrowUp size={12} className="text-[#FF5A00]" />
-                    ) : (
-                      <ArrowDown size={12} className="text-[#FF5A00]" />
-                    )
-                  ) : (
-                    <ArrowUpDown size={10} className="text-zinc-700" />
-                  )}
-                </button>
-
-                {/* FECHA (DD/MM/AAAA) */}
-                <button
-                  onClick={() => handleSort("solicitadoAt")}
-                  className="w-full h-full flex items-center justify-between text-left hover:text-[#FF5A00] transition-colors pr-2 cursor-pointer outline-none"
-                >
-                  <span>FECHA</span>
-                  {sortColumn === "solicitadoAt" ? (
-                    sortDirection === "asc" ? (
-                      <ArrowUp size={12} className="text-[#FF5A00]" />
-                    ) : (
-                      <ArrowDown size={12} className="text-[#FF5A00]" />
-                    )
-                  ) : (
-                    <ArrowUpDown size={10} className="text-zinc-700" />
-                  )}
-                </button>
-
-                {/* CÓDIGO */}
-                <button
-                  onClick={() => handleSort("semielaboradoCodigo")}
-                  className="w-full h-full flex items-center justify-between text-left hover:text-[#FF5A00] transition-colors pr-2 cursor-pointer outline-none"
-                >
-                  <span>CÓDIGO</span>
-                  {sortColumn === "semielaboradoCodigo" ? (
-                    sortDirection === "asc" ? (
-                      <ArrowUp size={12} className="text-[#FF5A00]" />
-                    ) : (
-                      <ArrowDown size={12} className="text-[#FF5A00]" />
-                    )
-                  ) : (
-                    <ArrowUpDown size={10} className="text-zinc-700" />
-                  )}
-                </button>
-
-                {/* SEMIELABORADO */}
-                <button
-                  onClick={() => handleSort("semielaboradoNombre")}
-                  className="w-full h-full flex items-center justify-between text-left hover:text-[#FF5A00] transition-colors pr-2 cursor-pointer outline-none"
-                >
-                  <span>SEMIELABORADO</span>
-                  {sortColumn === "semielaboradoNombre" ? (
-                    sortDirection === "asc" ? (
-                      <ArrowUp size={12} className="text-[#FF5A00]" />
-                    ) : (
-                      <ArrowDown size={12} className="text-[#FF5A00]" />
-                    )
-                  ) : (
-                    <ArrowUpDown size={10} className="text-zinc-700" />
-                  )}
-                </button>
-
-                {/* MOTIVO / DESTINO */}
-                <button
-                  onClick={() => handleSort("motivoUso")}
-                  className="w-full h-full flex items-center justify-between text-left hover:text-[#FF5A00] transition-colors pr-2 cursor-pointer outline-none"
-                >
-                  <span>MOTIVO / DESTINO</span>
-                  {sortColumn === "motivoUso" ? (
-                    sortDirection === "asc" ? (
-                      <ArrowUp size={12} className="text-[#FF5A00]" />
-                    ) : (
-                      <ArrowDown size={12} className="text-[#FF5A00]" />
-                    )
-                  ) : (
-                    <ArrowUpDown size={10} className="text-zinc-700" />
-                  )}
-                </button>
-
-                {/* RET / TOTAL */}
-                <button
-                  onClick={() => handleSort("cantidadSolicitada")}
-                  className="w-full h-full flex items-center justify-between text-left hover:text-[#FF5A00] transition-colors pl-2 cursor-pointer outline-none"
-                >
-                  <span>RET / TOTAL</span>
-                  {sortColumn === "cantidadSolicitada" ? (
-                    sortDirection === "asc" ? (
-                      <ArrowUp size={12} className="text-[#FF5A00]" />
-                    ) : (
-                      <ArrowDown size={12} className="text-[#FF5A00]" />
-                    )
-                  ) : (
-                    <ArrowUpDown size={10} className="text-zinc-700" />
-                  )}
-                </button>
-
-                {/* PRIORIDAD */}
-                <button
-                  onClick={() => handleSort("urgencia")}
-                  className="w-full h-full flex items-center justify-center gap-1 hover:text-[#FF5A00] transition-colors cursor-pointer outline-none"
-                >
-                  <span>PRIORIDAD</span>
-                  {sortColumn === "urgencia" ? (
-                    sortDirection === "asc" ? (
-                      <ArrowUp size={12} className="text-[#FF5A00]" />
-                    ) : (
-                      <ArrowDown size={12} className="text-[#FF5A00]" />
-                    )
-                  ) : (
-                    <ArrowUpDown size={10} className="text-zinc-700" />
-                  )}
-                </button>
-
-                {/* ESTADO */}
-                <button
-                  onClick={() => handleSort("estado")}
-                  className="w-full h-full flex items-center justify-center gap-1 hover:text-[#FF5A00] transition-colors cursor-pointer outline-none"
-                >
-                  <span>ESTADO</span>
-                  {sortColumn === "estado" ? (
-                    sortDirection === "asc" ? (
-                      <ArrowUp size={12} className="text-[#FF5A00]" />
-                    ) : (
-                      <ArrowDown size={12} className="text-[#FF5A00]" />
-                    )
-                  ) : (
-                    <ArrowUpDown size={10} className="text-zinc-700" />
-                  )}
-                </button>
-
+              {/* CABECERA TABLA (48px) */}
+              <div className="grid grid-cols-[120px_140px_1fr_200px_130px_100px_110px_130px] h-12 bg-[#080808] border-b border-zinc-800/90 items-center text-zinc-500     text-[9px] font-extrabold uppercase tracking-widest shrink-0 px-4 select-none">
+                <div>ID SOL.</div>
+                <div>CÓDIGO</div>
+                <div>SEMIELABORADO</div>
+                <div>MOTIVO / DESTINO</div>
+                <div className="text-right">RET / TOTAL</div>
+                <div className="text-center">PRIORIDAD</div>
+                <div className="text-center">ESTADO</div>
                 <div className="text-right">ACCIONES</div>
               </div>
 
-              {/* FILAS DE LA TABLA */}
-              <div className="flex flex-col bg-black flex-1 overflow-visible min-w-[1100px]">
+              {/* FILAS DE LA TABLA CON OVERFLOW VISIBLE Y SUBMENÚ QUE FLOTA SIEMPRE HACIA ABAJO */}
+              <div className="flex flex-col bg-black flex-1 overflow-visible">
                 {currentItems.map((s) => {
                   const archived = isArchived(s.estado);
                   const styleEst = getEstadoStyle(s.estado, archived);
                   const solIdStr = getSolId(s);
                   const motivoText = getMotivo(s);
-                  const fechaStrFormatted = formatFechaDDMMAAAA(s.solicitadoAt);
 
                   return (
                     <div
                       key={s.id}
-                      className={`grid grid-cols-[100px_110px_130px_1fr_180px_120px_100px_110px_130px] h-12 items-center px-4 border-b border-zinc-900/80 last:border-b-0 text-xs hover:bg-[#0a0a0a] transition-colors   shrink-0 relative ${
+                      className={`grid grid-cols-[120px_140px_1fr_200px_130px_100px_110px_130px] h-12 items-center px-4 border-b border-zinc-900/80 last:border-b-0 text-xs hover:bg-[#0a0a0a] transition-colors     shrink-0 relative ${
                         archived ? "opacity-60" : ""
                       } ${activeActionMenuId === s.id ? "z-[100]" : "z-10"}`}
                     >
                       <div className="font-extrabold text-white truncate">
                         {solIdStr}
-                      </div>
-
-                      <div className="text-zinc-400 font-bold text-[10px] truncate">
-                        {fechaStrFormatted}
                       </div>
 
                       <div className="truncate">
@@ -1106,7 +890,7 @@ export default function SolicitudesInternas({ usuarioActual }) {
                         </span>
                       </div>
 
-                      {/* BOTÓN Y MENÚ DE ACCIONES (FLOTANTE SIEMPRE HACIA ABAJO) */}
+                      {/* BOTÓN DESPLEGABLE DE ACCIONES SIEMPRE HACIA ABAJO Y POR SOBRE LA TABLA */}
                       <div className="flex justify-end relative">
                         <button
                           onClick={(e) => {
@@ -1115,7 +899,7 @@ export default function SolicitudesInternas({ usuarioActual }) {
                               activeActionMenuId === s.id ? null : s.id,
                             );
                           }}
-                          className={`px-3 py-1.5 border   text-[9px] font-bold uppercase tracking-widest flex items-center gap-1.5 transition-all cursor-pointer ${
+                          className={`px-3 py-1.5 border     text-[9px] font-bold uppercase tracking-widest flex items-center gap-1.5 transition-all cursor-pointer ${
                             activeActionMenuId === s.id
                               ? "bg-[#050505] border-[#FF5A00] text-[#FF5A00]"
                               : "bg-[#050505] border-zinc-800 text-zinc-400 hover:border-[#FF5A00] hover:text-white"
@@ -1132,11 +916,11 @@ export default function SolicitudesInternas({ usuarioActual }) {
                           />
                         </button>
 
-                        {/* SUBMENÚ QUE ABRE SIEMPRE HACIA ABAJO CON Z-100 */}
+                        {/* SUBMENÚ QUE ABRE SIEMPRE HACIA ABAJO (TOP-FULL MT-1.5) CON Z-100 */}
                         {activeActionMenuId === s.id && (
                           <div
                             onClick={(e) => e.stopPropagation()}
-                            className="absolute top-full right-0 mt-1.5 w-48 bg-[#050505] border border-zinc-700 shadow-[0_20px_50px_rgba(0,0,0,0.95)] z-[100] flex flex-col   text-[10px] animate-in fade-in slide-in-from-top-2 duration-150 origin-top-right"
+                            className="absolute top-full right-0 mt-1.5 w-48 bg-[#050505] border border-zinc-700 shadow-[0_20px_50px_rgba(0,0,0,0.95)] z-[100] flex flex-col     text-[10px] animate-in fade-in slide-in-from-top-2 duration-150 origin-top-right"
                           >
                             <button
                               onClick={() => {
@@ -1227,7 +1011,7 @@ export default function SolicitudesInternas({ usuarioActual }) {
 
         {/* PIE DE PAGINACIÓN */}
         {solicitudesFiltradas.length > 0 && (
-          <div className="mt-4 pt-4 border-t border-zinc-800/60 flex items-center justify-between   text-xs text-zinc-500 shrink-0">
+          <div className="mt-4 pt-4 border-t border-zinc-800/60 flex items-center justify-between     text-xs text-zinc-500 shrink-0">
             <span className="uppercase text-[10px] font-bold tracking-widest text-zinc-400">
               Página <strong className="text-white">{currentPage}</strong> de{" "}
               <strong className="text-white">{totalPages}</strong> (
@@ -1263,8 +1047,8 @@ export default function SolicitudesInternas({ usuarioActual }) {
 
       {/* MODAL NUEVA SOLICITUD */}
       {modalNuevoOpen && (
-        <div className="fixed inset-0 bg-black/90 backdrop-blur-sm z-[100] flex items-center justify-center p-4 font-sans animate-in fade-in duration-200">
-          <div className="bg-[#050505] border border-zinc-800 w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col relative shadow-[0_0_50px_rgba(0,0,0,0.8)] animate-in zoom-in-95 duration-200">
+        <div className="fixed inset-0 bg-black/90 backdrop-blur-sm z-[100] flex items-center justify-center p-4 font-sans">
+          <div className="bg-[#050505] border border-zinc-800 w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col relative shadow-2xl">
             <div className="p-6 border-b border-zinc-800 flex justify-between items-center bg-[#020202]">
               <h3 className="text-xl md:text-2xl font-extrabold italic uppercase tracking-tighter text-white">
                 Nueva <span className="text-[#FF5A00]">Solicitud</span>
@@ -1282,7 +1066,7 @@ export default function SolicitudesInternas({ usuarioActual }) {
               className="p-6 overflow-y-auto flex flex-col gap-5 custom-scrollbar"
             >
               <div>
-                <label className="block text-xs uppercase tracking-widest text-zinc-500 mb-2   font-bold">
+                <label className="block text-xs uppercase tracking-widest text-zinc-500 mb-2     font-bold">
                   1. Material / Semielaborado *
                 </label>
                 <div className="relative">
@@ -1293,11 +1077,11 @@ export default function SolicitudesInternas({ usuarioActual }) {
                       setSearchSemiText(e.target.value);
                       setSemiSeleccionado(null);
                     }}
-                    className="w-full bg-black border border-zinc-800 text-white p-4 text-sm focus:border-[#FF5A00] outline-none   font-bold uppercase transition-colors"
+                    className="w-full bg-black border border-zinc-800 text-white p-4 text-sm focus:border-[#FF5A00] outline-none     font-bold uppercase transition-colors"
                     placeholder="Buscar por código o nombre..."
                   />
                   {searchSemiText && !semiSeleccionado && (
-                    <div className="absolute top-full left-0 w-full bg-[#0a0a0a] border border-zinc-800 mt-1 max-h-48 overflow-y-auto z-50 shadow-2xl custom-scrollbar  ">
+                    <div className="absolute top-full left-0 w-full bg-[#0a0a0a] border border-zinc-800 mt-1 max-h-48 overflow-y-auto z-50 shadow-2xl custom-scrollbar    ">
                       {semielaboradosFiltrados.map((item, i) => (
                         <div
                           key={i}
@@ -1320,7 +1104,7 @@ export default function SolicitudesInternas({ usuarioActual }) {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-4  ">
+              <div className="grid grid-cols-2 gap-4    ">
                 <div>
                   <label className="block text-xs uppercase tracking-widest text-zinc-500 mb-2 font-bold">
                     2. Unidades *
@@ -1350,7 +1134,7 @@ export default function SolicitudesInternas({ usuarioActual }) {
                 </div>
               </div>
 
-              <div className="space-y-2  ">
+              <div className="space-y-2    ">
                 <div className="flex justify-between items-center">
                   <label className="block text-xs uppercase tracking-widest text-zinc-500 font-bold">
                     4. Destino / Motivo de Solicitud *
@@ -1372,7 +1156,7 @@ export default function SolicitudesInternas({ usuarioActual }) {
               </div>
 
               {errorDuplicado && (
-                <div className="p-3 bg-[#FF0055]/10 border border-[#FF0055]/30 text-[#FF0055] text-xs   font-bold uppercase">
+                <div className="p-3 bg-[#FF0055]/10 border border-[#FF0055]/30 text-[#FF0055] text-xs     font-bold uppercase">
                   Ya existe una solicitud activa para este semielaborado.
                 </div>
               )}
@@ -1393,8 +1177,8 @@ export default function SolicitudesInternas({ usuarioActual }) {
 
       {/* MODAL EDITAR SOLICITUD */}
       {modalEditarOpen && (
-        <div className="fixed inset-0 bg-black/90 backdrop-blur-sm z-[100] flex items-center justify-center p-4 font-sans animate-in fade-in duration-200">
-          <div className="bg-[#050505] border border-zinc-800 w-full max-w-lg flex flex-col relative shadow-[0_0_50px_rgba(0,0,0,0.8)] animate-in zoom-in-95 duration-200">
+        <div className="fixed inset-0 bg-black/90 backdrop-blur-sm z-[100] flex items-center justify-center p-4 font-sans">
+          <div className="bg-[#050505] border border-zinc-800 w-full max-w-lg flex flex-col relative shadow-2xl">
             <div className="p-6 border-b border-zinc-800 flex justify-between items-center bg-[#020202]">
               <h3 className="text-xl font-extrabold italic uppercase tracking-tighter text-[#FF5A00]">
                 Editar{" "}
@@ -1408,10 +1192,7 @@ export default function SolicitudesInternas({ usuarioActual }) {
               </button>
             </div>
 
-            <form
-              onSubmit={handleGuardarEdicion}
-              className="p-6 space-y-5  "
-            >
+            <form onSubmit={handleGuardarEdicion} className="p-6 space-y-5    ">
               <div>
                 <span className="bg-[#FF5A00]/10 border border-[#FF5A00]/20 text-[#FF5A00] px-2 py-0.5 text-[10px] font-bold tracking-widest mb-1 inline-block">
                   {modalEditarOpen.semielaboradoCodigo}
@@ -1493,8 +1274,8 @@ export default function SolicitudesInternas({ usuarioActual }) {
 
       {/* MODAL RETIRO PARCIAL */}
       {modalRetiroOpen && (
-        <div className="fixed inset-0 bg-black/90 backdrop-blur-sm z-[100] flex items-center justify-center p-4 font-sans animate-in fade-in duration-200">
-          <div className="bg-[#050505] border border-zinc-800 w-full max-w-md flex flex-col relative shadow-[0_0_50px_rgba(0,0,0,0.8)] animate-in zoom-in-95 duration-200">
+        <div className="fixed inset-0 bg-black/90 backdrop-blur-sm z-[100] flex items-center justify-center p-4 font-sans">
+          <div className="bg-[#050505] border border-zinc-800 w-full max-w-md flex flex-col relative shadow-2xl">
             <div className="p-6 border-b border-zinc-800 flex justify-between items-center bg-[#020202]">
               <h3 className="text-xl font-extrabold italic uppercase tracking-tighter text-[#FFD700]">
                 Extraer Material
@@ -1506,74 +1287,46 @@ export default function SolicitudesInternas({ usuarioActual }) {
                 <X size={24} />
               </button>
             </div>
-
-            <div className="p-6 space-y-6  ">
-              <div className="flex justify-between items-start">
-                <div className="min-w-0 pr-4">
-                  <span className="bg-[#FF5A00]/10 border border-[#FF5A00]/20 text-[#FF5A00] px-1.5 py-0.5 text-[10px] font-bold tracking-widest mb-2 inline-block">
-                    {modalRetiroOpen.semielaboradoCodigo}
+            <div className="p-6 space-y-5    ">
+              <div>
+                <span className="bg-[#FF5A00]/10 border border-[#FF5A00]/20 text-[#FF5A00] px-1.5 py-0.5 text-[10px] font-bold tracking-widest mb-2 inline-block">
+                  {modalRetiroOpen.semielaboradoCodigo}
+                </span>
+                <p className="text-zinc-300 text-sm mb-2 font-bold font-sans">
+                  {modalRetiroOpen.semielaboradoNombre}
+                </p>
+                <p className="text-3xl font-extrabold text-white">
+                  {modalRetiroOpen.cantidadSolicitada -
+                    modalRetiroOpen.cantidadRetirada}{" "}
+                  <span className="text-xs font-normal text-zinc-500">
+                    u. disp.
                   </span>
-                  <p className="text-zinc-300 text-sm font-bold font-sans truncate">
-                    {modalRetiroOpen.semielaboradoNombre}
-                  </p>
-                </div>
-                <div className="text-right shrink-0">
-                  <p className="text-[9px] uppercase tracking-widest text-zinc-500 font-bold mb-1">
-                    Disponible
-                  </p>
-                  <p className="text-3xl font-extrabold text-[#FFD700] leading-none">
-                    {modalRetiroOpen.cantidadSolicitada -
-                      modalRetiroOpen.cantidadRetirada}
-                  </p>
-                </div>
+                </p>
               </div>
 
-              <div className="space-y-3">
-                <div className="flex justify-between items-end">
-                  <label className="block text-xs uppercase tracking-widest text-zinc-500 font-bold">
-                    Cantidad a retirar
-                  </label>
-                  <span className="text-[10px] text-zinc-600 font-bold">
-                    UNIDADES
-                  </span>
-                </div>
-
-                <div className="relative group">
+              <div>
+                <label className="block text-xs uppercase tracking-widest text-zinc-500 mb-2 font-bold">
+                  Retiro Parcial
+                </label>
+                <div className="flex">
                   <input
                     type="number"
-                    min="1"
-                    max={
-                      modalRetiroOpen.cantidadSolicitada -
-                      modalRetiroOpen.cantidadRetirada
-                    }
                     value={cantidadRetiroManual}
                     onChange={(e) => setCantidadRetiroManual(e.target.value)}
-                    className="w-full bg-black border-2 border-zinc-800 text-white p-4 pr-20 text-lg font-bold focus:border-[#FFD700] focus:ring-4 focus:ring-[#FFD700]/10 outline-none transition-all"
-                    placeholder="0"
-                    autoFocus
+                    className="w-full bg-black border border-zinc-800 border-r-0 text-white p-4 focus:border-[#FFD700] outline-none font-bold"
+                    placeholder="Ingresar cant..."
                   />
                   <button
-                    type="button"
                     onClick={() =>
-                      setCantidadRetiroManual(
-                        modalRetiroOpen.cantidadSolicitada -
-                          modalRetiroOpen.cantidadRetirada,
+                      handleRegistrarRetiro(
+                        modalRetiroOpen.id,
+                        cantidadRetiroManual,
                       )
                     }
-                    className="absolute right-2 top-1/2 -translate-y-1/2 bg-[#FFD700]/10 text-[#FFD700] hover:bg-[#FFD700] hover:text-black border border-[#FFD700]/20 px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest transition-colors cursor-pointer"
+                    className="bg-zinc-800 text-white px-6 font-bold uppercase text-xs tracking-wider hover:bg-[#FFD700] hover:text-black transition-colors cursor-pointer"
                   >
-                    MAX
+                    OK
                   </button>
-                </div>
-
-                {/* BARRA DE PROGRESO VISUAL */}
-                <div className="h-1 w-full bg-zinc-900 overflow-hidden">
-                  <div
-                    className="h-full bg-[#FFD700] transition-all duration-300 ease-out"
-                    style={{
-                      width: `${Math.min(100, Math.max(0, (Number(cantidadRetiroManual) / (modalRetiroOpen.cantidadSolicitada - modalRetiroOpen.cantidadRetirada)) * 100))}%`,
-                    }}
-                  />
                 </div>
               </div>
 
@@ -1581,19 +1334,13 @@ export default function SolicitudesInternas({ usuarioActual }) {
                 onClick={() =>
                   handleRegistrarRetiro(
                     modalRetiroOpen.id,
-                    cantidadRetiroManual,
+                    modalRetiroOpen.cantidadSolicitada -
+                      modalRetiroOpen.cantidadRetirada,
                   )
                 }
-                disabled={
-                  !cantidadRetiroManual ||
-                  Number(cantidadRetiroManual) <= 0 ||
-                  Number(cantidadRetiroManual) >
-                    modalRetiroOpen.cantidadSolicitada -
-                      modalRetiroOpen.cantidadRetirada
-                }
-                className="w-full bg-[#FFD700] hover:bg-white text-black font-extrabold italic uppercase tracking-tighter text-lg p-4 transition-all disabled:opacity-30 flex justify-center items-center gap-2 cursor-pointer mt-2 shadow-[0_0_20px_rgba(255,215,0,0.15)]"
+                className="w-full bg-transparent border border-[#FFD700] text-[#FFD700] hover:bg-[#FFD700] hover:text-black font-bold uppercase tracking-widest text-xs p-4 transition-colors cursor-pointer mt-2"
               >
-                Confirmar Retiro <ChevronRight size={20} strokeWidth={3} />
+                Extraer Todo
               </button>
             </div>
           </div>
@@ -1602,8 +1349,8 @@ export default function SolicitudesInternas({ usuarioActual }) {
 
       {/* MODAL HISTORIAL / AUDITORÍA */}
       {modalHistorialOpen && (
-        <div className="fixed inset-0 bg-black/90 backdrop-blur-sm z-[100] flex flex-col items-center justify-center p-4 font-sans animate-in fade-in duration-200">
-          <div className="bg-[#050505] border border-zinc-800 w-full max-w-md max-h-[85vh] flex flex-col relative shadow-[0_0_50px_rgba(0,0,0,0.8)] animate-in zoom-in-95 duration-200">
+        <div className="fixed inset-0 bg-black/90 backdrop-blur-sm z-[100] flex flex-col items-center justify-center p-4 font-sans">
+          <div className="bg-[#050505] border border-zinc-800 w-full max-w-md max-h-[85vh] flex flex-col relative shadow-2xl">
             <div className="p-6 border-b border-zinc-800 flex justify-between items-center bg-[#020202] shrink-0">
               <h3 className="text-xl font-extrabold italic uppercase tracking-tighter text-white">
                 Auditoría{" "}
@@ -1619,7 +1366,7 @@ export default function SolicitudesInternas({ usuarioActual }) {
               </button>
             </div>
 
-            <div className="p-6 overflow-y-auto space-y-6   custom-scrollbar">
+            <div className="p-6 overflow-y-auto space-y-6     custom-scrollbar">
               <div className="space-y-4 border-l border-zinc-800 pl-5 ml-2">
                 <div className="relative">
                   <div className="w-2.5 h-2.5 rounded-full bg-zinc-600 absolute -left-[26px] top-1" />
@@ -1627,8 +1374,7 @@ export default function SolicitudesInternas({ usuarioActual }) {
                     Solicitado
                   </p>
                   <p className="text-[10px] text-zinc-500 mt-0.5">
-                    {formatFechaDDMMAAAA(modalHistorialOpen.solicitadoAt)}{" "}
-                    {modalHistorialOpen.solicitadoAt?.slice(11, 16)} HS
+                    {modalHistorialOpen.solicitadoAt}
                   </p>
                   {getMotivo(modalHistorialOpen) !== "--" && (
                     <p className="text-[10px] text-[#FFD700] mt-1 font-bold uppercase">
@@ -1644,8 +1390,7 @@ export default function SolicitudesInternas({ usuarioActual }) {
                       En Proceso
                     </p>
                     <p className="text-[10px] text-zinc-500 mt-0.5">
-                      {formatFechaDDMMAAAA(modalHistorialOpen.atendidoAt)}{" "}
-                      {modalHistorialOpen.atendidoAt?.slice(11, 16)} HS
+                      {modalHistorialOpen.atendidoAt}
                     </p>
                   </div>
                 )}
@@ -1657,8 +1402,7 @@ export default function SolicitudesInternas({ usuarioActual }) {
                       Disponible
                     </p>
                     <p className="text-[10px] text-zinc-500 mt-0.5">
-                      {formatFechaDDMMAAAA(modalHistorialOpen.disponibleAt)}{" "}
-                      {modalHistorialOpen.disponibleAt?.slice(11, 16)} HS
+                      {modalHistorialOpen.disponibleAt}
                     </p>
                   </div>
                 )}
@@ -1684,8 +1428,7 @@ export default function SolicitudesInternas({ usuarioActual }) {
                           </p>
                         </div>
                         <p className="text-zinc-500 text-[10px]">
-                          {formatFechaDDMMAAAA(r.fecha)}{" "}
-                          {r.fecha?.slice(11, 16)} HS
+                          {r.fecha.slice(11, 16)}hs
                         </p>
                       </div>
                     ))}
