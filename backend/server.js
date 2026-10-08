@@ -3710,70 +3710,63 @@ const formatLocal = (dateInput) => {
 // 1. OBTENER TODAS LAS SOLICITUDES
 app.get("/api/solicitudes-internas", async (req, res) => {
   try {
-    const [rows] = await db.query(
-      "SELECT * FROM solicitudes_internas ORDER BY solicitado_at DESC",
-    );
-
-    const solicitudes = rows.map((r) => ({
-      id: r.id,
-      semielaboradoCodigo: r.semielaborado_codigo,
-      semielaboradoNombre: r.semielaborado_nombre,
-      cantidadSolicitada: r.cantidad_solicitada,
-      cantidadRetirada: r.cantidad_retirada,
-      urgencia: r.urgencia,
-      estado: r.estado,
-      solicitadoAt: formatLocal(r.solicitado_at),
-      atendidoAt: formatLocal(r.atendido_at),
-      disponibleAt: formatLocal(r.disponible_at),
-      entregadoAt: formatLocal(r.entregado_at),
-      retirosHistorial: parseRetirosHistorial(r.retiros_historial),
-    }));
-
-    res.json(solicitudes);
+    const [rows] = await db.query(`
+      SELECT 
+        id,
+        semielaborado_codigo AS semielaboradoCodigo,
+        semielaborado_nombre AS semielaboradoNombre,
+        cantidad_solicitada AS cantidadSolicitada,
+        cantidad_retirada AS cantidadRetirada,
+        urgencia,
+        motivo_uso AS motivoUso,
+        estado,
+        solicitado_at AS solicitadoAt,
+        atendido_at AS atendidoAt,
+        disponible_at AS disponibleAt,
+        entregado_at AS entregadoAt,
+        retiros_historial AS retirosHistorial
+      FROM solicitudes_internas
+      ORDER BY id DESC
+    `);
+    res.json(rows);
   } catch (error) {
-    console.error("Error al obtener solicitudes internas:", error);
-    res.status(500).json({ error: error.message });
+    console.error("Error al obtener solicitudes:", error);
+    res.status(500).json({ error: "Error al consultar solicitudes." });
   }
 });
 
 // 2. CREAR NUEVA SOLICITUD
 app.post("/api/solicitudes-internas", async (req, res) => {
-  const {
-    id,
-    semielaboradoCodigo,
-    semielaboradoNombre,
-    cantidadSolicitada,
-    urgencia,
-    estado,
-    solicitadoAt,
-  } = req.body;
-
-  if (!id || !semielaboradoNombre || !cantidadSolicitada) {
-    return res.status(400).json({ error: "Faltan datos requeridos." });
-  }
-
   try {
-    await db.query(
+    // Acepta tanto camelCase como snake_case para compatibilidad total
+    const codigo =
+      req.body.semielaboradoCodigo || req.body.semielaborado_codigo;
+    const nombre =
+      req.body.semielaboradoNombre || req.body.semielaborado_nombre;
+    const cantidad =
+      req.body.cantidadSolicitada || req.body.cantidad_solicitada;
+    const urgencia = req.body.urgencia || "MEDIA";
+    const motivo =
+      req.body.motivoUso || req.body.motivo_uso || req.body.motivo || "";
+    const estado = req.body.estado || "SOLICITADO";
+    const solicitadoAt =
+      req.body.solicitadoAt || req.body.solicitado_at || new Date();
+
+    if (!codigo || !cantidad) {
+      return res.status(400).json({ error: "Faltan datos requeridos." });
+    }
+
+    const [result] = await db.query(
       `INSERT INTO solicitudes_internas 
-       (id, semielaborado_codigo, semielaborado_nombre, cantidad_solicitada, cantidad_retirada, urgencia, estado, solicitado_at, retiros_historial)
-       VALUES (?, ?, ?, ?, 0, ?, ?, ?, ?)`,
-      [
-        id,
-        semielaboradoCodigo || "S/C",
-        semielaboradoNombre,
-        cantidadSolicitada,
-        urgencia || "MEDIA",
-        estado || "SOLICITADO",
-        solicitadoAt ||
-          new Date().toISOString().replace("T", " ").substring(0, 19),
-        JSON.stringify([]),
-      ],
+      (semielaborado_codigo, semielaborado_nombre, cantidad_solicitada, urgencia, motivo_uso, estado, solicitado_at) 
+      VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [codigo, nombre, cantidad, urgencia, motivo, estado, solicitadoAt],
     );
 
-    res.json({ success: true, mensaje: "Solicitud registrada con éxito" });
+    res.json({ success: true, id: result.insertId });
   } catch (error) {
-    console.error("Error al crear solicitud interna:", error);
-    res.status(500).json({ error: error.message });
+    console.error("Error al crear solicitud:", error);
+    res.status(500).json({ error: "Error interno en el servidor." });
   }
 });
 
