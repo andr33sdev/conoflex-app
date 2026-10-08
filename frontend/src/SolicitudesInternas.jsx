@@ -678,7 +678,6 @@ export default function SolicitudesInternas({ usuarioActual }) {
                 (s.cantidadRetirada / s.cantidadSolicitada) * 100,
               );
               const solIdStr = getSolId(s);
-              const isNearBottom = idx >= Math.max(1, currentItems.length - 2);
 
               return (
                 <div
@@ -810,11 +809,7 @@ export default function SolicitudesInternas({ usuarioActual }) {
                     {activeActionMenuId === s.id && (
                       <div
                         onClick={(e) => e.stopPropagation()}
-                        className={`absolute right-0 w-48 bg-[#050505] border border-zinc-700 shadow-[0_20px_50px_rgba(0,0,0,0.95)] z-[100] flex flex-col text-[10px] animate-in fade-in duration-150 ${
-                          isNearBottom
-                            ? "bottom-full mb-1.5 slide-in-from-bottom-2 origin-bottom-right"
-                            : "top-full mt-1.5 slide-in-from-top-2 origin-top-right"
-                        }`}
+                        className={`absolute right-0 w-48 bg-[#050505] border border-zinc-700 shadow-[0_20px_50px_rgba(0,0,0,0.95)] z-[100] flex flex-col text-[10px] animate-in fade-in duration-150 ${"top-full mt-1.5 slide-in-from-top-2 origin-top-right"}`}
                       >
                         <button
                           onClick={() => {
@@ -927,8 +922,6 @@ export default function SolicitudesInternas({ usuarioActual }) {
                   const styleEst = getEstadoStyle(s.estado, archived);
                   const solIdStr = getSolId(s);
                   const motivoText = getMotivo(s);
-                  const isNearBottom =
-                    idx >= Math.max(0, currentItems.length - 3);
 
                   return (
                     <div
@@ -1008,11 +1001,7 @@ export default function SolicitudesInternas({ usuarioActual }) {
                         {activeActionMenuId === s.id && (
                           <div
                             onClick={(e) => e.stopPropagation()}
-                            className={`absolute right-0 w-48 bg-[#050505] border border-zinc-700 shadow-[0_20px_50px_rgba(0,0,0,0.95)] z-[100] flex flex-col text-[10px] animate-in fade-in duration-150 ${
-                              isNearBottom
-                                ? "bottom-full mb-1.5 slide-in-from-bottom-2 origin-bottom-right"
-                                : "top-full mt-1.5 slide-in-from-top-2 origin-top-right"
-                            }`}
+                            className={`absolute right-0 w-48 bg-[#050505] border border-zinc-700 shadow-[0_20px_50px_rgba(0,0,0,0.95)] z-[100] flex flex-col text-[10px] animate-in fade-in duration-150 ${"top-full mt-1.5 slide-in-from-top-2 origin-top-right"}`}
                           >
                             <button
                               onClick={() => {
@@ -1530,7 +1519,7 @@ export default function SolicitudesInternas({ usuarioActual }) {
                   <div className="relative">
                     <div className="w-2.5 h-2.5 rounded-full bg-[#FF5A00] absolute -left-[26px] top-1" />
                     <p className="text-[10px] font-bold uppercase text-[#FF5A00] tracking-wider">
-                      En Proceso
+                      Atendido
                     </p>
                     <p className="text-[10px] text-zinc-500 mt-0.5">
                       {formatFechaArg(
