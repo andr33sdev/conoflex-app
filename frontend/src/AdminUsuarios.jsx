@@ -16,17 +16,18 @@ import {
 
 const MODULOS_SISTEMA = [
   { id: "materias-primas", nombre: "Materias Primas" },
+  { id: "proveedores", nombre: "Proveedores" },
   { id: "semielaborados", nombre: "Semielaborados" },
   { id: "reflectivas", nombre: "Reflectivas & Pegado" },
   { id: "ingenieria", nombre: "Ingeniería & BOM" },
   { id: "metricas", nombre: "Métricas & KPI" },
   { id: "planificacion", nombre: "Planificación OT" },
   { id: "carga-produccion", nombre: "Carga Producción" },
+  { id: "pedidos", nombre: "Pedidos" },
   { id: "despachar-pedidos", nombre: "Despachar Pedidos" },
   { id: "comercial", nombre: "IA Comercial" },
   { id: "solicitudes-internas", nombre: "Solicitudes Internas" },
   { id: "planta-online", nombre: "Planta On-Line" },
-  { id: "pedidos", nombre: "Pedidos" },
 ];
 
 export default function AdminUsuarios() {
@@ -377,11 +378,11 @@ export default function AdminUsuarios() {
                   >
                     <td className="py-3 px-4 font-semibold text-slate-200">
                       {u.nombre}
-                      <span className="block text-[10px] text-slate-500  ">
+                      <span className="block text-[10px] text-slate-500 font-mono">
                         ID: #{u.id}
                       </span>
                     </td>
-                    <td className="py-3 px-4 text-slate-300  ">
+                    <td className="py-3 px-4 text-slate-300 font-mono">
                       {u.email}
                     </td>
                     <td className="py-3 px-4">
@@ -402,7 +403,7 @@ export default function AdminUsuarios() {
                     <td className="py-3 px-4">
                       <button
                         onClick={() => handleAbrirEditarVendedores(u)}
-                        className="bg-slate-900 border border-slate-800 hover:border-slate-700 text-amber-300   px-2.5 py-1 rounded-lg text-xs transition-all flex items-center gap-1.5 cursor-pointer"
+                        className="bg-slate-900 border border-slate-800 hover:border-slate-700 text-amber-300 px-2.5 py-1 rounded-lg text-xs transition-all flex items-center gap-1.5 cursor-pointer font-mono"
                       >
                         <Briefcase size={12} className="text-amber-400" />
                         {u.vendedores && u.vendedores.length > 0
@@ -456,7 +457,7 @@ export default function AdminUsuarios() {
                 >
                   <span>{r}</span>
                   {r === "ADMIN" && (
-                    <span className="text-[10px] text-cyan-400 bg-cyan-950 px-2 py-0.5 rounded">
+                    <span className="text-[10px] text-cyan-400 bg-cyan-950 px-2 py-0.5 rounded font-mono">
                       FULL
                     </span>
                   )}
@@ -514,7 +515,7 @@ export default function AdminUsuarios() {
                         checked={tieneAcceso}
                         disabled={rolSeleccionado === "ADMIN"}
                         onChange={() => toggleModuloPermiso(m.id)}
-                        className="rounded accent-cyan-500"
+                        className="rounded accent-cyan-500 cursor-pointer"
                       />
                       <span>{m.nombre}</span>
                     </label>
@@ -572,7 +573,7 @@ export default function AdminUsuarios() {
                     setFormUsuario({ ...formUsuario, email: e.target.value })
                   }
                   placeholder="usuario@conoflex.com.ar"
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-slate-200 focus:outline-none focus:border-cyan-500"
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-slate-200 focus:outline-none focus:border-cyan-500 font-mono"
                 />
               </div>
 
@@ -588,7 +589,7 @@ export default function AdminUsuarios() {
                     setFormUsuario({ ...formUsuario, password: e.target.value })
                   }
                   placeholder="••••••••"
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-slate-200 focus:outline-none focus:border-cyan-500"
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-slate-200 focus:outline-none focus:border-cyan-500 font-mono"
                 />
               </div>
 
@@ -637,7 +638,7 @@ export default function AdminUsuarios() {
                               vendedores: nuevaLista,
                             });
                           }}
-                          className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs   transition-all cursor-pointer ${
+                          className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs transition-all cursor-pointer font-mono ${
                             checked
                               ? "bg-amber-500/20 border border-amber-500/50 text-amber-300 font-bold"
                               : "bg-slate-900 border border-slate-800 text-slate-400"
@@ -689,7 +690,7 @@ export default function AdminUsuarios() {
               </strong>
             </p>
 
-            <div className="flex flex-wrap gap-2 max-h-48 overflow-y-auto p-3 border border-slate-800 rounded-xl bg-slate-950 mb-4">
+            <div className="flex flex-wrap gap-2 max-h-48 overflow-y-auto p-3 border border-slate-800 rounded-xl bg-slate-950 mb-4 font-mono">
               {vendedoresDisponibles.length === 0 ? (
                 <span className="text-[11px] text-slate-500 italic p-1">
                   Cargando vendedores de la base de datos...
@@ -711,7 +712,7 @@ export default function AdminUsuarios() {
                           vendedores: nuevaLista,
                         });
                       }}
-                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs   transition-all cursor-pointer ${
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs transition-all cursor-pointer ${
                         checked
                           ? "bg-amber-500/20 border border-amber-500/50 text-amber-300 font-bold"
                           : "bg-slate-900 border border-slate-800 text-slate-400"
@@ -767,7 +768,7 @@ export default function AdminUsuarios() {
                   value={nuevoRolNombre}
                   onChange={(e) => setNuevoRolNombre(e.target.value)}
                   placeholder="Ej: SUPERVISOR, LOGISTICA..."
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-slate-200 focus:outline-none focus:border-cyan-500 uppercase  "
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-slate-200 focus:outline-none focus:border-cyan-500 uppercase font-mono"
                 />
               </div>
 
@@ -810,7 +811,7 @@ export default function AdminUsuarios() {
                   value={nuevaPassword}
                   onChange={(e) => setNuevaPassword(e.target.value)}
                   placeholder="••••••••"
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-slate-200 focus:outline-none focus:border-cyan-500"
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-slate-200 focus:outline-none focus:border-cyan-500 font-mono"
                 />
               </div>
 
