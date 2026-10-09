@@ -4014,21 +4014,28 @@ app.get("/api/pedidos", async (req, res) => {
   }
 });
 
-// BUSCAR OP EN 'estado_pedidos' (TRAE TODOS LOS MODELOS DE ESA OP)
+// BUSCAR OP EN 'estado_pedidos' (TRAE MODELOS SÓLO DE LOS ÚLTIMOS 6 MESES)
 app.get("/api/estado-pedidos/op/:op", async (req, res) => {
   try {
     const { op } = req.params;
     const cleanOp = op.trim().replace(/^OP-/i, "");
 
+    // Agregamos la restricción de 6 meses dinámicos usando DATE_SUB
     const [rows] = await db.query(
-      `SELECT * FROM estado_pedidos WHERE op = ? OR op = ?`,
+      `SELECT * FROM estado_pedidos 
+       WHERE (op = ? OR op = ?) 
+       AND (fecha >= DATE_SUB(CURDATE(), INTERVAL 6 MONTH) 
+            OR created_at >= DATE_SUB(NOW(), INTERVAL 6 MONTH))`,
       [cleanOp, `OP-${cleanOp}`],
     );
 
     if (rows.length === 0) {
-      return res.status(404).json({
-        error: "No se encontró la OP especificada en estado_pedidos.",
-      });
+      return res
+        .status(404)
+        .json({
+          error:
+            "No se encontró la OP en los registros de los últimos 6 meses.",
+        });
     }
 
     const primerRow = rows[0];
