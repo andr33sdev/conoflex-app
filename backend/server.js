@@ -3992,6 +3992,215 @@ app.get("/api/estado-pedidos", async (req, res) => {
 });
 
 // ==========================================
+// MÓDULO PEDIDOS - ENDPOINTS
+// ==========================================
+
+// 1. OBTENER LISTADO DE PEDIDOS CON SU AVANCE
+app.get("/api/pedidos", async (req, res) => {
+  try {
+    const [rows] = await db.query(`
+      SELECT p.*, 
+        COUNT(i.id) as total_items,
+        SUM(CASE WHEN i.completado = 1 THEN 1 ELSE 0 END) as items_completados
+      FROM pedidos p
+      LEFT JOIN pedido_items i ON p.id = i.pedido_id
+      GROUP BY p.id
+      ORDER BY p.id DESC
+    `);
+    res.json(rows || []);
+  } catch (error) {
+    console.error("Error al obtener pedidos:", error);
+    res.status(500).json({ error: "Error al obtener pedidos." });
+  }
+});
+
+// 2. BUSCAR DATOS DE LA OP EN 'estado_pedidos' PARA AUTOCOMPLETAR
+app.get("/api/estado-pedidos/op/:op", async (req, res) => {
+  try {
+    const { op } = req.params;
+    const [rows] = await db.query(
+      `SELECT * FROM estado_pedidos WHERE op = ? OR op = ? LIMIT 1`,
+      [op, `OP-${op}`],
+    );
+
+    if (rows.length === 0) {
+      return res
+        .status(404)
+        .json({ error: "No se encontró la OP especificada." });
+    }
+
+    const item = rows[0];
+    res.json({
+      op: item.op,
+      cliente: item.cliente || item.nombre_cliente || "CLIENTE S/N",
+      articulo: item.articulo || item.producto || item.descripcion || "S/D",
+      cantidad: item.cantidad || item.cantidad_total || 0,
+      fecha: item.fecha || item.fecha_creacion || new Date(),
+    });
+  } catch (error) {
+    console.error("Error al buscar OP:", error);
+    res.status(500).json({ error: "Error al consultar la OP." });
+  }
+});
+
+// 3. CREAR NUEVO PEDIDO (SÓLO ADMIN)
+app.post("/api/pedidos", async (req, res) => {
+  try {
+    const { op, cliente, articulo, cantidadTotal, fecha } = req.body;
+
+    if (!op || !cliente || !articulo || !cantidadTotal) {
+      return res
+        .status(400)
+        .json({ error: "Faltan datos requeridos del pedido." });
+    }
+
+    const [result] = await db.query(
+      `INSERT INTO pedidos (op, cliente, articulo, cantidad_total, cantidad_completada, estado, fecha) 
+       VALUES (?, ?, ?, ?, 0, 'PENDIENTE', ?)`,
+      [op, cliente, articulo, Number(cantidadTotal), fecha || new Date()],
+    );
+
+    res.json({ success: true, id: result.insertId });
+  } catch (error) {
+    console.error("Error al crear pedido:", error);
+    res.status(500).json({ error: "Error al guardar el pedido." });
+  }
+});
+
+// 4. OBTENER DETALLES COMPLETOS DE UN PEDIDO (ITEMS + HISTORIAL DE AVANCES)
+app.get("/api/pedidos/:id/detalles", async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const [pedidos] = await db.query(`SELECT * FROM pedidos WHERE id = ?`, [
+      id,
+    ]);
+    if (pedidos.length === 0) {
+      return res.status(404).json({ error: "Pedido no encontrado." });
+    }
+
+    const [items] = await db.query(
+      `SELECT * FROM pedido_items WHERE pedido_id = ? ORDER BY id ASC`,
+      [id],
+    );
+    const [historial] = await db.query(
+      `SELECT h.*, i.descripcion as item_nombre 
+       FROM pedido_historial h
+       LEFT JOIN pedido_items i ON h.item_id = i.id
+       WHERE h.pedido_id = ? 
+       ORDER BY h.id DESC`,
+      [id],
+    );
+
+    res.json({
+      pedido: pedidos[0],
+      items: items || [],
+      historial: historial || [],
+    });
+  } catch (error) {
+    console.error("Error al obtener detalles del pedido:", error);
+    res.status(500).json({ error: "Error al cargar los detalles." });
+  }
+});
+
+// 5. AGREGAR UN ÍTEM / CHECKPOINT AL PEDIDO (SÓLO ADMIN)
+app.post("/api/pedidos/:id/items", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { descripcion, cantidadObjetivo } = req.body;
+
+    if (!descripcion || !cantidadObjetivo) {
+      return res
+        .status(400)
+        .json({ error: "Falta descripción o cantidad del ítem." });
+    }
+
+    const [result] = await db.query(
+      `INSERT INTO pedido_items (pedido_id, descripcion, cantidad_objetivo, cantidad_completada, completado) 
+       VALUES (?, ?, ?, 0, 0)`,
+      [id, descripcion.trim().toUpperCase(), Number(cantidadObjetivo)],
+    );
+
+    res.json({ success: true, itemId: result.insertId });
+  } catch (error) {
+    console.error("Error al agregar ítem:", error);
+    res.status(500).json({ error: "Error al guardar el ítem." });
+  }
+});
+
+// 6. REGISTRAR AVANCE PARCIAL O TOTAL EN UN ÍTEM (PRODUCCIÓN/ADMIN)
+app.put("/api/pedidos/:id/items/:itemId/avance", async (req, res) => {
+  try {
+    const { id, itemId } = req.params;
+    const { cantidadAvanzada, usuario, fechaHora } = req.body;
+    const qty = Number(cantidadAvanzada);
+
+    if (!qty || qty <= 0) {
+      return res.status(400).json({ error: "Ingresá una cantidad válida." });
+    }
+
+    // Obtener el ítem actual
+    const [itemRows] = await db.query(
+      `SELECT * FROM pedido_items WHERE id = ? AND pedido_id = ?`,
+      [itemId, id],
+    );
+    if (itemRows.length === 0) {
+      return res.status(404).json({ error: "Ítem no encontrado." });
+    }
+
+    const itemObj = itemRows[0];
+    const nuevaCantCompletada = Math.min(
+      itemObj.cantidad_completada + qty,
+      itemObj.cantidad_objetivo,
+    );
+    const estaCompletado =
+      nuevaCantCompletada >= itemObj.cantidad_objetivo ? 1 : 0;
+
+    // Actualizar el ítem
+    await db.query(
+      `UPDATE pedido_items SET cantidad_completada = ?, completado = ? WHERE id = ?`,
+      [nuevaCantCompletada, estaCompletado, itemId],
+    );
+
+    // Registrar log de auditoría
+    await db.query(
+      `INSERT INTO pedido_historial (pedido_id, item_id, cantidad_avanzada, usuario, fecha_hora) 
+       VALUES (?, ?, ?, ?, ?)`,
+      [id, itemId, qty, usuario || "Producción", fechaHora || new Date()],
+    );
+
+    // Recalcular estado global del pedido
+    const [allItems] = await db.query(
+      `SELECT * FROM pedido_items WHERE pedido_id = ?`,
+      [id],
+    );
+    const totalPedido = allItems.reduce(
+      (acc, curr) => acc + curr.cantidad_objetivo,
+      0,
+    );
+    const completadoPedido = allItems.reduce(
+      (acc, curr) => acc + curr.cantidad_completada,
+      0,
+    );
+
+    let nuevoEstado = "EN_PROCESO";
+    if (completadoPedido === 0) nuevoEstado = "PENDIENTE";
+    else if (completadoPedido >= totalPedido && totalPedido > 0)
+      nuevoEstado = "COMPLETADO";
+
+    await db.query(
+      `UPDATE pedidos SET cantidad_completada = ?, estado = ? WHERE id = ?`,
+      [completadoPedido, nuevoEstado, id],
+    );
+
+    res.json({ success: true, estadoPedido: nuevoEstado });
+  } catch (error) {
+    console.error("Error al registrar avance:", error);
+    res.status(500).json({ error: "Error interno al registrar el avance." });
+  }
+});
+
+// ==========================================
 // MÓDULO ESTADO PEDIDOS & DESPACHOS
 // ==========================================
 

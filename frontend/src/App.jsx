@@ -3,7 +3,7 @@ import Layout from "./Layout";
 import Login from "./Login";
 import AdminUsuarios from "./AdminUsuarios";
 import Inventory from "./Inventory";
-import Proveedores from "./Proveedores"; // <-- AGREGADO
+import Proveedores from "./Proveedores";
 import Semielaborados from "./Semielaborados";
 import Reflectivas from "./Reflectivas";
 import Metricas from "./Metricas";
@@ -14,6 +14,7 @@ import ComercialIA from "./ComercialIA";
 import ProduccionPlanta from "./ProduccionPlanta";
 import SolicitudesInternas from "./SolicitudesInternas";
 import DespacharPedidos from "./DespacharPedidos";
+import Pedidos from "./Pedidos"; // <-- AGREGADO: Importación del nuevo módulo
 
 function App() {
   // PERSISTENCIA DE SESIÓN: Carga la sesión previa desde localStorage al refrescar
@@ -154,7 +155,6 @@ function App() {
         />
       )}
 
-      {/* <-- MÓDULO AGREGADO --> */}
       {hasAccess("proveedores") && activeModule === "proveedores" && (
         <Proveedores />
       )}
@@ -187,6 +187,12 @@ function App() {
       {hasAccess("planificacion") && activeModule === "planificacion" && (
         <PlanificacionProduccion />
       )}
+
+      {/* <-- MÓDULO AGREGADO: PEDIDOS --> */}
+      {hasAccess("pedidos") && activeModule === "pedidos" && (
+        <Pedidos usuarioActual={usuarioActual} />
+      )}
+
       {activeModule === "despachar-pedidos" && (
         <DespacharPedidos usuarioActual={usuarioActual} />
       )}

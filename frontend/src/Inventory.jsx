@@ -572,7 +572,7 @@ export default function Inventory() {
                         </span>
                       </div>
 
-                      <div className="px-4 text-white font-bold text-xs truncate pr-2">
+                      <div className="px-4 text-white font-bold text-xs truncate pr-2 uppercase">
                         {item.nombre}
                       </div>
 

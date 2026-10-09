@@ -17,7 +17,8 @@ import {
   LogOut,
   UserCircle,
   Truck,
-  Building2, // <-- AGREGADO
+  Building2,
+  ListChecks, // Ya lo tenías importado, lo usaremos para Pedidos
 } from "lucide-react";
 
 import logo from "./assets/logo.svg";
@@ -35,7 +36,7 @@ export default function Layout({
 
   const ALL_MENU_ITEMS = [
     { id: "materias-primas", label: "Materias Primas", icon: Boxes },
-    { id: "proveedores", label: "Proveedores", icon: Building2 }, // <-- AGREGADO
+    { id: "proveedores", label: "Proveedores", icon: Building2 },
     { id: "semielaborados", label: "Semielaborados", icon: Layers },
     { id: "reflectivas", label: "Reflectivas & Pegado", icon: Sparkles },
     { id: "ingenieria", label: "Ingeniería & BOM", icon: Cpu },
@@ -48,6 +49,7 @@ export default function Layout({
     { id: "planificacion", label: "Planificación OT", icon: CalendarDays },
     { id: "carga-produccion", label: "Carga Producción", icon: ClipboardCheck },
     { id: "comercial", label: "IA Comercial", icon: Bot },
+    { id: "pedidos", label: "Pedidos", icon: ListChecks }, // <-- AGREGADO
     { id: "despachar-pedidos", label: "Despachar Pedidos", icon: Truck },
     {
       id: "solicitudes-internas",
