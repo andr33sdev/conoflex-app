@@ -26,6 +26,7 @@ const MODULOS_SISTEMA = [
   { id: "comercial", nombre: "IA Comercial" },
   { id: "solicitudes-internas", nombre: "Solicitudes Internas" },
   { id: "planta-online", nombre: "Planta On-Line" },
+  { id: "pedidos", nombre: "Pedidos" },
 ];
 
 export default function AdminUsuarios() {
