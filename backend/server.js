@@ -4014,28 +4014,37 @@ app.get("/api/pedidos", async (req, res) => {
   }
 });
 
-// 2. BUSCAR DATOS DE LA OP EN 'estado_pedidos' PARA AUTOCOMPLETAR
+// BUSCAR OP EN 'estado_pedidos' (TRAE TODOS LOS MODELOS DE ESA OP)
 app.get("/api/estado-pedidos/op/:op", async (req, res) => {
   try {
     const { op } = req.params;
+    const cleanOp = op.trim().replace(/^OP-/i, "");
+
     const [rows] = await db.query(
-      `SELECT * FROM estado_pedidos WHERE op = ? OR op = ? LIMIT 1`,
-      [op, `OP-${op}`],
+      `SELECT * FROM estado_pedidos WHERE op = ? OR op = ?`,
+      [cleanOp, `OP-${cleanOp}`],
     );
 
     if (rows.length === 0) {
       return res
         .status(404)
-        .json({ error: "No se encontró la OP especificada." });
+        .json({
+          error: "No se encontró la OP especificada en estado_pedidos.",
+        });
     }
 
-    const item = rows[0];
+    const primerRow = rows[0];
+    const articulos = rows.map((r, index) => ({
+      id: r.id || index,
+      modelo: r.modelo || r.detalles || "ARTÍCULO SIN ESPECIFICAR",
+      cantidad: Number(r.cantidad) || 0,
+    }));
+
     res.json({
-      op: item.op,
-      cliente: item.cliente || item.nombre_cliente || "CLIENTE S/N",
-      articulo: item.articulo || item.producto || item.descripcion || "S/D",
-      cantidad: item.cantidad || item.cantidad_total || 0,
-      fecha: item.fecha || item.fecha_creacion || new Date(),
+      op: primerRow.op,
+      cliente: primerRow.cliente || "CLIENTE S/N",
+      fecha: primerRow.fecha || primerRow.created_at || new Date(),
+      articulos: articulos,
     });
   } catch (error) {
     console.error("Error al buscar OP:", error);
@@ -4043,24 +4052,48 @@ app.get("/api/estado-pedidos/op/:op", async (req, res) => {
   }
 });
 
-// 3. CREAR NUEVO PEDIDO (SÓLO ADMIN)
+// CREAR NUEVO PEDIDO CON ARTÍCULOS SELECCIONADOS (ADMIN)
 app.post("/api/pedidos", async (req, res) => {
   try {
-    const { op, cliente, articulo, cantidadTotal, fecha } = req.body;
+    const { op, cliente, fecha, articulosSeleccionados } = req.body;
 
-    if (!op || !cliente || !articulo || !cantidadTotal) {
+    if (
+      !op ||
+      !cliente ||
+      !articulosSeleccionados ||
+      !articulosSeleccionados.length
+    ) {
       return res
         .status(400)
-        .json({ error: "Faltan datos requeridos del pedido." });
+        .json({ error: "Faltan datos o no seleccionaste ningún artículo." });
     }
+
+    const resumenArticulos = articulosSeleccionados
+      .map((a) => a.modelo)
+      .join(" / ");
+    const cantidadTotalGlobal = articulosSeleccionados.reduce(
+      (sum, a) => sum + Number(a.cantidad),
+      0,
+    );
 
     const [result] = await db.query(
       `INSERT INTO pedidos (op, cliente, articulo, cantidad_total, cantidad_completada, estado, fecha) 
        VALUES (?, ?, ?, ?, 0, 'PENDIENTE', ?)`,
-      [op, cliente, articulo, Number(cantidadTotal), fecha || new Date()],
+      [op, cliente, resumenArticulos, cantidadTotalGlobal, fecha || new Date()],
     );
 
-    res.json({ success: true, id: result.insertId });
+    const pedidoId = result.insertId;
+
+    // Se cargan automáticamente los artículos seleccionados como ítems/checkpoints
+    for (const art of articulosSeleccionados) {
+      await db.query(
+        `INSERT INTO pedido_items (pedido_id, descripcion, cantidad_objetivo, cantidad_completada, completado) 
+         VALUES (?, ?, ?, 0, 0)`,
+        [pedidoId, art.modelo.trim().toUpperCase(), Number(art.cantidad)],
+      );
+    }
+
+    res.json({ success: true, id: pedidoId });
   } catch (error) {
     console.error("Error al crear pedido:", error);
     res.status(500).json({ error: "Error al guardar el pedido." });
