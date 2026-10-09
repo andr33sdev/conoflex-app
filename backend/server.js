@@ -4026,11 +4026,9 @@ app.get("/api/estado-pedidos/op/:op", async (req, res) => {
     );
 
     if (rows.length === 0) {
-      return res
-        .status(404)
-        .json({
-          error: "No se encontró la OP especificada en estado_pedidos.",
-        });
+      return res.status(404).json({
+        error: "No se encontró la OP especificada en estado_pedidos.",
+      });
     }
 
     const primerRow = rows[0];
@@ -4052,7 +4050,7 @@ app.get("/api/estado-pedidos/op/:op", async (req, res) => {
   }
 });
 
-// CREAR NUEVO PEDIDO CON ARTÍCULOS SELECCIONADOS (ADMIN)
+// CREAR NUEVOS PEDIDOS INDIVIDUALES POR ARTÍCULO (ADMIN)
 app.post("/api/pedidos", async (req, res) => {
   try {
     const { op, cliente, fecha, articulosSeleccionados } = req.body;
@@ -4068,35 +4066,33 @@ app.post("/api/pedidos", async (req, res) => {
         .json({ error: "Faltan datos o no seleccionaste ningún artículo." });
     }
 
-    const resumenArticulos = articulosSeleccionados
-      .map((a) => a.modelo)
-      .join(" / ");
-    const cantidadTotalGlobal = articulosSeleccionados.reduce(
-      (sum, a) => sum + Number(a.cantidad),
-      0,
-    );
-
-    const [result] = await db.query(
-      `INSERT INTO pedidos (op, cliente, articulo, cantidad_total, cantidad_completada, estado, fecha) 
-       VALUES (?, ?, ?, ?, 0, 'PENDIENTE', ?)`,
-      [op, cliente, resumenArticulos, cantidadTotalGlobal, fecha || new Date()],
-    );
-
-    const pedidoId = result.insertId;
-
-    // Se cargan automáticamente los artículos seleccionados como ítems/checkpoints
+    // Por cada artículo marcado, creamos un Pedido INDEPENDIENTE en la BD
     for (const art of articulosSeleccionados) {
+      const modeloLimpio = art.modelo.trim().toUpperCase();
+      const cantidadArticulo = Number(art.cantidad) || 0;
+
+      const [result] = await db.query(
+        `INSERT INTO pedidos (op, cliente, articulo, cantidad_total, cantidad_completada, estado, fecha) 
+         VALUES (?, ?, ?, ?, 0, 'PENDIENTE', ?)`,
+        [op, cliente, modeloLimpio, cantidadArticulo, fecha || new Date()],
+      );
+
+      const pedidoId = result.insertId;
+
+      // Autocreamos el primer checkpoint con el nombre del artículo
       await db.query(
         `INSERT INTO pedido_items (pedido_id, descripcion, cantidad_objetivo, cantidad_completada, completado) 
          VALUES (?, ?, ?, 0, 0)`,
-        [pedidoId, art.modelo.trim().toUpperCase(), Number(art.cantidad)],
+        [pedidoId, modeloLimpio, cantidadArticulo],
       );
     }
 
-    res.json({ success: true, id: pedidoId });
+    res.json({ success: true });
   } catch (error) {
-    console.error("Error al crear pedido:", error);
-    res.status(500).json({ error: "Error al guardar el pedido." });
+    console.error("Error al crear los pedidos:", error);
+    res
+      .status(500)
+      .json({ error: "Error al guardar los pedidos en la base de datos." });
   }
 });
 
@@ -4136,28 +4132,78 @@ app.get("/api/pedidos/:id/detalles", async (req, res) => {
   }
 });
 
-// 5. AGREGAR UN ÍTEM / CHECKPOINT AL PEDIDO (SÓLO ADMIN)
+// AGREGAR ÍTEM / CHECKPOINT (SI NO HAY CANTIDAD, ES CHECKLIST COMÚN)
 app.post("/api/pedidos/:id/items", async (req, res) => {
   try {
     const { id } = req.params;
     const { descripcion, cantidadObjetivo } = req.body;
+    const cantNum = Number(cantidadObjetivo) || 0; // 0 = Checklist común
 
-    if (!descripcion || !cantidadObjetivo) {
-      return res
-        .status(400)
-        .json({ error: "Falta descripción o cantidad del ítem." });
+    if (!descripcion || !descripcion.trim()) {
+      return res.status(400).json({ error: "Falta la descripción del ítem." });
     }
 
     const [result] = await db.query(
       `INSERT INTO pedido_items (pedido_id, descripcion, cantidad_objetivo, cantidad_completada, completado) 
        VALUES (?, ?, ?, 0, 0)`,
-      [id, descripcion.trim().toUpperCase(), Number(cantidadObjetivo)],
+      [id, descripcion.trim().toUpperCase(), cantNum],
     );
 
     res.json({ success: true, itemId: result.insertId });
   } catch (error) {
     console.error("Error al agregar ítem:", error);
     res.status(500).json({ error: "Error al guardar el ítem." });
+  }
+});
+
+// TILDAR/MARCAR LISTO UN CHECKLIST COMÚN (SIN CANTIDAD)
+app.put("/api/pedidos/:id/items/:itemId/tildar", async (req, res) => {
+  try {
+    const { id, itemId } = req.params;
+    const { usuario, fechaHora } = req.body;
+
+    // Marcar como completado
+    await db.query(
+      `UPDATE pedido_items SET completado = 1 WHERE id = ? AND pedido_id = ?`,
+      [itemId, id],
+    );
+
+    // Obtener la descripción del ítem para el log
+    const [itemRows] = await db.query(
+      `SELECT descripcion FROM pedido_items WHERE id = ?`,
+      [itemId],
+    );
+    const desc = itemRows[0]?.descripcion || "Ítem";
+
+    // Auditoría
+    await db.query(
+      `INSERT INTO pedido_historial (pedido_id, item_id, cantidad_avanzada, usuario, fecha_hora) 
+       VALUES (?, ?, 0, ?, ?)`,
+      [id, itemId, usuario || "Producción", fechaHora || new Date()],
+    );
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error("Error al tildar ítem:", error);
+    res.status(500).json({ error: "Error al marcar ítem." });
+  }
+});
+
+// GUARDAR / ACTUALIZAR OBSERVACIONES DEL PEDIDO
+app.put("/api/pedidos/:id/observaciones", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { observaciones } = req.body;
+
+    await db.query(`UPDATE pedidos SET observaciones = ? WHERE id = ?`, [
+      observaciones ? observaciones.trim() : null,
+      id,
+    ]);
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error("Error al guardar observaciones:", error);
+    res.status(500).json({ error: "Error al guardar observaciones." });
   }
 });
 
