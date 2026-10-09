@@ -4014,32 +4014,41 @@ app.get("/api/pedidos", async (req, res) => {
   }
 });
 
-// BUSCAR OP EN 'estado_pedidos' (TRAE MODELOS SÓLO DE LOS ÚLTIMOS 6 MESES)
+// BUSCAR OP EN 'estado_pedidos' (TRAE ÚNICAMENTE LA VERSIÓN MÁS RECIENTE)
 app.get("/api/estado-pedidos/op/:op", async (req, res) => {
   try {
     const { op } = req.params;
     const cleanOp = op.trim().replace(/^OP-/i, "");
 
-    // Agregamos la restricción de 6 meses dinámicos usando DATE_SUB
+    // 1. Buscamos todas las coincidencias y las ordenamos por fecha (la más nueva primero)
     const [rows] = await db.query(
       `SELECT * FROM estado_pedidos 
-       WHERE (op = ? OR op = ?) 
-       AND (fecha >= DATE_SUB(CURDATE(), INTERVAL 6 MONTH) 
-            OR created_at >= DATE_SUB(NOW(), INTERVAL 6 MONTH))`,
+       WHERE op = ? OR op = ?
+       ORDER BY fecha DESC, id DESC`,
       [cleanOp, `OP-${cleanOp}`],
     );
 
     if (rows.length === 0) {
       return res
         .status(404)
-        .json({
-          error:
-            "No se encontró la OP en los registros de los últimos 6 meses.",
-        });
+        .json({ error: "No se encontró la OP especificada." });
     }
 
-    const primerRow = rows[0];
-    const articulos = rows.map((r, index) => ({
+    // 2. Capturamos la fecha del primer registro (que obligatoriamente es la más reciente por el ORDER BY)
+    const fechaMasReciente = rows[0].fecha;
+
+    // 3. Filtramos la lista para quedarnos SÓLO con los renglones que coincidan con esa fecha exacta
+    // Así se ignora cualquier artículo que pertenezca a la misma OP pero de años anteriores.
+    const rowsRecientes = rows.filter((r) => {
+      if (!r.fecha || !fechaMasReciente) return true;
+      // Comparamos el valor de tiempo exacto para descartar fechas viejas
+      return (
+        new Date(r.fecha).getTime() === new Date(fechaMasReciente).getTime()
+      );
+    });
+
+    const primerRow = rowsRecientes[0];
+    const articulos = rowsRecientes.map((r, index) => ({
       id: r.id || index,
       modelo: r.modelo || r.detalles || "ARTÍCULO SIN ESPECIFICAR",
       cantidad: Number(r.cantidad) || 0,
