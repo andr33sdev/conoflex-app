@@ -4234,7 +4234,7 @@ app.put("/api/pedidos/:id/items/:itemId/avance", async (req, res) => {
       return res.status(400).json({ error: "Ingresá una cantidad válida." });
     }
 
-    // Obtener el ítem actual
+    // 1. Actualizar el ítem específico que se avanzó
     const [itemRows] = await db.query(
       `SELECT * FROM pedido_items WHERE id = ? AND pedido_id = ?`,
       [itemId, id],
@@ -4251,38 +4251,55 @@ app.put("/api/pedidos/:id/items/:itemId/avance", async (req, res) => {
     const estaCompletado =
       nuevaCantCompletada >= itemObj.cantidad_objetivo ? 1 : 0;
 
-    // Actualizar el ítem
     await db.query(
       `UPDATE pedido_items SET cantidad_completada = ?, completado = ? WHERE id = ?`,
       [nuevaCantCompletada, estaCompletado, itemId],
     );
 
-    // Registrar log de auditoría
+    // 2. Registrar log de auditoría
     await db.query(
       `INSERT INTO pedido_historial (pedido_id, item_id, cantidad_avanzada, usuario, fecha_hora) 
        VALUES (?, ?, ?, ?, ?)`,
       [id, itemId, qty, usuario || "Producción", fechaHora || new Date()],
     );
 
-    // Recalcular estado global del pedido
-    const [allItems] = await db.query(
-      `SELECT * FROM pedido_items WHERE pedido_id = ?`,
+    // 3. RECALCULAR ESTADO GLOBAL BASADO **SÓLO** EN EL ARTÍCULO PRINCIPAL (El 1er ítem)
+    const [mainItemRows] = await db.query(
+      `SELECT * FROM pedido_items WHERE pedido_id = ? ORDER BY id ASC LIMIT 1`,
       [id],
     );
-    const totalPedido = allItems.reduce(
-      (acc, curr) => acc + curr.cantidad_objetivo,
-      0,
-    );
-    const completadoPedido = allItems.reduce(
-      (acc, curr) => acc + curr.cantidad_completada,
-      0,
-    );
 
-    let nuevoEstado = "EN_PROCESO";
-    if (completadoPedido === 0) nuevoEstado = "PENDIENTE";
-    else if (completadoPedido >= totalPedido && totalPedido > 0)
-      nuevoEstado = "COMPLETADO";
+    let completadoPedido = 0;
+    let nuevoEstado = "PENDIENTE";
 
+    if (mainItemRows.length > 0) {
+      const mainItem = mainItemRows[0];
+      completadoPedido = mainItem.cantidad_completada; // SÓLO toma el avance del artículo
+
+      if (completadoPedido === 0) {
+        nuevoEstado = "PENDIENTE";
+      } else if (
+        completadoPedido >= mainItem.cantidad_objetivo &&
+        mainItem.cantidad_objetivo > 0
+      ) {
+        nuevoEstado = "COMPLETADO";
+      } else {
+        nuevoEstado = "EN_PROCESO";
+      }
+    }
+
+    // Si el artículo principal sigue en 0, pero Producción empezó una tarea secundaria, lo pasamos a EN_PROCESO
+    if (nuevoEstado === "PENDIENTE") {
+      const [anyProgress] = await db.query(
+        `SELECT COUNT(*) as count FROM pedido_items WHERE pedido_id = ? AND (cantidad_completada > 0 OR completado = 1)`,
+        [id],
+      );
+      if (anyProgress[0].count > 0) {
+        nuevoEstado = "EN_PROCESO";
+      }
+    }
+
+    // 4. Actualizar tabla principal de pedidos (Sin sumar basura de otras tareas)
     await db.query(
       `UPDATE pedidos SET cantidad_completada = ?, estado = ? WHERE id = ?`,
       [completadoPedido, nuevoEstado, id],
@@ -4292,6 +4309,59 @@ app.put("/api/pedidos/:id/items/:itemId/avance", async (req, res) => {
   } catch (error) {
     console.error("Error al registrar avance:", error);
     res.status(500).json({ error: "Error interno al registrar el avance." });
+  }
+});
+
+// 7. TILDAR/MARCAR LISTO UN CHECKLIST COMÚN (SIN CANTIDAD)
+app.put("/api/pedidos/:id/items/:itemId/tildar", async (req, res) => {
+  try {
+    const { id, itemId } = req.params;
+    const { usuario, fechaHora } = req.body;
+
+    await db.query(
+      `UPDATE pedido_items SET completado = 1 WHERE id = ? AND pedido_id = ?`,
+      [itemId, id],
+    );
+
+    await db.query(
+      `INSERT INTO pedido_historial (pedido_id, item_id, cantidad_avanzada, usuario, fecha_hora) 
+       VALUES (?, ?, 0, ?, ?)`,
+      [id, itemId, usuario || "Producción", fechaHora || new Date()],
+    );
+
+    // Actualizamos a EN_PROCESO si estaba PENDIENTE, pero NO alteramos la cantidad global
+    await db.query(
+      `UPDATE pedidos SET estado = 'EN_PROCESO' WHERE id = ? AND estado = 'PENDIENTE'`,
+      [id],
+    );
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error("Error al tildar ítem:", error);
+    res.status(500).json({ error: "Error al marcar ítem." });
+  }
+});
+
+// ARCHIVAR / DESARCHIVAR PEDIDO (SÓLO ADMIN)
+app.put("/api/pedidos/:id/archivar", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { archivado } = req.body; // true (1) o false (0)
+    const valor = archivado ? 1 : 0;
+
+    const [result] = await db.query(
+      "UPDATE pedidos SET archivado = ? WHERE id = ?",
+      [valor, id],
+    );
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ error: "Pedido no encontrado." });
+    }
+
+    res.json({ success: true, archivado: valor });
+  } catch (error) {
+    console.error("Error al archivar pedido:", error);
+    res.status(500).json({ error: "Error al actualizar estado de archivado." });
   }
 });
 
