@@ -80,12 +80,12 @@ export default function Pedidos({ usuarioActual }) {
   const [pedidos, setPedidos] = useState([]);
   const [loading, setLoading] = useState(true);
   const [busqueda, setBusqueda] = useState("");
-  const [tabActual, setTabActual] = useState("ACTIVOS"); // "ACTIVOS" | "ARCHIVADOS"
+  const [tabActual, setTabActual] = useState("ACTIVOS");
 
-  // PAGINACIÓN
+  // PAGINACIÓN DINÁMICA
   const tableContainerRef = useRef(null);
   const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage, setItemsPerPage] = useState(10);
+  const [itemsPerPage, setItemsPerPage] = useState(8);
 
   // MODALES
   const [modalNuevoOpen, setModalNuevoOpen] = useState(false);
@@ -103,7 +103,7 @@ export default function Pedidos({ usuarioActual }) {
   const [opDataFound, setOpDataFound] = useState(null);
   const [articulosSeleccionados, setArticulosSeleccionados] = useState([]);
 
-  // FORMULARIO AGREGAR ÍTEM ADICIONAL EN DETALLES
+  // FORMULARIO ÍTEM ADICIONAL
   const [itemDesc, setItemDesc] = useState("");
   const [itemCant, setItemCant] = useState("");
 
@@ -111,7 +111,7 @@ export default function Pedidos({ usuarioActual }) {
   const [observacionesInput, setObservacionesInput] = useState("");
   const [savingObservaciones, setSavingObservaciones] = useState(false);
 
-  // AVANCES PARCIALES (PRODUCCIÓN)
+  // AVANCES PARCIALES
   const [avancesInputs, setAvancesInputs] = useState({});
 
   useEffect(() => {
@@ -121,6 +121,44 @@ export default function Pedidos({ usuarioActual }) {
   useEffect(() => {
     setCurrentPage(1);
   }, [tabActual, busqueda]);
+
+  // CÁLCULO DINÁMICO DE FILAS EXACTAS SIN SCROLL
+  useEffect(() => {
+    if (loading) return;
+
+    const updatePageSize = () => {
+      if (!tableContainerRef.current) return;
+      const containerHeight = tableContainerRef.current.clientHeight;
+      const headerHeight = 48; // h-12 de la cabecera
+      const tableBorders = 2; // 1px superior + 1px inferior
+      const rowHeight = 56; // h-14 de cada fila
+      const safetyMargin = 2; // Margen de seguridad contra redondeos
+
+      const availableHeight =
+        containerHeight - headerHeight - tableBorders - safetyMargin;
+      const calculatedCount = Math.floor(availableHeight / rowHeight);
+
+      if (calculatedCount > 0) {
+        setItemsPerPage((prev) =>
+          prev !== calculatedCount ? calculatedCount : prev,
+        );
+      }
+    };
+
+    updatePageSize();
+
+    const observer = new ResizeObserver(updatePageSize);
+    if (tableContainerRef.current) {
+      observer.observe(tableContainerRef.current);
+    }
+
+    window.addEventListener("resize", updatePageSize);
+
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", updatePageSize);
+    };
+  }, [loading]);
 
   const fetchPedidos = async () => {
     try {
@@ -351,7 +389,6 @@ export default function Pedidos({ usuarioActual }) {
     }
   };
 
-  // CONTEO DINÁMICO
   const counts = useMemo(() => {
     const activos = pedidos.filter((p) => !p.archivado).length;
     const archivados = pedidos.filter((p) => Boolean(p.archivado)).length;
@@ -359,22 +396,35 @@ export default function Pedidos({ usuarioActual }) {
   }, [pedidos]);
 
   const pedidosFiltrados = useMemo(() => {
-    return pedidos.filter((p) => {
-      const isArchived = Boolean(p.archivado);
-      if (!isAdmin && isArchived) return false;
-      if (tabActual === "ARCHIVADOS" && !isArchived) return false;
-      if (tabActual === "ACTIVOS" && isArchived) return false;
+    return pedidos
+      .filter((p) => {
+        const isArchived = Boolean(p.archivado);
+        if (!isAdmin && isArchived) return false;
+        if (tabActual === "ARCHIVADOS" && !isArchived) return false;
+        if (tabActual === "ACTIVOS" && isArchived) return false;
 
-      const query = busqueda.toLowerCase();
-      return (
-        String(p.op).toLowerCase().includes(query) ||
-        String(p.cliente).toLowerCase().includes(query) ||
-        String(p.articulo).toLowerCase().includes(query)
+        const query = busqueda.toLowerCase();
+        return (
+          String(p.op).toLowerCase().includes(query) ||
+          String(p.cliente).toLowerCase().includes(query) ||
+          String(p.articulo).toLowerCase().includes(query)
+        );
+      })
+      .sort(
+        (a, b) =>
+          new Date(a.fecha).getTime() - new Date(b.fecha).getTime() ||
+          a.id - b.id,
       );
-    });
   }, [pedidos, busqueda, tabActual, isAdmin]);
 
   const totalPages = Math.ceil(pedidosFiltrados.length / itemsPerPage) || 1;
+
+  useEffect(() => {
+    if (currentPage > totalPages && totalPages > 0) {
+      setCurrentPage(totalPages);
+    }
+  }, [totalPages, currentPage]);
+
   const currentItems = useMemo(() => {
     const start = (currentPage - 1) * itemsPerPage;
     return pedidosFiltrados.slice(start, start + itemsPerPage);
@@ -388,29 +438,10 @@ export default function Pedidos({ usuarioActual }) {
     return "text-zinc-400 border-zinc-800 bg-zinc-900";
   };
 
-  useEffect(() => {
-    const updatePageSize = () => {
-      if (!tableContainerRef.current) return;
-      const containerHeight = tableContainerRef.current.clientHeight;
-      const headerHeight = 48;
-      const rowHeight = 56;
-      const availableHeight = containerHeight - headerHeight;
-      const calculatedCount = Math.floor(availableHeight / rowHeight);
-      if (calculatedCount > 0) {
-        setItemsPerPage(calculatedCount);
-      }
-    };
-
-    updatePageSize();
-    const observer = new ResizeObserver(updatePageSize);
-    if (tableContainerRef.current) observer.observe(tableContainerRef.current);
-    return () => observer.disconnect();
-  }, []);
-
   return (
     <div className="flex-1 flex flex-col h-full min-h-0 bg-black font-sans text-zinc-200 overflow-hidden relative selection:bg-[#FF5A00]/30">
       {/* HEADER HERO */}
-      <div className="border-b border-zinc-800/50 p-4 sm:p-6 md:p-10 flex flex-col sm:flex-row sm:items-end justify-between gap-4 shrink-0 bg-[#050505] relative overflow-hidden">
+      <div className="border-b border-zinc-800/50 p-4 sm:p-6 md:p-8 flex flex-col sm:flex-row sm:items-end justify-between gap-4 shrink-0 bg-[#050505] relative overflow-hidden">
         <div className="z-10">
           <h1 className="text-3xl sm:text-4xl md:text-5xl font-extrabold italic tracking-tighter text-white uppercase leading-none">
             PEDIDOS
@@ -431,7 +462,7 @@ export default function Pedidos({ usuarioActual }) {
         )}
       </div>
 
-      {/* BARRA DE HERRAMIENTAS: BÚSQUEDA Y PESTAÑAS ADMIN */}
+      {/* BARRA DE HERRAMIENTAS */}
       <div className="px-3 sm:px-6 md:px-8 py-3 border-b border-zinc-800/50 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 shrink-0 bg-black relative z-20">
         <div className="relative w-full sm:w-[360px] md:w-[400px]">
           <Search
@@ -443,13 +474,12 @@ export default function Pedidos({ usuarioActual }) {
             value={busqueda}
             onChange={(e) => setBusqueda(e.target.value)}
             placeholder="Buscar por N° OP, cliente o artículo..."
-            className="w-full bg-[#080808] border border-zinc-800 focus:border-[#FF5A00] text-white pl-9 pr-4 py-2 text-xs transition-colors outline-none font-mono rounded-sm"
+            className="w-full bg-[#080808] border border-zinc-800 focus:border-[#FF5A00] text-white pl-9 pr-4 py-2 text-xs transition-colors outline-none   rounded-sm"
           />
         </div>
 
-        {/* PESTAÑAS SÓLO PARA ADMIN */}
         {isAdmin && (
-          <div className="flex items-center border border-zinc-800 bg-[#050505] shrink-0 font-mono self-start sm:self-auto">
+          <div className="flex items-center border border-zinc-800 bg-[#050505] shrink-0   self-start sm:self-auto">
             <button
               onClick={() => setTabActual("ACTIVOS")}
               className={`px-4 py-2 text-[10px] font-bold uppercase tracking-widest transition-colors cursor-pointer border-r border-zinc-800 flex items-center gap-2 ${
@@ -460,7 +490,7 @@ export default function Pedidos({ usuarioActual }) {
             >
               <span>ACTIVOS</span>
               <span
-                className={`text-[9px] px-1.5 py-0.2 rounded ${tabActual === "ACTIVOS" ? "bg-black text-[#FF5A00]" : "bg-zinc-800 text-zinc-400"}`}
+                className={`text-[9px] px-1.5 py-0.5 rounded ${tabActual === "ACTIVOS" ? "bg-black text-[#FF5A00]" : "bg-zinc-800 text-zinc-400"}`}
               >
                 {counts.activos}
               </span>
@@ -476,7 +506,7 @@ export default function Pedidos({ usuarioActual }) {
               <Archive size={12} />
               <span>ARCHIVADOS</span>
               <span
-                className={`text-[9px] px-1.5 py-0.2 rounded ${tabActual === "ARCHIVADOS" ? "bg-black text-[#FFD700]" : "bg-zinc-800 text-zinc-400"}`}
+                className={`text-[9px] px-1.5 py-0.5 rounded ${tabActual === "ARCHIVADOS" ? "bg-black text-[#FFD700]" : "bg-zinc-800 text-zinc-400"}`}
               >
                 {counts.archivados}
               </span>
@@ -485,8 +515,8 @@ export default function Pedidos({ usuarioActual }) {
         )}
       </div>
 
-      {/* ÁREA DE CONTENIDO / TABLA */}
-      <div className="flex-1 flex flex-col justify-between overflow-hidden p-3 sm:p-6 md:p-8 bg-black min-h-0 relative z-10">
+      {/* ÁREA DE CONTENIDO */}
+      <div className="flex-1 flex flex-col justify-between overflow-hidden p-3 sm:p-5 md:p-6 bg-black min-h-0 relative z-10">
         {loading ? (
           <div className="flex justify-center items-center flex-1 text-[#FF5A00]">
             <RefreshCw className="animate-spin" size={28} />
@@ -502,11 +532,11 @@ export default function Pedidos({ usuarioActual }) {
         ) : (
           <div
             ref={tableContainerRef}
-            className="flex-1 min-h-0 w-full flex flex-col justify-start overflow-x-auto custom-scrollbar"
+            className="flex-1 min-h-0 w-full flex flex-col justify-start overflow-x-auto overflow-y-hidden custom-scrollbar"
           >
             <div className="w-full border border-zinc-800/90 bg-[#030303] flex flex-col shadow-2xl h-fit min-w-[800px] lg:min-w-[920px] rounded-sm">
-              {/* CABECERA TABLA */}
-              <div className="grid grid-cols-[75px_80px_minmax(140px,1fr)_minmax(140px,1.2fr)_90px_90px_130px] gap-2 h-12 bg-[#080808] border-b border-zinc-800/90 items-center text-zinc-500 font-mono text-[9px] font-extrabold uppercase tracking-widest shrink-0 px-4 select-none">
+              {/* CABECERA TABLA (48px exactos) */}
+              <div className="grid grid-cols-[75px_80px_minmax(140px,1fr)_minmax(140px,1.2fr)_90px_90px_130px] gap-2 h-12 bg-[#080808] border-b border-zinc-800/90 items-center text-zinc-500   text-[9px] font-extrabold uppercase tracking-widest shrink-0 px-4 select-none">
                 <div>FECHA</div>
                 <div>N° OP</div>
                 <div>CLIENTE</div>
@@ -516,8 +546,8 @@ export default function Pedidos({ usuarioActual }) {
                 <div className="text-right">ACCIONES</div>
               </div>
 
-              {/* FILAS DE LA TABLA */}
-              <div className="flex flex-col bg-black flex-1 font-mono">
+              {/* FILAS DE LA TABLA (56px exactos por fila) */}
+              <div className="flex flex-col bg-black flex-1  ">
                 {currentItems.map((p) => {
                   const esArchivado = Boolean(p.archivado);
                   return (
@@ -570,7 +600,6 @@ export default function Pedidos({ usuarioActual }) {
                           <span>DETALLES</span>
                         </button>
 
-                        {/* ACCIÓN ARCHIVAR / DESARCHIVAR (SÓLO ADMIN) */}
                         {isAdmin && (
                           <button
                             onClick={() =>
@@ -605,7 +634,7 @@ export default function Pedidos({ usuarioActual }) {
 
         {/* PAGINACIÓN */}
         {pedidosFiltrados.length > 0 && (
-          <div className="mt-3 pt-3 border-t border-zinc-800/60 flex flex-col sm:flex-row items-center justify-between gap-2 font-mono text-xs text-zinc-500 shrink-0">
+          <div className="mt-3 pt-3 border-t border-zinc-800/60 flex flex-col sm:flex-row items-center justify-between gap-2   text-xs text-zinc-500 shrink-0 select-none">
             <span className="uppercase text-[10px] font-bold tracking-widest text-zinc-400">
               Página <strong className="text-white">{currentPage}</strong> de{" "}
               <strong className="text-white">{totalPages}</strong> (
@@ -634,9 +663,7 @@ export default function Pedidos({ usuarioActual }) {
         )}
       </div>
 
-      {/* =========================================
-          MODAL NUEVO PEDIDO
-      ========================================= */}
+      {/* MODAL NUEVO PEDIDO */}
       {modalNuevoOpen && (
         <div className="fixed inset-0 bg-black/90 backdrop-blur-sm z-[100] flex items-center justify-center p-2 sm:p-4 font-sans animate-in fade-in duration-200">
           <div className="bg-[#050505] border border-zinc-800 w-full max-w-xl max-h-[92vh] overflow-hidden flex flex-col relative shadow-2xl rounded-sm">
@@ -652,7 +679,7 @@ export default function Pedidos({ usuarioActual }) {
               </button>
             </div>
 
-            <div className="p-5 sm:p-6 space-y-6 overflow-y-auto custom-scrollbar font-mono">
+            <div className="p-5 sm:p-6 space-y-6 overflow-y-auto custom-scrollbar  ">
               <form onSubmit={handleBuscarOP} className="flex gap-2">
                 <input
                   type="text"
@@ -676,7 +703,7 @@ export default function Pedidos({ usuarioActual }) {
               </form>
 
               {opDataFound && (
-                <div className="p-5 bg-zinc-900/30 border border-zinc-800 space-y-5 font-mono animate-in fade-in duration-300 rounded-sm">
+                <div className="p-5 bg-zinc-900/30 border border-zinc-800 space-y-5   animate-in fade-in duration-300 rounded-sm">
                   <div className="flex justify-between border-b border-zinc-800/80 pb-3">
                     <span className="text-zinc-500 font-bold text-xs uppercase tracking-widest">
                       OP ENCONTRADA
@@ -753,13 +780,11 @@ export default function Pedidos({ usuarioActual }) {
         </div>
       )}
 
-      {/* =========================================
-          MODAL DETALLES DEL PEDIDO
-      ========================================= */}
+      {/* MODAL DETALLES */}
       {modalDetalleOpen && (
         <div className="fixed inset-0 bg-black/90 backdrop-blur-md z-[100] flex items-center justify-center p-2 sm:p-6 font-sans animate-in fade-in duration-200">
           <div className="bg-[#050505] border border-zinc-800/80 w-full max-w-6xl max-h-[95vh] overflow-hidden flex flex-col relative shadow-[0_0_80px_rgba(0,0,0,0.95)] rounded-md">
-            <div className="px-5 sm:px-6 py-4 border-b border-zinc-800 flex justify-between items-center bg-[#020202] shrink-0 font-mono">
+            <div className="px-5 sm:px-6 py-4 border-b border-zinc-800 flex justify-between items-center bg-[#020202] shrink-0  ">
               <div className="flex items-center gap-4 min-w-0">
                 <span className="text-[#FF5A00] bg-[#FF5A00]/10 border border-[#FF5A00]/30 px-3 py-1 text-xs font-black tracking-widest uppercase rounded-sm shrink-0">
                   OP-{String(modalDetalleOpen.op).replace(/^OP-/i, "")}
@@ -775,7 +800,6 @@ export default function Pedidos({ usuarioActual }) {
               </div>
 
               <div className="flex items-center gap-3">
-                {/* ACCIÓN ARCHIVAR / RESTAURAR DESDE EL MODAL */}
                 {isAdmin && (
                   <button
                     onClick={() =>
@@ -809,7 +833,7 @@ export default function Pedidos({ usuarioActual }) {
               <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
                 {/* COLUMNA IZQ: RESUMEN, ÍTEMS Y NOTAS */}
                 <div className="lg:col-span-7 space-y-6">
-                  <div className="bg-[#0a0a0a] p-5 border border-zinc-800/80 rounded-md space-y-3 font-mono">
+                  <div className="bg-[#0a0a0a] p-5 border border-zinc-800/80 rounded-md space-y-3  ">
                     <div className="flex justify-between items-start gap-4">
                       <div className="min-w-0">
                         <span className="text-[10px] text-zinc-500 uppercase font-bold tracking-widest block mb-1">
@@ -858,7 +882,7 @@ export default function Pedidos({ usuarioActual }) {
                   {isAdmin && (
                     <form
                       onSubmit={handleAgregarItemAdmin}
-                      className="bg-[#030303] p-4 border border-zinc-800/80 rounded-md space-y-3 font-mono"
+                      className="bg-[#030303] p-4 border border-zinc-800/80 rounded-md space-y-3  "
                     >
                       <span className="text-[10px] uppercase font-bold text-zinc-400 block tracking-widest">
                         + AGREGAR TAREA O CHECKPOINT DE TRABAJO
@@ -878,7 +902,7 @@ export default function Pedidos({ usuarioActual }) {
                           value={itemCant}
                           onChange={(e) => setItemCant(e.target.value)}
                           placeholder="Cant. (Opcional)"
-                          className="w-full sm:w-32 bg-black border border-zinc-800 text-white p-2.5 text-xs font-bold focus:border-[#FF5A00] outline-none text-center font-mono placeholder:text-zinc-600 placeholder:font-normal"
+                          className="w-full sm:w-32 bg-black border border-zinc-800 text-white p-2.5 text-xs font-bold focus:border-[#FF5A00] outline-none text-center   placeholder:text-zinc-600 placeholder:font-normal"
                         />
                         <button
                           type="submit"
@@ -890,7 +914,7 @@ export default function Pedidos({ usuarioActual }) {
                     </form>
                   )}
 
-                  <div className="space-y-3 font-mono">
+                  <div className="space-y-3  ">
                     <div className="flex justify-between items-center border-b border-zinc-800/60 pb-2">
                       <span className="text-xs uppercase font-bold text-white tracking-widest flex items-center gap-2">
                         <CheckSquare size={15} className="text-[#FF5A00]" />
@@ -942,7 +966,7 @@ export default function Pedidos({ usuarioActual }) {
                                   </h5>
 
                                   {!esChecklistComun && (
-                                    <p className="text-[10px] text-zinc-400 mt-1 font-mono">
+                                    <p className="text-[10px] text-zinc-400 mt-1  ">
                                       Avance:{" "}
                                       <strong className="text-emerald-400">
                                         {item.cantidad_completada}
@@ -995,7 +1019,7 @@ export default function Pedidos({ usuarioActual }) {
                                             })
                                           }
                                           placeholder={`Cant. a registrar (Máx ${cantFaltante})...`}
-                                          className="w-full bg-transparent text-white p-2 text-xs font-bold outline-none text-center sm:text-left font-mono placeholder:text-zinc-600 placeholder:font-normal"
+                                          className="w-full bg-transparent text-white p-2 text-xs font-bold outline-none text-center sm:text-left   placeholder:text-zinc-600 placeholder:font-normal"
                                         />
                                         <button
                                           type="button"
@@ -1018,7 +1042,7 @@ export default function Pedidos({ usuarioActual }) {
                                             cantFaltante,
                                           )
                                         }
-                                        className="w-full sm:w-auto bg-[#FF5A00] hover:bg-white text-black font-extrabold px-4 py-2 text-xs uppercase transition cursor-pointer rounded-sm shrink-0 flex items-center justify-center gap-1.5"
+                                        className="w-full sm:w-auto bg-[#FF5A00] hover:bg-white text-black font-extrabold px-4 py-1.5 text-xs uppercase transition cursor-pointer rounded-sm shrink-0 flex items-center justify-center gap-1.5"
                                       >
                                         + CARGAR
                                       </button>
@@ -1034,7 +1058,7 @@ export default function Pedidos({ usuarioActual }) {
                   </div>
 
                   {/* OBSERVACIONES / NOTAS */}
-                  <div className="bg-[#080808] border border-zinc-800 p-4 rounded-md space-y-3 font-mono">
+                  <div className="bg-[#080808] border border-zinc-800 p-4 rounded-md space-y-3  ">
                     <div className="flex justify-between items-center border-b border-zinc-800/80 pb-2">
                       <span className="text-xs uppercase font-bold text-white tracking-widest flex items-center gap-2">
                         <FileText size={15} className="text-[#FFD700]" />
@@ -1072,8 +1096,8 @@ export default function Pedidos({ usuarioActual }) {
                   </div>
                 </div>
 
-                {/* COLUMNA DERECHA: HISTORIAL Y AUDITORÍA */}
-                <div className="lg:col-span-5 flex flex-col h-full bg-[#050505] border border-zinc-800/80 rounded-md overflow-hidden font-mono">
+                {/* COLUMNA DERECHA: HISTORIAL */}
+                <div className="lg:col-span-5 flex flex-col h-full bg-[#050505] border border-zinc-800/80 rounded-md overflow-hidden  ">
                   <div className="bg-[#080808] border-b border-zinc-800/80 p-4 shrink-0 flex items-center gap-2">
                     <History size={16} className="text-zinc-400" />
                     <span className="text-[11px] uppercase font-bold text-zinc-300 tracking-widest">
