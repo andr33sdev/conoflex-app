@@ -4430,7 +4430,7 @@ app.post("/api/fichero/sync", async (req, res) => {
 app.get("/api/fichero/historial", async (req, res) => {
   try {
     const [rows] = await db.query(
-      "SELECT * FROM fichadas ORDER BY fecha_hora DESC LIMIT 100",
+      "SELECT * FROM fichadas ORDER BY fecha_hora DESC",
     );
     return res.json(rows);
   } catch (error) {

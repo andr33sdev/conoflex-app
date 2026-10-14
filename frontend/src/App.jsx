@@ -14,10 +14,10 @@ import ComercialIA from "./ComercialIA";
 import ProduccionPlanta from "./ProduccionPlanta";
 import SolicitudesInternas from "./SolicitudesInternas";
 import DespacharPedidos from "./DespacharPedidos";
-import Pedidos from "./Pedidos"; // <-- AGREGADO: Importación del nuevo módulo
+import Pedidos from "./Pedidos";
+import FicheroModule from "./FicheroModule"; // <-- AGREGADO: Importación del nuevo módulo
 
 function App() {
-  // PERSISTENCIA DE SESIÓN: Carga la sesión previa desde localStorage al refrescar
   const [usuarioActual, setUsuarioActual] = useState(() => {
     const savedUser = localStorage.getItem("usuario_conoflex");
     if (savedUser) {
@@ -71,7 +71,6 @@ function App() {
     return () => window.removeEventListener("popstate", checkUrl);
   }, []);
 
-  // PROTECCIÓN DE MÓDULOS NO AUTORIZADOS
   useEffect(() => {
     if (usuarioActual && usuarioActual.rol?.toUpperCase() !== "ADMIN") {
       const tienePermiso =
@@ -107,13 +106,11 @@ function App() {
     }
   };
 
-  // GUARDAR SESIÓN EN LOCALSTORAGE
   const handleLoginSuccess = (user) => {
     setUsuarioActual(user);
     localStorage.setItem("usuario_conoflex", JSON.stringify(user));
   };
 
-  // CERRAR SESIÓN Y LIMPIAR LOCALSTORAGE
   const handleLogout = () => {
     setUsuarioActual(null);
     localStorage.removeItem("usuario_conoflex");
@@ -146,6 +143,10 @@ function App() {
     >
       {usuarioActual.rol?.toUpperCase() === "ADMIN" &&
         activeModule === "admin-usuarios" && <AdminUsuarios />}
+
+      {/* <-- MÓDULO AGREGADO: CONTROL DE ASISTENCIA --> */}
+      {usuarioActual.rol?.toUpperCase() === "ADMIN" &&
+        activeModule === "control-asistencia" && <FicheroModule />}
 
       {hasAccess("materias-primas") && activeModule === "materias-primas" && (
         <Inventory
@@ -188,7 +189,6 @@ function App() {
         <PlanificacionProduccion />
       )}
 
-      {/* <-- MÓDULO AGREGADO: PEDIDOS --> */}
       {hasAccess("pedidos") && activeModule === "pedidos" && (
         <Pedidos usuarioActual={usuarioActual} />
       )}

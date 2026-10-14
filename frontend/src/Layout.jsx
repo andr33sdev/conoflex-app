@@ -19,6 +19,7 @@ import {
   Truck,
   Building2,
   ListChecks,
+  Fingerprint, // <-- Importación agregada para FicheroModule
 } from "lucide-react";
 
 import logo from "./assets/logo.svg";
@@ -32,7 +33,6 @@ export default function Layout({
   usuarioActual = { nombre: "Usuario", rol: "ADMIN", permisos: ["*"] },
   onLogout = () => {},
 }) {
-  // ESTADO GLOBAL DEL MENÚ LATERAL (OCULTO POR DEFECTO SIEMPRE)
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
   const ALL_MENU_ITEMS = [
@@ -58,6 +58,13 @@ export default function Layout({
       icon: ClipboardList,
     },
     { id: "planta-online", label: "Planta On-Line", icon: Activity },
+    // <-- NUEVO MÓDULO AGREGADO -->
+    {
+      id: "control-asistencia",
+      label: "Control Asistencia",
+      icon: Fingerprint,
+      adminOnly: true, // Sólo para administradores
+    },
     {
       id: "admin-usuarios",
       label: "Panel Administrador",
@@ -77,12 +84,11 @@ export default function Layout({
 
   const handleSelectModule = (id) => {
     setActiveModule(id);
-    setIsSidebarOpen(false); // Cierra automáticamente al seleccionar módulo
+    setIsSidebarOpen(false);
   };
 
   return (
     <div className="h-screen w-full bg-[#020202] flex items-center justify-center p-0 md:p-3 lg:p-4 overflow-hidden font-sans text-zinc-100 antialiased selection:bg-[#FF5A00]/30 selection:text-white relative">
-      {/* FONDO DE PUNTOS */}
       <style>{`
         .bg-dots-orange {
           background-image: radial-gradient(rgba(255, 90, 0, 0.2) 1px, transparent 1px);
@@ -102,8 +108,6 @@ export default function Layout({
         <div className="absolute inset-0 bg-dots-orange animate-dots-drift opacity-60" />
       </div>
 
-      {/* DRAWER DEL MENÚ (SIDEBAR DESLIZABLE) */}
-      {/* Overlay Oscuro Atrás */}
       <div
         className={`fixed inset-0 z-[100] transition-all duration-300 ${
           isSidebarOpen
@@ -112,12 +116,11 @@ export default function Layout({
         }`}
         onClick={() => setIsSidebarOpen(false)}
       >
-        {/* Panel Deslizable */}
         <div
           className={`absolute top-0 left-0 h-full w-72 max-w-[85vw] bg-[#050505] p-5 flex flex-col justify-between border-r border-zinc-800 shadow-[20px_0_50px_rgba(0,0,0,0.8)] transition-transform duration-300 ease-out ${
             isSidebarOpen ? "translate-x-0" : "-translate-x-full"
           }`}
-          onClick={(e) => e.stopPropagation()} // Evita que al clickear el panel se cierre
+          onClick={(e) => e.stopPropagation()}
         >
           <button
             onClick={() => setIsSidebarOpen(false)}
@@ -202,9 +205,7 @@ export default function Layout({
         </div>
       </div>
 
-      {/* MARCO PRINCIPAL DE LA APLICACIÓN */}
       <div className="w-full max-w-[1600px] h-full md:max-h-[98vh] flex flex-col rounded-none md:rounded-2xl border-0 md:border md:border-zinc-800/90 bg-[#030303] shadow-[0_0_60px_rgba(0,0,0,0.95)] overflow-hidden relative z-10">
-        {/* HEADER SUPERIOR GLOBAL */}
         <div className="flex items-center justify-between p-3 sm:p-4 border-b border-zinc-800/50 bg-[#050505] shrink-0 z-30">
           <div className="flex items-center gap-3 sm:gap-4 min-w-0">
             <button
@@ -232,7 +233,6 @@ export default function Layout({
             </div>
           </div>
 
-          {/* BOTÓN RECARGAR (EJ: PARA SEMIELABORADOS) */}
           {activeModule === "semielaborados" && (
             <button
               onClick={onReloadSheets}
@@ -250,7 +250,6 @@ export default function Layout({
           )}
         </div>
 
-        {/* ÁREA DE CONTENIDO DINÁMICA */}
         <main className="flex-1 overflow-y-auto overflow-x-hidden p-0 min-h-0 relative bg-black">
           <div className="h-full transition-all duration-300 ease-out">
             {children}
