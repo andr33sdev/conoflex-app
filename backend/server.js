@@ -4365,6 +4365,79 @@ app.put("/api/pedidos/:id/archivar", async (req, res) => {
   }
 });
 
+// ==========================
+// FICHERO
+// =========================
+
+// 1. Obtener el último N° de registro almacenado en la base de datos
+app.get("/api/fichero/ultimo", async (req, res) => {
+  try {
+    const [rows] = await db.query(
+      "SELECT MAX(rec_no) AS ultimo_rec FROM fichadas",
+    );
+    const ultimo = rows[0]?.ultimo_rec || 0;
+    return res.json({ ultimo_rec: ultimo });
+  } catch (error) {
+    console.error("Error al consultar último registro:", error);
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+// 2. Recibir e insertar las fichadas nuevas
+app.post("/api/fichero/sync", async (req, res) => {
+  const { registros } = req.body;
+
+  if (!registros || !Array.isArray(registros) || registros.length === 0) {
+    return res.json({
+      mensaje: "Sin registros nuevos para insertar.",
+      insertados: 0,
+    });
+  }
+
+  try {
+    const valores = registros.map((r) => [
+      r.rec_no,
+      r.empleado_id,
+      r.nombre,
+      r.fecha_hora,
+      r.tipo,
+      r.metodo || "Facial",
+    ]);
+
+    // INSERT IGNORE descarta registros si el rec_no ya existe
+    const sql = `
+      INSERT IGNORE INTO fichadas 
+      (rec_no, empleado_id, nombre, fecha_hora, tipo, metodo) 
+      VALUES ?
+    `;
+
+    const [resultado] = await db.query(sql, [valores]);
+    console.log(
+      `✔ Sincronización exitosa: ${resultado.affectedRows} fichadas insertadas.`,
+    );
+
+    return res.json({
+      ok: true,
+      insertados: resultado.affectedRows,
+    });
+  } catch (error) {
+    console.error("Error al guardar fichadas:", error);
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+// 3. Consultar fichadas ordenadas para la app de gestión
+app.get("/api/fichero/historial", async (req, res) => {
+  try {
+    const [rows] = await db.query(
+      "SELECT * FROM fichadas ORDER BY fecha_hora DESC LIMIT 100",
+    );
+    return res.json(rows);
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
+  }
+});
+
 // ==========================================
 // MÓDULO ESTADO PEDIDOS & DESPACHOS
 // ==========================================
