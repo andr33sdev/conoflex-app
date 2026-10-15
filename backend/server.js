@@ -4947,7 +4947,66 @@ const toolsConnie = [
 ];
 
 // ==========================================
-// ENDPOINT: CHAT CONNIE (MULTI-TURNO RESISTENTE)
+// 1. EJECUTOR UNIVERSAL SQL (SOLO LECTURA)
+// ==========================================
+async function ejecutarConsultaSQLConnie(sqlQuery) {
+  const query = (sqlQuery || "").trim();
+
+  // Candado de seguridad: solo permitir lectura
+  const esLectura = /^select\b|^with\b|^show\b|^describe\b/i.test(query);
+  const esPeligrosa =
+    /insert|update|delete|drop|alter|truncate|create|grant|revoke/i.test(query);
+
+  if (!esLectura || esPeligrosa) {
+    return {
+      error: "Acceso denegado: Solo se permiten consultas de lectura (SELECT).",
+    };
+  }
+
+  try {
+    console.log("👉 [Connie SQL]:", query);
+    const [filas] = await db.query(query);
+
+    if (Array.isArray(filas) && filas.length > 60) {
+      return {
+        total_encontrados: filas.length,
+        filas: filas.slice(0, 60),
+        aviso: "Se limitó a 60 filas para optimizar la respuesta.",
+      };
+    }
+    return { total: filas.length, filas };
+  } catch (error) {
+    console.error("Error SQL Connie:", error.message);
+    return { error: `Error en la consulta MySQL: ${error.message}` };
+  }
+}
+
+// ==========================================
+// 2. HERRAMIENTA LIBRE DE CONSULTA PARA GEMINI
+// ==========================================
+const toolConnieSQL = {
+  functionDeclarations: [
+    {
+      name: "ejecutarConsultaSQL",
+      description:
+        "Ejecuta cualquier consulta SQL SELECT en la base de datos MySQL de Conoflex para consultar ventas, pedidos, asistencias, fichadas, stock de materias primas, semielaborados o producción.",
+      parameters: {
+        type: "OBJECT",
+        properties: {
+          consultaSQL: {
+            type: "STRING",
+            description:
+              "Sentencia SQL SELECT válida para MySQL. Podés usar SUM, COUNT, AVG, GROUP BY, WHERE y LIKE.",
+          },
+        },
+        required: ["consultaSQL"],
+      },
+    },
+  ],
+};
+
+// ==========================================
+// 3. CHAT AUTÓNOMO MULTI-TURNO CON ACCESO TOTAL
 // ==========================================
 app.post("/api/chat-ia", async (req, res) => {
   try {
@@ -4965,49 +5024,61 @@ app.post("/api/chat-ia", async (req, res) => {
 
     const dolarOficial = await obtenerDolarOficial();
     const tcVenta = dolarOficial?.venta || 1500;
-    const esquemaBD = await obtenerEsquemaBaseDeDatosMySQL();
 
     const systemInstruction = `
 Sos Connie, la Analista Operativa, Comercial e Industrial de Conoflex Argentina.
-Tu interlocutor es un directivo/operador de la empresa (NUNCA lo llames Connie a él; vos sos Connie).
+Tu interlocutor es un directivo de la empresa (NUNCA lo llames Connie; vos sos Connie).
 
-ENTORNO:
+ENTORNO EN TIEMPO REAL:
 - FECHA DE HOY: ${hoyFormateado} (${hoyISO}).
 - DÓLAR OFICIAL VENTA: $${tcVenta} ARS.
 
-CAPACIDADES EN TIEMPO REAL:
-1. VENTAS Y PEDIDOS ('estado_pedidos'): Usá la herramienta "obtenerReporteVentas". Al consultar por un mes específico (ej: octubre 2026), definí fecha_inicio al primer día (2026-10-01) y fecha_fin al último día (2026-10-31).
-2. ASISTENCIA Y FICHERO DEL PERSONAL ('fichadas'): Usá "ejecutarConsultaSQL".
-   - Columnas: rec_no, empleado_id, nombre (nombre del operario en mayúsculas), fecha_hora, tipo ('ENTRADA' o 'SALIDA'), metodo.
-3. INVENTARIO Y STOCK:
-   - 'materias_primas': codigo, nombre, stock_actual, unidad_medida.
-   - 'semielaborados': codigo, nombre, stock_33, stock_26, stock_ayolas, stock_37.
-4. PRODUCCIÓN:
-   - 'registro_produccion' y 'cargas_produccion': cant_buenos, cant_fallas, kg_total, kg_fallas.
+TABLAS PRINCIPALES EN LA BASE DE DATOS (MYSQL):
+1. 'estado_pedidos' (Ventas y Despachos):
+   - Columnas: fecha (DATE 'YYYY-MM-DD'), op, cliente, modelo, detalles, cantidad, estado, punisiva (precio unitario sin IVA en ARS), cosusd (costo unitario USD), vendedor, canal.
+   - REGLAS DE VENTAS:
+     * Para buscar un modelo con color o variante (ej: '2071LE-2R NA'), buscá en 'modelo' y en 'detalles' usando LIKE porque el color ('NA' o 'NARANJA') o los packs ('X5', 'X10') pueden estar en cualquiera de las dos columnas:
+       WHERE (modelo LIKE '%2071LE-2R%' OR detalles LIKE '%2071LE-2R%')
+         AND (modelo LIKE '%NA%' OR detalles LIKE '%NA%' OR detalles LIKE '%NARANJA%')
+     * Siempre excluír pedidos cancelados: estado != 'CANCELADO'.
+     * Para calcular unidades totales: SUM(cantidad).
+     * Para calcular facturación en ARS sin IVA: SUM(cantidad * punisiva).
+     * Para calcular costo total en USD: SUM(cosusd).
+     * Para ventas de un mes específico (ej: octubre 2026): fecha BETWEEN '2026-10-01' AND '2026-10-31'.
 
-ESQUEMA COMPLETO DE TABLAS:
-${esquemaBD}
+2. 'fichadas' (Control de Asistencia del Personal):
+   - Columnas: rec_no, empleado_id, nombre (nombre del operario), fecha_hora (DATETIME), tipo ('ENTRADA' o 'SALIDA'), metodo.
+   - Para revisar asistencias podés agrupar por nombre y tipo, o consultar entradas recientes ordenadas por fecha_hora DESC.
 
-REGLAS DE RESPUESTA:
-- NUNCA digas que no tenés acceso a información de la empresa. Tenés acceso total a la base de datos MySQL.
-- Sé ejecutiva, amable y hablá en español argentino fluido.
-- Presentá siempre los datos ordenados con viñetas claras y cifras totales.
+3. 'materias_primas':
+   - Columnas: codigo, nombre, stock_actual, unidad_medida.
+
+4. 'semielaborados':
+   - Columnas: codigo, nombre, stock_33, stock_26, stock_ayolas, stock_37.
+
+5. 'registro_produccion' y 'cargas_produccion':
+   - Columnas: fecha, maquina, cant_buenos, cant_fallas, kg_total, kg_fallas.
+
+INSTRUCCIONES CLAVE:
+- Usá SIEMPRE la herramienta "ejecutarConsultaSQL" para obtener datos reales mediante consultas SELECT.
+- Podés hacer todas las sumatorias, filtros y agrupaciones que necesites.
+- Sé ejecutiva, directa y hablá en español argentino natural.
+- Presentá los números finales consolidados y bien ordenados con viñetas; no muestres código SQL técnico al usuario.
 `;
 
-    // 1. Filtrar el mensaje actual si ya vino en el array
-    const historialFiltrado = historial.filter(
-      (h) => h.texto && h.texto.trim() !== mensaje.trim(),
-    );
-
-    // 2. Construir turnos alternados estrictos
-    const turnos = [];
+    // SANEAMIENTO ESTRICTO DE TURNOS (Evita roles user/user consecutivos y 500)
+    const turnosPrevios = [];
     let ultimoRol = null;
 
-    for (const h of historialFiltrado) {
+    // Tomamos el historial excluyendo el mensaje actual si ya vino adjunto
+    const historialLimpio = historial.filter(
+      (h) => h.texto && h.texto.trim() !== (mensaje || "").trim(),
+    );
+
+    for (const h of historialLimpio.slice(-6)) {
       const rol = h.rol === "user" ? "user" : "model";
-      // Evitar turnos consecutivos del mismo rol
       if (rol !== ultimoRol) {
-        turnos.push({
+        turnosPrevios.push({
           role: rol,
           parts: [{ text: h.texto }],
         });
@@ -5015,67 +5086,67 @@ REGLAS DE RESPUESTA:
       }
     }
 
-    // 3. REGLA OBLIGATORIA DE GEMINI: El historial DEBE empezar con 'user'
-    while (turnos.length > 0 && turnos[0].role !== "user") {
-      turnos.shift();
+    // Gemini exige que la conversación comience con un turno 'user'
+    while (turnosPrevios.length > 0 && turnosPrevios[0].role !== "user") {
+      turnosPrevios.shift();
     }
 
-    // 4. El historial previo debe terminar en 'model' antes de agregar la nueva pregunta del usuario
-    while (turnos.length > 0 && turnos[turnos.length - 1].role !== "model") {
-      turnos.pop();
+    // Y debe terminar en 'model' antes de enviar la nueva pregunta del usuario
+    while (
+      turnosPrevios.length > 0 &&
+      turnosPrevios[turnosPrevios.length - 1].role !== "model"
+    ) {
+      turnosPrevios.pop();
     }
 
-    // 5. Armar el array final de contents (user -> model -> user -> ...)
+    // Armamos la conversación con alternancia garantizada: user -> model -> user
     const contents = [
-      ...turnos.slice(-6),
+      ...turnosPrevios,
       { role: "user", parts: [{ text: mensaje }] },
     ];
 
-    // Paso 1: Llamada al modelo para decidir si requiere invocar herramientas
+    // Paso 1: Gemini analiza la consulta y redacta el SQL
     let response = await ai.models.generateContent({
       model: "gemini-2.5-flash",
       contents: contents,
       config: {
         systemInstruction: systemInstruction,
-        tools: toolsConnie,
+        tools: [toolConnieSQL],
       },
     });
 
-    // Paso 2: Si Gemini invoca herramientas (ventas o SQL general)
+    // Paso 2: Si Gemini decide ejecutar la consulta SQL
     const functionCalls = response.functionCalls;
     if (functionCalls && functionCalls.length > 0) {
       contents.push(response.candidates[0].content);
 
-      const parts = [];
+      const toolResponses = [];
       for (const call of functionCalls) {
         let resultado = null;
-
-        if (call.name === "obtenerReporteVentas") {
-          resultado = await ejecutarConsultaVentasParams(call.args);
-        } else if (call.name === "ejecutarConsultaSQL") {
-          resultado = await ejecutarSQLSoloLectura(call.args.consultaSQL);
+        if (call.name === "ejecutarConsultaSQL") {
+          resultado = await ejecutarConsultaSQLConnie(call.args.consultaSQL);
         }
 
-        parts.push({
+        toolResponses.push({
           functionResponse: {
             name: call.name,
-            response: { resultado: resultado || "Sin registros encontrados." },
+            response: { resultado: resultado || "Sin resultados encontrados." },
           },
         });
       }
 
       contents.push({
         role: "user",
-        parts: parts,
+        parts: toolResponses,
       });
 
-      // Paso 3: Respuesta final procesada
+      // Paso 3: Gemini recibe los datos de MySQL, realiza los cálculos y responde
       response = await ai.models.generateContent({
         model: "gemini-2.5-flash",
         contents: contents,
         config: {
           systemInstruction: systemInstruction,
-          tools: toolsConnie,
+          tools: [toolConnieSQL],
         },
       });
     }
