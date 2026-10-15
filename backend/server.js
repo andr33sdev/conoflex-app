@@ -4947,7 +4947,7 @@ const toolsConnie = [
 ];
 
 // ==========================================
-// 4. ENDPOINT: CHAT AUTÓNOMO INTEGRAL
+// ENDPOINT: CHAT CONNIE (MULTI-TURNO RESISTENTE)
 // ==========================================
 app.post("/api/chat-ia", async (req, res) => {
   try {
@@ -4975,36 +4975,39 @@ ENTORNO:
 - FECHA DE HOY: ${hoyFormateado} (${hoyISO}).
 - DÓLAR OFICIAL VENTA: $${tcVenta} ARS.
 
-CAPACIDADES DE CONSULTA EN TIEMPO REAL:
-1. VENTAS Y PEDIDOS: Usá la herramienta "obtenerReporteVentas". Al consultar un mes específico, definí fecha_inicio al primer día y fecha_fin al último día de ese mes.
+CAPACIDADES EN TIEMPO REAL:
+1. VENTAS Y PEDIDOS ('estado_pedidos'): Usá la herramienta "obtenerReporteVentas". Al consultar por un mes específico (ej: octubre 2026), definí fecha_inicio al primer día (2026-10-01) y fecha_fin al último día (2026-10-31).
 2. ASISTENCIA Y FICHERO DEL PERSONAL ('fichadas'): Usá "ejecutarConsultaSQL".
-   - Columnas de 'fichadas': rec_no, empleado_id, nombre (nombre del operario en mayúsculas), fecha_hora (DATETIME 'YYYY-MM-DD HH:MM:SS'), tipo ('ENTRADA' o 'SALIDA'), metodo.
-   - Para revisar asistencias de hoy o días recientes podés consultar:
-     SELECT nombre, fecha_hora, tipo FROM fichadas WHERE fecha_hora >= DATE_SUB(CURDATE(), INTERVAL 7 DAY) ORDER BY fecha_hora DESC LIMIT 50;
-3. MATERIAS PRIMAS Y STOCK:
+   - Columnas: rec_no, empleado_id, nombre (nombre del operario en mayúsculas), fecha_hora, tipo ('ENTRADA' o 'SALIDA'), metodo.
+3. INVENTARIO Y STOCK:
    - 'materias_primas': codigo, nombre, stock_actual, unidad_medida.
    - 'semielaborados': codigo, nombre, stock_33, stock_26, stock_ayolas, stock_37.
-4. PRODUCCIÓN Y CALIDAD:
-   - 'registro_produccion' y 'cargas_produccion': fecha, maquina, cant_buenos, cant_fallas, kg_total, kg_fallas.
+4. PRODUCCIÓN:
+   - 'registro_produccion' y 'cargas_produccion': cant_buenos, cant_fallas, kg_total, kg_fallas.
 
 ESQUEMA COMPLETO DE TABLAS:
 ${esquemaBD}
 
 REGLAS DE RESPUESTA:
-- NUNCA digas que no tenés acceso a información de la empresa (fichero, asistencia, personal, stock, producción o ventas). Si te preguntan algo de la planta, consultá la base de datos de inmediato.
-- Sé profesional, ejecutiva, clara y hablá en español argentino fluido. No muestres código SQL técnico al usuario, brindá las conclusiones y números organizados.
+- NUNCA digas que no tenés acceso a información de la empresa. Tenés acceso total a la base de datos MySQL.
+- Sé ejecutiva, amable y hablá en español argentino fluido.
+- Presentá siempre los datos ordenados con viñetas claras y cifras totales.
 `;
 
-    // Sanitización estricta de roles para evitar turnos user/user consecutivos
-    const turnosSanitizados = [];
+    // 1. Filtrar el mensaje actual si ya vino en el array
+    const historialFiltrado = historial.filter(
+      (h) => h.texto && h.texto.trim() !== mensaje.trim(),
+    );
+
+    // 2. Construir turnos alternados estrictos
+    const turnos = [];
     let ultimoRol = null;
 
-    for (const h of historial
-      .filter((item) => item.texto && item.texto !== mensaje)
-      .slice(-6)) {
+    for (const h of historialFiltrado) {
       const rol = h.rol === "user" ? "user" : "model";
+      // Evitar turnos consecutivos del mismo rol
       if (rol !== ultimoRol) {
-        turnosSanitizados.push({
+        turnos.push({
           role: rol,
           parts: [{ text: h.texto }],
         });
@@ -5012,16 +5015,23 @@ REGLAS DE RESPUESTA:
       }
     }
 
-    if (ultimoRol === "user") {
-      turnosSanitizados.pop();
+    // 3. REGLA OBLIGATORIA DE GEMINI: El historial DEBE empezar con 'user'
+    while (turnos.length > 0 && turnos[0].role !== "user") {
+      turnos.shift();
     }
 
+    // 4. El historial previo debe terminar en 'model' antes de agregar la nueva pregunta del usuario
+    while (turnos.length > 0 && turnos[turnos.length - 1].role !== "model") {
+      turnos.pop();
+    }
+
+    // 5. Armar el array final de contents (user -> model -> user -> ...)
     const contents = [
-      ...turnosSanitizados,
+      ...turnos.slice(-6),
       { role: "user", parts: [{ text: mensaje }] },
     ];
 
-    // Paso 1: Gemini decide qué herramienta usar
+    // Paso 1: Llamada al modelo para decidir si requiere invocar herramientas
     let response = await ai.models.generateContent({
       model: "gemini-2.5-flash",
       contents: contents,
@@ -5031,7 +5041,7 @@ REGLAS DE RESPUESTA:
       },
     });
 
-    // Paso 2: Ejecución de las herramientas invocadas
+    // Paso 2: Si Gemini invoca herramientas (ventas o SQL general)
     const functionCalls = response.functionCalls;
     if (functionCalls && functionCalls.length > 0) {
       contents.push(response.candidates[0].content);
@@ -5059,7 +5069,7 @@ REGLAS DE RESPUESTA:
         parts: parts,
       });
 
-      // Paso 3: Respuesta final interpretada
+      // Paso 3: Respuesta final procesada
       response = await ai.models.generateContent({
         model: "gemini-2.5-flash",
         contents: contents,
@@ -5070,10 +5080,10 @@ REGLAS DE RESPUESTA:
       });
     }
 
-    res.json({ success: true, respuesta: response.text });
+    return res.json({ success: true, respuesta: response.text });
   } catch (error) {
     console.error("Error en chat Connie:", error);
-    res.status(500).json({ error: "Error al procesar consulta." });
+    return res.status(500).json({ error: "Error al procesar consulta." });
   }
 });
 
