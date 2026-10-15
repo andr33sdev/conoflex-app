@@ -145,7 +145,7 @@ function App() {
         activeModule === "admin-usuarios" && <AdminUsuarios />}
 
       {/* <-- MÓDULO AGREGADO: CONTROL DE ASISTENCIA --> */}
-      {usuarioActual.rol?.toUpperCase() === "ADMIN" &&
+      {hasAccess("control-asistencia") &&
         activeModule === "control-asistencia" && <FicheroModule />}
 
       {hasAccess("materias-primas") && activeModule === "materias-primas" && (
