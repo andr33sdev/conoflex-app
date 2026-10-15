@@ -4820,174 +4820,11 @@ app.post(
 );
 
 // ==========================================
-// TOOL MEJORADA: BÚSQUEDA FLEXIBLE
+// 1. ESQUEMA DINÁMICO EN CACHÉ DE MYSQL
 // ==========================================
-const toolObtenerVentas = {
-  functionDeclarations: [
-    {
-      name: "obtenerReporteVentas",
-      description:
-        "Obtiene y agrupa ventas de la base de datos según filtros flexibles de fecha, canal o modelo.",
-      parameters: {
-        type: "OBJECT",
-        properties: {
-          fecha_inicio: {
-            type: "STRING",
-            description: "Fecha inicio YYYY-MM-DD (ej: '2026-09-01').",
-          },
-          fecha_fin: {
-            type: "STRING",
-            description: "Fecha fin YYYY-MM-DD (ej: '2026-09-30').",
-          },
-          canal: {
-            type: "STRING",
-            description:
-              "Canal de venta: 'MercadoLibre', 'Venta Directa' o 'Todos'.",
-          },
-          modelo_filtro: {
-            type: "STRING",
-            description:
-              "Filtro opcional de modelo o código de producto (ej: '4000-2R' o '4000').",
-          },
-          agrupar_por: {
-            type: "STRING",
-            description:
-              "Campo de agrupación: 'modelo', 'dia', 'mes' o 'sin_agrupar'.",
-          },
-          limite: {
-            type: "NUMBER",
-            description: "Límite de resultados (por defecto 50).",
-          },
-        },
-        required: ["fecha_inicio", "fecha_fin"],
-      },
-    },
-  ],
-};
-
-// ==========================================
-// FUNCIÓN SQL DE VENTAS BLINDADA CONTRA UNDEFINED
-// ==========================================
-async function ejecutarConsultaVentasParams(params) {
-  const {
-    fecha_inicio,
-    fecha_fin,
-    canal,
-    modelo_filtro,
-    agrupar_por,
-    limite = 50,
-  } = params || {};
-
-  // Fechas seguras por defecto (evita el TypeError de mysql2 si no se especifican)
-  const ahora = new Date();
-  const fechaFinSegura = fecha_fin || ahora.toISOString().split("T")[0];
-
-  // Si no se especifica inicio, toma el inicio del año actual o 2 años atrás para historial
-  const fechaIniSegura = fecha_inicio || `${ahora.getFullYear()}-01-01`;
-
-  let whereClauses = ["fecha BETWEEN ? AND ?", "estado != 'CANCELADO'"];
-  let queryParams = [fechaIniSegura, fechaFinSegura];
-
-  if (canal === "MercadoLibre") {
-    whereClauses.push(
-      "(LOWER(detalles) LIKE '%mercadolibre%' OR LOWER(detalles) LIKE '%mercado libre%' OR LOWER(detalles) LIKE '%ml%')",
-    );
-  } else if (canal === "Venta Directa") {
-    whereClauses.push(
-      "(LOWER(detalles) NOT LIKE '%mercadolibre%' AND LOWER(detalles) NOT LIKE '%mercado libre%' AND LOWER(detalles) NOT LIKE '%ml%')",
-    );
-  }
-
-  // Tokenización: cruza modelo y detalles para atrapar código, color y bultos
-  if (modelo_filtro && modelo_filtro.trim() !== "") {
-    const terminos = modelo_filtro.trim().split(/\s+/).filter(Boolean);
-    const aliasColor = {
-      NA: "NARANJA",
-      NE: "NEGRO",
-      AM: "AMARILLO",
-      AZ: "AZUL",
-      RO: "ROJO",
-      VE: "VERDE",
-    };
-
-    terminos.forEach((term) => {
-      const tUpper = term.toUpperCase();
-      const posibleColor = aliasColor[tUpper];
-      if (posibleColor) {
-        whereClauses.push(
-          "(modelo LIKE ? OR detalles LIKE ? OR modelo LIKE ? OR detalles LIKE ?)",
-        );
-        queryParams.push(
-          `%${term}%`,
-          `%${term}%`,
-          `%${posibleColor}%`,
-          `%${posibleColor}%`,
-        );
-      } else {
-        whereClauses.push("(modelo LIKE ? OR detalles LIKE ?)");
-        queryParams.push(`%${term}%`, `%${term}%`);
-      }
-    });
-  }
-
-  let selectQuery = "";
-
-  if (
-    agrupar_por === "modelo" ||
-    (modelo_filtro && agrupar_por !== "sin_agrupar")
-  ) {
-    selectQuery = `
-      SELECT 
-        modelo,
-        IF(LOWER(detalles) LIKE '%mercadolibre%' OR LOWER(detalles) LIKE '%mercado libre%' OR LOWER(detalles) LIKE '%ml%', 'MercadoLibre', 'Venta Directa') AS canal,
-        SUM(cantidad) AS unidades_totales,
-        COUNT(DISTINCT op) AS total_pedidos,
-        SUM(cantidad * punisiva) AS facturacion_ars_sin_iva,
-        SUM(cosusd) AS costo_total_usd
-      FROM estado_pedidos
-      WHERE ${whereClauses.join(" AND ")}
-      GROUP BY modelo, canal
-      ORDER BY unidades_totales DESC
-      LIMIT ?
-    `;
-    queryParams.push(Number(limite) || 50);
-  } else if (agrupar_por === "dia" || agrupar_por === "mes") {
-    const format = agrupar_por === "dia" ? "%Y-%m-%d" : "%Y-%m";
-    selectQuery = `
-      SELECT 
-        DATE_FORMAT(fecha, '${format}') AS periodo,
-        IF(LOWER(detalles) LIKE '%mercadolibre%' OR LOWER(detalles) LIKE '%mercado libre%' OR LOWER(detalles) LIKE '%ml%', 'MercadoLibre', 'Venta Directa') AS canal,
-        COUNT(DISTINCT op) AS total_pedidos,
-        SUM(cantidad) AS unidades_totales,
-        SUM(cantidad * punisiva) AS facturacion_ars_sin_iva,
-        SUM(cosusd) AS costo_total_usd
-      FROM estado_pedidos
-      WHERE ${whereClauses.join(" AND ")}
-      GROUP BY periodo, canal
-      ORDER BY periodo DESC
-      LIMIT ?
-    `;
-    queryParams.push(Number(limite) || 50);
-  } else {
-    selectQuery = `
-      SELECT 
-        COUNT(DISTINCT op) AS total_pedidos,
-        SUM(cantidad) AS unidades_totales,
-        SUM(cantidad * punisiva) AS facturacion_ars_sin_iva,
-        SUM(cosusd) AS costo_total_usd
-      FROM estado_pedidos
-      WHERE ${whereClauses.join(" AND ")}
-    `;
-  }
-
-  const [rows] = await db.query(selectQuery, queryParams);
-  return rows;
-}
-
-// ==========================================
-// 1. OBTENER ESQUEMA REAL DE MYSQL (INFORMACIÓN DE TABLAS Y COLUMNAS)
-// ==========================================
+let cacheEsquemaBD = null;
 async function obtenerEsquemaBaseDeDatosMySQL() {
+  if (cacheEsquemaBD) return cacheEsquemaBD;
   try {
     const [tablas] = await db.query(
       `SELECT TABLE_NAME FROM information_schema.tables WHERE TABLE_SCHEMA = DATABASE()`,
@@ -5001,12 +4838,13 @@ async function obtenerEsquemaBaseDeDatosMySQL() {
         [t.TABLE_NAME],
       );
       const colDefs = columnas
-        .map((c) => `  ${c.COLUMN_NAME} (${c.DATA_TYPE})`)
+        .map((c) => `${c.COLUMN_NAME} (${c.DATA_TYPE})`)
         .join(", ");
       esquemas.push(`TABLA ${t.TABLE_NAME}: [${colDefs}]`);
     }
 
-    return esquemas.join("\n\n");
+    cacheEsquemaBD = esquemas.join("\n\n");
+    return cacheEsquemaBD;
   } catch (err) {
     console.error("Error obteniendo esquema MySQL:", err);
     return "";
@@ -5014,12 +4852,11 @@ async function obtenerEsquemaBaseDeDatosMySQL() {
 }
 
 // ==========================================
-// 2. EJECUTOR ASÍNCRONO DE CONSULTAS MYSQL (SOLO LECTURA)
+// 2. EJECUTOR ASÍNCRONO DE CONSULTAS SQL (SOLO LECTURA)
 // ==========================================
 async function ejecutarSQLSoloLectura(sqlQuery) {
   const query = (sqlQuery || "").trim();
 
-  // Candado: solo permitir lectura
   const esLectura = /^select\b|^with\b|^show\b|^describe\b/i.test(query);
   const esPeligrosa =
     /insert|update|delete|drop|alter|truncate|create|grant|revoke/i.test(query);
@@ -5031,6 +4868,7 @@ async function ejecutarSQLSoloLectura(sqlQuery) {
   }
 
   try {
+    console.log("👉 SQL ejecutado por Connie:", query);
     const [filas] = await db.query(query);
 
     if (Array.isArray(filas) && filas.length > 50) {
@@ -5047,31 +4885,69 @@ async function ejecutarSQLSoloLectura(sqlQuery) {
 }
 
 // ==========================================
-// 3. DECLARACIÓN DE LA HERRAMIENTA UNIVERSAL
+// 3. DECLARACIÓN DE HERRAMIENTAS COMBINADAS
 // ==========================================
-const toolConsultarBD = {
-  functionDeclarations: [
-    {
-      name: "ejecutarConsultaSQL",
-      description:
-        "Ejecuta una consulta SQL SELECT en la base de datos MySQL de Conoflex para consultar materias primas, stock, semielaborados, pedidos, producción, asistencia o máquinas.",
-      parameters: {
-        type: "OBJECT",
-        properties: {
-          consultaSQL: {
-            type: "STRING",
-            description:
-              "Consulta SQL SELECT válida para MySQL. Usar LIKE '%termino%' para búsquedas de texto.",
+const toolsConnie = [
+  {
+    functionDeclarations: [
+      {
+        name: "obtenerReporteVentas",
+        description:
+          "Obtiene y agrupa ventas de productos terminados en 'estado_pedidos' según filtros flexibles de fecha, canal o modelo. Usar siempre para ventas y facturación.",
+        parameters: {
+          type: "OBJECT",
+          properties: {
+            fecha_inicio: {
+              type: "STRING",
+              description: "Fecha inicio YYYY-MM-DD (ej: '2026-10-01').",
+            },
+            fecha_fin: {
+              type: "STRING",
+              description: "Fecha fin YYYY-MM-DD (ej: '2026-10-31').",
+            },
+            canal: {
+              type: "STRING",
+              description:
+                "Canal de venta: 'MercadoLibre', 'Venta Directa' o 'Todos'.",
+            },
+            modelo_filtro: {
+              type: "STRING",
+              description:
+                "Modelo o código de producto (ej: '2071LE-2R NA' o '4000').",
+            },
+            agrupar_por: {
+              type: "STRING",
+              description:
+                "Campo de agrupación: 'modelo', 'dia', 'mes' o 'sin_agrupar'.",
+            },
+            limite: {
+              type: "NUMBER",
+              description: "Límite de resultados (por defecto 50).",
+            },
           },
         },
-        required: ["consultaSQL"],
       },
-    },
-  ],
-};
+      {
+        name: "ejecutarConsultaSQL",
+        description:
+          "Ejecuta consultas SQL SELECT en toda la base de datos de Conoflex para consultar asistencias de operarios en 'fichadas', inventario en 'materias_primas', stock en 'semielaborados', producción en 'registro_produccion', etc.",
+        parameters: {
+          type: "OBJECT",
+          properties: {
+            consultaSQL: {
+              type: "STRING",
+              description: "Consulta SQL SELECT válida para MySQL.",
+            },
+          },
+          required: ["consultaSQL"],
+        },
+      },
+    ],
+  },
+];
 
 // ==========================================
-// ENDPOINT DE CHAT ROBUSTO CON TOOL CALLING
+// 4. ENDPOINT: CHAT AUTÓNOMO INTEGRAL
 // ==========================================
 app.post("/api/chat-ia", async (req, res) => {
   try {
@@ -5089,72 +4965,109 @@ app.post("/api/chat-ia", async (req, res) => {
 
     const dolarOficial = await obtenerDolarOficial();
     const tcVenta = dolarOficial?.venta || 1500;
+    const esquemaBD = await obtenerEsquemaBaseDeDatosMySQL();
 
     const systemInstruction = `
-Sos Connie, la Analista Operativa y Comercial de Conoflex Argentina.
+Sos Connie, la Analista Operativa, Comercial e Industrial de Conoflex Argentina.
 Tu interlocutor es un directivo/operador de la empresa (NUNCA lo llames Connie a él; vos sos Connie).
 
 ENTORNO:
 - FECHA DE HOY: ${hoyFormateado} (${hoyISO}).
 - DÓLAR OFICIAL VENTA: $${tcVenta} ARS.
 
-CAPACIDADES Y REGLAS:
-1. Usá SIEMPRE la herramienta "obtenerReporteVentas" para responder consultas sobre pedidos, ventas o unidades.
-2. Si el usuario no indica fechas o pregunta de manera general, consultá el año en curso o el mes actual por defecto. Si pregunta por un mes específico, definí fecha_inicio al primer día del mes y fecha_fin al último.
-3. COHERENCIA EN VARIANTES: Aclará el total consolidado sumando variantes (como packs o productos de segunda) y detallalo de forma ejecutiva.
-4. Respondé en español argentino natural, con tono corporativo, claro y directo.
+CAPACIDADES DE CONSULTA EN TIEMPO REAL:
+1. VENTAS Y PEDIDOS: Usá la herramienta "obtenerReporteVentas". Al consultar un mes específico, definí fecha_inicio al primer día y fecha_fin al último día de ese mes.
+2. ASISTENCIA Y FICHERO DEL PERSONAL ('fichadas'): Usá "ejecutarConsultaSQL".
+   - Columnas de 'fichadas': rec_no, empleado_id, nombre (nombre del operario en mayúsculas), fecha_hora (DATETIME 'YYYY-MM-DD HH:MM:SS'), tipo ('ENTRADA' o 'SALIDA'), metodo.
+   - Para revisar asistencias de hoy o días recientes podés consultar:
+     SELECT nombre, fecha_hora, tipo FROM fichadas WHERE fecha_hora >= DATE_SUB(CURDATE(), INTERVAL 7 DAY) ORDER BY fecha_hora DESC LIMIT 50;
+3. MATERIAS PRIMAS Y STOCK:
+   - 'materias_primas': codigo, nombre, stock_actual, unidad_medida.
+   - 'semielaborados': codigo, nombre, stock_33, stock_26, stock_ayolas, stock_37.
+4. PRODUCCIÓN Y CALIDAD:
+   - 'registro_produccion' y 'cargas_produccion': fecha, maquina, cant_buenos, cant_fallas, kg_total, kg_fallas.
+
+ESQUEMA COMPLETO DE TABLAS:
+${esquemaBD}
+
+REGLAS DE RESPUESTA:
+- NUNCA digas que no tenés acceso a información de la empresa (fichero, asistencia, personal, stock, producción o ventas). Si te preguntan algo de la planta, consultá la base de datos de inmediato.
+- Sé profesional, ejecutiva, clara y hablá en español argentino fluido. No muestres código SQL técnico al usuario, brindá las conclusiones y números organizados.
 `;
 
-    const historialFiltrado = historial
-      .filter((h) => h.texto && h.texto !== mensaje)
-      .slice(-4);
+    // Sanitización estricta de roles para evitar turnos user/user consecutivos
+    const turnosSanitizados = [];
+    let ultimoRol = null;
+
+    for (const h of historial
+      .filter((item) => item.texto && item.texto !== mensaje)
+      .slice(-6)) {
+      const rol = h.rol === "user" ? "user" : "model";
+      if (rol !== ultimoRol) {
+        turnosSanitizados.push({
+          role: rol,
+          parts: [{ text: h.texto }],
+        });
+        ultimoRol = rol;
+      }
+    }
+
+    if (ultimoRol === "user") {
+      turnosSanitizados.pop();
+    }
 
     const contents = [
-      ...historialFiltrado.map((h) => ({
-        role: h.rol === "user" ? "user" : "model",
-        parts: [{ text: h.texto }],
-      })),
+      ...turnosSanitizados,
       { role: "user", parts: [{ text: mensaje }] },
     ];
 
+    // Paso 1: Gemini decide qué herramienta usar
     let response = await ai.models.generateContent({
       model: "gemini-2.5-flash",
       contents: contents,
       config: {
         systemInstruction: systemInstruction,
-        tools: [toolObtenerVentas],
+        tools: toolsConnie,
       },
     });
 
+    // Paso 2: Ejecución de las herramientas invocadas
     const functionCalls = response.functionCalls;
     if (functionCalls && functionCalls.length > 0) {
-      const call = functionCalls[0];
-      if (call.name === "obtenerReporteVentas") {
-        const resultadoBD = await ejecutarConsultaVentasParams(call.args);
+      contents.push(response.candidates[0].content);
 
-        contents.push(response.candidates[0].content);
-        contents.push({
-          role: "user",
-          parts: [
-            {
-              functionResponse: {
-                name: "obtenerReporteVentas",
-                response: { resultado: resultadoBD },
-              },
-            },
-          ],
-        });
+      const parts = [];
+      for (const call of functionCalls) {
+        let resultado = null;
 
-        // Se reenvía manteniendo tools y systemInstruction para evitar rechazo de la API
-        response = await ai.models.generateContent({
-          model: "gemini-2.5-flash",
-          contents: contents,
-          config: {
-            systemInstruction: systemInstruction,
-            tools: [toolObtenerVentas],
+        if (call.name === "obtenerReporteVentas") {
+          resultado = await ejecutarConsultaVentasParams(call.args);
+        } else if (call.name === "ejecutarConsultaSQL") {
+          resultado = await ejecutarSQLSoloLectura(call.args.consultaSQL);
+        }
+
+        parts.push({
+          functionResponse: {
+            name: call.name,
+            response: { resultado: resultado || "Sin registros encontrados." },
           },
         });
       }
+
+      contents.push({
+        role: "user",
+        parts: parts,
+      });
+
+      // Paso 3: Respuesta final interpretada
+      response = await ai.models.generateContent({
+        model: "gemini-2.5-flash",
+        contents: contents,
+        config: {
+          systemInstruction: systemInstruction,
+          tools: toolsConnie,
+        },
+      });
     }
 
     res.json({ success: true, respuesta: response.text });
