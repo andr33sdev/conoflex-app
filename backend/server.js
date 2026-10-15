@@ -4892,10 +4892,14 @@ async function ejecutarConsultaVentasParams(params) {
     );
   }
 
-  // Filtro por modelo (parcial para capturar sufijos como 4000-2R NA)
+  // Match inteligente: busca tanto en 'modelo' como en 'detalles' y maneja códigos compuestos
   if (modelo_filtro && modelo_filtro.trim() !== "") {
-    whereClauses.push("modelo LIKE ?");
-    queryParams.push(`%${modelo_filtro.trim()}%`);
+    const terminos = modelo_filtro.trim().split(/\s+/).filter(Boolean);
+    // Cada término (ej: "2071LE-2R" y "NA") debe estar presente en modelo O en detalles
+    terminos.forEach((t) => {
+      whereClauses.push("(modelo LIKE ? OR detalles LIKE ?)");
+      queryParams.push(`%${t}%`, `%${t}%`);
+    });
   }
 
   let selectQuery = "";
