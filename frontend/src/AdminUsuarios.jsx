@@ -28,6 +28,7 @@ const MODULOS_SISTEMA = [
   { id: "comercial", nombre: "IA Comercial" },
   { id: "solicitudes-internas", nombre: "Solicitudes Internas" },
   { id: "planta-online", nombre: "Planta On-Line" },
+  { id: "control-asistencia", nombre: "Control Asistencia" },
 ];
 
 export default function AdminUsuarios() {
@@ -612,7 +613,6 @@ export default function AdminUsuarios() {
                 </select>
               </div>
 
-              {/* SELECCIÓN DE VENDEDORES EN CREACIÓN */}
               <div>
                 <label className="text-slate-400 font-semibold mb-1.5 block">
                   Vendedor(es) Asignados (Despacho)

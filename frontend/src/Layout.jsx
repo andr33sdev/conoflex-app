@@ -63,7 +63,6 @@ export default function Layout({
       id: "control-asistencia",
       label: "Control Asistencia",
       icon: Fingerprint,
-      adminOnly: true, // Sólo para administradores
     },
     {
       id: "admin-usuarios",
