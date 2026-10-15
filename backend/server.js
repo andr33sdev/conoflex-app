@@ -5127,13 +5127,6 @@ REGLAS DE ACTUACIÓN:
   }
 });
 
-    res.json({ success: true, respuesta: response.text });
-  } catch (error) {
-    console.error("Error en chat Connie:", error);
-    res.status(500).json({ error: "Error al procesar consulta." });
-  }
-});
-
 app.listen(PORT, () =>
   console.log(`🚀 Servidor Conoflex unificado ejecutándose en puerto ${PORT}`),
 );
