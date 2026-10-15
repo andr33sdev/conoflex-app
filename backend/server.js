@@ -4953,74 +4953,83 @@ async function ejecutarConsultaVentasParams(params) {
 }
 
 // ==========================================
-// 1. UTILIDAD: OBTENER ESQUEMA COMPLETO DE SQLITE
+// 1. OBTENER ESQUEMA REAL DE MYSQL (INFORMACIÓN DE TABLAS Y COLUMNAS)
 // ==========================================
-// Inspecciona sqlite_master de tu db (better-sqlite3) para que Connie
-// conozca todas las tablas y columnas automáticamente.
-function obtenerEsquemaBaseDeDatos() {
+async function obtenerEsquemaBaseDeDatosMySQL() {
   try {
-    const tablas = db
-      .prepare(
-        `SELECT name, sql FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'`
-      )
-      .all();
+    const [tablas] = await db.query(
+      `SELECT TABLE_NAME FROM information_schema.tables WHERE TABLE_SCHEMA = DATABASE()`,
+    );
 
-    return tablas
-      .map((t) => `-- TABLA: ${t.name}\n${t.sql};`)
-      .join("\n\n");
+    const esquemas = [];
+    for (const t of tablas) {
+      const [columnas] = await db.query(
+        `SELECT COLUMN_NAME, DATA_TYPE FROM information_schema.columns 
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?`,
+        [t.TABLE_NAME],
+      );
+      const colDefs = columnas
+        .map((c) => `  ${c.COLUMN_NAME} (${c.DATA_TYPE})`)
+        .join(", ");
+      esquemas.push(`TABLA ${t.TABLE_NAME}: [${colDefs}]`);
+    }
+
+    return esquemas.join("\n\n");
   } catch (err) {
-    console.error("Error obteniendo esquema de la base de datos:", err);
+    console.error("Error obteniendo esquema MySQL:", err);
     return "";
   }
 }
 
 // ==========================================
-// 2. EJECUTOR SEGURO DE CONSULTAS (SOLO SELECT)
+// 2. EJECUTOR ASÍNCRONO DE CONSULTAS MYSQL (SOLO LECTURA)
 // ==========================================
-function ejecutarSQLSoloLectura(sqlQuery) {
+async function ejecutarSQLSoloLectura(sqlQuery) {
   const query = (sqlQuery || "").trim();
 
-  // Candado: solo permitir SELECT / WITH
-  const esLectura = /^select\b|^with\b/i.test(query);
-  const esPeligrosa = /insert|update|delete|drop|alter|truncate|create|grant|revoke/i.test(query);
+  // Candado: solo permitir lectura
+  const esLectura = /^select\b|^with\b|^show\b|^describe\b/i.test(query);
+  const esPeligrosa =
+    /insert|update|delete|drop|alter|truncate|create|grant|revoke/i.test(query);
 
   if (!esLectura || esPeligrosa) {
-    return { error: "Acceso denegado: Solo se permiten consultas de lectura (SELECT)." };
+    return {
+      error: "Acceso denegado: Solo se permiten consultas de lectura (SELECT).",
+    };
   }
 
   try {
-    const filas = db.prepare(query).all();
-    // Limitar filas para no desbordar el contexto de la IA
-    if (filas.length > 60) {
+    const [filas] = await db.query(query);
+
+    if (Array.isArray(filas) && filas.length > 50) {
       return {
         total_encontrados: filas.length,
-        mostrando: 60,
-        filas: filas.slice(0, 60),
-        aviso: "Se limitó la respuesta a 60 registros. Si es necesario, agregá LIMIT o agrupá por fecha/categoría."
+        filas: filas.slice(0, 50),
+        aviso: "Mostrando los primeros 50 registros.",
       };
     }
     return { total: filas.length, filas };
   } catch (error) {
-    return { error: `Error ejecutando SQL: ${error.message}` };
+    return { error: `Error SQL MySQL: ${error.message}` };
   }
 }
 
 // ==========================================
-// 3. DECLARACIÓN DE HERRAMIENTAS PARA GEMINI
+// 3. DECLARACIÓN DE LA HERRAMIENTA UNIVERSAL
 // ==========================================
 const toolConsultarBD = {
   functionDeclarations: [
     {
       name: "ejecutarConsultaSQL",
       description:
-        "Ejecuta una consulta SQL SELECT en la base de datos SQLite de Conoflex para consultar stock, materias primas, pedidos, asistencia, semielaborados, máquinas o producción.",
+        "Ejecuta una consulta SQL SELECT en la base de datos MySQL de Conoflex para consultar materias primas, stock, semielaborados, pedidos, producción, asistencia o máquinas.",
       parameters: {
         type: "OBJECT",
         properties: {
           consultaSQL: {
             type: "STRING",
             description:
-              "Consulta SQL SELECT válida para SQLite. Usar LIKE '%valor%' o COLLATE NOCASE para textos.",
+              "Consulta SQL SELECT válida para MySQL. Usar LIKE '%termino%' para búsquedas de texto.",
           },
         },
         required: ["consultaSQL"],
@@ -5030,7 +5039,7 @@ const toolConsultarBD = {
 };
 
 // ==========================================
-// 4. ENDPOINT: CHAT CON CONNIE (TEXT-TO-SQL)
+// 4. ENDPOINT: CHAT CON CONNIE (TEXT-TO-SQL REAL)
 // ==========================================
 app.post("/api/chat-ia", async (req, res) => {
   try {
@@ -5048,28 +5057,30 @@ app.post("/api/chat-ia", async (req, res) => {
 
     const dolarOficial = await obtenerDolarOficial();
     const tcVenta = dolarOficial?.venta || 1500;
-    const esquemaBD = obtenerEsquemaBaseDeDatos();
+
+    // Obtenemos el esquema de MySQL de forma asíncrona
+    const esquemaBD = await obtenerEsquemaBaseDeDatosMySQL();
 
     const systemInstruction = `
-Sos Connie, la Analista Operativa y Financiera de Conoflex Argentina.
-Tenés acceso en tiempo real a la base de datos SQLite completa de la empresa mediante la herramienta "ejecutarConsultaSQL".
+Sos Connie, la encargada de Inteligencia Operativa y Analista Financiera en Conoflex Argentina.
+Tenés acceso en tiempo real a la base de datos MySQL de la empresa mediante la herramienta "ejecutarConsultaSQL".
 
 ENTORNO:
 - FECHA DE HOY: ${hoyFormateado} (${hoyISO}).
 - DÓLAR OFICIAL VENTA: $${tcVenta} ARS.
 
-ESTRUCTURA DE TABLAS DISPONIBLES EN SQLITE:
+TABLAS Y CAMPOS DISPONIBLES EN MYSQL:
 ${esquemaBD}
 
 REGLAS DE ACTUACIÓN:
-1. Cuando el usuario pregunte por producción, stock, materias primas, fichadas/asistencia, pedidos o finanzas, NUNCA adivines ni inventes datos: armá una consulta SQL SELECT y ejecutala con la herramienta "ejecutarConsultaSQL".
-2. Si te piden rentabilidad en ARS: Facturación ARS sin IVA - (Costo USD * $${tcVenta}).
-3. Al buscar por texto, utilizá siempre LIKE '%termino%' o 'COLLATE NOCASE' para que coincida sin importar mayúsculas/minúsculas.
-4. Respondé en español argentino fluido, de forma ejecutiva, clara y directa.
-5. No muestres código SQL ni detalles de bases de datos al usuario; brindá las cifras, conclusiones y tablas finales ordenadas.
+1. Cuando te pregunten por materias primas, stock, semielaborados, ventas, pedidos, producción o asistencia, NUNCA inventes números: usa SIEMPRE la herramienta "ejecutarConsultaSQL" para consultar los datos reales.
+2. Escribí consultas SQL compatibles con MySQL (ej: SELECT nombre, stock_actual FROM materias_primas WHERE stock_actual <= 10).
+3. Si te piden rentabilidad en ARS: Facturación ARS sin IVA - (Costo USD * $${tcVenta}).
+4. Sé ejecutiva, amable y hablá en español argentino fluido.
+5. No muestres código SQL técnico en tu respuesta final; presentá los resultados claros con viñetas, nombres de artículos y cantidades ordenadas.
 `;
 
-    const historialAcotado = (historial || []).slice(-6);
+    const historialAcotado = (historial || []).slice(-4);
     const contents = [
       { role: "user", parts: [{ text: systemInstruction }] },
       ...historialAcotado.map((h) => ({
@@ -5079,20 +5090,21 @@ REGLAS DE ACTUACIÓN:
       { role: "user", parts: [{ text: mensaje }] },
     ];
 
-    // Paso 1: Gemini decide si ejecuta la consulta SQL
+    // Paso 1: Gemini analiza la pregunta y decide si invoca la consulta SQL
     let response = await ai.models.generateContent({
       model: "gemini-2.5-flash",
       contents: contents,
       config: { tools: [toolConsultarBD] },
     });
 
-    // Paso 2: Si Gemini invocó la herramienta, ejecutamos en SQLite y devolvemos los datos
+    // Paso 2: Ejecución de la herramienta
     const functionCalls = response.functionCalls;
     if (functionCalls && functionCalls.length > 0) {
       const call = functionCalls[0];
 
       if (call.name === "ejecutarConsultaSQL") {
-        const resultadoBD = ejecutarSQLSoloLectura(call.args.consultaSQL);
+        // Ejecución en MySQL con await
+        const resultadoBD = await ejecutarSQLSoloLectura(call.args.consultaSQL);
 
         contents.push(response.candidates[0].content);
         contents.push({
@@ -5107,7 +5119,7 @@ REGLAS DE ACTUACIÓN:
           ],
         });
 
-        // Paso 3: Gemini interpreta las filas obtenidas y genera la respuesta final
+        // Paso 3: Gemini recibe las filas reales de MySQL y genera la respuesta
         response = await ai.models.generateContent({
           model: "gemini-2.5-flash",
           contents: contents,
@@ -5115,15 +5127,10 @@ REGLAS DE ACTUACIÓN:
       }
     }
 
-    const textoFinal = response.text || "No pude obtener una respuesta clara para tu consulta.";
-    return res.json({ success: true, respuesta: textoFinal });
-
+    res.json({ success: true, respuesta: response.text });
   } catch (error) {
     console.error("Error en chat Connie:", error);
-    return res.status(500).json({
-      success: false,
-      error: "Ocurrió un error al procesar la respuesta de Connie.",
-    });
+    res.status(500).json({ error: "Error al procesar consulta." });
   }
 });
 
