@@ -4953,7 +4953,84 @@ async function ejecutarConsultaVentasParams(params) {
 }
 
 // ==========================================
-// CHAT CONNI - AGENTE AUTÓNOMO CON FUNCTION CALLING
+// 1. UTILIDAD: OBTENER ESQUEMA COMPLETO DE SQLITE
+// ==========================================
+// Inspecciona sqlite_master de tu db (better-sqlite3) para que Connie
+// conozca todas las tablas y columnas automáticamente.
+function obtenerEsquemaBaseDeDatos() {
+  try {
+    const tablas = db
+      .prepare(
+        `SELECT name, sql FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'`
+      )
+      .all();
+
+    return tablas
+      .map((t) => `-- TABLA: ${t.name}\n${t.sql};`)
+      .join("\n\n");
+  } catch (err) {
+    console.error("Error obteniendo esquema de la base de datos:", err);
+    return "";
+  }
+}
+
+// ==========================================
+// 2. EJECUTOR SEGURO DE CONSULTAS (SOLO SELECT)
+// ==========================================
+function ejecutarSQLSoloLectura(sqlQuery) {
+  const query = (sqlQuery || "").trim();
+
+  // Candado: solo permitir SELECT / WITH
+  const esLectura = /^select\b|^with\b/i.test(query);
+  const esPeligrosa = /insert|update|delete|drop|alter|truncate|create|grant|revoke/i.test(query);
+
+  if (!esLectura || esPeligrosa) {
+    return { error: "Acceso denegado: Solo se permiten consultas de lectura (SELECT)." };
+  }
+
+  try {
+    const filas = db.prepare(query).all();
+    // Limitar filas para no desbordar el contexto de la IA
+    if (filas.length > 60) {
+      return {
+        total_encontrados: filas.length,
+        mostrando: 60,
+        filas: filas.slice(0, 60),
+        aviso: "Se limitó la respuesta a 60 registros. Si es necesario, agregá LIMIT o agrupá por fecha/categoría."
+      };
+    }
+    return { total: filas.length, filas };
+  } catch (error) {
+    return { error: `Error ejecutando SQL: ${error.message}` };
+  }
+}
+
+// ==========================================
+// 3. DECLARACIÓN DE HERRAMIENTAS PARA GEMINI
+// ==========================================
+const toolConsultarBD = {
+  functionDeclarations: [
+    {
+      name: "ejecutarConsultaSQL",
+      description:
+        "Ejecuta una consulta SQL SELECT en la base de datos SQLite de Conoflex para consultar stock, materias primas, pedidos, asistencia, semielaborados, máquinas o producción.",
+      parameters: {
+        type: "OBJECT",
+        properties: {
+          consultaSQL: {
+            type: "STRING",
+            description:
+              "Consulta SQL SELECT válida para SQLite. Usar LIKE '%valor%' o COLLATE NOCASE para textos.",
+          },
+        },
+        required: ["consultaSQL"],
+      },
+    },
+  ],
+};
+
+// ==========================================
+// 4. ENDPOINT: CHAT CON CONNIE (TEXT-TO-SQL)
 // ==========================================
 app.post("/api/chat-ia", async (req, res) => {
   try {
@@ -4971,21 +5048,28 @@ app.post("/api/chat-ia", async (req, res) => {
 
     const dolarOficial = await obtenerDolarOficial();
     const tcVenta = dolarOficial?.venta || 1500;
+    const esquemaBD = obtenerEsquemaBaseDeDatos();
 
     const systemInstruction = `
-Sos Connie, encargada de Inteligencia Operativa y Analista Financiera en Conoflex Argentina.
+Sos Connie, la Analista Operativa y Financiera de Conoflex Argentina.
+Tenés acceso en tiempo real a la base de datos SQLite completa de la empresa mediante la herramienta "ejecutarConsultaSQL".
 
 ENTORNO:
 - FECHA DE HOY: ${hoyFormateado} (${hoyISO}).
-- DÓLAR OFICIAL VENTA HOY: $${tcVenta} ARS.
+- DÓLAR OFICIAL VENTA: $${tcVenta} ARS.
 
-CAPACIDADES Y REGLAS:
-- Tenés acceso a la herramienta "obtenerReporteVentas". Usala siempre que necesites consultar datos de ventas, cantidades, productos más vendidos, rentabilidad o pedidos de cualquier fecha, rango, mes o canal.
-- Si te piden rentabilidad en ARS: Facturación ARS sin IVA - (Costo USD * $${tcVenta}).
-- Sé ejecutiva, amable y hablá en español argentino fluido. No expliques la parte técnica de las SQL o funciones, dá directamente los resultados de forma clara.
+ESTRUCTURA DE TABLAS DISPONIBLES EN SQLITE:
+${esquemaBD}
+
+REGLAS DE ACTUACIÓN:
+1. Cuando el usuario pregunte por producción, stock, materias primas, fichadas/asistencia, pedidos o finanzas, NUNCA adivines ni inventes datos: armá una consulta SQL SELECT y ejecutala con la herramienta "ejecutarConsultaSQL".
+2. Si te piden rentabilidad en ARS: Facturación ARS sin IVA - (Costo USD * $${tcVenta}).
+3. Al buscar por texto, utilizá siempre LIKE '%termino%' o 'COLLATE NOCASE' para que coincida sin importar mayúsculas/minúsculas.
+4. Respondé en español argentino fluido, de forma ejecutiva, clara y directa.
+5. No muestres código SQL ni detalles de bases de datos al usuario; brindá las cifras, conclusiones y tablas finales ordenadas.
 `;
 
-    const historialAcotado = (historial || []).slice(-4);
+    const historialAcotado = (historial || []).slice(-6);
     const contents = [
       { role: "user", parts: [{ text: systemInstruction }] },
       ...historialAcotado.map((h) => ({
@@ -4995,40 +5079,53 @@ CAPACIDADES Y REGLAS:
       { role: "user", parts: [{ text: mensaje }] },
     ];
 
-    // Primer paso: Gemini analiza si requiere ejecutar la herramienta
+    // Paso 1: Gemini decide si ejecuta la consulta SQL
     let response = await ai.models.generateContent({
       model: "gemini-2.5-flash",
       contents: contents,
-      config: { tools: [toolObtenerVentas] },
+      config: { tools: [toolConsultarBD] },
     });
 
-    // Si Gemini decide llamar a la función
+    // Paso 2: Si Gemini invocó la herramienta, ejecutamos en SQLite y devolvemos los datos
     const functionCalls = response.functionCalls;
     if (functionCalls && functionCalls.length > 0) {
       const call = functionCalls[0];
-      if (call.name === "obtenerReporteVentas") {
-        const resultadoBD = await ejecutarConsultaVentasParams(call.args);
 
-        // Se le envían los datos de vuelta a Gemini para que elabore la respuesta final
+      if (call.name === "ejecutarConsultaSQL") {
+        const resultadoBD = ejecutarSQLSoloLectura(call.args.consultaSQL);
+
         contents.push(response.candidates[0].content);
         contents.push({
           role: "user",
           parts: [
             {
               functionResponse: {
-                name: "obtenerReporteVentas",
+                name: "ejecutarConsultaSQL",
                 response: { resultado: resultadoBD },
               },
             },
           ],
         });
 
+        // Paso 3: Gemini interpreta las filas obtenidas y genera la respuesta final
         response = await ai.models.generateContent({
           model: "gemini-2.5-flash",
           contents: contents,
         });
       }
     }
+
+    const textoFinal = response.text || "No pude obtener una respuesta clara para tu consulta.";
+    return res.json({ success: true, respuesta: textoFinal });
+
+  } catch (error) {
+    console.error("Error en chat Connie:", error);
+    return res.status(500).json({
+      success: false,
+      error: "Ocurrió un error al procesar la respuesta de Connie.",
+    });
+  }
+});
 
     res.json({ success: true, respuesta: response.text });
   } catch (error) {
