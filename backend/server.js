@@ -5091,8 +5091,6 @@ REGLAS DE ACTUACIÓN:
 5. No muestres código SQL técnico en tu respuesta final; presentá los resultados claros con viñetas, nombres de artículos y cantidades ordenadas.
 `;
 
-console.log("👉 SQL ejecutado por Connie:", query);
-
     const historialAcotado = (historial || []).slice(-4);
     const contents = [
       { role: "user", parts: [{ text: systemInstruction }] },
@@ -5141,6 +5139,7 @@ console.log("👉 SQL ejecutado por Connie:", query);
     }
 
     res.json({ success: true, respuesta: response.text });
+    console.log("👉 SQL ejecutado por Connie:", query);
   } catch (error) {
     console.error("Error en chat Connie:", error);
     res.status(500).json({ error: "Error al procesar consulta." });
