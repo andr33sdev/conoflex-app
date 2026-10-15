@@ -4866,7 +4866,7 @@ const toolObtenerVentas = {
 };
 
 // ==========================================
-// FUNCIÓN SQL CON MATCH FLEXIBLE DE CANAL Y MODELO
+// FUNCIÓN SQL DE VENTAS BLINDADA CONTRA UNDEFINED
 // ==========================================
 async function ejecutarConsultaVentasParams(params) {
   const {
@@ -4876,12 +4876,18 @@ async function ejecutarConsultaVentasParams(params) {
     modelo_filtro,
     agrupar_por,
     limite = 50,
-  } = params;
+  } = params || {};
+
+  // Fechas seguras por defecto (evita el TypeError de mysql2 si no se especifican)
+  const ahora = new Date();
+  const fechaFinSegura = fecha_fin || ahora.toISOString().split("T")[0];
+
+  // Si no se especifica inicio, toma el inicio del año actual o 2 años atrás para historial
+  const fechaIniSegura = fecha_inicio || `${ahora.getFullYear()}-01-01`;
 
   let whereClauses = ["fecha BETWEEN ? AND ?", "estado != 'CANCELADO'"];
-  let queryParams = [fecha_inicio, fecha_fin];
+  let queryParams = [fechaIniSegura, fechaFinSegura];
 
-  // Match flexible para MercadoLibre (con espacio, sin espacio o sigla)
   if (canal === "MercadoLibre") {
     whereClauses.push(
       "(LOWER(detalles) LIKE '%mercadolibre%' OR LOWER(detalles) LIKE '%mercado libre%' OR LOWER(detalles) LIKE '%ml%')",
@@ -4892,13 +4898,35 @@ async function ejecutarConsultaVentasParams(params) {
     );
   }
 
-  // Match inteligente: busca tanto en 'modelo' como en 'detalles' y maneja códigos compuestos
+  // Tokenización: cruza modelo y detalles para atrapar código, color y bultos
   if (modelo_filtro && modelo_filtro.trim() !== "") {
     const terminos = modelo_filtro.trim().split(/\s+/).filter(Boolean);
-    // Cada término (ej: "2071LE-2R" y "NA") debe estar presente en modelo O en detalles
-    terminos.forEach((t) => {
-      whereClauses.push("(modelo LIKE ? OR detalles LIKE ?)");
-      queryParams.push(`%${t}%`, `%${t}%`);
+    const aliasColor = {
+      NA: "NARANJA",
+      NE: "NEGRO",
+      AM: "AMARILLO",
+      AZ: "AZUL",
+      RO: "ROJO",
+      VE: "VERDE",
+    };
+
+    terminos.forEach((term) => {
+      const tUpper = term.toUpperCase();
+      const posibleColor = aliasColor[tUpper];
+      if (posibleColor) {
+        whereClauses.push(
+          "(modelo LIKE ? OR detalles LIKE ? OR modelo LIKE ? OR detalles LIKE ?)",
+        );
+        queryParams.push(
+          `%${term}%`,
+          `%${term}%`,
+          `%${posibleColor}%`,
+          `%${posibleColor}%`,
+        );
+      } else {
+        whereClauses.push("(modelo LIKE ? OR detalles LIKE ?)");
+        queryParams.push(`%${term}%`, `%${term}%`);
+      }
     });
   }
 
@@ -4922,7 +4950,7 @@ async function ejecutarConsultaVentasParams(params) {
       ORDER BY unidades_totales DESC
       LIMIT ?
     `;
-    queryParams.push(limite);
+    queryParams.push(Number(limite) || 50);
   } else if (agrupar_por === "dia" || agrupar_por === "mes") {
     const format = agrupar_por === "dia" ? "%Y-%m-%d" : "%Y-%m";
     selectQuery = `
@@ -4939,7 +4967,7 @@ async function ejecutarConsultaVentasParams(params) {
       ORDER BY periodo DESC
       LIMIT ?
     `;
-    queryParams.push(limite);
+    queryParams.push(Number(limite) || 50);
   } else {
     selectQuery = `
       SELECT 
@@ -5043,11 +5071,11 @@ const toolConsultarBD = {
 };
 
 // ==========================================
-// 4. ENDPOINT: CHAT CON CONNIE (TEXT-TO-SQL REAL)
+// ENDPOINT DE CHAT ROBUSTO CON TOOL CALLING
 // ==========================================
 app.post("/api/chat-ia", async (req, res) => {
   try {
-    const { mensaje, historial } = req.body;
+    const { mensaje, historial = [] } = req.body;
 
     const ahora = new Date();
     const hoyISO = ahora.toISOString().split("T")[0];
@@ -5062,9 +5090,6 @@ app.post("/api/chat-ia", async (req, res) => {
     const dolarOficial = await obtenerDolarOficial();
     const tcVenta = dolarOficial?.venta || 1500;
 
-    // Obtenemos el esquema de MySQL de forma asíncrona
-    const esquemaBD = await obtenerEsquemaBaseDeDatosMySQL();
-
     const systemInstruction = `
 Sos Connie, la Analista Operativa y Comercial de Conoflex Argentina.
 Tu interlocutor es un directivo/operador de la empresa (NUNCA lo llames Connie a él; vos sos Connie).
@@ -5073,39 +5098,39 @@ ENTORNO:
 - FECHA DE HOY: ${hoyFormateado} (${hoyISO}).
 - DÓLAR OFICIAL VENTA: $${tcVenta} ARS.
 
-REGLAS DE PRECISIÓN EN CONSULTAS ('estado_pedidos'):
-1. Usá SIEMPRE la herramienta "obtenerReporteVentas" para responder sobre pedidos, ventas o unidades.
-2. COHERENCIA DE MODELOS Y VARIANTES: En la base de datos existen artículos con la misma base pero distintas terminaciones (ej: "2071LE-2R NA", "2071LE-2R NA 2 (De Segunda)", packs "X5", etc.).
-   - Si te piden ventas de un modelo en un mes, aclará siempre el total consolidado y su desglose si incluye productos de segunda calidad o packs.
-   - De esta manera, si en un ranking general aparece el artículo principal (ej: 2.054 u.) y en la consulta puntual das el total acumulado con variantes (ej: 2.805 u.), explicá la diferencia desde el primer momento con claridad ejecutiva.
-3. Sé profesional, ejecutiva, segura y hablá en español argentino natural sin titubear ni pedir disculpas reiteradas.
+CAPACIDADES Y REGLAS:
+1. Usá SIEMPRE la herramienta "obtenerReporteVentas" para responder consultas sobre pedidos, ventas o unidades.
+2. Si el usuario no indica fechas o pregunta de manera general, consultá el año en curso o el mes actual por defecto. Si pregunta por un mes específico, definí fecha_inicio al primer día del mes y fecha_fin al último.
+3. COHERENCIA EN VARIANTES: Aclará el total consolidado sumando variantes (como packs o productos de segunda) y detallalo de forma ejecutiva.
+4. Respondé en español argentino natural, con tono corporativo, claro y directo.
 `;
 
-    const historialAcotado = (historial || []).slice(-4);
+    const historialFiltrado = historial
+      .filter((h) => h.texto && h.texto !== mensaje)
+      .slice(-4);
+
     const contents = [
-      { role: "user", parts: [{ text: systemInstruction }] },
-      ...historialAcotado.map((h) => ({
+      ...historialFiltrado.map((h) => ({
         role: h.rol === "user" ? "user" : "model",
         parts: [{ text: h.texto }],
       })),
       { role: "user", parts: [{ text: mensaje }] },
     ];
 
-    // Paso 1: Gemini analiza la pregunta y decide si invoca la consulta SQL
     let response = await ai.models.generateContent({
       model: "gemini-2.5-flash",
       contents: contents,
-      config: { tools: [toolConsultarBD] },
+      config: {
+        systemInstruction: systemInstruction,
+        tools: [toolObtenerVentas],
+      },
     });
 
-    // Paso 2: Ejecución de la herramienta
     const functionCalls = response.functionCalls;
     if (functionCalls && functionCalls.length > 0) {
       const call = functionCalls[0];
-
-      if (call.name === "ejecutarConsultaSQL") {
-        // Ejecución en MySQL con await
-        const resultadoBD = await ejecutarSQLSoloLectura(call.args.consultaSQL);
+      if (call.name === "obtenerReporteVentas") {
+        const resultadoBD = await ejecutarConsultaVentasParams(call.args);
 
         contents.push(response.candidates[0].content);
         contents.push({
@@ -5113,23 +5138,26 @@ REGLAS DE PRECISIÓN EN CONSULTAS ('estado_pedidos'):
           parts: [
             {
               functionResponse: {
-                name: "ejecutarConsultaSQL",
+                name: "obtenerReporteVentas",
                 response: { resultado: resultadoBD },
               },
             },
           ],
         });
 
-        // Paso 3: Gemini recibe las filas reales de MySQL y genera la respuesta
+        // Se reenvía manteniendo tools y systemInstruction para evitar rechazo de la API
         response = await ai.models.generateContent({
           model: "gemini-2.5-flash",
           contents: contents,
+          config: {
+            systemInstruction: systemInstruction,
+            tools: [toolObtenerVentas],
+          },
         });
       }
     }
 
     res.json({ success: true, respuesta: response.text });
-    console.log("👉 SQL ejecutado por Connie:", query);
   } catch (error) {
     console.error("Error en chat Connie:", error);
     res.status(500).json({ error: "Error al procesar consulta." });
