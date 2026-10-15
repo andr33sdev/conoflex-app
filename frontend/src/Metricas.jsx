@@ -13,7 +13,6 @@ import {
   Zap,
   Calculator,
   AlertTriangle,
-  Clock,
   ChevronDown,
   Settings,
   BarChart3,
@@ -21,15 +20,12 @@ import {
   Shield,
   Bot,
   Send,
-  Boxes,
   DownloadCloud,
-  Volume2,
-  VolumeX,
   Scale,
   AlertOctagon,
+  Sparkles,
 } from "lucide-react";
 
-// COLORES MÁQUINAS - ESTILO CYBER INDUSTRIAL
 const CATEGORY_COLORS = {
   EXTRUSIÓN: {
     stroke: "#FF5A00",
@@ -197,11 +193,8 @@ export default function Metricas() {
   const [isSyncing, setIsSyncing] = useState(false);
   const [isSyncingPedidos, setIsSyncingPedidos] = useState(false);
 
-  // MENÚ DESPLEGABLE SINCRONIZAR
   const [isSyncMenuOpen, setIsSyncMenuOpen] = useState(false);
   const syncMenuRef = useRef(null);
-
-  const [vozHabilitada, setVozHabilitada] = useState(true);
 
   const [gruposAlerta, setGruposAlerta] = useState([]);
   const [grupoActivo, setGrupoActivo] = useState(null);
@@ -246,12 +239,11 @@ export default function Metricas() {
     {
       rol: "assistant",
       texto:
-        "¡Hola! Soy Connie. Tengo la info de toda la planta en tiempo real. ¿Qué querés revisar?",
+        "¡Hola! Soy Connie. Tengo la base de datos de Conoflex conectada en tiempo real. ¿Qué querés analizar hoy?",
     },
   ]);
   const [inputChat, setInputChat] = useState("");
   const [enviandoChat, setEnviandoChat] = useState(false);
-  const [estadoVoz, setEstadoVoz] = useState("idle");
   const chatBottomRef = useRef(null);
 
   useEffect(() => {
@@ -265,97 +257,12 @@ export default function Metricas() {
   }, []);
 
   useEffect(() => {
-    if ("speechSynthesis" in window) {
-      window.speechSynthesis.onvoiceschanged = () => {
-        window.speechSynthesis.getVoices();
-      };
-    }
-  }, []);
-
-  useEffect(() => {
     fetchAllData();
   }, []);
 
   useEffect(() => {
     chatBottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [mensajes]);
-
-  const hablarConnie = (texto) => {
-    if (!vozHabilitada || !("speechSynthesis" in window)) return;
-
-    window.speechSynthesis.cancel();
-
-    const textoLimpio = texto
-      .replace(/\*+/g, "")
-      .replace(/#/g, "")
-      .replace(/[`_~]/g, "")
-      .replace(
-        /([\u2700-\u27BF]|[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDD10-\uDDFF])/g,
-        "",
-      );
-
-    const utterance = new SpeechSynthesisUtterance(textoLimpio);
-    const voces = window.speechSynthesis.getVoices();
-
-    const vocesEspanol = voces.filter((v) => v.lang.startsWith("es"));
-    const palabrasFemeninas = [
-      "elena",
-      "sabina",
-      "laura",
-      "monica",
-      "paulina",
-      "luciana",
-      "francisca",
-      "victoria",
-      "paloma",
-      "mia",
-      "dalia",
-      "alva",
-      "female",
-      "mujer",
-    ];
-
-    let vozFemenina = vocesEspanol.find((v) =>
-      palabrasFemeninas.some((nombre) => v.name.toLowerCase().includes(nombre)),
-    );
-
-    if (!vozFemenina) {
-      vozFemenina =
-        vocesEspanol.find(
-          (v) =>
-            !v.name.toLowerCase().includes("male") &&
-            !v.name.toLowerCase().includes("pablo") &&
-            !v.name.toLowerCase().includes("raul") &&
-            !v.name.toLowerCase().includes("jorge"),
-        ) || vocesEspanol[0];
-    }
-
-    if (vozFemenina) {
-      utterance.voice = vozFemenina;
-      utterance.lang = vozFemenina.lang;
-    } else {
-      utterance.lang = "es-AR";
-    }
-
-    utterance.rate = 1.0;
-    utterance.pitch = 1.15;
-
-    utterance.onstart = () => setEstadoVoz("speaking");
-    utterance.onend = () => setEstadoVoz("idle");
-    utterance.onerror = () => setEstadoVoz("idle");
-
-    window.speechSynthesis.speak(utterance);
-  };
-
-  const toggleSilenciarVoz = () => {
-    if (vozHabilitada) {
-      if ("speechSynthesis" in window) window.speechSynthesis.cancel();
-      setEstadoVoz("idle");
-      setVozHabilitada(false);
-    } else {
-      setVozHabilitada(true);
-    }
-  };
+  }, [mensajes, enviandoChat]);
 
   const handleSyncEstadoPedidos = async () => {
     setIsSyncingPedidos(true);
@@ -470,7 +377,6 @@ export default function Metricas() {
           ...nuevosMensajes,
           { rol: "assistant", texto: data.respuesta },
         ]);
-        hablarConnie(data.respuesta);
       } else {
         setMensajes([
           ...nuevosMensajes,
@@ -518,7 +424,6 @@ export default function Metricas() {
   const diasCriticoActivo = grupoActivo ? grupoActivo.dias_critico : 5;
   const diasAlertaActivo = grupoActivo ? grupoActivo.dias_alerta : 15;
 
-  // CÁLCULOS EXACTOS BASADOS EN TU BASE DE DATOS (cant_buenos, segunda_calidad, cant_fallas, kg_total, kg_fallas)
   const globalStats = useMemo(() => {
     const filtrados = produccion.filter((r) => {
       if (!r.fecha || r.fecha === "1970-01-01") return false;
@@ -539,7 +444,6 @@ export default function Metricas() {
       kgFallas += Number(r.kg_fallas || 0);
     });
 
-    // Fila 1: Piezas
     const totalPiezasProcesadas = buenas + segunda + fallas;
     const totalPiezasBuenas = buenas + segunda;
     const totalPiezasMalas = fallas;
@@ -548,7 +452,6 @@ export default function Metricas() {
         ? ((totalPiezasMalas / totalPiezasProcesadas) * 100).toFixed(2)
         : "0.00";
 
-    // Fila 2: Kilogramos
     const cantidadKgTotal = kgTotal;
     const cantidadKgFallas = kgFallas;
     const cantidadKgBuenas = Math.max(0, kgTotal - kgFallas);
@@ -752,90 +655,106 @@ export default function Metricas() {
 
   return (
     <div className="flex-1 flex flex-col h-full min-h-0 bg-black font-sans text-zinc-200 overflow-hidden relative selection:bg-[#FF5A00]/30">
-      {/* 1. HEADER HERO */}
-      <div className="border-b border-zinc-800/50 p-6 md:p-10 flex flex-col md:flex-row md:items-end justify-between gap-6 shrink-0 bg-[#050505] relative overflow-hidden">
-        <div className="z-10">
-          <h1 className="text-4xl md:text-5xl font-extrabold italic tracking-tighter text-white uppercase leading-none">
-            Métricas <span className="text-[#FF5A00]">& KPI</span>
-          </h1>
-          <p className="text-zinc-500 text-sm mt-2 max-w-md uppercase tracking-widest font-bold flex items-center gap-2">
-            PANEL DE CONTROL OPERATIVO E INTERACCIÓN
-          </p>
+      {/* 1. HEADER HERO: SE OCULTA SI ESTÁ ACTIVO EL ASISTENTE */}
+      {activeTab !== "chat" && (
+        <div className="border-b border-zinc-800/50 p-6 md:p-10 flex flex-col md:flex-row md:items-end justify-between gap-6 shrink-0 bg-[#050505] relative overflow-hidden transition-all duration-200">
+          <div className="z-10">
+            <h1 className="text-4xl md:text-5xl font-extrabold italic tracking-tighter text-white uppercase leading-none">
+              Métricas <span className="text-[#FF5A00]">& KPI</span>
+            </h1>
+            <p className="text-zinc-500 text-sm mt-2 max-w-md uppercase tracking-widest font-bold flex items-center gap-2">
+              PANEL DE CONTROL OPERATIVO E INTERACCIÓN
+            </p>
+          </div>
         </div>
-      </div>
+      )}
 
-      {/* 2. BARRA DE FILTROS & NAVEGACIÓN */}
-      <div className="px-4 py-4 md:px-8 border-b border-zinc-800/50 flex flex-col md:flex-row items-center justify-between gap-4 shrink-0 bg-black relative z-20">
-        <div className="flex flex-col sm:flex-row items-center gap-4 w-full md:w-auto flex-1 min-w-0">
-          {/* BOTÓN DESPLEGABLE "SINCRONIZAR" */}
-          <div className="relative shrink-0 w-full sm:w-auto" ref={syncMenuRef}>
-            <button
-              onClick={() => setIsSyncMenuOpen(!isSyncMenuOpen)}
-              className="w-full sm:w-auto flex items-center justify-between gap-3 px-6 py-2.5 font-bold text-xs uppercase tracking-widest transition-all bg-[#FFD700] hover:bg-white text-black active:scale-95 cursor-pointer"
+      {/* 2. BARRA DE NAVEGACIÓN Y FILTROS: COMPACTA AL ABRIR EL CHAT */}
+      <div
+        className={`border-b border-zinc-800/50 flex flex-col md:flex-row items-center shrink-0 bg-black relative z-20 transition-all duration-200 ${
+          activeTab === "chat"
+            ? "px-4 py-2.5 justify-end"
+            : "px-4 py-4 md:px-8 justify-between gap-4"
+        }`}
+      >
+        {/* SE OCULTA EN EL CHAT PARA GANAR ALTURA */}
+        {activeTab !== "chat" && (
+          <div className="flex flex-col sm:flex-row items-center gap-4 w-full md:w-auto flex-1 min-w-0">
+            {/* BOTÓN DESPLEGABLE "SINCRONIZAR" */}
+            <div
+              className="relative shrink-0 w-full sm:w-auto"
+              ref={syncMenuRef}
             >
-              <RefreshCw
-                size={16}
-                className={isSyncing || isSyncingPedidos ? "animate-spin" : ""}
-                strokeWidth={3}
+              <button
+                onClick={() => setIsSyncMenuOpen(!isSyncMenuOpen)}
+                className="w-full sm:w-auto flex items-center justify-between gap-3 px-6 py-2.5 font-bold text-xs uppercase tracking-widest transition-all bg-[#FFD700] hover:bg-white text-black active:scale-95 cursor-pointer"
+              >
+                <RefreshCw
+                  size={16}
+                  className={
+                    isSyncing || isSyncingPedidos ? "animate-spin" : ""
+                  }
+                  strokeWidth={3}
+                />
+                <span>SINCRONIZAR</span>
+                <ChevronDown
+                  size={14}
+                  className={`transition-transform duration-200 ${isSyncMenuOpen ? "rotate-180" : ""}`}
+                />
+              </button>
+
+              {isSyncMenuOpen && (
+                <div className="absolute top-full left-0 mt-2 w-full sm:w-64 bg-[#050505] border border-zinc-800 shadow-2xl z-50 p-2 flex flex-col gap-2">
+                  <button
+                    onClick={() => {
+                      setIsSyncMenuOpen(false);
+                      handleSyncEstadoPedidos();
+                    }}
+                    disabled={isSyncingPedidos}
+                    className="w-full text-left p-3.5 bg-black hover:bg-zinc-900 border border-zinc-800 hover:border-[#FF5A00] text-white text-xs font-bold uppercase tracking-widest transition-colors flex items-center justify-between cursor-pointer disabled:opacity-50"
+                  >
+                    <span>SINCRONIZAR PEDIDOS</span>
+                    <DownloadCloud size={16} className="text-[#FF5A00]" />
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      setIsSyncMenuOpen(false);
+                      handleSyncSheets();
+                    }}
+                    disabled={isSyncing}
+                    className="w-full text-left p-3.5 bg-black hover:bg-zinc-900 border border-zinc-800 hover:border-[#FFD700] text-white text-xs font-bold uppercase tracking-widest transition-colors flex items-center justify-between cursor-pointer disabled:opacity-50"
+                  >
+                    <span>SINCRONIZAR PRODUCCIÓN</span>
+                    <RefreshCw size={16} className="text-[#FFD700]" />
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* RANGO DE FECHAS */}
+            <div className="flex items-center gap-2 bg-[#050505] border border-zinc-800 px-3 py-2 shrink-0 w-full sm:w-auto">
+              <Calendar size={13} className="text-[#FF5A00]" />
+              <input
+                type="date"
+                value={fechaDesde}
+                onChange={(e) => setFechaDesde(e.target.value)}
+                className="bg-transparent text-white outline-none text-[11px] uppercase"
+                style={{ colorScheme: "dark" }}
               />
-              <span>SINCRONIZAR</span>
-              <ChevronDown
-                size={14}
-                className={`transition-transform duration-200 ${isSyncMenuOpen ? "rotate-180" : ""}`}
+              <span className="text-zinc-600">-</span>
+              <input
+                type="date"
+                value={fechaHasta}
+                onChange={(e) => setFechaHasta(e.target.value)}
+                className="bg-transparent text-white outline-none text-[11px] uppercase"
+                style={{ colorScheme: "dark" }}
               />
-            </button>
-
-            {isSyncMenuOpen && (
-              <div className="absolute top-full left-0 mt-2 w-full sm:w-64 bg-[#050505] border border-zinc-800 shadow-2xl z-50 p-2 flex flex-col gap-2">
-                <button
-                  onClick={() => {
-                    setIsSyncMenuOpen(false);
-                    handleSyncEstadoPedidos();
-                  }}
-                  disabled={isSyncingPedidos}
-                  className="w-full text-left p-3.5 bg-black hover:bg-zinc-900 border border-zinc-800 hover:border-[#FF5A00] text-white   text-xs font-bold uppercase tracking-widest transition-colors flex items-center justify-between cursor-pointer disabled:opacity-50"
-                >
-                  <span>SINCRONIZAR PEDIDOS</span>
-                  <DownloadCloud size={16} className="text-[#FF5A00]" />
-                </button>
-
-                <button
-                  onClick={() => {
-                    setIsSyncMenuOpen(false);
-                    handleSyncSheets();
-                  }}
-                  disabled={isSyncing}
-                  className="w-full text-left p-3.5 bg-black hover:bg-zinc-900 border border-zinc-800 hover:border-[#FFD700] text-white   text-xs font-bold uppercase tracking-widest transition-colors flex items-center justify-between cursor-pointer disabled:opacity-50"
-                >
-                  <span>SINCRONIZAR PRODUCCIÓN</span>
-                  <RefreshCw size={16} className="text-[#FFD700]" />
-                </button>
-              </div>
-            )}
+            </div>
           </div>
+        )}
 
-          {/* RANGO DE FECHAS */}
-          <div className="flex items-center gap-2 bg-[#050505] border border-zinc-800 px-3 py-2 shrink-0   w-full sm:w-auto">
-            <Calendar size={13} className="text-[#FF5A00]" />
-            <input
-              type="date"
-              value={fechaDesde}
-              onChange={(e) => setFechaDesde(e.target.value)}
-              className="bg-transparent text-white outline-none text-[11px] uppercase"
-              style={{ colorScheme: "dark" }}
-            />
-            <span className="text-zinc-600">-</span>
-            <input
-              type="date"
-              value={fechaHasta}
-              onChange={(e) => setFechaHasta(e.target.value)}
-              className="bg-transparent text-white outline-none text-[11px] uppercase"
-              style={{ colorScheme: "dark" }}
-            />
-          </div>
-        </div>
-
-        {/* TABS DE MÓDULO */}
+        {/* TABS DE MÓDULO (SIEMPRE DISPONIBLES) */}
         <div className="flex items-center gap-0 w-full sm:w-auto border border-zinc-800 bg-[#050505] shrink-0">
           <button
             onClick={() => setActiveTab("kpis")}
@@ -862,13 +781,17 @@ export default function Metricas() {
       </div>
 
       {/* ÁREA DE CONTENIDO */}
-      <div className="flex-1 min-h-0 overflow-y-auto bg-black p-4 md:p-8 custom-scrollbar flex flex-col">
+      <div
+        className={`flex-1 min-h-0 bg-black flex flex-col ${
+          activeTab === "chat"
+            ? "p-2 sm:p-4 overflow-hidden"
+            : "p-4 md:p-8 overflow-y-auto custom-scrollbar"
+        }`}
+      >
         {/* VISTA 1: TABLERO GENERAL DE KPIS */}
         {activeTab === "kpis" && (
           <div className="flex-1 flex flex-col gap-6 w-full max-w-[1400px] mx-auto transition-all duration-300 ease-out">
-            {/* FILA 1 DE 4 TARJETAS KPI: PIEZAS (UNIDADES) */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              {/* CARD 1: TOTAL PIEZAS PROCESADAS */}
               <div className="bg-[#050505] border border-zinc-800 p-5 flex flex-col justify-between gap-3 shadow-sm group hover:border-[#FF5A00]/50 transition-colors">
                 <div className="flex justify-between items-center text-zinc-500 text-[10px] font-bold uppercase tracking-widest">
                   <span>TOTAL PIEZAS PROCESADAS</span>
@@ -878,7 +801,7 @@ export default function Metricas() {
                   {loading
                     ? "..."
                     : globalStats.totalPiezasProcesadas.toLocaleString()}{" "}
-                  <span className="text-sm text-zinc-600 font-medium   not-italic tracking-normal">
+                  <span className="text-sm text-zinc-600 font-medium not-italic tracking-normal">
                     u.
                   </span>
                 </div>
@@ -887,7 +810,6 @@ export default function Metricas() {
                 </p>
               </div>
 
-              {/* CARD 2: TOTAL PIEZAS BUENAS */}
               <div className="bg-[#050505] border border-zinc-800 p-5 flex flex-col justify-between gap-3 shadow-sm group hover:border-emerald-500/50 transition-colors">
                 <div className="flex justify-between items-center text-zinc-500 text-[10px] font-bold uppercase tracking-widest">
                   <span>TOTAL PIEZAS BUENAS</span>
@@ -897,7 +819,7 @@ export default function Metricas() {
                   {loading
                     ? "..."
                     : globalStats.totalPiezasBuenas.toLocaleString()}{" "}
-                  <span className="text-sm text-zinc-600 font-medium   not-italic tracking-normal">
+                  <span className="text-sm text-zinc-600 font-medium not-italic tracking-normal">
                     u.
                   </span>
                 </div>
@@ -906,7 +828,6 @@ export default function Metricas() {
                 </p>
               </div>
 
-              {/* CARD 3: TOTAL PIEZAS NO CONFORME (MALAS) */}
               <div className="bg-[#050505] border border-zinc-800 p-5 flex flex-col justify-between gap-3 shadow-sm group hover:border-[#FF0055]/50 transition-colors">
                 <div className="flex justify-between items-center text-zinc-500 text-[10px] font-bold uppercase tracking-widest">
                   <span>TOTAL PIEZAS NO CONFORME</span>
@@ -916,7 +837,7 @@ export default function Metricas() {
                   {loading
                     ? "..."
                     : globalStats.totalPiezasMalas.toLocaleString()}{" "}
-                  <span className="text-sm text-zinc-600 font-medium   not-italic tracking-normal">
+                  <span className="text-sm text-zinc-600 font-medium not-italic tracking-normal">
                     u.
                   </span>
                 </div>
@@ -925,7 +846,6 @@ export default function Metricas() {
                 </p>
               </div>
 
-              {/* CARD 4: PORCENTAJE DE FALLAS (UNIDADES) */}
               <div className="bg-[#050505] border border-zinc-800 p-5 flex flex-col justify-between gap-3 shadow-sm group hover:border-[#FFD700]/50 transition-colors">
                 <div className="flex justify-between items-center text-zinc-500 text-[10px] font-bold uppercase tracking-widest">
                   <span>PORCENTAJE DE FALLAS (U)</span>
@@ -947,9 +867,7 @@ export default function Metricas() {
               </div>
             </div>
 
-            {/* FILA 2 DE 4 TARJETAS KPI: KILOGRAMOS (KG) */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              {/* CARD 1: CANTIDAD KG TOTAL */}
               <div className="bg-[#050505] border border-zinc-800 p-5 flex flex-col justify-between gap-3 shadow-sm group hover:border-[#FF5A00]/50 transition-colors">
                 <div className="flex justify-between items-center text-zinc-500 text-[10px] font-bold uppercase tracking-widest">
                   <span>CANTIDAD KG TOTAL</span>
@@ -959,7 +877,7 @@ export default function Metricas() {
                   {loading
                     ? "..."
                     : globalStats.cantidadKgTotal.toLocaleString()}{" "}
-                  <span className="text-sm text-zinc-600 font-medium   not-italic tracking-normal">
+                  <span className="text-sm text-zinc-600 font-medium not-italic tracking-normal">
                     Kg
                   </span>
                 </div>
@@ -968,7 +886,6 @@ export default function Metricas() {
                 </p>
               </div>
 
-              {/* CARD 2: CANTIDAD KG BUENAS */}
               <div className="bg-[#050505] border border-zinc-800 p-5 flex flex-col justify-between gap-3 shadow-sm group hover:border-emerald-500/50 transition-colors">
                 <div className="flex justify-between items-center text-zinc-500 text-[10px] font-bold uppercase tracking-widest">
                   <span>CANTIDAD KG BUENAS</span>
@@ -978,7 +895,7 @@ export default function Metricas() {
                   {loading
                     ? "..."
                     : globalStats.cantidadKgBuenas.toLocaleString()}{" "}
-                  <span className="text-sm text-zinc-600 font-medium   not-italic tracking-normal">
+                  <span className="text-sm text-zinc-600 font-medium not-italic tracking-normal">
                     Kg
                   </span>
                 </div>
@@ -987,7 +904,6 @@ export default function Metricas() {
                 </p>
               </div>
 
-              {/* CARD 3: CANTIDAD KG FALLAS */}
               <div className="bg-[#050505] border border-zinc-800 p-5 flex flex-col justify-between gap-3 shadow-sm group hover:border-[#FF0055]/50 transition-colors">
                 <div className="flex justify-between items-center text-zinc-500 text-[10px] font-bold uppercase tracking-widest">
                   <span>CANTIDAD KG FALLAS</span>
@@ -997,7 +913,7 @@ export default function Metricas() {
                   {loading
                     ? "..."
                     : globalStats.cantidadKgFallas.toLocaleString()}{" "}
-                  <span className="text-sm text-zinc-600 font-medium   not-italic tracking-normal">
+                  <span className="text-sm text-zinc-600 font-medium not-italic tracking-normal">
                     Kg
                   </span>
                 </div>
@@ -1006,7 +922,6 @@ export default function Metricas() {
                 </p>
               </div>
 
-              {/* CARD 4: PORCENTAJE DE FALLAS (KG) */}
               <div className="bg-[#050505] border border-zinc-800 p-5 flex flex-col justify-between gap-3 shadow-sm group hover:border-[#FFD700]/50 transition-colors">
                 <div className="flex justify-between items-center text-zinc-500 text-[10px] font-bold uppercase tracking-widest">
                   <span>PORCENTAJE DE FALLAS (KG)</span>
@@ -1028,7 +943,6 @@ export default function Metricas() {
               </div>
             </div>
 
-            {/* 2 TARJETAS DE ACCIÓN CÓMODAS Y ANCHAS */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="bg-[#050505] border border-zinc-800 p-6 sm:p-8 flex flex-col justify-between gap-6 transition-colors">
                 <div className="space-y-3">
@@ -1072,7 +986,7 @@ export default function Metricas() {
                     setCurrentPageSE(1);
                     setIsMatrizModalOpen(true);
                   }}
-                  className="w-full bg-[#FFD700] hover:bg-white text-black py-3.5 text-xs font-bold uppercase tracking-widest transition cursor-pointer flex items-center justify-center gap-2 font-bold"
+                  className="w-full bg-[#FFD700] hover:bg-white text-black py-3.5 text-xs font-bold uppercase tracking-widest transition cursor-pointer flex items-center justify-center gap-2"
                 >
                   <Maximize2 size={14} />
                   <span>ABRIR MATRIZ & SIMULADOR</span>
@@ -1082,110 +996,100 @@ export default function Metricas() {
           </div>
         )}
 
-        {/* VISTA CHAT INTERACTIVO */}
+        {/* VISTA 2: CHAT FULLSCREEN EXPANDIDO */}
         {activeTab === "chat" && (
-          <div className="h-full flex flex-col min-h-0 bg-[#030303] border border-zinc-800 max-w-4xl mx-auto w-full shadow-2xl">
-            {/* CABECERA CHAT */}
-            <div className="relative border-b border-zinc-800 bg-[#050505] p-6 flex justify-center">
-              <div className="relative inline-block">
-                <AIAvatar
-                  estado={
-                    enviandoChat
-                      ? "thinking"
-                      : estadoVoz === "speaking"
-                        ? "speaking"
-                        : "idle"
-                  }
-                  nombre="Connie — Asistente de Planta"
-                />
+          <div className="h-full flex-1 flex flex-col min-h-0 bg-[#050505] border border-zinc-800/90 shadow-[0_0_60px_rgba(0,0,0,0.9)] relative overflow-hidden">
+            {/* CABECERA CON EL COMPONENTE AIAvatar */}
+            <div className="border-b border-zinc-800/90 bg-[#070707] flex flex-col sm:flex-row items-stretch sm:items-center justify-between shrink-0">
+              <AIAvatar estado={enviandoChat ? "thinking" : "idle"} />
 
-                <button
-                  onClick={toggleSilenciarVoz}
-                  className={`absolute top-0 right-0 translate-x-1/4 -translate-y-1/4 w-8 h-8 rounded-none border flex items-center justify-center transition-all cursor-pointer shadow-lg z-20 ${
-                    vozHabilitada
-                      ? "bg-black border-emerald-500/60 text-emerald-400 hover:scale-105"
-                      : "bg-black border-[#FF0055]/60 text-[#FF0055] hover:scale-105"
-                  }`}
-                  title={
-                    vozHabilitada
-                      ? "Silenciar voz de Connie"
-                      : "Activar voz de Connie"
-                  }
-                >
-                  {vozHabilitada ? (
-                    <Volume2
-                      size={14}
-                      className="animate-pulse text-emerald-400"
-                    />
-                  ) : (
-                    <VolumeX size={14} className="text-[#FF0055]" />
-                  )}
-                </button>
+              <div className="hidden md:flex items-center gap-2 text-zinc-500 text-[10px] uppercase font-bold tracking-widest bg-black px-4 py-2 border border-zinc-900 mr-5">
+                <Sparkles size={13} className="text-[#FFD700]" />
+                <span>CONSULTAS SQL DIRECTAS EN TIEMPO REAL</span>
               </div>
             </div>
 
-            {/* ÁREA DE MENSAJES */}
-            <div className="flex-1 overflow-y-auto p-4 md:p-8 space-y-6 min-h-0 bg-black custom-scrollbar">
-              {mensajes.map((m, i) => (
-                <div
-                  key={i}
-                  className={`flex gap-3 max-w-[85%] ${
-                    m.rol === "user"
-                      ? "ml-auto justify-end"
-                      : "mr-auto justify-start"
-                  }`}
-                >
-                  {m.rol === "assistant" && (
-                    <div className="w-10 h-10 border border-zinc-800 bg-[#050505] flex items-center justify-center text-[#FF5A00] shrink-0 mt-1">
-                      <Bot size={20} />
-                    </div>
-                  )}
-
+            {/* ÁREA DE MENSAJES EXPANDIDA */}
+            <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-4 min-h-0 bg-[#020202] custom-scrollbar">
+              {mensajes.map((m, i) => {
+                const esUsuario = m.rol === "user";
+                return (
                   <div
-                    className={`p-4 text-sm leading-relaxed font-medium ${
-                      m.rol === "user"
-                        ? "bg-[#FF5A00] text-black rounded-l-2xl rounded-tr-2xl"
-                        : "bg-[#050505] border border-zinc-800 text-zinc-300 whitespace-pre-wrap rounded-r-2xl rounded-tl-2xl font-sans"
+                    key={i}
+                    className={`flex items-start gap-3 w-full transition-all duration-200 animate-in fade-in slide-in-from-bottom-2 ${
+                      esUsuario ? "justify-end" : "justify-start"
                     }`}
                   >
-                    {m.texto}
-                  </div>
+                    {!esUsuario && (
+                      <div className="w-8 h-8 rounded-none border border-zinc-800 bg-[#0a0a0a] flex items-center justify-center text-[#FF5A00] shrink-0 mt-0.5 shadow-sm">
+                        <Bot size={16} />
+                      </div>
+                    )}
 
-                  {m.rol === "user" && (
-                    <div className="w-10 h-10 border border-[#FF5A00] bg-[#FF5A00]/10 flex items-center justify-center text-[#FF5A00]   text-sm font-bold shrink-0 mt-1">
-                      U
+                    <div
+                      className={`max-w-[85%] sm:max-w-[75%] p-4 text-xs leading-relaxed font-sans shadow-md border ${
+                        esUsuario
+                          ? "bg-[#111111] border-[#FF5A00]/60 text-white rounded-none border-r-4 border-r-[#FF5A00]"
+                          : "bg-[#080808] border-zinc-800/90 text-zinc-200 rounded-none border-l-4 border-l-[#FFD700]/70 whitespace-pre-wrap font-medium"
+                      }`}
+                    >
+                      <div className="flex items-center justify-between text-[9px] font-black uppercase tracking-widest mb-1.5 opacity-60">
+                        <span>{esUsuario ? "CONSULTA" : "CONNIE"}</span>
+                      </div>
+                      {m.texto}
                     </div>
-                  )}
+
+                    {esUsuario && (
+                      <div className="w-8 h-8 rounded-none border border-[#FF5A00]/40 bg-[#FF5A00]/10 flex items-center justify-center text-[#FF5A00] text-xs font-black shrink-0 mt-0.5">
+                        U
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+
+              {/* INDICADOR DE PENSAMIENTO */}
+              {enviandoChat && (
+                <div className="flex items-center gap-3 justify-start animate-in fade-in duration-200">
+                  <div className="w-8 h-8 border border-zinc-800 bg-[#0a0a0a] flex items-center justify-center text-[#FF5A00] shrink-0">
+                    <Bot size={16} className="animate-spin" />
+                  </div>
+                  <div className="bg-[#080808] border border-zinc-800 px-4 py-3 text-xs text-zinc-400 flex items-center gap-2 border-l-4 border-l-[#FF5A00]">
+                    <span className="w-2 h-2 rounded-full bg-[#FF5A00] animate-ping" />
+                    <span className="font-bold uppercase tracking-widest text-[10px]">
+                      Consultando base de datos y analizando registros...
+                    </span>
+                  </div>
                 </div>
-              ))}
+              )}
+
               <div ref={chatBottomRef} />
             </div>
 
             {/* BARRA DE ENTRADA CHAT */}
-            <div className="p-4 bg-[#050505] border-t border-zinc-800 flex items-center gap-3">
+            <div className="p-3 sm:p-4 bg-[#060606] border-t border-zinc-800/90 flex items-center gap-2.5">
               <input
                 type="text"
                 value={inputChat}
                 onChange={(e) => setInputChat(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && enviarMensajeChat()}
                 placeholder="Preguntale a Connie sobre insumos, semielaborados, ventas o pedidos..."
-                className="flex-1 bg-black border border-zinc-800 px-4 py-3 text-sm text-white font-medium outline-none focus:border-[#FF5A00]"
+                className="flex-1 bg-black border border-zinc-800 px-4 py-3 text-xs text-white placeholder-zinc-600 outline-none focus:border-[#FF5A00] transition-colors uppercase font-medium tracking-wide"
               />
               <button
                 onClick={() => enviarMensajeChat()}
-                disabled={enviandoChat}
-                className="bg-[#FF5A00] hover:bg-white text-black p-3.5 transition-colors cursor-pointer disabled:opacity-50 shrink-0"
+                disabled={enviandoChat || !inputChat.trim()}
+                className="bg-[#FF5A00] hover:bg-white text-black px-6 py-3 transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2 font-bold text-xs uppercase tracking-widest shrink-0"
               >
-                <Send size={18} />
+                <span>ENVIAR</span>
+                <Send size={14} />
               </button>
             </div>
           </div>
         )}
       </div>
 
-      {/* =========================================================
-          MODAL 1: COMPARADOR BÉZIER
-      ========================================================= */}
+      {/* MODAL 1: COMPARADOR BÉZIER */}
       {isChartModalOpen && (
         <div className="fixed inset-0 bg-black/90 backdrop-blur-sm z-[100] flex items-center justify-center p-4 font-sans">
           <div className="bg-[#050505] border border-zinc-800 w-full max-w-5xl h-[92vh] sm:h-[88vh] p-6 shadow-2xl flex flex-col relative">
@@ -1197,7 +1101,7 @@ export default function Metricas() {
             </button>
 
             <div className="border-b border-zinc-800/80 pb-3 shrink-0 pr-8">
-              <span className="text-[10px]   font-bold text-[#FF5A00] bg-[#FF5A00]/10 border border-[#FF5A00]/20 px-2 py-0.5 tracking-widest uppercase">
+              <span className="text-[10px] font-bold text-[#FF5A00] bg-[#FF5A00]/10 border border-[#FF5A00]/20 px-2 py-0.5 tracking-widest uppercase">
                 ANÁLISIS EVOLUTIVO
               </span>
               <h3 className="text-xl font-extrabold italic text-white uppercase tracking-tighter mt-2 flex items-center gap-2">
@@ -1207,12 +1111,12 @@ export default function Metricas() {
             </div>
 
             <div className="bg-black border border-zinc-800 p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shrink-0 my-4">
-              <div className="flex items-center gap-2 text-[10px]   text-zinc-500 font-bold tracking-widest uppercase">
+              <div className="flex items-center gap-2 text-[10px] text-zinc-500 font-bold tracking-widest uppercase">
                 <GripVertical size={14} className="text-[#FF5A00]" />
                 <span>SELECCIONÁ CATEGORÍA PARA TRAZAR:</span>
               </div>
 
-              <div className="flex items-center gap-2   text-[10px] flex-wrap uppercase font-bold tracking-widest">
+              <div className="flex items-center gap-2 text-[10px] flex-wrap uppercase font-bold tracking-widest">
                 {["EXTRUSIÓN", "INYECCIÓN", "ROTOMOLDEO"].map((cat) => {
                   const isAlreadyActive = activeCategories.includes(cat);
                   const color = CATEGORY_COLORS[cat].stroke;
@@ -1391,7 +1295,7 @@ export default function Metricas() {
                   </g>
                 </svg>
 
-                <div className="flex justify-between items-center pt-3 text-[10px]   text-zinc-500 border-t border-zinc-800/80 overflow-x-auto mt-2 tracking-widest font-bold">
+                <div className="flex justify-between items-center pt-3 text-[10px] text-zinc-500 border-t border-zinc-800/80 overflow-x-auto mt-2 tracking-widest font-bold">
                   {evolutionaryData.mesesLista.map((mes) => (
                     <span key={mes} className="shrink-0 px-1">
                       {mes}
@@ -1404,7 +1308,7 @@ export default function Metricas() {
             <div className="pt-4 flex justify-end shrink-0">
               <button
                 onClick={() => setIsChartModalOpen(false)}
-                className="border border-zinc-800 text-zinc-400 hover:text-white   text-[10px] font-bold uppercase tracking-widest px-6 py-2.5 transition cursor-pointer"
+                className="border border-zinc-800 text-zinc-400 hover:text-white text-[10px] font-bold uppercase tracking-widest px-6 py-2.5 transition cursor-pointer"
               >
                 Cerrar
               </button>
@@ -1413,7 +1317,7 @@ export default function Metricas() {
         </div>
       )}
 
-      {/* MODAL 2: MATRIZ DE RIESGO Y SIMULADOR (GRILLA 48px) */}
+      {/* MODAL 2: MATRIZ DE RIESGO Y SIMULADOR */}
       {isMatrizModalOpen && (
         <div className="fixed inset-0 bg-black/90 backdrop-blur-sm z-[100] flex items-center justify-center p-4 font-sans">
           <div className="bg-[#050505] border border-zinc-800 w-full max-w-6xl h-[92vh] sm:h-[88vh] p-8 shadow-2xl flex flex-col relative">
@@ -1426,7 +1330,7 @@ export default function Metricas() {
 
             <div className="border-b border-zinc-800/80 pb-4 shrink-0 flex flex-col md:flex-row justify-between items-start md:items-end pr-8 gap-4">
               <div>
-                <span className="text-[10px]   font-bold text-[#FFD700] bg-[#FFD700]/10 border border-[#FFD700]/20 px-2 py-0.5 tracking-widest uppercase">
+                <span className="text-[10px] font-bold text-[#FFD700] bg-[#FFD700]/10 border border-[#FFD700]/20 px-2 py-0.5 tracking-widest uppercase">
                   PLANIFICACIÓN DE DEPOSITOS
                 </span>
                 <h3 className="text-2xl font-extrabold italic text-white uppercase tracking-tighter mt-2 flex items-center gap-2">
@@ -1435,7 +1339,7 @@ export default function Metricas() {
                 </h3>
               </div>
 
-              <div className="flex items-center gap-2   text-xs bg-black border border-zinc-800 px-3 py-2 shrink-0">
+              <div className="flex items-center gap-2 text-xs bg-black border border-zinc-800 px-3 py-2 shrink-0">
                 <span className="text-zinc-500 text-[10px] font-bold uppercase tracking-widest">
                   Grupo:
                 </span>
@@ -1498,7 +1402,7 @@ export default function Metricas() {
                 />
               </div>
 
-              <div className="flex items-center gap-1 overflow-x-auto text-[10px]   border border-zinc-800 bg-black shrink-0">
+              <div className="flex items-center gap-1 overflow-x-auto text-[10px] border border-zinc-800 bg-black shrink-0">
                 {[
                   { id: "TODOS", label: "TODOS" },
                   { id: "CRITICO", label: `CRÍTICO` },
@@ -1529,7 +1433,7 @@ export default function Metricas() {
             >
               <div
                 ref={tableHeaderRef}
-                className="grid grid-cols-[180px_1fr_120px_120px_100px_100px] h-12 bg-[#080808] border-b border-zinc-800/90 items-center text-zinc-500   text-[9px] font-bold uppercase tracking-widest shrink-0 px-4"
+                className="grid grid-cols-[180px_1fr_120px_120px_100px_100px] h-12 bg-[#080808] border-b border-zinc-800/90 items-center text-zinc-500 text-[9px] font-bold uppercase tracking-widest shrink-0 px-4"
               >
                 <div>CÓDIGO</div>
                 <div>SEMIELABORADO</div>
@@ -1560,21 +1464,21 @@ export default function Metricas() {
                       key={item.id}
                       className="grid grid-cols-[180px_1fr_120px_120px_100px_100px] h-12 items-center px-4 border-b border-zinc-900/80 last:border-b-0 hover:bg-[#0a0a0a] transition-colors text-xs shrink-0"
                     >
-                      <div className="  font-bold text-[#FFD700] truncate pr-2">
+                      <div className="font-bold text-[#FFD700] truncate pr-2">
                         {item.codigo}
                       </div>
                       <div className="text-white font-bold truncate pr-4">
                         {item.nombre}
                       </div>
-                      <div className="text-right   font-bold text-emerald-400">
+                      <div className="text-right font-bold text-emerald-400">
                         {item.stock_total.toLocaleString()}
                       </div>
-                      <div className="text-right   text-zinc-300">
+                      <div className="text-right text-zinc-300">
                         {item.demanda_mensual > 0
                           ? item.demanda_mensual.toLocaleString()
                           : "--"}
                       </div>
-                      <div className="flex justify-center  ">
+                      <div className="flex justify-center">
                         {item.dias_stock !== null ? (
                           <span
                             className={`inline-block px-2 py-0.5 border font-bold text-[10px] tracking-widest ${badgeStyle}`}
@@ -1608,7 +1512,7 @@ export default function Metricas() {
               </div>
             </div>
 
-            <div className="flex justify-between items-center pt-4 border-t border-zinc-800 text-xs   text-zinc-500 shrink-0 uppercase font-bold tracking-widest">
+            <div className="flex justify-between items-center pt-4 border-t border-zinc-800 text-xs text-zinc-500 shrink-0 uppercase font-bold tracking-widest">
               <span>
                 Pág. <strong className="text-white">{currentPageSE}</strong> de{" "}
                 <strong className="text-white">{totalPagesSE}</strong>
@@ -1648,19 +1552,19 @@ export default function Metricas() {
             </button>
 
             <div className="border-b border-zinc-800/80 pb-3 pr-6">
-              <span className="text-[10px]   font-bold text-[#FFD700] bg-[#FFD700]/10 px-2 py-0.5 border border-[#FFD700]/20 tracking-widest uppercase">
+              <span className="text-[10px] font-bold text-[#FFD700] bg-[#FFD700]/10 px-2 py-0.5 border border-[#FFD700]/20 tracking-widest uppercase">
                 SIMULADOR OPERATIVO
               </span>
               <h3 className="text-lg font-extrabold italic text-white uppercase tracking-tighter mt-2 flex items-center gap-2">
                 <Zap size={18} className="text-[#FFD700]" /> PROYECTAR LOTE
               </h3>
-              <p className="text-[10px] text-zinc-400   mt-1 font-bold uppercase tracking-widest truncate">
+              <p className="text-[10px] text-zinc-400 mt-1 font-bold uppercase tracking-widest truncate">
                 [{simulatedItem.codigo}] {simulatedItem.nombre}
               </p>
             </div>
 
             <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-3  ">
+              <div className="grid grid-cols-2 gap-3">
                 <div className="bg-black p-3 border border-zinc-800">
                   <span className="text-[9px] text-zinc-500 block uppercase font-bold tracking-widest mb-1">
                     STOCK ACTUAL:
@@ -1681,7 +1585,7 @@ export default function Metricas() {
                 </div>
               </div>
 
-              <div className="space-y-3  ">
+              <div className="space-y-3">
                 <div>
                   <label className="text-[10px] text-zinc-400 uppercase tracking-widest font-bold block mb-1.5">
                     FECHA DE ARRIBO PROYECTADA:
@@ -1715,7 +1619,7 @@ export default function Metricas() {
             <div className="flex justify-end pt-3 border-t border-zinc-800">
               <button
                 onClick={() => setSimulatedItem(null)}
-                className="border border-zinc-800 text-zinc-400 hover:text-white   text-[10px] font-bold uppercase tracking-widest px-5 py-2 transition cursor-pointer"
+                className="border border-zinc-800 text-zinc-400 hover:text-white text-[10px] font-bold uppercase tracking-widest px-5 py-2 transition cursor-pointer"
               >
                 CERRAR
               </button>
@@ -1742,7 +1646,7 @@ export default function Metricas() {
               </h3>
             </div>
 
-            <div className="space-y-4  ">
+            <div className="space-y-4">
               <div>
                 <label className="text-[10px] text-zinc-500 uppercase tracking-widest font-bold block mb-1.5">
                   NOMBRE DEL GRUPO / REGIÓN:
@@ -1813,7 +1717,7 @@ export default function Metricas() {
                     alert("Error al guardar grupo.");
                   }
                 }}
-                className="w-full bg-[#FF5A00] hover:bg-white text-black font-bold uppercase tracking-widest   py-3 text-xs shadow-md transition cursor-pointer"
+                className="w-full bg-[#FF5A00] hover:bg-white text-black font-bold uppercase tracking-widest py-3 text-xs shadow-md transition cursor-pointer"
               >
                 GUARDAR UMBRALES
               </button>
