@@ -11,16 +11,10 @@ import {
   Sparkles,
   Target,
   X,
-  Plus,
-  Minus,
-  Maximize,
-  Minimize,
 } from "lucide-react";
 
-// Vectores globales para ultra-rendimiento a 60FPS
+// Vectores globales para alto rendimiento en 60 FPS
 const _mPose = new THREE.Matrix4();
-const _vPos = new THREE.Vector3();
-const _qRot = new THREE.Quaternion();
 
 export default function LaboratorioAR() {
   const mountRef = useRef(null);
@@ -36,10 +30,6 @@ export default function LaboratorioAR() {
   const [pisoDetectado, setPisoDetectado] = useState(false);
   const [mensajeEstado, setMensajeEstado] = useState("INICIE AR");
 
-  // Calibrador en vivo
-  const [escalaFactor, setEscalaFactor] = useState(1.0);
-  const escalaRef = useRef(1.0);
-
   const sceneRef = useRef(null);
   const cameraRef = useRef(null);
   const reticleRef = useRef(null);
@@ -48,10 +38,10 @@ export default function LaboratorioAR() {
   const modeloConoRef = useRef(null);
   const modeloPaletaRef = useRef(null);
 
-  // Alturas Teóricas
-  const ALTURA_CONO = 0.7;
-  const ALTURA_PALETA = 0.6;
-  const HUNDIMIENTO = 0.15;
+  // Ajustes Finos de Escala y Encastre
+  const ALTURA_CONO = 0.7; // Cono exacto de 70 cm
+  const ALTURA_PALETA = 0.48; // Paleta reducida a 48 cm para mejor proporción visual
+  const HUNDIMIENTO = 0.24; // Profundidad de encastre severo dentro del cuello del cono
 
   const conoInstanciaRef = useRef(null);
   const paletaInstanciaRef = useRef(null);
@@ -65,17 +55,6 @@ export default function LaboratorioAR() {
     setFaseUI(nuevaFase);
     if (mensaje) setMensajeEstado(mensaje);
   };
-
-  // Propaga la escala instantáneamente
-  useEffect(() => {
-    escalaRef.current = escalaFactor;
-    if (conoInstanciaRef.current)
-      conoInstanciaRef.current.scale.setScalar(escalaFactor);
-    if (paletaInstanciaRef.current)
-      paletaInstanciaRef.current.scale.setScalar(escalaFactor);
-    if (shadowMeshRef.current)
-      shadowMeshRef.current.scale.setScalar(escalaFactor);
-  }, [escalaFactor]);
 
   useEffect(() => {
     if ("xr" in navigator) {
@@ -99,7 +78,7 @@ export default function LaboratorioAR() {
     );
     cameraRef.current = camera;
 
-    // 2. RENDERIZADOR
+    // 2. RENDERIZADOR (Modo Ultra Estable)
     const renderer = new THREE.WebGLRenderer({
       antialias: false,
       alpha: true,
@@ -122,10 +101,9 @@ export default function LaboratorioAR() {
     dirLight.position.set(1, 4, 1);
     scene.add(dirLight);
 
-    // 4. RETÍCULA DE BUSCADOR INTELIGENTE (Estilo Instagram)
+    // 4. RETÍCULA HOLOGRÁFICA (Buscador visual)
     const reticleGroup = new THREE.Group();
 
-    // Anillo exterior
     const ringGeo = new THREE.RingGeometry(0.15, 0.2, 32).rotateX(-Math.PI / 2);
     const ringMat = new THREE.MeshBasicMaterial({
       color: 0xffffff,
@@ -135,7 +113,6 @@ export default function LaboratorioAR() {
     });
     const ring = new THREE.Mesh(ringGeo, ringMat);
 
-    // Cruz de objetivo
     const crossGeo = new THREE.PlaneGeometry(0.08, 0.01).rotateX(-Math.PI / 2);
     const crossMat = new THREE.MeshBasicMaterial({
       color: 0xffffff,
@@ -148,7 +125,6 @@ export default function LaboratorioAR() {
     reticleGroup.add(ring, crossH, crossV);
     reticleGroup.visible = false;
     reticleGroup.frustumCulled = false;
-    // Permite que la matriz se calcule manualmente para el efecto de flotación
     reticleGroup.matrixAutoUpdate = true;
     scene.add(reticleGroup);
     reticleRef.current = reticleGroup;
@@ -181,13 +157,12 @@ export default function LaboratorioAR() {
     scene.add(fakeShadow);
     shadowMeshRef.current = fakeShadow;
 
-    // 5. CARGADOR Y LIMPIADOR DE CAJAS OCULTAS
+    // 5. CARGADOR CON ESCALADO ESTRICTO
     const loader = new GLTFLoader();
 
     const prepararModelo = (gltfScene, alturaObjetivo) => {
       gltfScene.updateMatrixWorld(true);
 
-      // Calculamos la caja limitante SOLO de las mallas visibles (ignora luces/cámaras fantasma)
       const bbox = new THREE.Box3();
       let hasMesh = false;
       gltfScene.traverse((child) => {
@@ -197,7 +172,7 @@ export default function LaboratorioAR() {
           const b = child.geometry.boundingBox.clone();
           b.applyMatrix4(child.matrixWorld);
           bbox.union(b);
-          // Shader ultra ligero
+
           if (child.material) {
             child.material = new THREE.MeshLambertMaterial({
               color: child.material.color || 0xffffff,
@@ -207,7 +182,6 @@ export default function LaboratorioAR() {
         }
       });
 
-      // Si el modelo está vacío o corrupto, asumimos tamaño 1
       const currentH = hasMesh ? bbox.max.y - bbox.min.y : 1;
       const factor = alturaObjetivo / (currentH || 1);
 
@@ -302,7 +276,7 @@ export default function LaboratorioAR() {
       console.error(e);
     }
 
-    // 7. BUCLE CONTINUO (Con efecto de buscador)
+    // 7. RENDER LOOP
     renderer.setAnimationLoop((timestamp, frame) => {
       if (frame) {
         const referenceSpace = renderer.xr.getReferenceSpace();
@@ -329,14 +303,11 @@ export default function LaboratorioAR() {
               const pose = hit.getPose(referenceSpace);
 
               if (pose) {
-                // SE ENCONTRÓ EL PISO REAL: El aro se pega a la baldosa y se vuelve verde
                 reticleGroup.visible = true;
-
-                // Aplicamos la matriz físicamente
                 reticleGroup.matrixAutoUpdate = false;
                 reticleGroup.matrix.fromArray(pose.transform.matrix);
 
-                ring.material.color.setHex(0x10b981); // Verde brillante
+                ring.material.color.setHex(0x10b981);
                 ring.material.opacity = 0.9;
                 crossH.material.color.setHex(0x10b981);
                 crossV.material.color.setHex(0x10b981);
@@ -346,22 +317,18 @@ export default function LaboratorioAR() {
             }
           }
 
-          // SI NO ENCUENTRA PISO: El aro flota frente al celular en blanco semitransparente
           if (!pisoEncontrado) {
             reticleGroup.visible = true;
-            reticleGroup.matrixAutoUpdate = true; // Liberamos la matriz para flotar
+            reticleGroup.matrixAutoUpdate = true;
 
-            // Lo forzamos a aparecer 1.5m al frente de la cámara, mirándonos
             const dir = new THREE.Vector3(0, -0.2, -1.5).applyQuaternion(
               camera.quaternion,
             );
             reticleGroup.position.copy(camera.position).add(dir);
-
-            // Animación de rotación lenta para indicar "Buscando..."
             reticleGroup.rotation.x = Math.PI / 8;
             reticleGroup.rotation.y += 0.02;
 
-            ring.material.color.setHex(0xffffff); // Blanco transparente
+            ring.material.color.setHex(0xffffff);
             ring.material.opacity = 0.3;
             crossH.material.color.setHex(0xffffff);
             crossV.material.color.setHex(0xffffff);
@@ -371,7 +338,7 @@ export default function LaboratorioAR() {
         }
       }
 
-      // Animaciones suaves
+      // Animaciones de ensamble
       for (let i = animacionesRef.current.length - 1; i >= 0; i--) {
         const anim = animacionesRef.current[i];
         anim.obj.position.lerp(anim.targetPos, 0.18);
@@ -393,6 +360,11 @@ export default function LaboratorioAR() {
     renderer.xr.addEventListener("sessionend", () => {
       setEnModoAR(false);
       cambiarFase("ESPERANDO", "SESIÓN FINALIZADA");
+      if (hitTestSourceRef.current) {
+        try {
+          hitTestSourceRef.current.cancel();
+        } catch (err) {}
+      }
       hitTestSourceRef.current = null;
       hitTestSourceRequestedRef.current = false;
     });
@@ -420,7 +392,6 @@ export default function LaboratorioAR() {
   const fijarObjetivo = () => {
     if (!reticleRef.current || !pisoDetectado) return;
 
-    // Congelar visualmente
     reticleRef.current.children.forEach((c) =>
       c.material.color.setHex(0xff5a00),
     );
@@ -434,10 +405,9 @@ export default function LaboratorioAR() {
     const cono = modeloConoRef.current.clone(true);
     cono.traverse((c) => (c.frustumCulled = false));
 
-    // Tomar coordenadas exactas de la mira
     cono.position.setFromMatrixPosition(reticleRef.current.matrix);
 
-    // Apuntar el cono hacia el usuario
+    // Orientación precisa al usuario
     if (cameraRef.current) {
       const angle = Math.atan2(
         cameraRef.current.position.x - cono.position.x,
@@ -446,27 +416,34 @@ export default function LaboratorioAR() {
       cono.rotation.set(0, angle, 0);
     }
 
-    cono.scale.setScalar(escalaRef.current);
-
-    // Congelar matriz para máxima eficiencia en celular
+    // Congelamiento Matricial para Máxima Estabilidad (Mitiga el micro-drift)
     cono.matrixAutoUpdate = false;
     cono.updateMatrix();
 
     sceneRef.current.add(cono);
     conoInstanciaRef.current = cono;
 
+    // Sombra inamovible
     if (shadowMeshRef.current) {
       shadowMeshRef.current.position.set(
         cono.position.x,
-        cono.position.y + 0.002,
+        cono.position.y + 0.001,
         cono.position.z,
       );
-      shadowMeshRef.current.scale.setScalar(escalaRef.current);
       shadowMeshRef.current.visible = true;
     }
 
     reticleRef.current.visible = false;
-    cambiarFase("CONO", "CONO ANCLADO 100% FIJO");
+
+    // Destruimos el sensor de pisos para liberar carga y estabilizar la cámara
+    if (hitTestSourceRef.current) {
+      try {
+        hitTestSourceRef.current.cancel();
+      } catch (e) {}
+      hitTestSourceRef.current = null;
+    }
+
+    cambiarFase("CONO", "CONO ANCLADO FIRMEMENTE");
   };
 
   const alternarPaleta = () => {
@@ -481,21 +458,25 @@ export default function LaboratorioAR() {
       const paleta = modeloPaletaRef.current.clone(true);
       paleta.traverse((c) => (c.frustumCulled = false));
 
-      const esc = escalaRef.current;
-      paleta.scale.setScalar(esc);
+      const posBaseX = conoInstanciaRef.current.position.x;
+      const posBaseY = conoInstanciaRef.current.position.y;
+      const posBaseZ = conoInstanciaRef.current.position.z;
 
-      // Desciende desde 40 cm por encima del tope
-      paleta.position.setFromMatrixPosition(conoInstanciaRef.current.matrix);
-      paleta.position.y += (ALTURA_CONO + 0.4) * esc;
-      paleta.quaternion.setFromRotationMatrix(conoInstanciaRef.current.matrix);
+      // Nace 40cm por arriba del cono
+      paleta.position.set(posBaseX, posBaseY + ALTURA_CONO + 0.4, posBaseZ);
+      paleta.quaternion.copy(conoInstanciaRef.current.quaternion);
 
+      // Le habilitamos temporalmente la actualización de matriz para que anime fluido
+      paleta.matrixAutoUpdate = true;
       sceneRef.current.add(paleta);
       paletaInstanciaRef.current = paleta;
 
-      const targetPos = new THREE.Vector3().setFromMatrixPosition(
-        conoInstanciaRef.current.matrix,
+      // Cálculo del encastre (Se hunde 24cm dentro del cuello del cono)
+      const targetPos = new THREE.Vector3(
+        posBaseX,
+        posBaseY + ALTURA_CONO - HUNDIMIENTO,
+        posBaseZ,
       );
-      targetPos.y += (ALTURA_CONO - HUNDIMIENTO) * esc;
 
       cambiarFase("ANIMANDO", "ENSAMBLANDO...");
 
@@ -503,6 +484,7 @@ export default function LaboratorioAR() {
         obj: paleta,
         targetPos: targetPos,
         onComplete: () => {
+          // Volvemos a congelar la paleta una vez encastrada
           paleta.matrixAutoUpdate = false;
           paleta.updateMatrix();
           cambiarFase("PALETA", "PRODUCTO ENSAMBLADO");
@@ -529,6 +511,9 @@ export default function LaboratorioAR() {
     conoInstanciaRef.current = null;
     paletaInstanciaRef.current = null;
 
+    // Permitimos que el loop vuelva a buscar el piso
+    hitTestSourceRequestedRef.current = false;
+
     cambiarFase("BUSCANDO", "MUEVA LA CÁMARA PARA DETECTAR EL PISO");
   };
 
@@ -539,7 +524,7 @@ export default function LaboratorioAR() {
         className="absolute inset-0 pointer-events-none z-50 flex flex-col justify-between p-4"
       >
         {/* HEADER */}
-        <div className="flex flex-col items-center gap-2 pt-2">
+        <div className="flex flex-col items-center pt-2">
           <div
             className={`inline-flex items-center gap-2 backdrop-blur-md border border-white/10 px-4 py-2 rounded-full text-[11px] font-bold tracking-widest text-white shadow-lg transition-colors ${pisoDetectado && faseUI === "BUSCANDO" ? "bg-emerald-600/90" : "bg-black/85"}`}
           >
@@ -554,51 +539,6 @@ export default function LaboratorioAR() {
             {mensajeEstado}
           </div>
         </div>
-
-        {/* CALIBRADOR DE TAMAÑO MANUAL (Siempre a mano por si el .glb viene desescalado) */}
-        {enModoAR && (faseUI === "CONO" || faseUI === "PALETA") && (
-          <div className="mx-auto bg-black/80 backdrop-blur-xl border border-zinc-700 p-2 rounded-2xl flex flex-col items-center gap-2 pointer-events-auto shadow-2xl mb-4">
-            <span className="text-[10px] font-bold text-zinc-300 uppercase tracking-widest">
-              ¿Tamaño incorrecto? Calibrar:
-            </span>
-            <div className="flex gap-2">
-              <button
-                onClick={() =>
-                  setEscalaFactor((e) =>
-                    Math.max(0.1, Number((e - 0.5).toFixed(2))),
-                  )
-                }
-                className="bg-zinc-800 hover:bg-zinc-700 text-rose-400 font-bold px-3 py-2 rounded-xl flex items-center gap-1 active:scale-95"
-              >
-                <Minus size={14} /> 50%
-              </button>
-              <button
-                onClick={() =>
-                  setEscalaFactor((e) => Number((e - 0.1).toFixed(2)))
-                }
-                className="bg-zinc-800 hover:bg-zinc-700 text-rose-300 font-bold px-3 py-2 rounded-xl flex items-center gap-1 active:scale-95"
-              >
-                <Minimize size={14} /> 10%
-              </button>
-              <button
-                onClick={() =>
-                  setEscalaFactor((e) => Number((e + 0.1).toFixed(2)))
-                }
-                className="bg-zinc-800 hover:bg-zinc-700 text-emerald-300 font-bold px-3 py-2 rounded-xl flex items-center gap-1 active:scale-95"
-              >
-                <Maximize size={14} /> 10%
-              </button>
-              <button
-                onClick={() =>
-                  setEscalaFactor((e) => Number((e + 0.5).toFixed(2)))
-                }
-                className="bg-zinc-800 hover:bg-zinc-700 text-emerald-400 font-bold px-3 py-2 rounded-xl flex items-center gap-1 active:scale-95"
-              >
-                <Plus size={14} /> 50%
-              </button>
-            </div>
-          </div>
-        )}
 
         {/* BOTONERA TÁCTIL PRINCIPAL */}
         {enModoAR && (
@@ -673,8 +613,8 @@ export default function LaboratorioAR() {
           REALIDAD AUMENTADA
         </h1>
         <p className="text-zinc-400 text-sm max-w-md mb-8">
-          Buscador holográfico activo y panel de calibración de escalas en
-          tiempo real.
+          Buscador holográfico activo y proporciones reales de encastre
+          aplicadas.
         </p>
       </div>
 
