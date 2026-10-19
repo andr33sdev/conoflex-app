@@ -65,6 +65,12 @@ export default function Layout({
       label: "Realidad Aumentada",
       icon: Smartphone, // o ScanFace, el que prefieras visualmente
     },
+
+    {
+      id: "visor-ar",
+      label: "Visor AR",
+      icon: Smartphone, // o ScanFace, el que prefieras visualmente
+    },
     { id: "planificacion", label: "Planificación OT", icon: CalendarDays },
     { id: "carga-produccion", label: "Carga Producción", icon: ClipboardCheck },
     { id: "comercial", label: "IA Comercial", icon: Bot },

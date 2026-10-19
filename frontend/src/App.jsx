@@ -19,6 +19,7 @@ import FicheroModule from "./FicheroModule";
 import SimuladorLogistica from "./SimuladorLogistica";
 import LaboratorioEnsamblaje from "./LaboratorioEnsamblaje";
 import LaboratorioAR from "./LaboratorioAR";
+import VisorAR from "./VisorAR";
 
 function App() {
   const [usuarioActual, setUsuarioActual] = useState(() => {
@@ -181,6 +182,8 @@ function App() {
       )}
 
       {hasAccess("lab-ar") && activeModule === "lab-ar" && <LaboratorioAR />}
+
+      {hasAccess("visor-ar") && activeModule === "visor-ar" && <VisorAR />}
 
       {hasAccess("metricas") && activeModule === "metricas" && (
         <Metricas key={reloadKey} />
