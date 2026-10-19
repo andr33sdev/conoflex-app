@@ -7,11 +7,12 @@ import {
   Smartphone,
   MapPin,
   RotateCcw,
-  CheckCircle2,
   Unlink,
   Sparkles,
   Target,
   X,
+  AlertTriangle,
+  CheckCircle2,
 } from "lucide-react";
 
 export default function LaboratorioAR() {
@@ -21,12 +22,19 @@ export default function LaboratorioAR() {
   const [arSupported, setArSupported] = useState(true);
   const [enModoAR, setEnModoAR] = useState(false);
 
+  // Fases de interacción: ESPERANDO -> BUSCANDO -> FIJADO -> CONO -> PALETA
   const [faseUI, setFaseUI] = useState("ESPERANDO");
   const faseRef = useRef("ESPERANDO");
 
   const [reticulaVisible, setReticulaVisible] = useState(false);
   const [mensajeEstado, setMensajeEstado] = useState("INICIE AR");
 
+  const [logs, setLogs] = useState([]);
+  const addLog = (msg, isError = false) => {
+    setLogs((prev) => [...prev.slice(-3), { msg, isError }]);
+  };
+
+  // Referencias Three.js
   const sceneRef = useRef(null);
   const reticleRef = useRef(null);
   const fakeShadowRef = useRef(null);
@@ -34,7 +42,7 @@ export default function LaboratorioAR() {
   const modeloConoRef = useRef(null);
   const modeloPaletaRef = useRef(null);
 
-  // Medidas reales en metros (1.15m total ensamblado)
+  // Medidas estrictas en Metros (1.15m total ensamblado)
   const ALTURA_CONO = 0.7;
   const ALTURA_PALETA = 0.6;
   const HUNDIMIENTO = 0.15;
@@ -50,6 +58,9 @@ export default function LaboratorioAR() {
   };
 
   useEffect(() => {
+    const handleGlobalError = (event) => addLog(`${event.message}`, true);
+    window.addEventListener("error", handleGlobalError);
+
     if ("xr" in navigator) {
       navigator.xr.isSessionSupported("immersive-ar").then((supported) => {
         setArSupported(supported);
@@ -61,122 +72,119 @@ export default function LaboratorioAR() {
     const container = mountRef.current;
     if (!container) return;
 
-    // 1. ESCENA Y CÁMARA CON PLANO CERCANO (NEAR CLIPPING) DE 1 CM
+    // 1. ESCENA Y CÁMARA
     const scene = new THREE.Scene();
     sceneRef.current = scene;
 
+    // Far plane extendido a 1000m para evitar que desaparezca a la distancia
     const camera = new THREE.PerspectiveCamera(
       70,
       window.innerWidth / window.innerHeight,
       0.01,
-      30,
+      1000,
     );
 
-    // 2. RENDERIZADOR OPTIMIZADO PARA MÓVILES (0 sombras dinámicas = 60 FPS estables)
+    // 2. RENDERIZADOR BLINDADO (Sin anti-alias, máxima potencia)
     const renderer = new THREE.WebGLRenderer({
       antialias: false,
       alpha: true,
       powerPreference: "high-performance",
       precision: "mediump",
-      depth: true,
-      stencil: false,
     });
     renderer.setPixelRatio(1);
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.xr.enabled = true;
-    renderer.xr.setReferenceSpaceType("local-floor");
-    renderer.shadowMap.enabled = false; // DESACTIVADO: Cero lag en móviles
+
+    // Anclaje local (Mucho más estable en Android que local-floor para evitar derrapes)
+    renderer.xr.setReferenceSpaceType("local");
+
+    // Apagamos las sombras dinámicas nativas (matan la batería y los FPS)
+    renderer.shadowMap.enabled = false;
     container.appendChild(renderer.domElement);
 
-    // 3. ILUMINACIÓN AMBIENTE LIGERA
-    const hemiLight = new THREE.HemisphereLight(0xffffff, 0x444444, 1.3);
+    // 3. LUCES LIVIANAS
+    const hemiLight = new THREE.HemisphereLight(0xffffff, 0x444444, 1.4);
     hemiLight.position.set(0, 5, 0);
     scene.add(hemiLight);
 
-    const dirLight = new THREE.DirectionalLight(0xffffff, 1.6);
+    const dirLight = new THREE.DirectionalLight(0xffffff, 1.2);
     dirLight.position.set(1, 3, 1);
     scene.add(dirLight);
 
-    // 4. SOMBRA DE CONTACTO PROCEDURAL (Fake Shadow Canvas)
-    // Genera un degradé radial en memoria: 0% uso de GPU y calidad perfecta
+    // 4. SOMBRA ARTIFICIAL (Rendimiento 100%, 0 lag)
     const canvasShadow = document.createElement("canvas");
     canvasShadow.width = 128;
     canvasShadow.height = 128;
     const ctx = canvasShadow.getContext("2d");
     const gradient = ctx.createRadialGradient(64, 64, 0, 64, 64, 64);
-    gradient.addColorStop(0, "rgba(0,0,0,0.7)");
-    gradient.addColorStop(0.5, "rgba(0,0,0,0.3)");
+    gradient.addColorStop(0, "rgba(0,0,0,0.6)");
+    gradient.addColorStop(0.5, "rgba(0,0,0,0.2)");
     gradient.addColorStop(1, "rgba(0,0,0,0)");
     ctx.fillStyle = gradient;
     ctx.fillRect(0, 0, 128, 128);
 
     const shadowTex = new THREE.CanvasTexture(canvasShadow);
-    const shadowGeo = new THREE.PlaneGeometry(0.65, 0.65);
     const shadowMat = new THREE.MeshBasicMaterial({
       map: shadowTex,
       transparent: true,
-      depthWrite: false, // CLAVE: No compite con el cono
-      depthTest: true,
+      depthWrite: false, // Evita conflictos visuales con el piso
     });
-    const fakeShadow = new THREE.Mesh(shadowGeo, shadowMat);
+    const fakeShadow = new THREE.Mesh(
+      new THREE.PlaneGeometry(0.7, 0.7),
+      shadowMat,
+    );
     fakeShadow.rotation.x = -Math.PI / 2;
     fakeShadow.visible = false;
     fakeShadow.frustumCulled = false;
     scene.add(fakeShadow);
     fakeShadowRef.current = fakeShadow;
 
-    // 5. NORMALIZADOR Y HORNEADOR DE GEOMETRÍAS (Fix definitivo de escala y desaparición)
+    // 5. CARGA DE MODELOS CON PROTECCIÓN MATRICIAL (Evita saltos de tamaño)
     const loader = new GLTFLoader();
 
-    const hornearGeometria = (gltfScene, alturaDeseada) => {
+    const prepararModeloEstable = (gltfScene, alturaDeseada) => {
+      // Forzamos actualización de matrices base
       gltfScene.updateMatrixWorld(true);
-      const bboxOrig = new THREE.Box3().setFromObject(gltfScene);
-      const sizeOrig = new THREE.Vector3();
-      bboxOrig.getSize(sizeOrig);
+      const bbox = new THREE.Box3().setFromObject(gltfScene);
+      const size = new THREE.Vector3();
+      bbox.getSize(size);
 
-      const factor = alturaDeseada / (sizeOrig.y || 1);
+      const factor = alturaDeseada / (size.y || 1);
 
-      // Hornear la escala directamente en cada malla interna
-      gltfScene.traverse((child) => {
-        if (child.isMesh && child.geometry) {
-          child.geometry = child.geometry.clone();
-          child.geometry.scale(factor, factor, factor);
-          child.geometry.computeVertexNormals();
-          child.geometry.computeBoundingBox();
-          child.geometry.computeBoundingSphere();
+      // PIVOTE 1: Centra el objeto al origen 0,0,0
+      const pivot = new THREE.Group();
+      gltfScene.position.x = -(bbox.min.x + bbox.max.x) / 2;
+      gltfScene.position.z = -(bbox.min.z + bbox.max.z) / 2;
+      gltfScene.position.y = -bbox.min.y;
+      pivot.add(gltfScene);
 
-          // Anti-desaparición
-          child.frustumCulled = false;
+      // PIVOTE 2: Escala el grupo (evita distorsionar las mallas internamente)
+      const scaler = new THREE.Group();
+      scaler.add(pivot);
+      scaler.scale.setScalar(factor);
 
-          // Asegurar solidez y visibilidad
-          if (child.material) {
-            child.material.depthWrite = true;
-            child.material.depthTest = true;
-          }
+      // BLINDAJE TOTAL ANTI-DESAPARICIÓN
+      scaler.traverse((child) => {
+        child.frustumCulled = false; // Jamás desaparecerá
+        if (child.isMesh) {
+          child.castShadow = false;
+          child.receiveShadow = false;
         }
       });
+      scaler.frustumCulled = false;
 
-      // Recalcular posición centrada al piso (Y=0)
-      const bboxFinal = new THREE.Box3().setFromObject(gltfScene);
-      gltfScene.position.x = -(bboxFinal.min.x + bboxFinal.max.x) / 2;
-      gltfScene.position.z = -(bboxFinal.min.z + bboxFinal.max.z) / 2;
-      gltfScene.position.y = -bboxFinal.min.y;
-
-      const wrapper = new THREE.Group();
-      wrapper.frustumCulled = false;
-      wrapper.add(gltfScene);
-      return wrapper;
+      return scaler;
     };
 
     loader.load(
       "/models/cono.glb",
       (gltf) => {
-        modeloConoRef.current = hornearGeometria(gltf.scene, ALTURA_CONO);
+        modeloConoRef.current = prepararModeloEstable(gltf.scene, ALTURA_CONO);
+        addLog("cono.glb cargado OK");
       },
       undefined,
       () => {
         const g = new THREE.Group();
-        g.frustumCulled = false;
         const base = new THREE.Mesh(
           new THREE.BoxGeometry(0.35, 0.05, 0.35),
           new THREE.MeshStandardMaterial({ color: 0x111111 }),
@@ -190,6 +198,7 @@ export default function LaboratorioAR() {
         cono.position.y = 0.35;
         cono.frustumCulled = false;
         g.add(base, cono);
+        g.frustumCulled = false;
         modeloConoRef.current = g;
       },
     );
@@ -197,12 +206,15 @@ export default function LaboratorioAR() {
     loader.load(
       "/models/paleta.glb",
       (gltf) => {
-        modeloPaletaRef.current = hornearGeometria(gltf.scene, ALTURA_PALETA);
+        modeloPaletaRef.current = prepararModeloEstable(
+          gltf.scene,
+          ALTURA_PALETA,
+        );
+        addLog("paleta.glb cargada OK");
       },
       undefined,
       () => {
         const g = new THREE.Group();
-        g.frustumCulled = false;
         const circ = new THREE.Mesh(
           new THREE.CylinderGeometry(0.14, 0.14, 0.02, 16).rotateX(Math.PI / 2),
           new THREE.MeshStandardMaterial({ color: 0xff0000 }),
@@ -216,27 +228,31 @@ export default function LaboratorioAR() {
         poste.position.y = 0.17;
         poste.frustumCulled = false;
         g.add(circ, poste);
+        g.frustumCulled = false;
         modeloPaletaRef.current = g;
       },
     );
 
-    // 6. RETÍCULA DE ANCLAJE
-    const reticleGeo = new THREE.RingGeometry(0.1, 0.14, 24).rotateX(
-      -Math.PI / 2,
+    // 6. MIRA DE ALTA VISIBILIDAD
+    const reticleGroup = new THREE.Group();
+    const ring = new THREE.Mesh(
+      new THREE.RingGeometry(0.15, 0.2, 32).rotateX(-Math.PI / 2),
+      new THREE.MeshBasicMaterial({ color: 0x10b981, side: THREE.DoubleSide }),
     );
-    const reticleMat = new THREE.MeshBasicMaterial({
-      color: 0x10b981,
-      side: THREE.DoubleSide,
-      depthWrite: false,
-    });
-    const reticle = new THREE.Mesh(reticleGeo, reticleMat);
-    reticle.matrixAutoUpdate = false;
-    reticle.visible = false;
-    reticle.frustumCulled = false;
-    scene.add(reticle);
-    reticleRef.current = reticle;
+    const centerDot = new THREE.Mesh(
+      new THREE.CircleGeometry(0.04, 16).rotateX(-Math.PI / 2),
+      new THREE.MeshBasicMaterial({ color: 0x10b981, side: THREE.DoubleSide }),
+    );
+    reticleGroup.add(ring, centerDot);
+    reticleGroup.matrixAutoUpdate = false;
+    reticleGroup.visible = false;
 
-    // 7. BOTÓN NATIVO WEBXR
+    // Apagamos culling de la mira para que no titile
+    reticleGroup.traverse((c) => (c.frustumCulled = false));
+    scene.add(reticleGroup);
+    reticleRef.current = reticleGroup;
+
+    // 7. BOTÓN AR NATIVO
     let arButton;
     try {
       arButton = ARButton.createButton(renderer, {
@@ -247,7 +263,7 @@ export default function LaboratorioAR() {
           : undefined,
       });
 
-      arButton.style.bottom = "24px";
+      arButton.style.bottom = "28px";
       arButton.style.padding = "14px 28px";
       arButton.style.fontWeight = "bold";
       arButton.style.borderRadius = "14px";
@@ -257,13 +273,13 @@ export default function LaboratorioAR() {
       arButton.style.zIndex = "99999";
       document.body.appendChild(arButton);
     } catch (e) {
-      console.error(e);
+      addLog("Fallo ARButton: " + e.message, true);
     }
 
     let hitTestSource = null;
     let hitTestSourceRequested = false;
 
-    // 8. BUCLE DE RENDERIZADO ULTRALIGERO
+    // 8. BUCLE DE RENDER (El motor principal)
     renderer.setAnimationLoop((timestamp, frame) => {
       if (frame) {
         const referenceSpace = renderer.xr.getReferenceSpace();
@@ -278,25 +294,27 @@ export default function LaboratorioAR() {
           hitTestSourceRequested = true;
         }
 
-        // APAGADO EN CALIENTE: Solo procesa hit-test mientras busca
+        // Hit-test activo SOLO durante la fase "BUSCANDO"
         if (hitTestSource && referenceSpace && faseRef.current === "BUSCANDO") {
           const hitTestResults = frame.getHitTestResults(hitTestSource);
+
           if (hitTestResults.length > 0) {
             const hit = hitTestResults[0];
             const pose = hit.getPose(referenceSpace);
+
             if (pose) {
-              reticle.visible = true;
-              reticle.matrix.fromArray(pose.transform.matrix);
+              reticleGroup.visible = true;
+              reticleGroup.matrix.fromArray(pose.transform.matrix);
               setReticulaVisible(true);
             }
           } else {
-            reticle.visible = false;
+            reticleGroup.visible = false;
             setReticulaVisible(false);
           }
         }
       }
 
-      // Animaciones de interpolación directa
+      // Procesador de animaciones fluido
       for (let i = animacionesRef.current.length - 1; i >= 0; i--) {
         const anim = animacionesRef.current[i];
         anim.obj.position.lerp(anim.targetPos, 0.15);
@@ -312,8 +330,8 @@ export default function LaboratorioAR() {
 
     renderer.xr.addEventListener("sessionstart", () => {
       setEnModoAR(true);
-      cambiarFase("BUSCANDO", "APUNTE LA CÁMARA AL PISO");
-      reticle.material.color.setHex(0x10b981);
+      cambiarFase("BUSCANDO", "APUNTE LENTAMENTE AL PISO");
+      reticleGroup.children.forEach((c) => c.material.color.setHex(0x10b981));
     });
 
     renderer.xr.addEventListener("sessionend", () => {
@@ -331,6 +349,7 @@ export default function LaboratorioAR() {
     window.addEventListener("resize", handleResize);
 
     return () => {
+      window.removeEventListener("error", handleGlobalError);
       window.removeEventListener("resize", handleResize);
       renderer.setAnimationLoop(null);
       if (container.contains(renderer.domElement))
@@ -341,26 +360,34 @@ export default function LaboratorioAR() {
   }, []);
 
   // ==========================================
-  // CONTROL DE ESTADOS DE ANCLAJE
+  // LÓGICA DE BOTONES (UI MÓVIL)
   // ==========================================
   const fijarObjetivo = () => {
     if (!reticleRef.current || !reticleRef.current.visible) return;
-    reticleRef.current.material.color.setHex(0xff5a00); // Bloqueo en naranja
-    cambiarFase("FIJADO", "OBJETIVO FIJADO EN EL PISO");
+
+    // Congelamos la mira cambiando a color naranja
+    reticleRef.current.children.forEach((c) =>
+      c.material.color.setHex(0xff5a00),
+    );
+    cambiarFase("FIJADO", "MIRA CONGELADA");
   };
 
   const colocarCono = () => {
     if (!sceneRef.current || !modeloConoRef.current || !reticleRef.current)
       return;
 
+    // Se clona el modelo asegurando que mantenga la propiedad anti-culling
     const cono = modeloConoRef.current.clone(true);
+    cono.traverse((c) => (c.frustumCulled = false));
+
+    // Toma las coordenadas exactas de la mira congelada
     cono.position.setFromMatrixPosition(reticleRef.current.matrix);
     cono.quaternion.setFromRotationMatrix(reticleRef.current.matrix);
 
     sceneRef.current.add(cono);
     conoInstanciaRef.current = cono;
 
-    // Colocar la sombra estática milimétricamente pegada al piso
+    // Ponemos la sombra procedural en el piso real (ligeramente levantada para no titilar)
     if (fakeShadowRef.current) {
       fakeShadowRef.current.position.set(
         cono.position.x,
@@ -379,16 +406,19 @@ export default function LaboratorioAR() {
 
     if (faseUI === "CONO") {
       const paleta = modeloPaletaRef.current.clone(true);
+      paleta.traverse((c) => (c.frustumCulled = false));
 
+      // Cae desde 0.5 metros por encima del cono
       paleta.position.set(
         conoInstanciaRef.current.position.x,
-        conoInstanciaRef.current.position.y + ALTURA_CONO + 0.4,
+        conoInstanciaRef.current.position.y + ALTURA_CONO + 0.5,
         conoInstanciaRef.current.position.z,
       );
       paleta.rotation.copy(conoInstanciaRef.current.rotation);
       sceneRef.current.add(paleta);
       paletaInstanciaRef.current = paleta;
 
+      // El encastre matemático perfecto
       const targetY =
         conoInstanciaRef.current.position.y + ALTURA_CONO - HUNDIMIENTO;
       cambiarFase("ANIMANDO", "ENSAMBLANDO...");
@@ -412,8 +442,11 @@ export default function LaboratorioAR() {
   };
 
   const cancelarObjetivo = () => {
-    if (reticleRef.current) reticleRef.current.material.color.setHex(0x10b981);
-    cambiarFase("BUSCANDO", "APUNTE LA CÁMARA AL PISO");
+    if (reticleRef.current)
+      reticleRef.current.children.forEach((c) =>
+        c.material.color.setHex(0x10b981),
+      );
+    cambiarFase("BUSCANDO", "APUNTE LENTAMENTE AL PISO");
   };
 
   const reiniciarTodo = () => {
@@ -425,8 +458,11 @@ export default function LaboratorioAR() {
     conoInstanciaRef.current = null;
     paletaInstanciaRef.current = null;
 
-    if (reticleRef.current) reticleRef.current.material.color.setHex(0x10b981);
-    cambiarFase("BUSCANDO", "APUNTE LA CÁMARA AL PISO");
+    if (reticleRef.current)
+      reticleRef.current.children.forEach((c) =>
+        c.material.color.setHex(0x10b981),
+      );
+    cambiarFase("BUSCANDO", "APUNTE LENTAMENTE AL PISO");
   };
 
   return (
@@ -435,6 +471,7 @@ export default function LaboratorioAR() {
         ref={overlayRef}
         className="absolute inset-0 pointer-events-none z-50 flex flex-col justify-between p-4"
       >
+        {/* TOP STATUS BAR */}
         <div className="text-center pt-2">
           <div className="inline-flex items-center gap-2 bg-black/85 backdrop-blur-md border border-white/10 px-4 py-2 rounded-full text-[11px] font-bold tracking-widest text-white shadow-lg">
             <ScanFace size={15} className="text-[#FF5A00]" />
@@ -442,20 +479,42 @@ export default function LaboratorioAR() {
           </div>
         </div>
 
+        {/* LOGS MÓVILES */}
+        {logs.length > 0 && (
+          <div className="mx-auto bg-black/80 border border-yellow-500/40 rounded-lg p-2 max-w-xs text-left mb-auto mt-4 pointer-events-auto">
+            {logs.map((l, i) => (
+              <p
+                key={i}
+                className={`text-[9px] font-mono leading-tight ${l.isError ? "text-red-400 font-bold" : "text-emerald-400"}`}
+              >
+                &gt; {l.msg}
+              </p>
+            ))}
+          </div>
+        )}
+
+        {/* CONTROLES TÁCTILES */}
         {enModoAR && (
           <div className="flex flex-col items-center gap-3 pb-8 pointer-events-auto">
             {faseUI === "BUSCANDO" && (
-              <button
-                onClick={fijarObjetivo}
-                disabled={!reticulaVisible}
-                className={`font-extrabold uppercase tracking-widest text-xs px-8 py-4 rounded-full flex items-center gap-2 transition-all ${
-                  reticulaVisible
-                    ? "bg-emerald-500 hover:bg-emerald-400 text-black shadow-lg active:scale-95 cursor-pointer"
-                    : "bg-zinc-800 text-zinc-500 opacity-50 cursor-not-allowed"
-                }`}
-              >
-                <Target size={18} /> FIJAR OBJETIVO
-              </button>
+              <div className="flex flex-col items-center gap-2">
+                <button
+                  onClick={fijarObjetivo}
+                  disabled={!reticulaVisible}
+                  className={`font-extrabold uppercase tracking-widest text-xs px-8 py-4 rounded-full flex items-center gap-2 transition-all ${
+                    reticulaVisible
+                      ? "bg-emerald-500 hover:bg-emerald-400 text-black shadow-lg active:scale-95 cursor-pointer"
+                      : "bg-zinc-800 text-zinc-500 opacity-50 cursor-not-allowed"
+                  }`}
+                >
+                  <Target size={18} /> FIJAR OBJETIVO
+                </button>
+                {!reticulaVisible && (
+                  <span className="text-[9px] text-zinc-300 font-semibold bg-black/70 px-3 py-1.5 rounded-lg text-center backdrop-blur-md border border-zinc-700">
+                    Buscando piso... mové el celular despacio
+                  </span>
+                )}
+              </div>
             )}
 
             {faseUI === "FIJADO" && (
@@ -468,7 +527,7 @@ export default function LaboratorioAR() {
                 </button>
                 <button
                   onClick={cancelarObjetivo}
-                  className="bg-black/80 border border-zinc-700 text-zinc-400 text-[10px] font-bold uppercase tracking-widest px-4 py-2 rounded-full flex items-center gap-1 active:scale-95 cursor-pointer"
+                  className="bg-black/80 border border-zinc-700 text-zinc-400 text-[10px] font-bold uppercase tracking-widest px-5 py-2.5 rounded-full flex items-center gap-1 active:scale-95 cursor-pointer"
                 >
                   <X size={14} /> CANCELAR
                 </button>
@@ -508,7 +567,7 @@ export default function LaboratorioAR() {
         )}
       </div>
 
-      {/* PANTALLA INICIAL WEB */}
+      {/* PANTALLA INICIAL (ANTES DE AR) */}
       <div className="absolute inset-0 bg-[#050507] z-40 flex flex-col items-center justify-center p-6 text-center pointer-events-auto">
         <div className="w-20 h-20 bg-[#FF5A00]/10 rounded-full flex items-center justify-center border border-[#FF5A00]/30 mb-6">
           <Smartphone size={36} className="text-[#FF5A00]" />
@@ -517,8 +576,18 @@ export default function LaboratorioAR() {
           REALIDAD AUMENTADA
         </h1>
         <p className="text-zinc-400 text-sm max-w-md mb-8">
-          Modelos a escala física real (1.15m) optimizados a 60 FPS.
+          Experiencia estabilizada de ultra-bajo consumo con escalas forzadas.
         </p>
+
+        {!arSupported && (
+          <div className="bg-rose-500/10 border border-rose-500/20 text-rose-400 p-4 rounded-xl text-xs max-w-md flex items-start gap-3 text-left mb-6">
+            <CheckCircle2 size={18} className="shrink-0 mt-0.5" />
+            <p>
+              <strong>Navegador sin ARCore:</strong> Instalá Google Chrome o
+              Safari actualizado para disfrutar WebXR.
+            </p>
+          </div>
+        )}
       </div>
 
       <div
