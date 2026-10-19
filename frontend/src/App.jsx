@@ -15,7 +15,10 @@ import ProduccionPlanta from "./ProduccionPlanta";
 import SolicitudesInternas from "./SolicitudesInternas";
 import DespacharPedidos from "./DespacharPedidos";
 import Pedidos from "./Pedidos";
-import FicheroModule from "./FicheroModule"; // <-- AGREGADO: Importación del nuevo módulo
+import FicheroModule from "./FicheroModule";
+import SimuladorLogistica from "./SimuladorLogistica";
+import LaboratorioEnsamblaje from "./LaboratorioEnsamblaje";
+import LaboratorioAR from "./LaboratorioAR";
 
 function App() {
   const [usuarioActual, setUsuarioActual] = useState(() => {
@@ -177,8 +180,18 @@ function App() {
         <Reflectivas key={reloadKey} />
       )}
 
+      {hasAccess("lab-ar") && activeModule === "lab-ar" && <LaboratorioAR />}
+
       {hasAccess("metricas") && activeModule === "metricas" && (
         <Metricas key={reloadKey} />
+      )}
+
+      {hasAccess("simulador-carga") && activeModule === "simulador-carga" && (
+        <SimuladorLogistica />
+      )}
+
+      {hasAccess("lab-ensamblaje") && activeModule === "lab-ensamblaje" && (
+        <LaboratorioEnsamblaje />
       )}
 
       {hasAccess("ingenieria") && activeModule === "ingenieria" && (

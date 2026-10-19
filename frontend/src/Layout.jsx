@@ -19,7 +19,10 @@ import {
   Truck,
   Building2,
   ListChecks,
-  Fingerprint, // <-- Importación agregada para FicheroModule
+  Fingerprint,
+  Wrench,
+  Smartphone,
+  ScanFace,
 } from "lucide-react";
 
 import logo from "./assets/logo.svg";
@@ -46,6 +49,21 @@ export default function Layout({
       label: "Métricas & KPI",
       icon: BarChart3,
       highlight: true,
+    },
+    {
+      id: "simulador-carga",
+      label: "Simulador 3D Carga",
+      icon: Truck,
+    },
+    {
+      id: "lab-ensamblaje",
+      label: "Laboratorio 3D",
+      icon: Wrench,
+    },
+    {
+      id: "lab-ar",
+      label: "Realidad Aumentada",
+      icon: Smartphone, // o ScanFace, el que prefieras visualmente
     },
     { id: "planificacion", label: "Planificación OT", icon: CalendarDays },
     { id: "carga-produccion", label: "Carga Producción", icon: ClipboardCheck },

@@ -1012,11 +1012,6 @@ export default function Metricas() {
             {/* CABECERA CON EL AVATAR REDISEÑADO */}
             <div className="border-b border-zinc-800 bg-[#050505] flex flex-col sm:flex-row items-stretch sm:items-center justify-between shrink-0">
               <AIAvatar estado={enviandoChat ? "thinking" : "idle"} />
-
-              <div className="hidden md:flex items-center gap-2 text-zinc-500 text-[10px] uppercase font-bold tracking-widest bg-black px-4 py-2 border border-zinc-900 mr-5">
-                <Sparkles size={13} className="text-[#FFD700]" />
-                <span>CONSULTAS SQL DIRECTAS EN TIEMPO REAL</span>
-              </div>
             </div>
 
             {/* ÁREA DE MENSAJES (REDONDEADAS, LEGIBLES Y LIMPIAS) */}
