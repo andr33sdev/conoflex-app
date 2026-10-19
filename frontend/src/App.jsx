@@ -19,7 +19,7 @@ import FicheroModule from "./FicheroModule";
 import SimuladorLogistica from "./SimuladorLogistica";
 import LaboratorioEnsamblaje from "./LaboratorioEnsamblaje";
 import LaboratorioAR from "./LaboratorioAR";
-import VisorAR from "./VisorAR"; // <-- Nuevo Visor Nativo importado
+import VisorAR from "./VisorAR";
 
 function App() {
   const [usuarioActual, setUsuarioActual] = useState(() => {
@@ -77,6 +77,16 @@ function App() {
 
   useEffect(() => {
     if (usuarioActual && usuarioActual.rol?.toUpperCase() !== "ADMIN") {
+      // EXCEPCIÓN: Permitir siempre el acceso a los módulos experimentales 3D/AR
+      if (
+        activeModule === "visor-ar" ||
+        activeModule === "lab-ar" ||
+        activeModule === "lab-ensamblaje" ||
+        activeModule === "simulador-carga"
+      ) {
+        return;
+      }
+
       const tienePermiso =
         usuarioActual.permisos?.includes(activeModule) ||
         usuarioActual.permisos?.includes("*");
@@ -180,22 +190,17 @@ function App() {
         <Reflectivas key={reloadKey} />
       )}
 
-      {/* AR Pura en Three.js (Manual) */}
-      {hasAccess("lab-ar") && activeModule === "lab-ar" && <LaboratorioAR />}
-
-      {/* AR Nativa Google/Apple (Automática) */}
-      {hasAccess("visor-ar") && activeModule === "visor-ar" && <VisorAR />}
+      {/* ========================================================
+          MÓDULOS LIBERADOS PARA PRUEBAS (SIN hasAccess) 
+          ======================================================== */}
+      {activeModule === "simulador-carga" && <SimuladorLogistica />}
+      {activeModule === "lab-ensamblaje" && <LaboratorioEnsamblaje />}
+      {activeModule === "lab-ar" && <LaboratorioAR />}
+      {activeModule === "visor-ar" && <VisorAR />}
+      {/* ======================================================== */}
 
       {hasAccess("metricas") && activeModule === "metricas" && (
         <Metricas key={reloadKey} />
-      )}
-
-      {hasAccess("simulador-carga") && activeModule === "simulador-carga" && (
-        <SimuladorLogistica />
-      )}
-
-      {hasAccess("lab-ensamblaje") && activeModule === "lab-ensamblaje" && (
-        <LaboratorioEnsamblaje />
       )}
 
       {hasAccess("ingenieria") && activeModule === "ingenieria" && (

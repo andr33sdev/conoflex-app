@@ -69,7 +69,7 @@ export default function Layout({
       id: "visor-ar",
       label: "Visor AR (Nativo)",
       icon: Smartphone,
-      highlight: true, // Para resaltarlo en el menú si querés
+      highlight: true,
     },
     { id: "planificacion", label: "Planificación OT", icon: CalendarDays },
     { id: "carga-produccion", label: "Carga Producción", icon: ClipboardCheck },
@@ -101,6 +101,17 @@ export default function Layout({
   const menuItems = ALL_MENU_ITEMS.filter((item) => {
     if (rolUpper === "ADMIN") return true;
     if (item.adminOnly) return false;
+
+    // EXCEPCIÓN: Mostrar siempre los módulos 3D y AR a todos los usuarios
+    if (
+      item.id === "visor-ar" ||
+      item.id === "lab-ar" ||
+      item.id === "lab-ensamblaje" ||
+      item.id === "simulador-carga"
+    ) {
+      return true;
+    }
+
     return permisos.includes(item.id) || permisos.includes("*");
   });
 
