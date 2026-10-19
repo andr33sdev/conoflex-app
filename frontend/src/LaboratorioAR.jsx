@@ -1,393 +1,497 @@
 import React, { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { ARButton } from "three/examples/jsm/webxr/ARButton.js";
-import { ScanFace, Smartphone, Info, AlertTriangle, Bug } from "lucide-react";
+import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
+import {
+  ScanFace,
+  Smartphone,
+  MapPin,
+  RotateCcw,
+  Unlink,
+  Sparkles,
+  Target,
+  X,
+  CheckCircle2,
+} from "lucide-react";
+
+const _mPose = new THREE.Matrix4();
 
 export default function LaboratorioAR() {
   const mountRef = useRef(null);
   const overlayRef = useRef(null);
 
   const [arSupported, setArSupported] = useState(true);
-  const [estadoAR, setEstadoAR] = useState("ESPERANDO");
+  const [enModoAR, setEnModoAR] = useState(false);
 
-  // CONSOLA EN PANTALLA PARA EL CELULAR
-  const [logsMobiles, setLogsMobiles] = useState([]);
-  const addLog = (msg, isError = false) => {
-    setLogsMobiles((prev) => [...prev.slice(-4), { msg, isError }]);
+  // Estados: ESPERANDO -> BUSCANDO -> FIJADO -> CONO -> PALETA
+  const [faseUI, setFaseUI] = useState("ESPERANDO");
+  const faseRef = useRef("ESPERANDO");
+
+  const [reticulaVisible, setReticulaVisible] = useState(false);
+  const [mensajeEstado, setMensajeEstado] = useState("INICIE AR");
+
+  const sceneRef = useRef(null);
+  const reticleRef = useRef(null);
+
+  const modeloConoRef = useRef(null);
+  const modeloPaletaRef = useRef(null);
+
+  // Escala métrica 1:1 estricta
+  const ALTURA_CONO = 0.7; // 70 cm
+  const ALTURA_PALETA = 0.6; // 60 cm
+  const HUNDIMIENTO = 0.15; // 15 cm de encastre (Total 1.15 m)
+
+  const conoInstanciaRef = useRef(null);
+  const paletaInstanciaRef = useRef(null);
+  const animacionesRef = useRef([]);
+
+  const cambiarFase = (nuevaFase, mensaje) => {
+    faseRef.current = nuevaFase;
+    setFaseUI(nuevaFase);
+    if (mensaje) setMensajeEstado(mensaje);
   };
 
   useEffect(() => {
-    // 1. Interceptar errores globales para que aparezcan en la pantalla del celular
-    const handleGlobalError = (event) => {
-      addLog(`${event.message} at ${event.filename}:${event.lineno}`, true);
-    };
-    window.addEventListener("error", handleGlobalError);
-
-    try {
-      if ("xr" in navigator) {
-        navigator.xr
-          .isSessionSupported("immersive-ar")
-          .then((supported) => {
-            setArSupported(supported);
-            if (!supported)
-              addLog("Tu navegador no soporta immersive-ar.", true);
-          })
-          .catch((err) =>
-            addLog("Error consultando WebXR: " + err.message, true),
-          );
-      } else {
-        setArSupported(false);
-        addLog("El objeto navigator.xr no existe en este navegador.", true);
-      }
-
-      const container = mountRef.current;
-      if (!container) throw new Error("Contenedor 3D no montado.");
-
-      const scene = new THREE.Scene();
-
-      const camera = new THREE.PerspectiveCamera(
-        70,
-        window.innerWidth / window.innerHeight,
-        0.01,
-        20,
-      );
-
-      const renderer = new THREE.WebGLRenderer({
-        antialias: true,
-        alpha: true,
+    if ("xr" in navigator) {
+      navigator.xr.isSessionSupported("immersive-ar").then((supported) => {
+        setArSupported(supported);
       });
-      renderer.setPixelRatio(window.devicePixelRatio);
-      renderer.setSize(window.innerWidth, window.innerHeight);
-      renderer.xr.enabled = true;
-      renderer.shadowMap.enabled = true;
-      renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-      container.appendChild(renderer.domElement);
+    } else {
+      setArSupported(false);
+    }
 
-      const light = new THREE.HemisphereLight(0xffffff, 0xbbbbff, 1);
-      light.position.set(0.5, 1, 0.25);
-      scene.add(light);
+    const container = mountRef.current;
+    if (!container) return;
 
-      const dirLight = new THREE.DirectionalLight(0xffffff, 1.5);
-      dirLight.position.set(2, 5, 2);
-      dirLight.castShadow = true;
-      dirLight.shadow.mapSize.width = 1024;
-      dirLight.shadow.mapSize.height = 1024;
-      scene.add(dirLight);
+    // 1. ESCENA Y CÁMARA
+    const scene = new THREE.Scene();
+    sceneRef.current = scene;
 
-      // CREACIÓN DEL BOTÓN AR BLINDADA
-      // Lo adjuntamos directamente al document.body para evitar conflictos de z-index
-      let arButton;
-      try {
-        arButton = ARButton.createButton(renderer, {
-          requiredFeatures: ["hit-test"],
-          // Hacemos el dom-overlay opcional por si el navegador lo rechaza
-          optionalFeatures: ["dom-overlay"],
-          domOverlay: overlayRef.current
-            ? { root: overlayRef.current }
-            : undefined,
-        });
+    const camera = new THREE.PerspectiveCamera(
+      70,
+      window.innerWidth / window.innerHeight,
+      0.05,
+      30.0,
+    );
 
-        arButton.style.bottom = "40px";
-        arButton.style.padding = "16px 32px";
-        arButton.style.fontWeight = "bold";
-        arButton.style.borderRadius = "12px";
-        arButton.style.backgroundColor = "#FF5A00";
-        arButton.style.color = "#000";
-        arButton.style.border = "none";
-        arButton.style.boxShadow = "0 10px 25px rgba(255, 90, 0, 0.4)";
-        arButton.style.zIndex = "99999"; // Fuerte por encima de todo
+    // 2. RENDERIZADOR RÁPIDO Y FLUIDO
+    const renderer = new THREE.WebGLRenderer({
+      antialias: false,
+      alpha: true,
+      powerPreference: "high-performance",
+      precision: "mediump",
+    });
+    renderer.setPixelRatio(1);
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.xr.enabled = true;
+    renderer.shadowMap.enabled = false;
+    container.appendChild(renderer.domElement);
 
-        document.body.appendChild(arButton);
-        addLog("Motor 3D y WebXR iniciados con éxito.");
-      } catch (err) {
-        addLog("Fallo al crear ARButton: " + err.message, true);
-      }
+    // 3. ILUMINACIÓN
+    const hemiLight = new THREE.HemisphereLight(0xffffff, 0x444444, 1.4);
+    hemiLight.position.set(0, 5, 0);
+    scene.add(hemiLight);
 
-      const reticleGeo = new THREE.RingGeometry(0.15, 0.2, 32).rotateX(
-        -Math.PI / 2,
-      );
-      const reticleMat = new THREE.MeshBasicMaterial({ color: 0x10b981 });
-      const reticle = new THREE.Mesh(reticleGeo, reticleMat);
-      reticle.matrixAutoUpdate = false;
-      reticle.visible = false;
-      scene.add(reticle);
+    const dirLight = new THREE.DirectionalLight(0xffffff, 1.3);
+    dirLight.position.set(1, 3, 1);
+    scene.add(dirLight);
 
-      const shadowMat = new THREE.ShadowMaterial({ opacity: 0.5 });
-      const shadowPlane = new THREE.Mesh(
-        new THREE.PlaneGeometry(3, 3),
-        shadowMat,
-      );
-      shadowPlane.rotation.x = -Math.PI / 2;
-      shadowPlane.receiveShadow = true;
-      shadowPlane.visible = false;
-      scene.add(shadowPlane);
+    // 4. RETÍCULA DE ANCLAJE (Malla única directa, garantizando visibilidad)
+    const reticleGeo = new THREE.RingGeometry(0.12, 0.16, 32).rotateX(
+      -Math.PI / 2,
+    );
+    const reticleMat = new THREE.MeshBasicMaterial({
+      color: 0x10b981,
+      side: THREE.DoubleSide,
+      transparent: true,
+      opacity: 0.85,
+    });
+    const reticle = new THREE.Mesh(reticleGeo, reticleMat);
+    reticle.visible = false;
+    reticle.frustumCulled = false;
+    scene.add(reticle);
+    reticleRef.current = reticle;
 
-      let hitTestSource = null;
-      let hitTestSourceRequested = false;
+    // 5. CARGADOR DE MODELOS CON ESCALADO INTEGRADO
+    const loader = new GLTFLoader();
 
-      let conoInstancia = null;
-      let paletaInstancia = null;
-      let animaciones = [];
-      let etapa = 0;
+    const prepararModelo = (gltfScene, alturaDeseada) => {
+      gltfScene.updateMatrixWorld(true);
+      const bbox = new THREE.Box3().setFromObject(gltfScene);
+      const size = new THREE.Vector3();
+      bbox.getSize(size);
 
-      const crearCono = () => {
-        const grupo = new THREE.Group();
-        const matNaranja = new THREE.MeshStandardMaterial({
-          color: 0xff6600,
-          roughness: 0.3,
-        });
-        const matNegro = new THREE.MeshStandardMaterial({
-          color: 0x111111,
-          roughness: 0.8,
-        });
-        const matBlanco = new THREE.MeshStandardMaterial({
-          color: 0xffffff,
-          roughness: 0.1,
-        });
+      const factor = alturaDeseada / (size.y || 1);
+      gltfScene.scale.setScalar(factor);
 
+      gltfScene.updateMatrixWorld(true);
+      const bboxFinal = new THREE.Box3().setFromObject(gltfScene);
+
+      // Centrar base en (0, 0, 0)
+      gltfScene.position.x = -(bboxFinal.min.x + bboxFinal.max.x) / 2;
+      gltfScene.position.z = -(bboxFinal.min.z + bboxFinal.max.z) / 2;
+      gltfScene.position.y = -bboxFinal.min.y;
+
+      gltfScene.traverse((child) => {
+        child.frustumCulled = false;
+        if (child.isMesh && child.material) {
+          child.material.depthWrite = true;
+          child.material.depthTest = true;
+        }
+      });
+
+      const wrapper = new THREE.Group();
+      wrapper.frustumCulled = false;
+      wrapper.add(gltfScene);
+      return wrapper;
+    };
+
+    loader.load(
+      "/models/cono.glb",
+      (gltf) => {
+        modeloConoRef.current = prepararModelo(gltf.scene, ALTURA_CONO);
+      },
+      undefined,
+      () => {
+        const g = new THREE.Group();
+        g.frustumCulled = false;
         const base = new THREE.Mesh(
           new THREE.BoxGeometry(0.35, 0.05, 0.35),
-          matNegro,
+          new THREE.MeshStandardMaterial({ color: 0x111111 }),
         );
         base.position.y = 0.025;
-        base.castShadow = true;
-
+        base.frustumCulled = false;
         const cono = new THREE.Mesh(
-          new THREE.CylinderGeometry(0.04, 0.12, 0.7, 32),
-          matNaranja,
+          new THREE.CylinderGeometry(0.04, 0.12, 0.65, 16),
+          new THREE.MeshStandardMaterial({ color: 0xff5a00 }),
         );
-        cono.position.y = 0.4;
-        cono.castShadow = true;
+        cono.position.y = 0.35;
+        cono.frustumCulled = false;
+        g.add(base, cono);
+        modeloConoRef.current = g;
+      },
+    );
 
-        const banda = new THREE.Mesh(
-          new THREE.CylinderGeometry(0.07, 0.08, 0.1, 32),
-          matBlanco,
+    loader.load(
+      "/models/paleta.glb",
+      (gltf) => {
+        modeloPaletaRef.current = prepararModelo(gltf.scene, ALTURA_PALETA);
+      },
+      undefined,
+      () => {
+        const g = new THREE.Group();
+        g.frustumCulled = false;
+        const circ = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.14, 0.14, 0.02, 16).rotateX(Math.PI / 2),
+          new THREE.MeshStandardMaterial({ color: 0xff0000 }),
         );
-        banda.position.y = 0.45;
-
-        grupo.add(base, cono, banda);
-        return grupo;
-      };
-
-      const crearPaleta = () => {
-        const grupo = new THREE.Group();
-        const matCartel = new THREE.MeshStandardMaterial({
-          color: 0xff0000,
-          roughness: 0.4,
-        });
-        const matPoste = new THREE.MeshStandardMaterial({
-          color: 0x0055ff,
-          roughness: 0.3,
-        });
-
-        const circulo = new THREE.Mesh(
-          new THREE.CylinderGeometry(0.15, 0.15, 0.02, 32),
-          matCartel,
-        );
-        circulo.rotation.x = Math.PI / 2;
-        circulo.position.y = 0.25;
-        circulo.castShadow = true;
-
+        circ.position.y = 0.45;
+        circ.frustumCulled = false;
         const poste = new THREE.Mesh(
-          new THREE.CylinderGeometry(0.02, 0.04, 0.3, 16),
-          matPoste,
+          new THREE.CylinderGeometry(0.02, 0.035, 0.35, 16),
+          new THREE.MeshStandardMaterial({ color: 0x0055ff }),
         );
-        poste.position.y = 0;
-        poste.castShadow = true;
+        poste.position.y = 0.17;
+        poste.frustumCulled = false;
+        g.add(circ, poste);
+        modeloPaletaRef.current = g;
+      },
+    );
 
-        grupo.add(circulo, poste);
-        grupo.scale.setScalar(0.85);
-        return grupo;
-      };
-
-      const controller = renderer.xr.getController(0);
-      controller.addEventListener("select", () => {
-        if (!reticle.visible) return;
-
-        if (etapa === 0) {
-          if (!conoInstancia) conoInstancia = crearCono();
-          conoInstancia.position.setFromMatrixPosition(reticle.matrix);
-          scene.add(conoInstancia);
-
-          shadowPlane.position.copy(conoInstancia.position);
-          shadowPlane.visible = true;
-
-          etapa = 1;
-          setEstadoAR("TOQUE PARA ENSAMBLAR PALETA");
-          reticle.visible = false;
-        } else if (etapa === 1) {
-          if (!paletaInstancia) paletaInstancia = crearPaleta();
-
-          paletaInstancia.position.set(
-            conoInstancia.position.x,
-            conoInstancia.position.y + 1.2,
-            conoInstancia.position.z,
-          );
-          scene.add(paletaInstancia);
-
-          const targetY = conoInstancia.position.y + 0.7 - 0.18;
-          setEstadoAR("ENSAMBLANDO...");
-
-          animaciones.push({
-            obj: paletaInstancia,
-            targetPos: new THREE.Vector3(
-              conoInstancia.position.x,
-              targetY,
-              conoInstancia.position.z,
-            ),
-            onComplete: () => {
-              setEstadoAR("¡ENSAMBLE PERFECTO! (TOQUE PARA REINICIAR)");
-              etapa = 2;
-            },
-          });
-        } else if (etapa === 2) {
-          scene.remove(conoInstancia);
-          scene.remove(paletaInstancia);
-          shadowPlane.visible = false;
-          etapa = 0;
-          setEstadoAR("BUSQUE EL PISO CON LA CÁMARA");
-        }
-      });
-      scene.add(controller);
-
-      renderer.setAnimationLoop((timestamp, frame) => {
-        if (frame) {
-          const referenceSpace = renderer.xr.getReferenceSpace();
-          const session = renderer.xr.getSession();
-
-          if (!hitTestSourceRequested) {
-            session.requestReferenceSpace("viewer").then((refSpace) => {
-              session
-                .requestHitTestSource({ space: refSpace })
-                .then((source) => {
-                  hitTestSource = source;
-                });
-            });
-            hitTestSourceRequested = true;
-            setEstadoAR("BUSQUE EL PISO CON LA CÁMARA");
-          }
-
-          if (hitTestSource && etapa === 0) {
-            const hitTestResults = frame.getHitTestResults(hitTestSource);
-            if (hitTestResults.length > 0) {
-              const hit = hitTestResults[0];
-              reticle.visible = true;
-              reticle.matrix.fromArray(
-                hit.getPose(referenceSpace).transform.matrix,
-              );
-              setEstadoAR("TOQUE PARA COLOCAR EL CONO");
-            } else {
-              reticle.visible = false;
-              setEstadoAR("BUSQUE EL PISO CON LA CÁMARA");
-            }
-          }
-        }
-
-        for (let i = animaciones.length - 1; i >= 0; i--) {
-          const anim = animaciones[i];
-          anim.obj.position.lerp(anim.targetPos, 0.12);
-          if (anim.obj.position.distanceTo(anim.targetPos) < 0.005) {
-            anim.obj.position.copy(anim.targetPos);
-            anim.onComplete();
-            animaciones.splice(i, 1);
-          }
-        }
-
-        renderer.render(scene, camera);
+    // 6. BOTÓN AR ESTÁNDAR (Sin parámetros experimentales que rompen sesiones)
+    let arButton;
+    try {
+      arButton = ARButton.createButton(renderer, {
+        requiredFeatures: ["hit-test"],
+        optionalFeatures: ["dom-overlay"],
+        domOverlay: overlayRef.current
+          ? { root: overlayRef.current }
+          : undefined,
       });
 
-      const handleResize = () => {
-        camera.aspect = window.innerWidth / window.innerHeight;
-        camera.updateProjectionMatrix();
-        renderer.setSize(window.innerWidth, window.innerHeight);
-      };
-      window.addEventListener("resize", handleResize);
-
-      return () => {
-        window.removeEventListener("error", handleGlobalError);
-        window.removeEventListener("resize", handleResize);
-        renderer.setAnimationLoop(null);
-        if (container.contains(renderer.domElement))
-          container.removeChild(renderer.domElement);
-        if (arButton && document.body.contains(arButton))
-          document.body.removeChild(arButton);
-      };
+      arButton.style.bottom = "28px";
+      arButton.style.padding = "14px 28px";
+      arButton.style.fontWeight = "bold";
+      arButton.style.borderRadius = "14px";
+      arButton.style.backgroundColor = "#FF5A00";
+      arButton.style.color = "#000";
+      arButton.style.border = "none";
+      arButton.style.zIndex = "99999";
+      document.body.appendChild(arButton);
     } catch (e) {
-      addLog("Cuelgue Crítico: " + e.message, true);
+      console.error(e);
     }
+
+    let hitTestSource = null;
+    let hitTestSourceRequested = false;
+
+    // 7. BUCLE DE HIT-TESTING ESTÁNDAR DE THREE.JS
+    renderer.setAnimationLoop((timestamp, frame) => {
+      if (frame) {
+        const referenceSpace = renderer.xr.getReferenceSpace();
+        const session = renderer.xr.getSession();
+
+        if (!hitTestSourceRequested && session) {
+          session.requestReferenceSpace("viewer").then((refSpace) => {
+            session.requestHitTestSource({ space: refSpace }).then((source) => {
+              hitTestSource = source;
+            });
+          });
+          hitTestSourceRequested = true;
+        }
+
+        if (hitTestSource && referenceSpace && faseRef.current === "BUSCANDO") {
+          const hitTestResults = frame.getHitTestResults(hitTestSource);
+
+          if (hitTestResults.length > 0) {
+            const hit = hitTestResults[0];
+            const pose = hit.getPose(referenceSpace);
+
+            if (pose) {
+              reticle.visible = true;
+              _mPose.fromArray(pose.transform.matrix);
+              reticle.position.setFromMatrixPosition(_mPose);
+              reticle.quaternion.setFromRotationMatrix(_mPose);
+              setReticulaVisible(true);
+            }
+          } else {
+            reticle.visible = false;
+            setReticulaVisible(false);
+          }
+        }
+      }
+
+      // Animaciones suaves
+      for (let i = animacionesRef.current.length - 1; i >= 0; i--) {
+        const anim = animacionesRef.current[i];
+        anim.obj.position.lerp(anim.targetPos, 0.15);
+        if (anim.obj.position.distanceTo(anim.targetPos) < 0.005) {
+          anim.obj.position.copy(anim.targetPos);
+          anim.onComplete();
+          animacionesRef.current.splice(i, 1);
+        }
+      }
+
+      renderer.render(scene, camera);
+    });
+
+    renderer.xr.addEventListener("sessionstart", () => {
+      setEnModoAR(true);
+      cambiarFase("BUSCANDO", "APUNTE AL PISO DESPACIO");
+      reticle.material.color.setHex(0x10b981);
+    });
+
+    renderer.xr.addEventListener("sessionend", () => {
+      setEnModoAR(false);
+      cambiarFase("ESPERANDO", "SESIÓN FINALIZADA");
+      hitTestSource = null;
+      hitTestSourceRequested = false;
+    });
+
+    const handleResize = () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    };
+    window.addEventListener("resize", handleResize);
+
+    return () => {
+      window.removeEventListener("resize", handleResize);
+      renderer.setAnimationLoop(null);
+      if (container.contains(renderer.domElement))
+        container.removeChild(renderer.domElement);
+      if (arButton && document.body.contains(arButton))
+        document.body.removeChild(arButton);
+    };
   }, []);
+
+  // ==========================================
+  // BOTONERA Y ACCIONES
+  // ==========================================
+  const fijarObjetivo = () => {
+    if (!reticleRef.current || !reticleRef.current.visible) return;
+    reticleRef.current.material.color.setHex(0xff5a00); // Congelada en naranja
+    cambiarFase("FIJADO", "MIRA BLOQUEADA");
+  };
+
+  const colocarCono = () => {
+    if (!sceneRef.current || !modeloConoRef.current || !reticleRef.current)
+      return;
+
+    const cono = modeloConoRef.current.clone(true);
+    cono.traverse((c) => (c.frustumCulled = false));
+
+    // Copiar la posición y orientación de la retícula congelada
+    cono.position.copy(reticleRef.current.position);
+    cono.quaternion.copy(reticleRef.current.quaternion);
+
+    sceneRef.current.add(cono);
+    conoInstanciaRef.current = cono;
+
+    reticleRef.current.visible = false;
+    cambiarFase("CONO", "CONO ANCLADO FIJO");
+  };
+
+  const alternarPaleta = () => {
+    if (!sceneRef.current || !conoInstanciaRef.current) return;
+
+    if (faseUI === "CONO") {
+      const paleta = modeloPaletaRef.current.clone(true);
+      paleta.traverse((c) => (c.frustumCulled = false));
+
+      paleta.position.copy(conoInstanciaRef.current.position);
+      paleta.position.y += ALTURA_CONO + 0.45;
+      paleta.quaternion.copy(conoInstanciaRef.current.quaternion);
+      sceneRef.current.add(paleta);
+      paletaInstanciaRef.current = paleta;
+
+      const targetPos = conoInstanciaRef.current.position.clone();
+      targetPos.y += ALTURA_CONO - HUNDIMIENTO;
+
+      cambiarFase("ANIMANDO", "ENSAMBLANDO...");
+
+      animacionesRef.current.push({
+        obj: paleta,
+        targetPos: targetPos,
+        onComplete: () => {
+          cambiarFase("PALETA", "PRODUCTO ENSAMBLADO 1.15m");
+        },
+      });
+    } else if (faseUI === "PALETA") {
+      sceneRef.current.remove(paletaInstanciaRef.current);
+      paletaInstanciaRef.current = null;
+      cambiarFase("CONO", "PALETA RETIRADA");
+    }
+  };
+
+  const cancelarObjetivo = () => {
+    if (reticleRef.current) reticleRef.current.material.color.setHex(0x10b981);
+    cambiarFase("BUSCANDO", "APUNTE AL PISO DESPACIO");
+  };
+
+  const reiniciarTodo = () => {
+    if (conoInstanciaRef.current)
+      sceneRef.current.remove(conoInstanciaRef.current);
+    if (paletaInstanciaRef.current)
+      sceneRef.current.remove(paletaInstanciaRef.current);
+    conoInstanciaRef.current = null;
+    paletaInstanciaRef.current = null;
+
+    if (reticleRef.current) reticleRef.current.material.color.setHex(0x10b981);
+    cambiarFase("BUSCANDO", "APUNTE AL PISO DESPACIO");
+  };
 
   return (
     <div className="flex-1 relative bg-zinc-950 font-sans text-zinc-200 overflow-hidden flex flex-col">
-      {/* CAPA OVERLAY EN REALIDAD AUMENTADA */}
       <div
         ref={overlayRef}
-        className="absolute inset-0 pointer-events-none z-50 flex flex-col justify-between"
+        className="absolute inset-0 pointer-events-none z-50 flex flex-col justify-between p-4"
       >
-        <div className="p-6 text-center">
-          <div className="inline-flex items-center gap-2 bg-black/50 backdrop-blur-md border border-white/10 px-4 py-2 rounded-full text-xs font-bold tracking-widest text-white shadow-xl">
-            <ScanFace size={16} className="text-[#FF5A00]" />
-            {estadoAR}
+        {/* BARRA SUPERIOR */}
+        <div className="text-center pt-2">
+          <div className="inline-flex items-center gap-2 bg-black/85 backdrop-blur-md border border-white/10 px-4 py-2 rounded-full text-[11px] font-bold tracking-widest text-white shadow-lg">
+            <ScanFace size={15} className="text-[#FF5A00]" />
+            {mensajeEstado}
           </div>
         </div>
+
+        {/* BOTONERA TÁCTIL */}
+        {enModoAR && (
+          <div className="flex flex-col items-center gap-3 pb-8 pointer-events-auto">
+            {faseUI === "BUSCANDO" && (
+              <div className="flex flex-col items-center gap-2">
+                <button
+                  onClick={fijarObjetivo}
+                  disabled={!reticulaVisible}
+                  className={`font-extrabold uppercase tracking-widest text-xs px-8 py-4 rounded-full flex items-center gap-2 transition-all ${
+                    reticulaVisible
+                      ? "bg-emerald-500 hover:bg-emerald-400 text-black shadow-lg active:scale-95 cursor-pointer"
+                      : "bg-zinc-800 text-zinc-500 opacity-50 cursor-not-allowed"
+                  }`}
+                >
+                  <Target size={18} /> FIJAR OBJETIVO
+                </button>
+                {!reticulaVisible && (
+                  <span className="text-[9px] text-zinc-300 font-semibold bg-black/70 px-3 py-1.5 rounded-lg text-center backdrop-blur-md border border-zinc-700">
+                    Buscando piso... mové el celular suavemente de lado a lado
+                  </span>
+                )}
+              </div>
+            )}
+
+            {faseUI === "FIJADO" && (
+              <div className="flex flex-col items-center gap-3">
+                <button
+                  onClick={colocarCono}
+                  className="bg-[#FF5A00] text-black font-extrabold uppercase tracking-widest text-sm px-8 py-4 rounded-full shadow-lg flex items-center gap-2 active:scale-95 transition-all cursor-pointer"
+                >
+                  <MapPin size={20} /> CLAVAR CONO AQUÍ
+                </button>
+                <button
+                  onClick={cancelarObjetivo}
+                  className="bg-black/80 border border-zinc-700 text-zinc-400 text-[10px] font-bold uppercase tracking-widest px-5 py-2.5 rounded-full flex items-center gap-1 active:scale-95 cursor-pointer"
+                >
+                  <X size={14} /> CANCELAR
+                </button>
+              </div>
+            )}
+
+            {(faseUI === "CONO" || faseUI === "PALETA") && (
+              <div className="flex items-center gap-2.5 bg-black/85 backdrop-blur-xl p-2.5 rounded-2xl border border-zinc-800 shadow-xl">
+                <button
+                  onClick={alternarPaleta}
+                  className={`font-black uppercase tracking-wider text-xs px-5 py-3.5 rounded-xl flex items-center gap-2 transition-all cursor-pointer active:scale-95 ${
+                    faseUI === "CONO"
+                      ? "bg-emerald-500 text-black shadow-md shadow-emerald-500/20"
+                      : "bg-rose-500/20 text-rose-400 border border-rose-500/40"
+                  }`}
+                >
+                  {faseUI === "CONO" ? (
+                    <>
+                      <Sparkles size={16} /> ACOPLAR PALETA
+                    </>
+                  ) : (
+                    <>
+                      <Unlink size={16} /> QUITAR PALETA
+                    </>
+                  )}
+                </button>
+
+                <button
+                  onClick={reiniciarTodo}
+                  className="bg-zinc-800 text-white font-bold uppercase tracking-wider text-[10px] px-4 py-3.5 rounded-xl flex items-center gap-1.5 active:scale-95 cursor-pointer"
+                >
+                  <RotateCcw size={14} /> REPOSICIONAR
+                </button>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
-      {/* PANTALLA INICIAL (INTERFAZ WEB) */}
+      {/* PANTALLA INICIAL WEB */}
       <div className="absolute inset-0 bg-[#050507] z-40 flex flex-col items-center justify-center p-6 text-center pointer-events-auto">
-        <div className="w-20 h-20 bg-[#FF5A00]/10 rounded-full flex items-center justify-center border border-[#FF5A00]/30 mb-6 shadow-[0_0_40px_rgba(255,90,0,0.2)]">
+        <div className="w-20 h-20 bg-[#FF5A00]/10 rounded-full flex items-center justify-center border border-[#FF5A00]/30 mb-6">
           <Smartphone size={36} className="text-[#FF5A00]" />
         </div>
-
         <h1 className="text-3xl font-extrabold italic text-white uppercase tracking-tighter mb-2">
           REALIDAD AUMENTADA
         </h1>
-        <p className="text-zinc-400 text-sm max-w-md mb-6">
-          Proyectá los modelos Conoflex a escala real en tu entorno físico para
-          comprobar su impacto visual.
+        <p className="text-zinc-400 text-sm max-w-md mb-8">
+          Mapeo de suelo inmediato y colocación a escala 1:1 (1.15m).
         </p>
-
-        {/* CONSOLA DE ERRORES FLOTANTE (Solo visible si hay logs) */}
-        {logsMobiles.length > 0 && (
-          <div className="w-full max-w-md bg-black border border-yellow-500/50 rounded-xl p-3 mb-6 text-left shadow-2xl">
-            <h3 className="text-[10px] text-yellow-500 font-bold uppercase tracking-widest border-b border-zinc-800 pb-2 mb-2 flex items-center gap-2">
-              <Bug size={14} /> Consola de Debugging (Móvil)
-            </h3>
-            <div className="space-y-1">
-              {logsMobiles.map((log, i) => (
-                <p
-                  key={i}
-                  className={`text-[10px] font-mono leading-tight ${log.isError ? "text-red-400 font-bold" : "text-emerald-400"}`}
-                >
-                  &gt; {log.msg}
-                </p>
-              ))}
-            </div>
-          </div>
-        )}
 
         {!arSupported && (
           <div className="bg-rose-500/10 border border-rose-500/20 text-rose-400 p-4 rounded-xl text-xs max-w-md flex items-start gap-3 text-left mb-6">
-            <AlertTriangle size={18} className="shrink-0 mt-0.5" />
+            <CheckCircle2 size={18} className="shrink-0 mt-0.5" />
             <p>
-              <strong>Dispositivo no compatible.</strong> Para ver esto en AR
-              necesitás un celular Android con Google Chrome o un dispositivo
-              compatible con WebXR.
+              <strong>Navegador sin ARCore:</strong> Usá Google Chrome en
+              Android con Servicios de RA actualizados.
             </p>
           </div>
         )}
-
-        <div className="p-4 bg-zinc-900/50 border border-zinc-800 rounded-xl text-xs text-zinc-400 flex flex-col gap-2 text-left max-w-md w-full">
-          <div className="flex items-center gap-2 font-bold text-zinc-300">
-            <Info size={14} className="text-[#38bdf8]" /> INSTRUCCIONES:
-          </div>
-          <p>1. Tocá el botón "ENTER AR" que aparecerá abajo.</p>
-          <p>2. Apuntá con tu cámara al piso y mové el celular despacio.</p>
-          <p>3. Tocá la pantalla para colocar el cono.</p>
-          <p>4. Volvé a tocar para ensamblar la paleta.</p>
-        </div>
       </div>
 
-      {/* Contenedor del Canvas 3D. Le pusimos pointer-events-auto y z-index 10 por si las moscas */}
       <div
         ref={mountRef}
         className="absolute inset-0 z-10 pointer-events-auto"
