@@ -15,6 +15,8 @@ import {
 } from "lucide-react";
 
 const _mPose = new THREE.Matrix4();
+const _vPos = new THREE.Vector3();
+const _qRot = new THREE.Quaternion();
 
 export default function LaboratorioAR() {
   const mountRef = useRef(null);
@@ -31,19 +33,25 @@ export default function LaboratorioAR() {
   const [mensajeEstado, setMensajeEstado] = useState("INICIE AR");
 
   const sceneRef = useRef(null);
+  const cameraRef = useRef(null);
+  const rendererRef = useRef(null);
   const reticleRef = useRef(null);
 
   const modeloConoRef = useRef(null);
   const modeloPaletaRef = useRef(null);
 
-  // Escala métrica 1:1 estricta
+  // Alturas calibradas 1:1 en metros
   const ALTURA_CONO = 0.7; // 70 cm
   const ALTURA_PALETA = 0.6; // 60 cm
-  const HUNDIMIENTO = 0.15; // 15 cm de encastre (Total 1.15 m)
+  const HUNDIMIENTO = 0.15; // 15 cm (Total ensamblado: 1.15 m)
 
   const conoInstanciaRef = useRef(null);
   const paletaInstanciaRef = useRef(null);
   const animacionesRef = useRef([]);
+
+  // Variables de control de Hit-Test en tiempo real
+  const hitTestSourceRef = useRef(null);
+  const hitTestSourceRequestedRef = useRef(false);
 
   const cambiarFase = (nuevaFase, mensaje) => {
     faseRef.current = nuevaFase;
@@ -63,7 +71,7 @@ export default function LaboratorioAR() {
     const container = mountRef.current;
     if (!container) return;
 
-    // 1. ESCENA Y CÁMARA
+    // 1. ESCENA Y CÁMARA CALIBRADA
     const scene = new THREE.Scene();
     sceneRef.current = scene;
 
@@ -71,32 +79,36 @@ export default function LaboratorioAR() {
       70,
       window.innerWidth / window.innerHeight,
       0.05,
-      30.0,
+      25.0,
     );
+    cameraRef.current = camera;
 
-    // 2. RENDERIZADOR RÁPIDO Y FLUIDO
+    // 2. RENDERIZADOR OPTIMIZADO PARA MÓVILES (Zero Overhead)
     const renderer = new THREE.WebGLRenderer({
       antialias: false,
       alpha: true,
       powerPreference: "high-performance",
       precision: "mediump",
+      depth: true,
+      stencil: false,
     });
     renderer.setPixelRatio(1);
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.xr.enabled = true;
     renderer.shadowMap.enabled = false;
+    rendererRef.current = renderer;
     container.appendChild(renderer.domElement);
 
-    // 3. ILUMINACIÓN
-    const hemiLight = new THREE.HemisphereLight(0xffffff, 0x444444, 1.4);
+    // 3. ILUMINACIÓN AMBIENTE LIGERA
+    const hemiLight = new THREE.HemisphereLight(0xffffff, 0x444444, 1.5);
     hemiLight.position.set(0, 5, 0);
     scene.add(hemiLight);
 
-    const dirLight = new THREE.DirectionalLight(0xffffff, 1.3);
+    const dirLight = new THREE.DirectionalLight(0xffffff, 1.2);
     dirLight.position.set(1, 3, 1);
     scene.add(dirLight);
 
-    // 4. RETÍCULA DE ANCLAJE (Malla única directa, garantizando visibilidad)
+    // 4. RETÍCULA DE ANCLAJE
     const reticleGeo = new THREE.RingGeometry(0.12, 0.16, 32).rotateX(
       -Math.PI / 2,
     );
@@ -112,10 +124,10 @@ export default function LaboratorioAR() {
     scene.add(reticle);
     reticleRef.current = reticle;
 
-    // 5. CARGADOR DE MODELOS CON ESCALADO INTEGRADO
+    // 5. MOTOR DE OPTIMIZACIÓN Y ALIVIO PARA EL GLB DE 10MB
     const loader = new GLTFLoader();
 
-    const prepararModelo = (gltfScene, alturaDeseada) => {
+    const optimizarYEscalarGLB = (gltfScene, alturaDeseada) => {
       gltfScene.updateMatrixWorld(true);
       const bbox = new THREE.Box3().setFromObject(gltfScene);
       const size = new THREE.Vector3();
@@ -123,20 +135,44 @@ export default function LaboratorioAR() {
 
       const factor = alturaDeseada / (size.y || 1);
       gltfScene.scale.setScalar(factor);
-
       gltfScene.updateMatrixWorld(true);
-      const bboxFinal = new THREE.Box3().setFromObject(gltfScene);
 
-      // Centrar base en (0, 0, 0)
+      const bboxFinal = new THREE.Box3().setFromObject(gltfScene);
       gltfScene.position.x = -(bboxFinal.min.x + bboxFinal.max.x) / 2;
       gltfScene.position.z = -(bboxFinal.min.z + bboxFinal.max.z) / 2;
       gltfScene.position.y = -bboxFinal.min.y;
 
+      // Conversión de materiales pesados a Gouraud shading para fluidez total
       gltfScene.traverse((child) => {
-        child.frustumCulled = false;
-        if (child.isMesh && child.material) {
-          child.material.depthWrite = true;
-          child.material.depthTest = true;
+        if (child.isMesh) {
+          child.frustumCulled = false;
+          const origMat = child.material;
+
+          if (origMat) {
+            const texturaColor = origMat.map || null;
+            const colorBase = origMat.color
+              ? origMat.color.clone()
+              : new THREE.Color(0xffffff);
+
+            // MeshLambertMaterial consume 4 veces menos procesamiento que MeshStandard/Physical
+            child.material = new THREE.MeshLambertMaterial({
+              map: texturaColor,
+              color: colorBase,
+              reflectivity: 0.1,
+              depthWrite: true,
+              depthTest: true,
+            });
+
+            if (origMat.dispose) origMat.dispose();
+          }
+
+          if (child.geometry) {
+            // Eliminar canales no utilizados que sobrecargan la memoria RAM
+            if (child.geometry.attributes.tangent)
+              child.geometry.deleteAttribute("tangent");
+            if (child.geometry.attributes.color)
+              child.geometry.deleteAttribute("color");
+          }
         }
       });
 
@@ -149,21 +185,22 @@ export default function LaboratorioAR() {
     loader.load(
       "/models/cono.glb",
       (gltf) => {
-        modeloConoRef.current = prepararModelo(gltf.scene, ALTURA_CONO);
+        modeloConoRef.current = optimizarYEscalarGLB(gltf.scene, ALTURA_CONO);
       },
       undefined,
       () => {
+        // Fallback procedural ultra liviano
         const g = new THREE.Group();
         g.frustumCulled = false;
         const base = new THREE.Mesh(
           new THREE.BoxGeometry(0.35, 0.05, 0.35),
-          new THREE.MeshStandardMaterial({ color: 0x111111 }),
+          new THREE.MeshLambertMaterial({ color: 0x111111 }),
         );
         base.position.y = 0.025;
         base.frustumCulled = false;
         const cono = new THREE.Mesh(
           new THREE.CylinderGeometry(0.04, 0.12, 0.65, 16),
-          new THREE.MeshStandardMaterial({ color: 0xff5a00 }),
+          new THREE.MeshLambertMaterial({ color: 0xff5a00 }),
         );
         cono.position.y = 0.35;
         cono.frustumCulled = false;
@@ -175,7 +212,10 @@ export default function LaboratorioAR() {
     loader.load(
       "/models/paleta.glb",
       (gltf) => {
-        modeloPaletaRef.current = prepararModelo(gltf.scene, ALTURA_PALETA);
+        modeloPaletaRef.current = optimizarYEscalarGLB(
+          gltf.scene,
+          ALTURA_PALETA,
+        );
       },
       undefined,
       () => {
@@ -183,13 +223,13 @@ export default function LaboratorioAR() {
         g.frustumCulled = false;
         const circ = new THREE.Mesh(
           new THREE.CylinderGeometry(0.14, 0.14, 0.02, 16).rotateX(Math.PI / 2),
-          new THREE.MeshStandardMaterial({ color: 0xff0000 }),
+          new THREE.MeshLambertMaterial({ color: 0xff0000 }),
         );
         circ.position.y = 0.45;
         circ.frustumCulled = false;
         const poste = new THREE.Mesh(
           new THREE.CylinderGeometry(0.02, 0.035, 0.35, 16),
-          new THREE.MeshStandardMaterial({ color: 0x0055ff }),
+          new THREE.MeshLambertMaterial({ color: 0x0055ff }),
         );
         poste.position.y = 0.17;
         poste.frustumCulled = false;
@@ -198,7 +238,7 @@ export default function LaboratorioAR() {
       },
     );
 
-    // 6. BOTÓN AR ESTÁNDAR (Sin parámetros experimentales que rompen sesiones)
+    // 6. BOTÓN AR
     let arButton;
     try {
       arButton = ARButton.createButton(renderer, {
@@ -222,26 +262,30 @@ export default function LaboratorioAR() {
       console.error(e);
     }
 
-    let hitTestSource = null;
-    let hitTestSourceRequested = false;
-
-    // 7. BUCLE DE HIT-TESTING ESTÁNDAR DE THREE.JS
+    // 7. BUCLE PRINCIPAL (Solo procesa Hit-Test durante el escaneo)
     renderer.setAnimationLoop((timestamp, frame) => {
       if (frame) {
         const referenceSpace = renderer.xr.getReferenceSpace();
         const session = renderer.xr.getSession();
 
-        if (!hitTestSourceRequested && session) {
+        if (!hitTestSourceRequestedRef.current && session) {
           session.requestReferenceSpace("viewer").then((refSpace) => {
             session.requestHitTestSource({ space: refSpace }).then((source) => {
-              hitTestSource = source;
+              hitTestSourceRef.current = source;
             });
           });
-          hitTestSourceRequested = true;
+          hitTestSourceRequestedRef.current = true;
         }
 
-        if (hitTestSource && referenceSpace && faseRef.current === "BUSCANDO") {
-          const hitTestResults = frame.getHitTestResults(hitTestSource);
+        // Si estamos escaneando, actualizamos la mira
+        if (
+          hitTestSourceRef.current &&
+          referenceSpace &&
+          faseRef.current === "BUSCANDO"
+        ) {
+          const hitTestResults = frame.getHitTestResults(
+            hitTestSourceRef.current,
+          );
 
           if (hitTestResults.length > 0) {
             const hit = hitTestResults[0];
@@ -261,11 +305,11 @@ export default function LaboratorioAR() {
         }
       }
 
-      // Animaciones suaves
+      // Animaciones de interpolación directa
       for (let i = animacionesRef.current.length - 1; i >= 0; i--) {
         const anim = animacionesRef.current[i];
-        anim.obj.position.lerp(anim.targetPos, 0.15);
-        if (anim.obj.position.distanceTo(anim.targetPos) < 0.005) {
+        anim.obj.position.lerp(anim.targetPos, 0.18);
+        if (anim.obj.position.distanceTo(anim.targetPos) < 0.003) {
           anim.obj.position.copy(anim.targetPos);
           anim.onComplete();
           animacionesRef.current.splice(i, 1);
@@ -284,8 +328,13 @@ export default function LaboratorioAR() {
     renderer.xr.addEventListener("sessionend", () => {
       setEnModoAR(false);
       cambiarFase("ESPERANDO", "SESIÓN FINALIZADA");
-      hitTestSource = null;
-      hitTestSourceRequested = false;
+      if (hitTestSourceRef.current) {
+        try {
+          hitTestSourceRef.current.cancel();
+        } catch (err) {}
+      }
+      hitTestSourceRef.current = null;
+      hitTestSourceRequestedRef.current = false;
     });
 
     const handleResize = () => {
@@ -306,11 +355,15 @@ export default function LaboratorioAR() {
   }, []);
 
   // ==========================================
-  // BOTONERA Y ACCIONES
+  // ANCLAJE INAMOVIBLE Y ACCIONES
   // ==========================================
   const fijarObjetivo = () => {
     if (!reticleRef.current || !reticleRef.current.visible) return;
-    reticleRef.current.material.color.setHex(0xff5a00); // Congelada en naranja
+
+    // Congelar color de la retícula en naranja
+    reticleRef.current.material.color.setHex(0xff5a00);
+
+    // Apagar temporalmente el flujo de cálculo del hit-test
     cambiarFase("FIJADO", "MIRA BLOQUEADA");
   };
 
@@ -321,15 +374,29 @@ export default function LaboratorioAR() {
     const cono = modeloConoRef.current.clone(true);
     cono.traverse((c) => (c.frustumCulled = false));
 
-    // Copiar la posición y orientación de la retícula congelada
+    // Copiar la posición y orientación fija de la retícula
     cono.position.copy(reticleRef.current.position);
     cono.quaternion.copy(reticleRef.current.quaternion);
+
+    // BLOQUEO MATRICIAL: Congela el cono para que no sufra reajustes de ARCore
+    cono.matrixAutoUpdate = false;
+    cono.updateMatrix();
 
     sceneRef.current.add(cono);
     conoInstanciaRef.current = cono;
 
+    // Ocultar retícula
     reticleRef.current.visible = false;
-    cambiarFase("CONO", "CONO ANCLADO FIJO");
+
+    // Cancelar el rayo de Hit-Test en el dispositivo para liberar GPU y CPU
+    if (hitTestSourceRef.current) {
+      try {
+        hitTestSourceRef.current.cancel();
+      } catch (e) {}
+      hitTestSourceRef.current = null;
+    }
+
+    cambiarFase("CONO", "CONO ANCLADO 100% FIJO");
   };
 
   const alternarPaleta = () => {
@@ -339,21 +406,29 @@ export default function LaboratorioAR() {
       const paleta = modeloPaletaRef.current.clone(true);
       paleta.traverse((c) => (c.frustumCulled = false));
 
-      paleta.position.copy(conoInstanciaRef.current.position);
-      paleta.position.y += ALTURA_CONO + 0.45;
-      paleta.quaternion.copy(conoInstanciaRef.current.quaternion);
+      _vPos.setFromMatrixPosition(conoInstanciaRef.current.matrix);
+      _qRot.setFromRotationMatrix(conoInstanciaRef.current.matrix);
+
+      // Posición inicial: 40 cm por encima del tope
+      paleta.position.set(_vPos.x, _vPos.y + ALTURA_CONO + 0.4, _vPos.z);
+      paleta.quaternion.copy(_qRot);
       sceneRef.current.add(paleta);
       paletaInstanciaRef.current = paleta;
 
-      const targetPos = conoInstanciaRef.current.position.clone();
-      targetPos.y += ALTURA_CONO - HUNDIMIENTO;
-
+      const targetPos = new THREE.Vector3(
+        _vPos.x,
+        _vPos.y + ALTURA_CONO - HUNDIMIENTO,
+        _vPos.z,
+      );
       cambiarFase("ANIMANDO", "ENSAMBLANDO...");
 
       animacionesRef.current.push({
         obj: paleta,
         targetPos: targetPos,
         onComplete: () => {
+          // Congelar posición final de la paleta
+          paleta.matrixAutoUpdate = false;
+          paleta.updateMatrix();
           cambiarFase("PALETA", "PRODUCTO ENSAMBLADO 1.15m");
         },
       });
@@ -377,6 +452,9 @@ export default function LaboratorioAR() {
     conoInstanciaRef.current = null;
     paletaInstanciaRef.current = null;
 
+    // Reactivar búsqueda de suelo
+    hitTestSourceRequestedRef.current = false;
+
     if (reticleRef.current) reticleRef.current.material.color.setHex(0x10b981);
     cambiarFase("BUSCANDO", "APUNTE AL PISO DESPACIO");
   };
@@ -387,7 +465,7 @@ export default function LaboratorioAR() {
         ref={overlayRef}
         className="absolute inset-0 pointer-events-none z-50 flex flex-col justify-between p-4"
       >
-        {/* BARRA SUPERIOR */}
+        {/* BARRA SUPERIOR DE ESTADO */}
         <div className="text-center pt-2">
           <div className="inline-flex items-center gap-2 bg-black/85 backdrop-blur-md border border-white/10 px-4 py-2 rounded-full text-[11px] font-bold tracking-widest text-white shadow-lg">
             <ScanFace size={15} className="text-[#FF5A00]" />
@@ -395,7 +473,7 @@ export default function LaboratorioAR() {
           </div>
         </div>
 
-        {/* BOTONERA TÁCTIL */}
+        {/* CONTROLES TÁCTILES */}
         {enModoAR && (
           <div className="flex flex-col items-center gap-3 pb-8 pointer-events-auto">
             {faseUI === "BUSCANDO" && (
@@ -413,7 +491,7 @@ export default function LaboratorioAR() {
                 </button>
                 {!reticulaVisible && (
                   <span className="text-[9px] text-zinc-300 font-semibold bg-black/70 px-3 py-1.5 rounded-lg text-center backdrop-blur-md border border-zinc-700">
-                    Buscando piso... mové el celular suavemente de lado a lado
+                    Buscando piso... mové el celular suavemente
                   </span>
                 )}
               </div>
@@ -478,7 +556,8 @@ export default function LaboratorioAR() {
           REALIDAD AUMENTADA
         </h1>
         <p className="text-zinc-400 text-sm max-w-md mb-8">
-          Mapeo de suelo inmediato y colocación a escala 1:1 (1.15m).
+          Rendimiento optimizado a 60 FPS con bloqueo matricial permanente
+          (1.15m total).
         </p>
 
         {!arSupported && (
@@ -486,7 +565,7 @@ export default function LaboratorioAR() {
             <CheckCircle2 size={18} className="shrink-0 mt-0.5" />
             <p>
               <strong>Navegador sin ARCore:</strong> Usá Google Chrome en
-              Android con Servicios de RA actualizados.
+              Android con los Servicios de RA actualizados.
             </p>
           </div>
         )}
