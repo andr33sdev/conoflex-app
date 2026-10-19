@@ -11,7 +11,7 @@ import {
   Sparkles,
   Target,
   X,
-  CheckCircle2,
+  Zap,
 } from "lucide-react";
 
 const _mPose = new THREE.Matrix4();
@@ -25,7 +25,6 @@ export default function LaboratorioAR() {
   const [arSupported, setArSupported] = useState(true);
   const [enModoAR, setEnModoAR] = useState(false);
 
-  // Estados: ESPERANDO -> BUSCANDO -> FIJADO -> CONO -> PALETA
   const [faseUI, setFaseUI] = useState("ESPERANDO");
   const faseRef = useRef("ESPERANDO");
 
@@ -40,16 +39,14 @@ export default function LaboratorioAR() {
   const modeloConoRef = useRef(null);
   const modeloPaletaRef = useRef(null);
 
-  // Alturas calibradas 1:1 en metros
-  const ALTURA_CONO = 0.7; // 70 cm
-  const ALTURA_PALETA = 0.6; // 60 cm
-  const HUNDIMIENTO = 0.15; // 15 cm (Total ensamblado: 1.15 m)
+  const ALTURA_CONO = 0.7;
+  const ALTURA_PALETA = 0.6;
+  const HUNDIMIENTO = 0.15;
 
   const conoInstanciaRef = useRef(null);
   const paletaInstanciaRef = useRef(null);
   const animacionesRef = useRef([]);
 
-  // Variables de control de Hit-Test en tiempo real
   const hitTestSourceRef = useRef(null);
   const hitTestSourceRequestedRef = useRef(false);
 
@@ -71,7 +68,6 @@ export default function LaboratorioAR() {
     const container = mountRef.current;
     if (!container) return;
 
-    // 1. ESCENA Y CÁMARA CALIBRADA
     const scene = new THREE.Scene();
     sceneRef.current = scene;
 
@@ -79,11 +75,10 @@ export default function LaboratorioAR() {
       70,
       window.innerWidth / window.innerHeight,
       0.05,
-      25.0,
+      30.0,
     );
     cameraRef.current = camera;
 
-    // 2. RENDERIZADOR OPTIMIZADO PARA MÓVILES (Zero Overhead)
     const renderer = new THREE.WebGLRenderer({
       antialias: false,
       alpha: true,
@@ -95,11 +90,11 @@ export default function LaboratorioAR() {
     renderer.setPixelRatio(1);
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.xr.enabled = true;
+    renderer.xr.setReferenceSpaceType("local-floor");
     renderer.shadowMap.enabled = false;
     rendererRef.current = renderer;
     container.appendChild(renderer.domElement);
 
-    // 3. ILUMINACIÓN AMBIENTE LIGERA
     const hemiLight = new THREE.HemisphereLight(0xffffff, 0x444444, 1.5);
     hemiLight.position.set(0, 5, 0);
     scene.add(hemiLight);
@@ -108,7 +103,7 @@ export default function LaboratorioAR() {
     dirLight.position.set(1, 3, 1);
     scene.add(dirLight);
 
-    // 4. RETÍCULA DE ANCLAJE
+    // Retícula con doble cara
     const reticleGeo = new THREE.RingGeometry(0.12, 0.16, 32).rotateX(
       -Math.PI / 2,
     );
@@ -124,9 +119,8 @@ export default function LaboratorioAR() {
     scene.add(reticle);
     reticleRef.current = reticle;
 
-    // 5. MOTOR DE OPTIMIZACIÓN Y ALIVIO PARA EL GLB DE 10MB
+    // Normalizador de GLB
     const loader = new GLTFLoader();
-
     const optimizarYEscalarGLB = (gltfScene, alturaDeseada) => {
       gltfScene.updateMatrixWorld(true);
       const bbox = new THREE.Box3().setFromObject(gltfScene);
@@ -142,19 +136,16 @@ export default function LaboratorioAR() {
       gltfScene.position.z = -(bboxFinal.min.z + bboxFinal.max.z) / 2;
       gltfScene.position.y = -bboxFinal.min.y;
 
-      // Conversión de materiales pesados a Gouraud shading para fluidez total
       gltfScene.traverse((child) => {
         if (child.isMesh) {
           child.frustumCulled = false;
           const origMat = child.material;
-
           if (origMat) {
             const texturaColor = origMat.map || null;
             const colorBase = origMat.color
               ? origMat.color.clone()
               : new THREE.Color(0xffffff);
 
-            // MeshLambertMaterial consume 4 veces menos procesamiento que MeshStandard/Physical
             child.material = new THREE.MeshLambertMaterial({
               map: texturaColor,
               color: colorBase,
@@ -162,16 +153,7 @@ export default function LaboratorioAR() {
               depthWrite: true,
               depthTest: true,
             });
-
             if (origMat.dispose) origMat.dispose();
-          }
-
-          if (child.geometry) {
-            // Eliminar canales no utilizados que sobrecargan la memoria RAM
-            if (child.geometry.attributes.tangent)
-              child.geometry.deleteAttribute("tangent");
-            if (child.geometry.attributes.color)
-              child.geometry.deleteAttribute("color");
           }
         }
       });
@@ -189,7 +171,6 @@ export default function LaboratorioAR() {
       },
       undefined,
       () => {
-        // Fallback procedural ultra liviano
         const g = new THREE.Group();
         g.frustumCulled = false;
         const base = new THREE.Mesh(
@@ -238,7 +219,6 @@ export default function LaboratorioAR() {
       },
     );
 
-    // 6. BOTÓN AR
     let arButton;
     try {
       arButton = ARButton.createButton(renderer, {
@@ -262,7 +242,6 @@ export default function LaboratorioAR() {
       console.error(e);
     }
 
-    // 7. BUCLE PRINCIPAL (Solo procesa Hit-Test durante el escaneo)
     renderer.setAnimationLoop((timestamp, frame) => {
       if (frame) {
         const referenceSpace = renderer.xr.getReferenceSpace();
@@ -277,7 +256,6 @@ export default function LaboratorioAR() {
           hitTestSourceRequestedRef.current = true;
         }
 
-        // Si estamos escaneando, actualizamos la mira
         if (
           hitTestSourceRef.current &&
           referenceSpace &&
@@ -305,7 +283,6 @@ export default function LaboratorioAR() {
         }
       }
 
-      // Animaciones de interpolación directa
       for (let i = animacionesRef.current.length - 1; i >= 0; i--) {
         const anim = animacionesRef.current[i];
         anim.obj.position.lerp(anim.targetPos, 0.18);
@@ -354,16 +331,9 @@ export default function LaboratorioAR() {
     };
   }, []);
 
-  // ==========================================
-  // ANCLAJE INAMOVIBLE Y ACCIONES
-  // ==========================================
   const fijarObjetivo = () => {
     if (!reticleRef.current || !reticleRef.current.visible) return;
-
-    // Congelar color de la retícula en naranja
     reticleRef.current.material.color.setHex(0xff5a00);
-
-    // Apagar temporalmente el flujo de cálculo del hit-test
     cambiarFase("FIJADO", "MIRA BLOQUEADA");
   };
 
@@ -374,21 +344,17 @@ export default function LaboratorioAR() {
     const cono = modeloConoRef.current.clone(true);
     cono.traverse((c) => (c.frustumCulled = false));
 
-    // Copiar la posición y orientación fija de la retícula
     cono.position.copy(reticleRef.current.position);
     cono.quaternion.copy(reticleRef.current.quaternion);
 
-    // BLOQUEO MATRICIAL: Congela el cono para que no sufra reajustes de ARCore
     cono.matrixAutoUpdate = false;
     cono.updateMatrix();
 
     sceneRef.current.add(cono);
     conoInstanciaRef.current = cono;
 
-    // Ocultar retícula
     reticleRef.current.visible = false;
 
-    // Cancelar el rayo de Hit-Test en el dispositivo para liberar GPU y CPU
     if (hitTestSourceRef.current) {
       try {
         hitTestSourceRef.current.cancel();
@@ -397,6 +363,38 @@ export default function LaboratorioAR() {
     }
 
     cambiarFase("CONO", "CONO ANCLADO 100% FIJO");
+  };
+
+  // Rescate manual: Colocar a 1.2 metros al frente sin requerir detección de textura
+  const colocarForzadoAlFrente = () => {
+    if (!sceneRef.current || !modeloConoRef.current || !cameraRef.current)
+      return;
+
+    const dir = new THREE.Vector3(0, 0, -1.2).applyQuaternion(
+      cameraRef.current.quaternion,
+    );
+    const targetPos = cameraRef.current.position.clone().add(dir);
+    targetPos.y = Math.min(targetPos.y, cameraRef.current.position.y - 1.1); // Nivel de suelo estimado
+
+    const cono = modeloConoRef.current.clone(true);
+    cono.traverse((c) => (c.frustumCulled = false));
+    cono.position.copy(targetPos);
+
+    cono.matrixAutoUpdate = false;
+    cono.updateMatrix();
+
+    sceneRef.current.add(cono);
+    conoInstanciaRef.current = cono;
+
+    if (reticleRef.current) reticleRef.current.visible = false;
+    if (hitTestSourceRef.current) {
+      try {
+        hitTestSourceRef.current.cancel();
+      } catch (e) {}
+      hitTestSourceRef.current = null;
+    }
+
+    cambiarFase("CONO", "CONO COLOCADO AL FRENTE");
   };
 
   const alternarPaleta = () => {
@@ -409,7 +407,6 @@ export default function LaboratorioAR() {
       _vPos.setFromMatrixPosition(conoInstanciaRef.current.matrix);
       _qRot.setFromRotationMatrix(conoInstanciaRef.current.matrix);
 
-      // Posición inicial: 40 cm por encima del tope
       paleta.position.set(_vPos.x, _vPos.y + ALTURA_CONO + 0.4, _vPos.z);
       paleta.quaternion.copy(_qRot);
       sceneRef.current.add(paleta);
@@ -426,7 +423,6 @@ export default function LaboratorioAR() {
         obj: paleta,
         targetPos: targetPos,
         onComplete: () => {
-          // Congelar posición final de la paleta
           paleta.matrixAutoUpdate = false;
           paleta.updateMatrix();
           cambiarFase("PALETA", "PRODUCTO ENSAMBLADO 1.15m");
@@ -452,7 +448,6 @@ export default function LaboratorioAR() {
     conoInstanciaRef.current = null;
     paletaInstanciaRef.current = null;
 
-    // Reactivar búsqueda de suelo
     hitTestSourceRequestedRef.current = false;
 
     if (reticleRef.current) reticleRef.current.material.color.setHex(0x10b981);
@@ -465,7 +460,7 @@ export default function LaboratorioAR() {
         ref={overlayRef}
         className="absolute inset-0 pointer-events-none z-50 flex flex-col justify-between p-4"
       >
-        {/* BARRA SUPERIOR DE ESTADO */}
+        {/* Barra superior de estado */}
         <div className="text-center pt-2">
           <div className="inline-flex items-center gap-2 bg-black/85 backdrop-blur-md border border-white/10 px-4 py-2 rounded-full text-[11px] font-bold tracking-widest text-white shadow-lg">
             <ScanFace size={15} className="text-[#FF5A00]" />
@@ -473,25 +468,30 @@ export default function LaboratorioAR() {
           </div>
         </div>
 
-        {/* CONTROLES TÁCTILES */}
+        {/* Controles táctiles */}
         {enModoAR && (
           <div className="flex flex-col items-center gap-3 pb-8 pointer-events-auto">
             {faseUI === "BUSCANDO" && (
-              <div className="flex flex-col items-center gap-2">
-                <button
-                  onClick={fijarObjetivo}
-                  disabled={!reticulaVisible}
-                  className={`font-extrabold uppercase tracking-widest text-xs px-8 py-4 rounded-full flex items-center gap-2 transition-all ${
-                    reticulaVisible
-                      ? "bg-emerald-500 hover:bg-emerald-400 text-black shadow-lg active:scale-95 cursor-pointer"
-                      : "bg-zinc-800 text-zinc-500 opacity-50 cursor-not-allowed"
-                  }`}
-                >
-                  <Target size={18} /> FIJAR OBJETIVO
-                </button>
+              <div className="flex flex-col items-center gap-2.5">
+                {reticulaVisible ? (
+                  <button
+                    onClick={fijarObjetivo}
+                    className="bg-emerald-500 hover:bg-emerald-400 text-black font-extrabold uppercase tracking-widest text-xs px-8 py-4 rounded-full shadow-lg active:scale-95 transition-all cursor-pointer flex items-center gap-2"
+                  >
+                    <Target size={18} /> FIJAR OBJETIVO
+                  </button>
+                ) : (
+                  <button
+                    onClick={colocarForzadoAlFrente}
+                    className="bg-amber-500 hover:bg-amber-400 text-black font-bold uppercase tracking-wider text-xs px-6 py-3.5 rounded-full shadow-lg active:scale-95 transition-all cursor-pointer flex items-center gap-2"
+                  >
+                    <Zap size={16} /> COLOCAR SIN ESPERAR PISO
+                  </button>
+                )}
                 {!reticulaVisible && (
                   <span className="text-[9px] text-zinc-300 font-semibold bg-black/70 px-3 py-1.5 rounded-lg text-center backdrop-blur-md border border-zinc-700">
-                    Buscando piso... mové el celular suavemente
+                    Buscando piso... o usá el botón amarillo para plantar
+                    directo
                   </span>
                 )}
               </div>
@@ -547,7 +547,7 @@ export default function LaboratorioAR() {
         )}
       </div>
 
-      {/* PANTALLA INICIAL WEB */}
+      {/* Pantalla inicial previa */}
       <div className="absolute inset-0 bg-[#050507] z-40 flex flex-col items-center justify-center p-6 text-center pointer-events-auto">
         <div className="w-20 h-20 bg-[#FF5A00]/10 rounded-full flex items-center justify-center border border-[#FF5A00]/30 mb-6">
           <Smartphone size={36} className="text-[#FF5A00]" />
@@ -556,19 +556,8 @@ export default function LaboratorioAR() {
           REALIDAD AUMENTADA
         </h1>
         <p className="text-zinc-400 text-sm max-w-md mb-8">
-          Rendimiento optimizado a 60 FPS con bloqueo matricial permanente
-          (1.15m total).
+          Escaneo optimizado a 60 FPS con opción de colocación forzada.
         </p>
-
-        {!arSupported && (
-          <div className="bg-rose-500/10 border border-rose-500/20 text-rose-400 p-4 rounded-xl text-xs max-w-md flex items-start gap-3 text-left mb-6">
-            <CheckCircle2 size={18} className="shrink-0 mt-0.5" />
-            <p>
-              <strong>Navegador sin ARCore:</strong> Usá Google Chrome en
-              Android con los Servicios de RA actualizados.
-            </p>
-          </div>
-        )}
       </div>
 
       <div
