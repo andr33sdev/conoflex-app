@@ -40,9 +40,9 @@ export default function LaboratorioAR() {
   const modeloPaletaRef = useRef(null);
 
   // Alturas forzadas en METROS (Escala real AR)
-  const ALTURA_CONO = 0.7; // 70 cm
-  const ALTURA_PALETA = 0.6; // 60 cm
-  const HUNDIMIENTO = 0.15; // 15 cm de encastre (Total ensamblado: 1.15m)
+  const ALTURA_CONO = 0.7;
+  const ALTURA_PALETA = 0.6;
+  const HUNDIMIENTO = 0.15;
 
   const conoInstanciaRef = useRef(null);
   const paletaInstanciaRef = useRef(null);
@@ -79,35 +79,41 @@ export default function LaboratorioAR() {
       20,
     );
 
-    // 2. RENDERIZADOR OPTIMIZADO PARA ALTO RENDIMIENTO (Sin trabas)
-    const renderer = new THREE.WebGLRenderer({ antialias: false, alpha: true }); // Antialias false mejora rendimiento brutalmente en AR
-    renderer.setPixelRatio(1); // Mantiene resolución nativa para no saturar GPU
+    // 2. RENDERIZADOR EXTREMADAMENTE LIGERO (Fix de tirones y lag)
+    const renderer = new THREE.WebGLRenderer({
+      antialias: false,
+      alpha: true,
+      powerPreference: "high-performance", // Pide máximo rendimiento a la GPU del celular
+      precision: "mediump", // Baja precisión de coma flotante (súper veloz en móviles)
+      stencil: false,
+      depth: true,
+    });
+    renderer.setPixelRatio(1); // Mantiene resolución base sin re-escalar
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.xr.enabled = true;
     renderer.xr.setReferenceSpaceType("local-floor");
 
-    // Sombras ligeras
+    // Sombras básicas de alto rendimiento
     renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = THREE.PCFShadowMap;
+    renderer.shadowMap.type = THREE.BasicShadowMap; // Elimina PCF (mata-baterías)
     container.appendChild(renderer.domElement);
 
     // 3. LUCES LIGERAS
-    const hemiLight = new THREE.HemisphereLight(0xffffff, 0x444444, 1.4);
+    const hemiLight = new THREE.HemisphereLight(0xffffff, 0x444444, 1.2);
     hemiLight.position.set(0, 5, 0);
     scene.add(hemiLight);
 
     const dirLight = new THREE.DirectionalLight(0xffffff, 1.5);
     dirLight.position.set(1, 3, 1);
     dirLight.castShadow = true;
-    dirLight.shadow.mapSize.width = 512; // Sombra pequeña, mucho más veloz
-    dirLight.shadow.mapSize.height = 512;
+    dirLight.shadow.mapSize.width = 256; // Sombras a bajísima resolución = velocidad
+    dirLight.shadow.mapSize.height = 256;
     scene.add(dirLight);
 
-    // 4. SISTEMA DE RE-ESCALADO ESTRICTO (El fix para el cono gigante)
+    // 4. CARGA DE MODELOS CON FIX DE DESAPARICIÓN (Frustum Culling)
     const loader = new GLTFLoader();
 
     const normalizarYForzarEscala = (gltfScene, alturaDeseadaMetros) => {
-      // Limpiamos transformaciones previas
       gltfScene.position.set(0, 0, 0);
       gltfScene.scale.set(1, 1, 1);
       gltfScene.rotation.set(0, 0, 0);
@@ -117,32 +123,31 @@ export default function LaboratorioAR() {
       const sizeOriginal = new THREE.Vector3();
       bboxOriginal.getSize(sizeOriginal);
 
-      // Calculamos la compresión exacta. Ej: Si mide 700 (mm), el factor es 0.001
       const factorEscala = alturaDeseadaMetros / sizeOriginal.y;
       gltfScene.scale.setScalar(factorEscala);
       gltfScene.updateMatrixWorld(true);
 
-      // Recalcular post-escala para centrar
       const bboxFinal = new THREE.Box3().setFromObject(gltfScene);
 
       gltfScene.position.x = -(bboxFinal.min.x + bboxFinal.max.x) / 2;
       gltfScene.position.z = -(bboxFinal.min.z + bboxFinal.max.z) / 2;
       gltfScene.position.y = -bboxFinal.min.y;
 
-      // Optimización de mallas
+      // EL FIX MAGNÍFICO: Apagar Frustum Culling
       gltfScene.traverse((child) => {
         if (child.isMesh) {
           child.castShadow = true;
-          child.receiveShadow = false; // Ahorra muchísimos recursos
+          child.receiveShadow = false;
+          child.frustumCulled = false; // IMPIDE QUE DESAPAREZCA AL ACERCARTE
         }
       });
 
       const wrapper = new THREE.Group();
+      wrapper.frustumCulled = false;
       wrapper.add(gltfScene);
       return wrapper;
     };
 
-    // Cargar Cono y forzar a 0.7m
     loader.load(
       "/models/cono.glb",
       (gltf) => {
@@ -153,26 +158,28 @@ export default function LaboratorioAR() {
       },
       undefined,
       () => {
-        // Fallback
+        // Fallback Procedural
         const g = new THREE.Group();
+        g.frustumCulled = false;
         const base = new THREE.Mesh(
           new THREE.BoxGeometry(0.35, 0.05, 0.35),
           new THREE.MeshStandardMaterial({ color: 0x111111 }),
         );
         base.position.y = 0.025;
         base.castShadow = true;
+        base.frustumCulled = false;
         const cono = new THREE.Mesh(
           new THREE.CylinderGeometry(0.04, 0.12, 0.65, 16),
           new THREE.MeshStandardMaterial({ color: 0xff5a00 }),
         );
         cono.position.y = 0.35;
         cono.castShadow = true;
+        cono.frustumCulled = false;
         g.add(base, cono);
         modeloConoRef.current = g;
       },
     );
 
-    // Cargar Paleta y forzar a 0.6m
     loader.load(
       "/models/paleta.glb",
       (gltf) => {
@@ -183,26 +190,29 @@ export default function LaboratorioAR() {
       },
       undefined,
       () => {
-        // Fallback
+        // Fallback Procedural
         const g = new THREE.Group();
+        g.frustumCulled = false;
         const circ = new THREE.Mesh(
           new THREE.CylinderGeometry(0.14, 0.14, 0.02, 16).rotateX(Math.PI / 2),
           new THREE.MeshStandardMaterial({ color: 0xff0000 }),
         );
         circ.position.y = 0.45;
         circ.castShadow = true;
+        circ.frustumCulled = false;
         const poste = new THREE.Mesh(
           new THREE.CylinderGeometry(0.02, 0.035, 0.35, 16),
           new THREE.MeshStandardMaterial({ color: 0x0055ff }),
         );
         poste.position.y = 0.17;
         poste.castShadow = true;
+        poste.frustumCulled = false;
         g.add(circ, poste);
         modeloPaletaRef.current = g;
       },
     );
 
-    // 5. MIRA Y SOMBRAS LIGERAS
+    // 5. MIRA Y SOMBRAS (Sin Culling)
     const reticleGeo = new THREE.RingGeometry(0.1, 0.14, 24).rotateX(
       -Math.PI / 2,
     );
@@ -215,6 +225,7 @@ export default function LaboratorioAR() {
     const reticle = new THREE.Mesh(reticleGeo, reticleMat);
     reticle.matrixAutoUpdate = false;
     reticle.visible = false;
+    reticle.frustumCulled = false;
     scene.add(reticle);
     reticleRef.current = reticle;
 
@@ -225,10 +236,11 @@ export default function LaboratorioAR() {
     shadowPlane.rotation.x = -Math.PI / 2;
     shadowPlane.receiveShadow = true;
     shadowPlane.visible = false;
+    shadowPlane.frustumCulled = false;
     scene.add(shadowPlane);
     shadowPlaneRef.current = shadowPlane;
 
-    // 6. BOTÓN AR NATIVO
+    // 6. BOTÓN AR
     let arButton;
     try {
       arButton = ARButton.createButton(renderer, {
@@ -255,7 +267,7 @@ export default function LaboratorioAR() {
     let hitTestSource = null;
     let hitTestSourceRequested = false;
 
-    // 7. RENDER LOOP OPTIMIZADO
+    // 7. RENDER LOOP OPTIMIZADO EXTREMO
     renderer.setAnimationLoop((timestamp, frame) => {
       if (frame) {
         const referenceSpace = renderer.xr.getReferenceSpace();
@@ -270,7 +282,8 @@ export default function LaboratorioAR() {
           hitTestSourceRequested = true;
         }
 
-        // Solo procesamos hit-test si estamos activamente BUSCANDO. Sino, ahorramos batería.
+        // FIX DE ESTABILIDAD: Si ya fijamos el objetivo, IGNORAMOS el hitTest por completo.
+        // Esto evita que el celular consuma CPU escaneando el piso y evita que las coordenadas salten.
         if (hitTestSource && referenceSpace && faseRef.current === "BUSCANDO") {
           const hitTestResults = frame.getHitTestResults(hitTestSource);
           if (hitTestResults.length > 0) {
@@ -288,7 +301,7 @@ export default function LaboratorioAR() {
         }
       }
 
-      // Animaciones ultra ligeras
+      // Animaciones de interpolación (sin sobrecarga)
       for (let i = animacionesRef.current.length - 1; i >= 0; i--) {
         const anim = animacionesRef.current[i];
         anim.obj.position.lerp(anim.targetPos, 0.15);
@@ -334,12 +347,12 @@ export default function LaboratorioAR() {
   }, []);
 
   // ==========================================
-  // LÓGICA DE INTERFAZ
+  // LÓGICA DE INTERFAZ ESTABILIZADA
   // ==========================================
   const fijarObjetivo = () => {
     if (!reticleRef.current || !reticleRef.current.visible) return;
-    reticleRef.current.material.color.setHex(0xff5a00); // Se vuelve Naranja
-    cambiarFase("FIJADO", "OBJETIVO MARCADO EN EL PISO");
+    reticleRef.current.material.color.setHex(0xff5a00);
+    cambiarFase("FIJADO", "OBJETIVO CONGELADO");
   };
 
   const colocarCono = () => {
@@ -359,7 +372,7 @@ export default function LaboratorioAR() {
     }
 
     reticleRef.current.visible = false;
-    cambiarFase("CONO", "CONO ANCLADO ESTABLE");
+    cambiarFase("CONO", "CONO ANCLADO FIRMEMENTE");
   };
 
   const alternarPaleta = () => {
@@ -368,7 +381,6 @@ export default function LaboratorioAR() {
     if (faseUI === "CONO") {
       const paleta = modeloPaletaRef.current.clone(true);
 
-      // Cae desde 0.5m arriba del cono (Corto y elegante)
       paleta.position.set(
         conoInstanciaRef.current.position.x,
         conoInstanciaRef.current.position.y + ALTURA_CONO + 0.5,
@@ -378,7 +390,6 @@ export default function LaboratorioAR() {
       sceneRef.current.add(paleta);
       paletaInstanciaRef.current = paleta;
 
-      // El hundimiento define dónde encastra (70cm - 15cm = Y 0.55m)
       const targetY =
         conoInstanciaRef.current.position.y + ALTURA_CONO - HUNDIMIENTO;
       cambiarFase("ANIMANDO", "ENSAMBLANDO...");
@@ -431,19 +442,6 @@ export default function LaboratorioAR() {
             {mensajeEstado}
           </div>
         </div>
-
-        {logs.length > 0 && (
-          <div className="mx-auto bg-black/80 border border-yellow-500/40 rounded-lg p-2 max-w-xs text-left mb-auto mt-4 pointer-events-auto">
-            {logs.map((l, i) => (
-              <p
-                key={i}
-                className={`text-[9px] font-mono leading-tight ${l.isError ? "text-red-400 font-bold" : "text-emerald-400"}`}
-              >
-                &gt; {l.msg}
-              </p>
-            ))}
-          </div>
-        )}
 
         {enModoAR && (
           <div className="flex flex-col items-center gap-3 pb-8 pointer-events-auto">
@@ -512,7 +510,7 @@ export default function LaboratorioAR() {
           REALIDAD AUMENTADA
         </h1>
         <p className="text-zinc-400 text-sm max-w-md mb-8">
-          Modelos optimizados y anclados a escala real (1.15m Total).
+          Experimentá los modelos estabilizados a escala 1:1.
         </p>
       </div>
 
