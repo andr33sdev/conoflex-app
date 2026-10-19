@@ -19,7 +19,7 @@ import FicheroModule from "./FicheroModule";
 import SimuladorLogistica from "./SimuladorLogistica";
 import LaboratorioEnsamblaje from "./LaboratorioEnsamblaje";
 import LaboratorioAR from "./LaboratorioAR";
-import VisorAR from "./VisorAR";
+import VisorAR from "./VisorAR"; // <-- Nuevo Visor Nativo importado
 
 function App() {
   const [usuarioActual, setUsuarioActual] = useState(() => {
@@ -148,7 +148,6 @@ function App() {
       {usuarioActual.rol?.toUpperCase() === "ADMIN" &&
         activeModule === "admin-usuarios" && <AdminUsuarios />}
 
-      {/* <-- MÓDULO AGREGADO: CONTROL DE ASISTENCIA --> */}
       {hasAccess("control-asistencia") &&
         activeModule === "control-asistencia" && <FicheroModule />}
 
@@ -181,8 +180,10 @@ function App() {
         <Reflectivas key={reloadKey} />
       )}
 
+      {/* AR Pura en Three.js (Manual) */}
       {hasAccess("lab-ar") && activeModule === "lab-ar" && <LaboratorioAR />}
 
+      {/* AR Nativa Google/Apple (Automática) */}
       {hasAccess("visor-ar") && activeModule === "visor-ar" && <VisorAR />}
 
       {hasAccess("metricas") && activeModule === "metricas" && (

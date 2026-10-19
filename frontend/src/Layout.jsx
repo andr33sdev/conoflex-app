@@ -62,14 +62,14 @@ export default function Layout({
     },
     {
       id: "lab-ar",
-      label: "Realidad Aumentada",
-      icon: Smartphone, // o ScanFace, el que prefieras visualmente
+      label: "AR (Manual WebXR)",
+      icon: ScanFace,
     },
-
     {
       id: "visor-ar",
-      label: "Visor AR",
-      icon: Smartphone, // o ScanFace, el que prefieras visualmente
+      label: "Visor AR (Nativo)",
+      icon: Smartphone,
+      highlight: true, // Para resaltarlo en el menú si querés
     },
     { id: "planificacion", label: "Planificación OT", icon: CalendarDays },
     { id: "carga-produccion", label: "Carga Producción", icon: ClipboardCheck },
@@ -82,7 +82,6 @@ export default function Layout({
       icon: ClipboardList,
     },
     { id: "planta-online", label: "Planta On-Line", icon: Activity },
-    // <-- NUEVO MÓDULO AGREGADO -->
     {
       id: "control-asistencia",
       label: "Control Asistencia",
@@ -229,10 +228,9 @@ export default function Layout({
       </div>
 
       <div className="w-full max-w-[1600px] h-full md:max-h-[98vh] flex flex-col rounded-none md:rounded-2xl border-0 md:border md:border-zinc-800/90 bg-[#030303] shadow-[0_0_60px_rgba(0,0,0,0.95)] overflow-hidden relative z-10 print:border-none print:shadow-none print:bg-white print:h-auto print:max-h-none">
-        {/* BARRA SUPERIOR (Fondo blanco en impresión) */}
+        {/* BARRA SUPERIOR */}
         <div className="flex items-center justify-between p-3 sm:p-4 border-b border-zinc-800/50 print:border-gray-300 bg-[#050505] print:bg-white shrink-0 z-30">
           <div className="flex items-center gap-3 sm:gap-4 min-w-0">
-            {/* BOTÓN HAMBURGUESA (Se oculta al imprimir) */}
             <button
               onClick={() => setIsSidebarOpen(true)}
               className="print:hidden p-2 sm:p-2.5 text-zinc-400 hover:text-[#FFD700] hover:border-[#FFD700] bg-black border border-zinc-800 rounded-lg shrink-0 transition-colors cursor-pointer print:hidden"
@@ -240,7 +238,6 @@ export default function Layout({
               <Menu size={22} />
             </button>
 
-            {/* LOGO */}
             <div className="print:hidden w-10 h-10 sm:w-10 sm:h-10 rounded-full shrink-0 overflow-hidden">
               <img
                 src={logo}
@@ -249,7 +246,6 @@ export default function Layout({
               />
             </div>
 
-            {/* TEXTOS (Se cambian a negro al imprimir) */}
             <div className="print:hidden flex flex-col min-w-0 justify-center">
               <span className="text-white print:text-black font-extrabold italic text-base sm:text-xl uppercase tracking-tighter truncate leading-none">
                 CONOFLEX APP
@@ -260,7 +256,6 @@ export default function Layout({
             </div>
           </div>
 
-          {/* BOTÓN DE SINCRONIZAR (Se oculta al imprimir) */}
           {activeModule === "semielaborados" && (
             <button
               onClick={onReloadSheets}
