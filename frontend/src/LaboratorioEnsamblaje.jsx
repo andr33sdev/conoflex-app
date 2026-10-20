@@ -674,7 +674,7 @@ export default function LaboratorioEnsamblaje() {
                     )}
                   </div>
                   <div>
-                    <span className="text-[10px] text-slate-500 font-mono block mb-0.5">
+                    <span className="text-[10px] text-slate-500   block mb-0.5">
                       {item.codigo}
                     </span>
                     <span
@@ -737,28 +737,28 @@ export default function LaboratorioEnsamblaje() {
             {tieneCono ? (
               <div className="flex justify-between items-center text-slate-800">
                 <span>Cono 70cm c/ base</span>
-                <span className="font-mono font-bold">
+                <span className="  font-bold">
                   ${PRECIO_CONO.toLocaleString("es-AR")}
                 </span>
               </div>
             ) : (
               <div className="flex justify-between items-center text-slate-400 line-through">
                 <span>Sin base</span>
-                <span className="font-mono">$0</span>
+                <span className=" ">$0</span>
               </div>
             )}
 
             {tienePaleta ? (
               <div className="flex justify-between items-center text-slate-800">
                 <span>Paleta Cartel</span>
-                <span className="font-mono font-bold">
+                <span className="  font-bold">
                   +${PRECIO_PALETA.toLocaleString("es-AR")}
                 </span>
               </div>
             ) : (
               <div className="flex justify-between items-center text-slate-400 line-through">
                 <span>Sin accesorio</span>
-                <span className="font-mono">$0</span>
+                <span className=" ">$0</span>
               </div>
             )}
 
@@ -767,14 +767,14 @@ export default function LaboratorioEnsamblaje() {
                 <span className="flex items-center gap-1.5">
                   <Sparkles size={12} /> Impresión Vinilo
                 </span>
-                <span className="font-mono font-bold">
+                <span className="  font-bold">
                   +${PRECIO_GRAFICA.toLocaleString("es-AR")}
                 </span>
               </div>
             ) : (
               <div className="flex justify-between items-center text-slate-400 line-through">
                 <span>Sin personalizar</span>
-                <span className="font-mono">$0</span>
+                <span className=" ">$0</span>
               </div>
             )}
           </div>
