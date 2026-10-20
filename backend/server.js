@@ -1503,7 +1503,122 @@ app.get("/auth/google/callback", async (req, res) => {
   }
 });
 
-// HELPER CON FILTRO INTELIGENTE ANTI-FIRMAS E ICONOS SOCIALES
+// 1. INSPECTOR GEOMÉTRICO DE IMÁGENES (Sin dependencias externas)
+function obtenerDimensionesBuffer(buf) {
+  if (!buf || buf.length < 24) return null;
+
+  // PNG
+  if (
+    buf[0] === 0x89 &&
+    buf[1] === 0x50 &&
+    buf[2] === 0x4e &&
+    buf[3] === 0x47
+  ) {
+    return {
+      width: buf.readUInt32BE(16),
+      height: buf.readUInt32BE(20),
+    };
+  }
+
+  // GIF
+  if (buf[0] === 0x47 && buf[1] === 0x49 && buf[2] === 0x46) {
+    return {
+      width: buf.readUInt16LE(6),
+      height: buf.readUInt16LE(8),
+    };
+  }
+
+  // JPEG
+  if (buf[0] === 0xff && buf[1] === 0xd8) {
+    let i = 2;
+    while (i < buf.length - 8) {
+      if (buf[i] !== 0xff) {
+        i++;
+        continue;
+      }
+      const marker = buf[i + 1];
+      if (marker >= 0xc0 && marker <= 0xc3) {
+        return {
+          height: buf.readUInt16BE(i + 5),
+          width: buf.readUInt16BE(i + 7),
+        };
+      }
+      const length = buf.readUInt16BE(i + 2);
+      i += 2 + length;
+    }
+  }
+
+  // WEBP
+  if (
+    buf.slice(0, 4).toString() === "RIFF" &&
+    buf.slice(8, 12).toString() === "WEBP"
+  ) {
+    if (buf.slice(12, 16).toString() === "VP8 ") {
+      return {
+        width: buf.readUInt16LE(26) & 0x3fff,
+        height: buf.readUInt16LE(28) & 0x3fff,
+      };
+    }
+    if (buf.slice(12, 16).toString() === "VP8X") {
+      return {
+        width: 1 + (buf[24] | (buf[25] << 8) | (buf[26] << 16)),
+        height: 1 + (buf[27] | (buf[28] << 8) | (buf[29] << 16)),
+      };
+    }
+  }
+
+  return null;
+}
+
+// 2. DISCRIMINADOR INTELIGENTE (FILTRA FIRMAS Y REDES SOCIALES)
+function esImagenValidaProducto(buffer, filename = "", cid = "") {
+  // A) Descartar píxeles invisibles o iconos menores a 1.5 KB
+  if (!buffer || buffer.length < 1500) return false;
+
+  // B) Descartar si el nombre explicita redes o firmas
+  const meta = `${filename} ${cid}`.toLowerCase();
+  const palabrasBasura = [
+    "linkedin",
+    "instagram",
+    "youtube",
+    "facebook",
+    "twitter",
+    "whatsapp",
+    "signature",
+    "firma",
+    "avatar",
+    "icon",
+    "social",
+  ];
+  if (palabrasBasura.some((p) => meta.includes(p))) return false;
+
+  // C) Filtro por proporciones reales
+  const dims = obtenerDimensionesBuffer(buffer);
+  if (dims && dims.width > 0 && dims.height > 0) {
+    const { width, height } = dims;
+
+    // Descartar iconos sociales pequeños (32x32, 48x48, 64x64)
+    if (width <= 64 || height <= 64) {
+      return false;
+    }
+
+    // Descartar banners de firmas (relación de aspecto ancho/alto >= 2.6)
+    // Las firmas de Conoflex miden aprox 650x140 (ratio 4.6)
+    const ratio = width / height;
+    if (ratio >= 2.6) {
+      return false;
+    }
+
+    // Descartar líneas o separadores verticales
+    if (ratio <= 0.28) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+// 3. EXTRACCIÓN DEL CORREO
 async function extraerContenidoMail(gmail, messageId, payload) {
   let cuerpoTexto = "";
   let cuerpoHtml = "";
@@ -1515,55 +1630,19 @@ async function extraerContenidoMail(gmail, messageId, payload) {
     return Buffer.from(base64Standard, "base64").toString("utf-8");
   };
 
-  // Expresión regular para detectar firmas, banners e iconos de redes
-  const esFirmaOIcono = (nombre = "", cid = "") => {
-    const texto = `${nombre} ${cid}`.toLowerCase();
-    const patronesBasura = [
-      "linkedin",
-      "instagram",
-      "youtube",
-      "facebook",
-      "twitter",
-      "whatsapp",
-      "firma",
-      "signature",
-      "banner",
-      "logo",
-      "conoflex", // Evita incluir las firmas automáticas internas de tu propio equipo
-      "icon",
-      "avatar",
-      "footer",
-      "pie",
-    ];
-    return patronesBasura.some((patron) => texto.includes(patron));
-  };
-
   async function recorrerPartes(parts) {
     if (!parts || !Array.isArray(parts)) return;
 
     for (const part of parts) {
-      // 1. Extraer texto plano
       if (part.mimeType === "text/plain" && part.body && part.body.data) {
         cuerpoTexto += decodeBase64(part.body.data) + "\n";
       }
 
-      // 2. Extraer HTML de respaldo
       if (part.mimeType === "text/html" && part.body && part.body.data) {
         cuerpoHtml += decodeBase64(part.body.data) + "\n";
       }
 
-      // 3. Extraer imágenes filtrando firmas e iconos
       if (part.mimeType && part.mimeType.startsWith("image/")) {
-        const filename = part.filename || "";
-        const cid =
-          part.headers?.find((h) => h.name.toLowerCase() === "content-id")
-            ?.value || "";
-
-        // Si el nombre indica que es una firma o red social, se ignora
-        if (esFirmaOIcono(filename, cid)) {
-          continue;
-        }
-
         let base64Data = part.body?.data;
 
         if (!base64Data && part.body?.attachmentId) {
@@ -1580,21 +1659,25 @@ async function extraerContenidoMail(gmail, messageId, payload) {
         }
 
         if (base64Data) {
-          // FILTRO POR PESO:
-          // Un string Base64 menor a 20.000 caracteres representa menos de ~15 KB (iconos, viñetas, botones).
-          // Las fotos reales de productos o cámaras de celular pesan siempre más de 25-30 KB.
-          if (base64Data.length < 20000) {
-            continue;
+          const rawBuffer = Buffer.from(
+            base64Data.replace(/-/g, "+").replace(/_/g, "/"),
+            "base64",
+          );
+
+          // Pasamos el buffer por el filtro de dimensiones y firmas
+          if (
+            esImagenValidaProducto(
+              rawBuffer,
+              part.filename,
+              part.headers?.find((h) => h.name.toLowerCase() === "content-id")
+                ?.value,
+            )
+          ) {
+            imagenes.push({
+              mimeType: part.mimeType,
+              data: rawBuffer.toString("base64"),
+            });
           }
-
-          const base64Standard = base64Data
-            .replace(/-/g, "+")
-            .replace(/_/g, "/");
-
-          imagenes.push({
-            mimeType: part.mimeType,
-            data: base64Standard,
-          });
         }
       }
 
