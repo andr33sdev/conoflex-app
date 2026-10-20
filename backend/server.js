@@ -1503,13 +1503,102 @@ app.get("/auth/google/callback", async (req, res) => {
   }
 });
 
+// HELPER RECURSIVO PARA EXTRAER EL CUERPO COMPLETO E IMÁGENES DE UN CORREO
+async function extraerContenidoMail(gmail, messageId, payload) {
+  let cuerpoTexto = "";
+  let cuerpoHtml = "";
+  const imagenes = [];
+
+  // Función interna para decodificar texto en Base64 URL-Safe de Gmail
+  const decodeBase64 = (str) => {
+    if (!str) return "";
+    const base64Standard = str.replace(/-/g, "+").replace(/_/g, "/");
+    return Buffer.from(base64Standard, "base64").toString("utf-8");
+  };
+
+  async function recorrerPartes(parts) {
+    if (!parts || !Array.isArray(parts)) return;
+
+    for (const part of parts) {
+      // 1. Extraer texto plano
+      if (part.mimeType === "text/plain" && part.body && part.body.data) {
+        cuerpoTexto += decodeBase64(part.body.data) + "\n";
+      }
+
+      // 2. Extraer HTML (como respaldo si no hay text/plain)
+      if (part.mimeType === "text/html" && part.body && part.body.data) {
+        cuerpoHtml += decodeBase64(part.body.data) + "\n";
+      }
+
+      // 3. Extraer imágenes adjuntas o incrustadas (PNG, JPG, WEBP, etc.)
+      if (part.mimeType && part.mimeType.startsWith("image/")) {
+        let base64Data = part.body?.data;
+
+        // Si la imagen es un adjunto pesado, se descarga con su attachmentId
+        if (!base64Data && part.body?.attachmentId) {
+          try {
+            const attachRes = await gmail.users.messages.attachments.get({
+              userId: "me",
+              messageId: messageId,
+              id: part.body.attachmentId,
+            });
+            base64Data = attachRes.data.data;
+          } catch (errAttach) {
+            console.error("Error descargando adjunto:", errAttach.message);
+          }
+        }
+
+        if (base64Data) {
+          const base64Standard = base64Data
+            .replace(/-/g, "+")
+            .replace(/_/g, "/");
+          imagenes.push({
+            mimeType: part.mimeType,
+            data: base64Standard,
+          });
+        }
+      }
+
+      // Si tiene partes anidadas (emails multipart/mixed, multipart/related, etc.)
+      if (part.parts) {
+        await recorrerPartes(part.parts);
+      }
+    }
+  }
+
+  // Si el mensaje no tiene partes (mensaje plano directo)
+  if (payload.body && payload.body.data && payload.mimeType === "text/plain") {
+    cuerpoTexto = decodeBase64(payload.body.data);
+  } else if (payload.parts) {
+    await recorrerPartes(payload.parts);
+  }
+
+  // Si no hubo text/plain, limpiamos las etiquetas básicas del HTML
+  let cuerpoFinal = cuerpoTexto.trim();
+  if (!cuerpoFinal && cuerpoHtml) {
+    cuerpoFinal = cuerpoHtml
+      .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "")
+      .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "")
+      .replace(/<br\s*[\/]?>/gi, "\n")
+      .replace(/<\/p>/gi, "\n\n")
+      .replace(/<[^>]+>/g, " ")
+      .replace(/&nbsp;/g, " ")
+      .replace(/&lt;/g, "<")
+      .replace(/&gt;/g, ">")
+      .replace(/&amp;/g, "&")
+      .trim();
+  }
+
+  return { cuerpoCompleto: cuerpoFinal, imagenes };
+}
+
+// ENDPOINT: LISTADO DE MAILS (CON CONTENIDO 100% COMPLETO E IMÁGENES)
 app.get(
   "/api/mails",
   autenticarToken,
   autorizarRoles("ADMIN", "COMERCIAL"),
   async (req, res) => {
     try {
-      // Cargar tokens guardados si aún no están vinculados en memoria
       const pathToken = fs.existsSync(path.join(__dirname, "token.json"))
         ? path.join(__dirname, "token.json")
         : path.join(__dirname, "tokens_web.json");
@@ -1533,6 +1622,7 @@ app.get(
         q: "label:IA-Consulta",
         maxResults: 10,
       });
+
       const messages = listRes.data.messages || [];
       const mailsDetalle = [];
 
@@ -1542,12 +1632,22 @@ app.get(
           id: msg.id,
           format: "full",
         });
-        const headers = detail.data.payload.headers;
+
+        const headers = detail.data.payload.headers || [];
         const subject =
-          headers.find((h) => h.name === "Subject")?.value || "Sin asunto";
+          headers.find((h) => h.name.toLowerCase() === "subject")?.value ||
+          "Sin asunto";
         const from =
-          headers.find((h) => h.name === "From")?.value || "Desconocido";
+          headers.find((h) => h.name.toLowerCase() === "from")?.value ||
+          "Desconocido";
         const emailMatch = from.match(/<([^>]+)>/) || [null, from];
+
+        // Extracción completa: cuerpo entero sin límites de caracteres + imágenes adjuntas
+        const { cuerpoCompleto, imagenes } = await extraerContenidoMail(
+          gmail,
+          msg.id,
+          detail.data.payload,
+        );
 
         mailsDetalle.push({
           id: msg.id,
@@ -1555,126 +1655,83 @@ app.get(
           asunto: subject,
           remitente: from,
           emailCliente: emailMatch[1],
-          resumen: detail.data.snippet || "",
+          resumen: cuerpoCompleto || detail.data.snippet || "",
+          cuerpoCompleto: cuerpoCompleto || detail.data.snippet || "",
+          imagenes: imagenes,
         });
       }
+
       res.json({ mails: mailsDetalle });
     } catch (error) {
+      console.error("Error leyendo Gmail:", error);
       res.status(500).json({ error: "Error leyendo Gmail: " + error.message });
     }
   },
 );
 
-// HELPER PARA EXTRAER IMÁGENES ADJUNTAS DE UN MAIL DE GMAIL
-async function obtenerImagenesAdjuntasGmail(gmail, messageId, parts) {
-  const imagenesBase64 = [];
-
-  async function recorrerPartes(listaPartes) {
-    if (!listaPartes) return;
-    for (const part of listaPartes) {
-      // Si la parte es una imagen (PNG, JPEG, WEBP)
-      if (part.mimeType && part.mimeType.startsWith("image/")) {
-        let attachId = part.body?.attachmentId;
-        let inlineData = part.body?.data;
-
-        if (attachId) {
-          // Descargar el archivo adjunto desde la API de Gmail
-          const attachRes = await gmail.users.messages.attachments.get({
-            userId: "me",
-            messageId: messageId,
-            id: attachId,
-          });
-          inlineData = attachRes.data.data;
-        }
-
-        if (inlineData) {
-          // Convertir de URL-Safe Base64 (formato Gmail) a Standard Base64
-          const base64Standard = inlineData
-            .replace(/-/g, "+")
-            .replace(/_/g, "/");
-          imagenesBase64.push({
-            mimeType: part.mimeType,
-            data: base64Standard,
-          });
-        }
-      }
-
-      // Si tiene partes anidadas (emails multipart)
-      if (part.parts) {
-        await recorrerPartes(part.parts);
-      }
-    }
-  }
-
-  await recorrerPartes(parts);
-  return imagenesBase64;
-}
-
+// ENDPOINT: GENERACIÓN MULTIMODAL DE BORRADOR CON GEMINI Y GMAIL
 app.post(
   "/api/crear-borrador-gmail",
   autenticarToken,
   autorizarRoles("ADMIN", "COMERCIAL"),
   async (req, res) => {
     try {
-      const { mailCliente, consultaText, asunto, threadId } = req.body;
-
-      // 1. LECTURA DE IMÁGENES ADJUNTAS DESDE GMAIL (MULTIMODAL)
-      const imagenesAdjuntas = [];
+      const { mailCliente, consultaText, asunto, threadId, imagenes } =
+        req.body;
       const gmail = google.gmail({ version: "v1", auth: oauth2Client });
 
-      if (threadId) {
-        try {
-          const threadRes = await gmail.users.threads.get({ id: threadId });
-          const messages = threadRes.data.messages || [];
-          const lastMessage = messages[messages.length - 1];
+      // 1. Preparar las imágenes para la API multimodal de Gemini
+      const imagenesParaGemini = [];
 
-          const recorrerPartes = async (parts) => {
-            if (!parts) return;
-            for (const part of parts) {
-              if (part.mimeType && part.mimeType.startsWith("image/")) {
-                let attachId = part.body?.attachmentId;
-                let inlineData = part.body?.data;
-
-                if (attachId) {
-                  const attachRes = await gmail.users.messages.attachments.get({
-                    userId: "me",
-                    messageId: lastMessage.id,
-                    id: attachId,
-                  });
-                  inlineData = attachRes.data.data;
-                }
-
-                if (inlineData) {
-                  const base64Standard = inlineData
-                    .replace(/-/g, "+")
-                    .replace(/_/g, "/");
-                  imagenesAdjuntas.push({
-                    inlineData: {
-                      mimeType: part.mimeType,
-                      data: base64Standard,
-                    },
-                  });
-                }
-              }
-              if (part.parts) {
-                await recorrerPartes(part.parts);
-              }
-            }
-          };
-
-          if (lastMessage?.payload) {
-            if (lastMessage.payload.parts) {
-              await recorrerPartes(lastMessage.payload.parts);
-            } else if (lastMessage.payload.mimeType?.startsWith("image/")) {
-              await recorrerPartes([lastMessage.payload]);
-            }
+      // A) Si vienen desde el frontend
+      if (Array.isArray(imagenes) && imagenes.length > 0) {
+        for (const img of imagenes) {
+          if (img.data && img.mimeType) {
+            imagenesParaGemini.push({
+              inlineData: {
+                mimeType: img.mimeType,
+                data: img.data,
+              },
+            });
           }
-        } catch (errImg) {
-          console.error("Error leyendo imágenes adjuntas:", errImg.message);
         }
       }
 
-      // 2. CONSULTAS A BASE DE DATOS (REGLAS CONFIGURADAS EN LA PESTAÑA Y CATÁLOGO)
+      // B) Respaldo: Si no vinieron en el body pero hay threadId, extraerlas directamente del último mensaje
+      if (imagenesParaGemini.length === 0 && threadId) {
+        try {
+          const threadRes = await gmail.users.threads.get({
+            userId: "me",
+            id: threadId,
+            format: "full",
+          });
+          const msgs = threadRes.data.messages || [];
+          const lastMsg = msgs[msgs.length - 1];
+
+          if (lastMsg && lastMsg.payload) {
+            const { imagenes: imgsThread } = await extraerContenidoMail(
+              gmail,
+              lastMsg.id,
+              lastMsg.payload,
+            );
+            for (const img of imgsThread) {
+              imagenesParaGemini.push({
+                inlineData: {
+                  mimeType: img.mimeType,
+                  data: img.data,
+                },
+              });
+            }
+          }
+        } catch (errThread) {
+          console.warn(
+            "Aviso al obtener adjuntos del hilo:",
+            errThread.message,
+          );
+        }
+      }
+
+      // 2. Consultar reglas comerciales y catálogo en la base de datos
       const [reglaRows] = await db.query(
         "SELECT valor FROM reglas WHERE clave = 'prompt_comercial'",
       );
@@ -1684,37 +1741,46 @@ app.post(
         "SELECT codigo, nombre, medidas, precio_lista, especificacion, aplicacion, foto_tecnica, foto_catalogo FROM productos",
       );
 
-      // 3. PROMPT DE MAQUETACIÓN (RINDE CONTROL A LAS REGLAS DE LA PESTAÑA)
+      // 3. Prompt con directiva estricta para visión y mapeo de competencia/similares
       const prompt = `
-      REGLAS Y POLITICAS COMERCIALES DEL USUARIO (PRIORIDAD MÁXIMA):
-      ${reglasEntrenamiento}
+REGLAS Y POLÍTICAS COMERCIALES DEL USUARIO (PRIORIDAD MÁXIMA):
+${reglasEntrenamiento}
 
-      CATÁLOGO DE PRODUCTOS DISPONIBLES:
-      ${JSON.stringify(productosDB, null, 2)}
+CATÁLOGO OFICIAL DE PRODUCTOS CONOFLEX DISPONIBLES:
+${JSON.stringify(productosDB, null, 2)}
 
-      CONSULTA RECIBIDA DEL CLIENTE (${mailCliente}):
-      "${consultaText}"
+CONSULTA COMPLETA DEL CLIENTE (${mailCliente}):
+"""
+${consultaText}
+"""
 
-      ESTILO DE REDACCIÓN Y TONO COMERCIAL:
-      - Saludo inicial natural y fluido: Usá un encabezado profesional (ej: "Estimados, gracias por comunicarse con Conoflex Argentina. A continuación presentamos la propuesta comercial solicitada:").
-      - NUNCA incluyas corchetes ni variables de reemplazo como "[Tu Nombre]", "Atn. sr/a.", ni textos robóticos. Escribí directamente en representación del equipo de ventas de Conoflex.
-      - Redacción ordenada, directa y atenta.
+DIRECTIVAS CLAVE DE ANÁLISIS MULTIMODAL E INTERPRETACIÓN VISUAL:
+1. Revisa la TOTALIDAD del texto del cliente sin omitir detalles, medidas o cantidades.
+2. Si se han adjuntado imágenes (fotos enviadas por el cliente), ANALÍZALAS DETENIDAMENTE:
+   - Identifica el producto vial/industrial mostrado (conos, reductores, vallas, delineadores, etc.).
+   - Aunque la foto sea de un producto de la competencia, un modelo roto, un boceto o una versión descatalogada, localiza en el catálogo de CONOFLEX el producto equivalente o alternativo más adecuado.
+   - Explica brevemente al cliente en el cuerpo del correo la correspondencia (ej.: "En base a la fotografía que nos adjunta, nuestro modelo equivalente en Conoflex es...").
 
-      INSTRUCCIONES DE MAQUETACIÓN EN TARJETAS HTML:
-      1. Para cada producto cotizado, genera una TARJETA HORIZONTAL en HTML (tabla con borde #e2e8f0, esquinas redondeadas y padding de 10px).
-      2. REGLA DE IMÁGENES:
-         - Si el producto tiene valor en 'foto_tecnica', escribí exactamente: {FOTO_TECNICA_URL=poner_aqui_la_url_de_la_BD}
-         - Si tiene 'foto_catalogo', escribí exactamente: {FOTO_CATALOGO_URL=poner_aqui_la_url_de_la_BD}
-         - NUNCA uses la etiqueta <img> ni omitas las llaves si la URL existe. Si el valor es null, no pongas la variable.
-      3. Muestra Nombre en negrita, Código, Medidas y Especificaciones/Aplicación.
-      4. Muestra las 3 cajas de precio de forma ordenada (Lista, Precio c/Descuento y Total).
-      5. Agrega el cuadro final resumido con notas sobre IVA, descuentos y despacho.
+ESTILO DE REDACCIÓN Y TONO COMERCIAL:
+- Saludo inicial natural y fluido (ej.: "Estimados, gracias por comunicarse con Conoflex Argentina. A continuación presentamos la propuesta comercial solicitada:").
+- NUNCA incluyas corchetes ni comodines como "[Tu Nombre]", "[Firma]" o "Atn. sr/a.". Redacta directamente en representación del equipo de ventas de Conoflex.
+- Tono técnico, seguro y comercialmente persuasivo.
 
-      Devuelve ÚNICAMENTE el código HTML crudo sin bloques Markdown ni comentarios.
-    `;
+INSTRUCCIONES DE MAQUETACIÓN EN TARJETAS HTML:
+1. Para cada producto cotizado, genera una TARJETA HORIZONTAL en HTML (tabla con borde #e2e8f0, esquinas redondeadas y padding de 10px).
+2. REGLA DE IMÁGENES:
+   - Si el producto tiene valor en 'foto_tecnica', escribe exactamente: {FOTO_TECNICA_URL=poner_aqui_la_url_de_la_BD}
+   - Si tiene 'foto_catalogo', escribe exactamente: {FOTO_CATALOGO_URL=poner_aqui_la_url_de_la_BD}
+   - Si no tiene URL o es null, no incluyas la variable.
+3. Muestra Nombre en negrita, Código, Medidas y Especificaciones/Aplicación.
+4. Muestra las cajas de precio de forma ordenada (Lista, Precio c/Descuento y Total).
+5. Incluye el cuadro final de condiciones con notas sobre IVA, descuentos y entrega.
 
-      // 4. GENERACIÓN CON GEMINI FLASH MULTIMODAL
-      const contentsGemini = [...imagenesAdjuntas, prompt];
+Devuelve ÚNICAMENTE el código HTML crudo sin bloques Markdown (\`\`\`html) ni comentarios.
+`;
+
+      // 4. Invocación a Gemini 2.5 Flash con soporte multimodal
+      const contentsGemini = [...imagenesParaGemini, prompt];
 
       const response = await ai.models.generateContent({
         model: "gemini-2.5-flash",
@@ -1722,11 +1788,11 @@ app.post(
       });
 
       let htmlBody = response.text
-        .replace(/```html/g, "")
+        .replace(/```html/gi, "")
         .replace(/```/g, "")
         .trim();
 
-      // 5. PROCESAMIENTO POST-IA: REEMPLAZO DE REGLAS POR ETIQUETAS DE IMAGEN REALES
+      // 5. Reemplazo de variables de imagen por etiquetas <img> reales
       htmlBody = htmlBody.replace(
         /\{FOTO_TECNICA_URL=(https?:\/\/[^\}]+)\}/g,
         '<img src="$1" width="100%" style="max-height:220px; height: auto; object-fit:contain; border-radius:4px; margin: 0 5px;" alt="Técnica" />',
@@ -1736,11 +1802,11 @@ app.post(
         '<img src="$1" width="100%" style="max-height:220px; height: auto; object-fit:contain; border-radius:4px; margin: 0 5px;" alt="Catálogo" />',
       );
 
-      // Limpieza de seguridad
+      // Limpieza de cualquier variable residual
       htmlBody = htmlBody.replace(/\{FOTO_TECNICA_URL=[^\}]*\}/g, "");
       htmlBody = htmlBody.replace(/\{FOTO_CATALOGO_URL=[^\}]*\}/g, "");
 
-      // 6. CREACIÓN DEL BORRADOR EN GMAIL
+      // 6. Creación del borrador en Gmail
       const draftPayload = crearRawEmail(
         mailCliente,
         asunto || "Presupuesto Conoflex Argentina",
