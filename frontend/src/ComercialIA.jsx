@@ -31,9 +31,19 @@ import {
   Paperclip,
 } from "lucide-react";
 
-// HELPER SANITIZADOR PARA EVITAR MIXED CONTENT (HTTPS VS HTTP)
+// HELPER SANITIZADOR CORREGIDO (RESUELVE EL ERROR 414 URI TOO LONG)
 const getImageUrl = (url) => {
   if (!url) return "";
+
+  // Si ya es un Base64 embebido (data:), Blob o URL absoluta externa, devolver tal cual
+  if (
+    url.startsWith("data:") ||
+    url.startsWith("blob:") ||
+    url.startsWith("http://") ||
+    url.startsWith("https://")
+  ) {
+    return url;
+  }
 
   let path = url;
   if (path.includes("/imagenes/")) {
@@ -293,12 +303,12 @@ export default function ComercialIA() {
 
   const renderPrecioLimpio = (precioStr) => {
     if (!precioStr || precioStr === "-")
-      return <span className="text-zinc-600 font-mono text-xs">-</span>;
+      return <span className="text-zinc-600   text-xs">-</span>;
 
     const partes = precioStr.split("|").map((p) => p.trim());
     if (partes.length === 1) {
       return (
-        <span className="font-mono font-bold text-[#FFD700] text-xs whitespace-nowrap">
+        <span className="  font-bold text-[#FFD700] text-xs whitespace-nowrap">
           {partes[0]}
         </span>
       );
@@ -312,7 +322,7 @@ export default function ComercialIA() {
             return (
               <div
                 key={idx}
-                className="flex items-center gap-1.5 text-[10px] font-mono whitespace-nowrap bg-zinc-900/90 px-2 py-0.5 rounded border border-zinc-800"
+                className="flex items-center gap-1.5 text-[10px]   whitespace-nowrap bg-zinc-900/90 px-2 py-0.5 rounded border border-zinc-800"
               >
                 <span className="text-zinc-400 font-medium">
                   {subPartes[0].trim()}:
@@ -326,7 +336,7 @@ export default function ComercialIA() {
           return (
             <span
               key={idx}
-              className="text-[#FFD700] font-mono font-bold text-[11px] whitespace-nowrap bg-zinc-900/90 px-2 py-0.5 rounded border border-zinc-800"
+              className="text-[#FFD700]   font-bold text-[11px] whitespace-nowrap bg-zinc-900/90 px-2 py-0.5 rounded border border-zinc-800"
             >
               {p}
             </span>
@@ -416,7 +426,7 @@ export default function ComercialIA() {
               </div>
               <div className="flex-1">
                 <div className="flex items-center gap-2">
-                  <h5 className="text-xs font-bold text-[#FF5A00] uppercase font-mono tracking-wider">
+                  <h5 className="text-xs font-bold text-[#FF5A00] uppercase   tracking-wider">
                     PROCESANDO ARCHIVOS
                   </h5>
                   <span className="w-2 h-2 rounded-full bg-[#FF5A00] animate-ping" />
@@ -457,7 +467,7 @@ export default function ComercialIA() {
 
               <div className="flex-1 pr-2">
                 <h5
-                  className={`text-[11px] font-bold font-mono uppercase tracking-wider ${
+                  className={`text-[11px] font-bold   uppercase tracking-wider ${
                     toast.type === "success"
                       ? "text-[#FF5A00]"
                       : "text-rose-400"
@@ -489,7 +499,7 @@ export default function ComercialIA() {
           <h1 className="text-2xl sm:text-3xl font-black italic tracking-tighter text-white uppercase leading-none">
             COMERCIAL <span className="text-[#FF5A00]">IA</span>
           </h1>
-          <p className="text-[10px] sm:text-xs font-mono font-bold tracking-widest text-zinc-400 uppercase mt-1 flex items-center gap-2">
+          <p className="text-[10px] sm:text-xs   font-bold tracking-widest text-zinc-400 uppercase mt-1 flex items-center gap-2">
             <span>ROL DE VISUALIZACIÓN: ADMIN</span>
             <span className="text-zinc-700">•</span>
             <span className="text-[#FF5A00] flex items-center gap-1.5">
@@ -546,7 +556,7 @@ export default function ComercialIA() {
             {/* Lista lateral de Mails */}
             <div className="w-full md:w-80 lg:w-96 flex flex-col min-h-0 bg-[#050505]">
               <div className="p-3.5 border-b border-zinc-900 flex justify-between items-center bg-[#080808]">
-                <span className="text-[11px] font-mono font-bold uppercase tracking-wider text-zinc-400 flex items-center gap-2">
+                <span className="text-[11px]   font-bold uppercase tracking-wider text-zinc-400 flex items-center gap-2">
                   <Mail size={13} className="text-[#FF5A00]" />
                   ENTRADAS IA-CONSULTA
                 </span>
@@ -577,13 +587,13 @@ export default function ComercialIA() {
                           : "hover:bg-zinc-900/40"
                       }`}
                     >
-                      <div className="w-8 h-8 rounded bg-zinc-900 border border-zinc-800 flex items-center justify-center text-xs font-mono font-bold text-[#FF5A00] shrink-0 mt-0.5">
+                      <div className="w-8 h-8 rounded bg-zinc-900 border border-zinc-800 flex items-center justify-center text-xs   font-bold text-[#FF5A00] shrink-0 mt-0.5">
                         {getInicial(m.emailCliente)}
                       </div>
 
                       <div className="flex-1 min-w-0 space-y-1">
                         <div className="flex justify-between items-baseline gap-2">
-                          <h4 className="text-xs font-bold text-zinc-200 truncate font-mono">
+                          <h4 className="text-xs font-bold text-zinc-200 truncate  ">
                             {m.emailCliente}
                           </h4>
                         </div>
@@ -595,7 +605,7 @@ export default function ComercialIA() {
                         </p>
 
                         {tieneImagenes && (
-                          <div className="flex items-center gap-1.5 mt-1 text-[10px] font-mono text-amber-400">
+                          <div className="flex items-center gap-1.5 mt-1 text-[10px]   text-amber-400">
                             <Paperclip size={11} />
                             <span>
                               {m.imagenes.length} imagen(es) adjunta(s)
@@ -623,7 +633,7 @@ export default function ComercialIA() {
                     <p className="text-xs font-bold uppercase tracking-wider text-zinc-300">
                       Bandeja despejada
                     </p>
-                    <p className="text-[11px] text-zinc-500 font-mono">
+                    <p className="text-[11px] text-zinc-500  ">
                       Asigná la etiqueta 'IA-Consulta' en Gmail para procesarlos
                       aquí.
                     </p>
@@ -639,7 +649,7 @@ export default function ComercialIA() {
                   <div className="bg-[#080808] border border-zinc-800/80 rounded-xl p-5 space-y-4 shadow-xl">
                     <div className="flex flex-wrap justify-between items-start gap-2 border-b border-zinc-800/80 pb-4">
                       <div>
-                        <span className="text-[10px] font-mono font-bold uppercase tracking-widest text-[#FF5A00]">
+                        <span className="text-[10px]   font-bold uppercase tracking-widest text-[#FF5A00]">
                           REQUERIMIENTO DETECTADO
                         </span>
                         <h3 className="text-base font-extrabold italic text-white mt-1 uppercase">
@@ -648,7 +658,7 @@ export default function ComercialIA() {
                       </div>
                       <div className="flex items-center gap-2 bg-black border border-zinc-800 px-3 py-1.5 rounded-lg">
                         <User size={13} className="text-zinc-400" />
-                        <span className="text-xs font-mono text-zinc-300">
+                        <span className="text-xs   text-zinc-300">
                           {selectedMail.emailCliente}
                         </span>
                       </div>
@@ -657,10 +667,10 @@ export default function ComercialIA() {
                     {/* CUERPO COMPLETO SIN RECORTES */}
                     <div className="space-y-2">
                       <div className="flex items-center justify-between">
-                        <span className="text-[11px] font-mono text-zinc-500 uppercase tracking-wider">
+                        <span className="text-[11px]   text-zinc-500 uppercase tracking-wider">
                           MENSAJE COMPLETO DEL CLIENTE:
                         </span>
-                        <span className="text-[10px] font-mono text-zinc-600 bg-zinc-900 px-2 py-0.5 rounded border border-zinc-800">
+                        <span className="text-[10px]   text-zinc-600 bg-zinc-900 px-2 py-0.5 rounded border border-zinc-800">
                           100% ÍNTEGRO
                         </span>
                       </div>
@@ -676,11 +686,11 @@ export default function ComercialIA() {
                       selectedMail.imagenes.length > 0 && (
                         <div className="space-y-2.5 pt-2 border-t border-zinc-900">
                           <div className="flex items-center justify-between">
-                            <span className="text-[11px] font-mono font-bold text-amber-400 uppercase tracking-wider flex items-center gap-2">
+                            <span className="text-[11px]   font-bold text-amber-400 uppercase tracking-wider flex items-center gap-2">
                               <ImageIcon size={14} /> IMÁGENES ADJUNTAS
                               DETECTADAS ({selectedMail.imagenes.length})
                             </span>
-                            <span className="text-[10px] font-mono text-[#FF5A00] bg-[#FF5A00]/10 border border-[#FF5A00]/20 px-2 py-0.5 rounded">
+                            <span className="text-[10px]   text-[#FF5A00] bg-[#FF5A00]/10 border border-[#FF5A00]/20 px-2 py-0.5 rounded">
                               ANALIZADAS POR GEMINI VISIÓN
                             </span>
                           </div>
@@ -719,7 +729,7 @@ export default function ComercialIA() {
                   {/* Banner CTA Generador */}
                   <div className="bg-[#080808] border border-zinc-800/80 rounded-xl p-5 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-xl">
                     <div className="space-y-1">
-                      <h4 className="text-xs font-bold text-white flex items-center gap-2 font-mono uppercase tracking-wider">
+                      <h4 className="text-xs font-bold text-white flex items-center gap-2   uppercase tracking-wider">
                         <Sparkles size={14} className="text-[#FF5A00]" />{" "}
                         ANÁLISIS INTEGRAL MULTIMODAL (TEXTO + FOTOS)
                       </h4>
@@ -756,7 +766,7 @@ export default function ComercialIA() {
               ) : (
                 <div className="flex-1 flex flex-col items-center justify-center p-8 text-zinc-600 text-center space-y-3">
                   <Inbox size={36} className="text-zinc-800" />
-                  <p className="text-xs font-mono uppercase tracking-wider">
+                  <p className="text-xs   uppercase tracking-wider">
                     Seleccioná un mensaje de la bandeja para leer la consulta y
                     cotizar.
                   </p>
@@ -785,12 +795,12 @@ export default function ComercialIA() {
                     setPaginaCatalogo(1);
                   }}
                   placeholder="Buscar por código, nombre, uso o categoría..."
-                  className="w-full bg-black border border-zinc-800 text-xs text-zinc-100 pl-10 pr-4 py-2.5 rounded-lg focus:border-[#FF5A00] outline-none font-mono placeholder:text-zinc-600 transition-colors"
+                  className="w-full bg-black border border-zinc-800 text-xs text-zinc-100 pl-10 pr-4 py-2.5 rounded-lg focus:border-[#FF5A00] outline-none   placeholder:text-zinc-600 transition-colors"
                 />
               </div>
 
               <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap justify-end">
-                <label className="bg-zinc-900 hover:bg-zinc-800 border border-zinc-700/80 text-zinc-300 font-mono font-bold text-xs px-3.5 py-2.5 rounded-lg transition flex items-center gap-2 cursor-pointer shrink-0">
+                <label className="bg-zinc-900 hover:bg-zinc-800 border border-zinc-700/80 text-zinc-300   font-bold text-xs px-3.5 py-2.5 rounded-lg transition flex items-center gap-2 cursor-pointer shrink-0">
                   <FileText size={15} className="text-[#FF5A00]" />
                   <span>
                     {procesandoArchivo ? "Procesando..." : "Subir PDFs Fichas"}
@@ -848,13 +858,13 @@ export default function ComercialIA() {
 
             <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar border border-zinc-800/80 rounded-xl bg-[#030303]">
               {productosFiltrados.length === 0 ? (
-                <div className="h-64 flex flex-col items-center justify-center text-zinc-600 font-mono text-xs gap-2">
+                <div className="h-64 flex flex-col items-center justify-center text-zinc-600   text-xs gap-2">
                   <Box size={28} className="text-zinc-800" />
                   <span>No se encontraron productos coincidentes.</span>
                 </div>
               ) : vistaModo === "tabla" ? (
                 <table className="w-full text-left text-xs border-collapse">
-                  <thead className="bg-[#080808] text-zinc-500 font-mono text-[10px] uppercase border-b border-zinc-800 sticky top-0 z-10 tracking-wider">
+                  <thead className="bg-[#080808] text-zinc-500   text-[10px] uppercase border-b border-zinc-800 sticky top-0 z-10 tracking-wider">
                     <tr>
                       <th className="p-3 w-28 text-center">FOTOS</th>
                       <th className="p-3 w-36">CÓDIGO</th>
@@ -900,7 +910,7 @@ export default function ComercialIA() {
                                   }}
                                 />
                               ) : (
-                                <span className="text-[8px] font-mono text-zinc-600">
+                                <span className="text-[8px]   text-zinc-600">
                                   TÉC
                                 </span>
                               )}
@@ -935,7 +945,7 @@ export default function ComercialIA() {
                                   }}
                                 />
                               ) : (
-                                <span className="text-[8px] font-mono text-zinc-600">
+                                <span className="text-[8px]   text-zinc-600">
                                   CAT
                                 </span>
                               )}
@@ -943,7 +953,7 @@ export default function ComercialIA() {
                           </div>
                         </td>
 
-                        <td className="p-3 font-mono font-bold">
+                        <td className="p-3   font-bold">
                           <span className="bg-[#FF5A00]/10 text-[#FF5A00] border border-[#FF5A00]/20 px-2 py-0.5 rounded text-[11px]">
                             {p.codigo}
                           </span>
@@ -962,7 +972,7 @@ export default function ComercialIA() {
                         <td className="p-3 text-center">
                           <button
                             onClick={() => setProductoDetalle(p)}
-                            className="px-3 py-1.5 bg-black hover:bg-zinc-900 border border-zinc-800 hover:border-zinc-700 text-zinc-300 font-mono font-bold text-[10px] uppercase rounded transition cursor-pointer inline-flex items-center gap-1.5"
+                            className="px-3 py-1.5 bg-black hover:bg-zinc-900 border border-zinc-800 hover:border-zinc-700 text-zinc-300   font-bold text-[10px] uppercase rounded transition cursor-pointer inline-flex items-center gap-1.5"
                           >
                             <Eye size={12} className="text-[#FF5A00]" />
                             <span>DETALLES</span>
@@ -981,7 +991,7 @@ export default function ComercialIA() {
                     >
                       <div className="space-y-2.5">
                         <div className="flex justify-between items-start gap-2">
-                          <span className="font-mono text-xs font-bold text-[#FF5A00] bg-[#FF5A00]/10 border border-[#FF5A00]/20 px-2 py-0.5 rounded">
+                          <span className="  text-xs font-bold text-[#FF5A00] bg-[#FF5A00]/10 border border-[#FF5A00]/20 px-2 py-0.5 rounded">
                             {p.codigo}
                           </span>
                           <div className="text-right">
@@ -1008,7 +1018,7 @@ export default function ComercialIA() {
                                 : "border-zinc-900 opacity-40"
                             }`}
                           >
-                            <span className="absolute top-1 left-1.5 text-[8px] font-mono font-bold text-zinc-400 bg-black/80 px-1 py-0.5 rounded border border-zinc-800 z-10">
+                            <span className="absolute top-1 left-1.5 text-[8px]   font-bold text-zinc-400 bg-black/80 px-1 py-0.5 rounded border border-zinc-800 z-10">
                               TÉCNICA
                             </span>
                             {p.foto_tecnica ? (
@@ -1039,7 +1049,7 @@ export default function ComercialIA() {
                                 : "border-zinc-900 opacity-40"
                             }`}
                           >
-                            <span className="absolute top-1 left-1.5 text-[8px] font-mono font-bold text-[#FF5A00] bg-black/80 px-1 py-0.5 rounded border border-zinc-800 z-10">
+                            <span className="absolute top-1 left-1.5 text-[8px]   font-bold text-[#FF5A00] bg-black/80 px-1 py-0.5 rounded border border-zinc-800 z-10">
                               CATÁLOGO
                             </span>
                             {p.foto_catalogo ? (
@@ -1059,13 +1069,13 @@ export default function ComercialIA() {
                       </div>
 
                       <div className="pt-2 border-t border-zinc-900 flex items-center justify-between gap-2">
-                        <span className="text-[10px] font-mono text-zinc-500 uppercase">
+                        <span className="text-[10px]   text-zinc-500 uppercase">
                           {p.categoria || "Conos"}
                         </span>
 
                         <button
                           onClick={() => setProductoDetalle(p)}
-                          className="px-3 py-1.5 bg-black hover:bg-zinc-900 border border-zinc-800 text-zinc-300 font-mono font-bold rounded text-[10px] uppercase flex items-center gap-1.5 cursor-pointer"
+                          className="px-3 py-1.5 bg-black hover:bg-zinc-900 border border-zinc-800 text-zinc-300   font-bold rounded text-[10px] uppercase flex items-center gap-1.5 cursor-pointer"
                         >
                           <Eye size={12} className="text-[#FF5A00]" />
                           <span>DETALLES</span>
@@ -1077,7 +1087,7 @@ export default function ComercialIA() {
               )}
             </div>
 
-            <div className="flex justify-between items-center pt-2 text-[11px] font-mono font-bold text-zinc-500 uppercase shrink-0">
+            <div className="flex justify-between items-center pt-2 text-[11px]   font-bold text-zinc-500 uppercase shrink-0">
               <span>
                 PÁGINA <strong className="text-white">{paginaCatalogo}</strong>{" "}
                 DE{" "}
@@ -1131,7 +1141,7 @@ export default function ComercialIA() {
                 value={reglas}
                 onChange={(e) => setReglas(e.target.value)}
                 rows={12}
-                className="w-full bg-black border border-zinc-800 p-4 text-xs text-zinc-200 focus:border-[#FF5A00] outline-none leading-relaxed rounded-lg font-mono placeholder:text-zinc-700"
+                className="w-full bg-black border border-zinc-800 p-4 text-xs text-zinc-200 focus:border-[#FF5A00] outline-none leading-relaxed rounded-lg   placeholder:text-zinc-700"
                 placeholder="Ejemplo: Precios indicados son + IVA 21%. Envío sin cargo en GBA en compras superiores a $150.000..."
               />
 
@@ -1166,7 +1176,7 @@ export default function ComercialIA() {
               <X size={16} />
             </button>
 
-            <div className="text-xs font-mono font-bold text-[#FF5A00] uppercase tracking-wider self-start">
+            <div className="text-xs   font-bold text-[#FF5A00] uppercase tracking-wider self-start">
               {fotoLightbox.titulo || "Vista Previa de Imagen"}
             </div>
 
@@ -1193,10 +1203,10 @@ export default function ComercialIA() {
             <div className="bg-[#050505] border-b border-zinc-800 p-5 flex items-center justify-between shrink-0">
               <div className="space-y-1">
                 <div className="flex items-center gap-2">
-                  <span className="font-mono text-xs font-bold text-[#FF5A00] bg-[#FF5A00]/10 px-2 py-0.5 border border-[#FF5A00]/20 rounded">
+                  <span className="  text-xs font-bold text-[#FF5A00] bg-[#FF5A00]/10 px-2 py-0.5 border border-[#FF5A00]/20 rounded">
                     [{productoDetalle.codigo}]
                   </span>
-                  <span className="font-mono text-[10px] text-zinc-400 bg-zinc-900 px-2 py-0.5 rounded border border-zinc-800 uppercase">
+                  <span className="  text-[10px] text-zinc-400 bg-zinc-900 px-2 py-0.5 rounded border border-zinc-800 uppercase">
                     {productoDetalle.categoria || "Conos"}
                   </span>
                 </div>
@@ -1220,7 +1230,7 @@ export default function ComercialIA() {
                     <ShieldCheck size={18} />
                   </div>
                   <div>
-                    <span className="text-[10px] font-mono text-zinc-500 uppercase block font-bold">
+                    <span className="text-[10px]   text-zinc-500 uppercase block font-bold">
                       PRECIO OFICIAL DE LISTA
                     </span>
                     <span className="text-xs text-zinc-400 font-sans">
@@ -1234,10 +1244,10 @@ export default function ComercialIA() {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="bg-black border border-zinc-800 rounded-xl p-3 flex flex-col space-y-2">
                   <div className="flex items-center justify-between w-full">
-                    <span className="text-[10px] font-mono font-bold text-zinc-400 uppercase tracking-wider">
+                    <span className="text-[10px]   font-bold text-zinc-400 uppercase tracking-wider">
                       PLANO TÉCNICO
                     </span>
-                    <label className="bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 text-zinc-300 px-2.5 py-1 rounded text-[10px] font-mono flex items-center gap-1 cursor-pointer transition">
+                    <label className="bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 text-zinc-300 px-2.5 py-1 rounded text-[10px]   flex items-center gap-1 cursor-pointer transition">
                       <Upload size={11} />
                       <span>
                         {productoDetalle.foto_tecnica
@@ -1288,7 +1298,7 @@ export default function ComercialIA() {
                           size={24}
                           className="mx-auto text-zinc-800"
                         />
-                        <span className="text-[10px] font-mono text-zinc-600 block">
+                        <span className="text-[10px]   text-zinc-600 block">
                           Sin Foto Técnica
                         </span>
                       </div>
@@ -1298,10 +1308,10 @@ export default function ComercialIA() {
 
                 <div className="bg-black border border-zinc-800 rounded-xl p-3 flex flex-col space-y-2">
                   <div className="flex items-center justify-between w-full">
-                    <span className="text-[10px] font-mono font-bold text-[#FF5A00] uppercase tracking-wider">
+                    <span className="text-[10px]   font-bold text-[#FF5A00] uppercase tracking-wider">
                       USO / CATÁLOGO
                     </span>
-                    <label className="bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 text-zinc-300 px-2.5 py-1 rounded text-[10px] font-mono flex items-center gap-1 cursor-pointer transition">
+                    <label className="bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 text-zinc-300 px-2.5 py-1 rounded text-[10px]   flex items-center gap-1 cursor-pointer transition">
                       <Upload size={11} />
                       <span>
                         {productoDetalle.foto_catalogo
@@ -1352,7 +1362,7 @@ export default function ComercialIA() {
                           size={24}
                           className="mx-auto text-zinc-800"
                         />
-                        <span className="text-[10px] font-mono text-zinc-600 block">
+                        <span className="text-[10px]   text-zinc-600 block">
                           Sin Foto Catálogo
                         </span>
                       </div>
@@ -1363,10 +1373,10 @@ export default function ComercialIA() {
 
               {productoDetalle.medidas && (
                 <div className="bg-black border border-zinc-800 rounded-xl p-4 space-y-2">
-                  <h4 className="text-[11px] font-mono font-bold text-[#FF5A00] uppercase tracking-wider flex items-center gap-2">
+                  <h4 className="text-[11px]   font-bold text-[#FF5A00] uppercase tracking-wider flex items-center gap-2">
                     <Box size={14} /> ESPECIFICACIÓN Y MEDIDAS TÉCNICAS
                   </h4>
-                  <p className="text-xs text-zinc-200 font-mono leading-relaxed bg-zinc-950 p-3 rounded border border-zinc-900">
+                  <p className="text-xs text-zinc-200   leading-relaxed bg-zinc-950 p-3 rounded border border-zinc-900">
                     {productoDetalle.medidas}
                   </p>
                 </div>
@@ -1374,7 +1384,7 @@ export default function ComercialIA() {
 
               {productoDetalle.descripcion && (
                 <div className="bg-black border border-zinc-800 rounded-xl p-4 space-y-2">
-                  <h4 className="text-[11px] font-mono font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                  <h4 className="text-[11px]   font-bold text-white uppercase tracking-wider flex items-center gap-2">
                     <Layers size={14} className="text-[#FF5A00]" /> DESCRIPCIÓN
                     TÉCNICO-COMERCIAL
                   </h4>
@@ -1387,7 +1397,7 @@ export default function ComercialIA() {
               {(productoDetalle.aplicacion ||
                 productoDetalle.usos_recomendados) && (
                 <div className="bg-black border border-zinc-800 rounded-xl p-4 space-y-3">
-                  <h4 className="text-[11px] font-mono font-bold text-zinc-400 uppercase tracking-wider flex items-center gap-2">
+                  <h4 className="text-[11px]   font-bold text-zinc-400 uppercase tracking-wider flex items-center gap-2">
                     <Tag size={14} className="text-[#FF5A00]" /> APLICACIONES Y
                     USOS RECOMENDADOS
                   </h4>
@@ -1398,7 +1408,7 @@ export default function ComercialIA() {
                     ).map((uso, idx) => (
                       <span
                         key={idx}
-                        className="bg-zinc-900 text-zinc-200 border border-zinc-800 px-3 py-1 rounded text-xs font-mono font-medium flex items-center gap-1.5"
+                        className="bg-zinc-900 text-zinc-200 border border-zinc-800 px-3 py-1 rounded text-xs   font-medium flex items-center gap-1.5"
                       >
                         <span className="w-1.5 h-1.5 rounded-full bg-[#FF5A00]" />
                         {uso}
@@ -1412,7 +1422,7 @@ export default function ComercialIA() {
             <div className="bg-[#050505] border-t border-zinc-800 p-4 flex justify-end shrink-0">
               <button
                 onClick={() => setProductoDetalle(null)}
-                className="bg-zinc-900 hover:bg-zinc-800 text-zinc-300 font-mono font-bold text-xs uppercase px-5 py-2 rounded transition cursor-pointer"
+                className="bg-zinc-900 hover:bg-zinc-800 text-zinc-300   font-bold text-xs uppercase px-5 py-2 rounded transition cursor-pointer"
               >
                 Cerrar Ficha
               </button>

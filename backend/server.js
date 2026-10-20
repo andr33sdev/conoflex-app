@@ -1503,17 +1503,39 @@ app.get("/auth/google/callback", async (req, res) => {
   }
 });
 
-// HELPER RECURSIVO PARA EXTRAER EL CUERPO COMPLETO E IMÁGENES DE UN CORREO
+// HELPER CON FILTRO INTELIGENTE ANTI-FIRMAS E ICONOS SOCIALES
 async function extraerContenidoMail(gmail, messageId, payload) {
   let cuerpoTexto = "";
   let cuerpoHtml = "";
   const imagenes = [];
 
-  // Función interna para decodificar texto en Base64 URL-Safe de Gmail
   const decodeBase64 = (str) => {
     if (!str) return "";
     const base64Standard = str.replace(/-/g, "+").replace(/_/g, "/");
     return Buffer.from(base64Standard, "base64").toString("utf-8");
+  };
+
+  // Expresión regular para detectar firmas, banners e iconos de redes
+  const esFirmaOIcono = (nombre = "", cid = "") => {
+    const texto = `${nombre} ${cid}`.toLowerCase();
+    const patronesBasura = [
+      "linkedin",
+      "instagram",
+      "youtube",
+      "facebook",
+      "twitter",
+      "whatsapp",
+      "firma",
+      "signature",
+      "banner",
+      "logo",
+      "conoflex", // Evita incluir las firmas automáticas internas de tu propio equipo
+      "icon",
+      "avatar",
+      "footer",
+      "pie",
+    ];
+    return patronesBasura.some((patron) => texto.includes(patron));
   };
 
   async function recorrerPartes(parts) {
@@ -1525,16 +1547,25 @@ async function extraerContenidoMail(gmail, messageId, payload) {
         cuerpoTexto += decodeBase64(part.body.data) + "\n";
       }
 
-      // 2. Extraer HTML (como respaldo si no hay text/plain)
+      // 2. Extraer HTML de respaldo
       if (part.mimeType === "text/html" && part.body && part.body.data) {
         cuerpoHtml += decodeBase64(part.body.data) + "\n";
       }
 
-      // 3. Extraer imágenes adjuntas o incrustadas (PNG, JPG, WEBP, etc.)
+      // 3. Extraer imágenes filtrando firmas e iconos
       if (part.mimeType && part.mimeType.startsWith("image/")) {
+        const filename = part.filename || "";
+        const cid =
+          part.headers?.find((h) => h.name.toLowerCase() === "content-id")
+            ?.value || "";
+
+        // Si el nombre indica que es una firma o red social, se ignora
+        if (esFirmaOIcono(filename, cid)) {
+          continue;
+        }
+
         let base64Data = part.body?.data;
 
-        // Si la imagen es un adjunto pesado, se descarga con su attachmentId
         if (!base64Data && part.body?.attachmentId) {
           try {
             const attachRes = await gmail.users.messages.attachments.get({
@@ -1549,9 +1580,17 @@ async function extraerContenidoMail(gmail, messageId, payload) {
         }
 
         if (base64Data) {
+          // FILTRO POR PESO:
+          // Un string Base64 menor a 20.000 caracteres representa menos de ~15 KB (iconos, viñetas, botones).
+          // Las fotos reales de productos o cámaras de celular pesan siempre más de 25-30 KB.
+          if (base64Data.length < 20000) {
+            continue;
+          }
+
           const base64Standard = base64Data
             .replace(/-/g, "+")
             .replace(/_/g, "/");
+
           imagenes.push({
             mimeType: part.mimeType,
             data: base64Standard,
@@ -1559,21 +1598,18 @@ async function extraerContenidoMail(gmail, messageId, payload) {
         }
       }
 
-      // Si tiene partes anidadas (emails multipart/mixed, multipart/related, etc.)
       if (part.parts) {
         await recorrerPartes(part.parts);
       }
     }
   }
 
-  // Si el mensaje no tiene partes (mensaje plano directo)
   if (payload.body && payload.body.data && payload.mimeType === "text/plain") {
     cuerpoTexto = decodeBase64(payload.body.data);
   } else if (payload.parts) {
     await recorrerPartes(payload.parts);
   }
 
-  // Si no hubo text/plain, limpiamos las etiquetas básicas del HTML
   let cuerpoFinal = cuerpoTexto.trim();
   if (!cuerpoFinal && cuerpoHtml) {
     cuerpoFinal = cuerpoHtml
