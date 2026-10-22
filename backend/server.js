@@ -1,4 +1,4 @@
-import * as cheerio from "cheerio";
+const cheerio = require("cheerio");
 const express = require("express");
 const cors = require("cors");
 const multer = require("multer");
