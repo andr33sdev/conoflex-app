@@ -4825,6 +4825,78 @@ app.get("/api/fichero/historial", async (req, res) => {
   }
 });
 
+// OBTENER FERIADOS Y AJUSTES DE DÍAS
+app.get("/api/fichero/configuracion-dias", async (req, res) => {
+  try {
+    const [feriados] = await db.query(
+      "SELECT DATE_FORMAT(fecha, '%Y-%m-%d') AS fecha, descripcion FROM fichero_feriados",
+    );
+    const [ajustes] = await db.query(
+      "SELECT nombre_operario, DATE_FORMAT(fecha, '%Y-%m-%d') AS fecha, TIME_FORMAT(hora_inicio_pactada, '%H:%i') AS hora_inicio_pactada, horas_normales, todas_extra FROM fichero_ajustes_dias",
+    );
+    res.json({ feriados, ajustes });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// TOGGLE / GUARDAR FERIADO (GLOBAL)
+app.post("/api/fichero/feriado", async (req, res) => {
+  try {
+    const { fecha, es_feriado, descripcion } = req.body;
+    if (es_feriado) {
+      await db.query(
+        "INSERT INTO fichero_feriados (fecha, descripcion) VALUES (?, ?) ON DUPLICATE KEY UPDATE descripcion = VALUES(descripcion)",
+        [fecha, descripcion || "Feriado"],
+      );
+    } else {
+      await db.query("DELETE FROM fichero_feriados WHERE fecha = ?", [fecha]);
+    }
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// GUARDAR AJUSTE DE JORNADA (POR OPERARIO)
+app.post("/api/fichero/ajuste-dia", async (req, res) => {
+  try {
+    const {
+      nombre_operario,
+      fecha,
+      hora_inicio_pactada,
+      horas_normales,
+      todas_extra,
+      eliminar,
+    } = req.body;
+    if (eliminar) {
+      await db.query(
+        "DELETE FROM fichero_ajustes_dias WHERE nombre_operario = ? AND fecha = ?",
+        [nombre_operario, fecha],
+      );
+    } else {
+      await db.query(
+        `INSERT INTO fichero_ajustes_dias (nombre_operario, fecha, hora_inicio_pactada, horas_normales, todas_extra)
+         VALUES (?, ?, ?, ?, ?)
+         ON DUPLICATE KEY UPDATE 
+           hora_inicio_pactada = VALUES(hora_inicio_pactada),
+           horas_normales = VALUES(horas_normales),
+           todas_extra = VALUES(todas_extra)`,
+        [
+          nombre_operario,
+          fecha,
+          hora_inicio_pactada || null,
+          horas_normales ?? 9,
+          todas_extra ? 1 : 0,
+        ],
+      );
+    }
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // ==========================================
 // MÓDULO ESTADO PEDIDOS & DESPACHOS
 // ==========================================

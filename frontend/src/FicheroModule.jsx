@@ -22,6 +22,12 @@ import {
   X,
   Tag,
   Globe,
+  CheckSquare,
+  Square,
+  Sliders,
+  Calendar,
+  Clock,
+  Sparkles,
 } from "lucide-react";
 
 const API_BASE_URL = import.meta.env?.VITE_API_URL || "";
@@ -35,7 +41,7 @@ export default function FicheroModule() {
   const [sincronizandoWeb, setSincronizandoWeb] = useState(false);
 
   // Vistas: 'tabla' | 'calendario'
-  const [vista, setVista] = useState("tabla");
+  const [vista, setVista] = useState("calendario");
 
   // Filtros de tabla
   const [busqueda, setBusqueda] = useState("");
@@ -57,15 +63,29 @@ export default function FicheroModule() {
   const [categoriasUOYEP, setCategoriasUOYEP] = useState([]);
   const [valoresUOYEP, setValoresUOYEP] = useState([]);
   const [asignaciones, setAsignaciones] = useState({});
-  const [periodoEscalaActivo, setPeriodoEscalaActivo] = useState("");
+  const [periodoEscalaActivo, setPeriodoEscalaActivo] = useState("2026-10");
   const [modalCategoriasAbierto, setModalCategoriasAbierto] = useState(false);
 
-  // Calendario
+  // Feriados globales { [fechaISO]: boolean }
+  const [feriadosGlobales, setFeriadosGlobales] = useState({});
+  // Ajustes particulares { [nombre_fechaISO]: { horaInicio, horasNormales, todasExtra } }
+  const [ajustesDias, setAjustesDias] = useState({});
+
+  // Modal de configuración de día
+  const [diaConfigurando, setDiaConfigurando] = useState(null); // { fechaISO, numero, data }
+  const [formFeriado, setFormFeriado] = useState(false);
+  const [formHoraInicio, setFormHoraInicio] = useState("");
+  const [formTipoHoras, setFormTipoHoras] = useState("ESTANDAR"); // 'ESTANDAR' | 'TODAS_EXTRA' | 'PERSONALIZADO'
+  const [formHsNormalesPersonalizadas, setFormHsNormalesPersonalizadas] =
+    useState(9);
+
+  // Calendario y Días Tildados para Extras
   const [operarioSeleccionado, setOperarioSeleccionado] = useState(null);
   const [mesCalendario, setMesCalendario] = useState(() => {
     const hoy = new Date();
     return { anio: hoy.getFullYear(), mes: hoy.getMonth() };
   });
+  const [diasTildadosExtras, setDiasTildadosExtras] = useState({});
 
   // Exportación
   const [menuExportarAbierto, setMenuExportarAbierto] = useState(false);
@@ -112,7 +132,34 @@ export default function FicheroModule() {
     });
   };
 
-  // 1. CARGA DE ESCALA DESDE BD
+  // 1. CARGA DE CONFIGURACIÓN DE DÍAS Y FERIADOS DESDE BD
+  const cargarConfiguracionDias = useCallback(async () => {
+    try {
+      const res = await fetch(getApiUrl("/api/fichero/configuracion-dias"));
+      if (res.ok) {
+        const data = await res.json();
+        const mapFeriados = {};
+        (data.feriados || []).forEach((f) => {
+          mapFeriados[f.fecha] = true;
+        });
+        setFeriadosGlobales(mapFeriados);
+
+        const mapAjustes = {};
+        (data.ajustes || []).forEach((a) => {
+          mapAjustes[`${a.nombre_operario}_${a.fecha}`] = {
+            horaInicio: a.hora_inicio_pactada || "",
+            horasNormales: parseFloat(a.horas_normales) || 9,
+            todasExtra: !!a.todas_extra,
+          };
+        });
+        setAjustesDias(mapAjustes);
+      }
+    } catch (err) {
+      console.error("Error cargando configuración de días:", err);
+    }
+  }, []);
+
+  // 2. CARGA DE ESCALA DESDE BD
   const cargarEscalaUOYEP = useCallback(async () => {
     try {
       const res = await fetch(getApiUrl("/api/fichero/escala-uoyep"));
@@ -128,7 +175,6 @@ export default function FicheroModule() {
         });
         setAsignaciones(mapaAsig);
 
-        // Si no hay período activo seleccionado, fijar el primero disponible
         if (data.periodos && data.periodos.length > 0) {
           setPeriodoEscalaActivo((prev) => prev || data.periodos[0].periodo);
         }
@@ -138,7 +184,6 @@ export default function FicheroModule() {
     }
   }, []);
 
-  // 2. SINCRONIZACIÓN WEB MANUAL
   const sincronizarConWebUOYEP = async () => {
     setSincronizandoWeb(true);
     try {
@@ -152,7 +197,7 @@ export default function FicheroModule() {
         alert(data.error || "No se pudo sincronizar con la web de UOYEP");
       }
     } catch (err) {
-      alert("Error de conexión al intentar sincronizar con UOYEP");
+      alert("Error de conexión al sincronizar con UOYEP");
     } finally {
       setSincronizandoWeb(false);
     }
@@ -179,7 +224,8 @@ export default function FicheroModule() {
   useEffect(() => {
     cargarFichadas(false);
     cargarEscalaUOYEP();
-  }, [cargarFichadas, cargarEscalaUOYEP]);
+    cargarConfiguracionDias();
+  }, [cargarFichadas, cargarEscalaUOYEP, cargarConfiguracionDias]);
 
   const formatearFechaHora = (fechaString) => {
     const d = new Date(fechaString);
@@ -200,6 +246,7 @@ export default function FicheroModule() {
       fechaVisual,
       horaVisual,
       horaNum,
+      minNum: d.getMinutes(),
       timestamp: d.getTime(),
     };
   };
@@ -303,7 +350,6 @@ export default function FicheroModule() {
     }
   }, [listaOperarios, operarioSeleccionado]);
 
-  // Valores hora correspondientes al período seleccionado en el selector
   const mapaValoresPeriodoActivo = useMemo(() => {
     const mapa = {};
     valoresUOYEP
@@ -314,137 +360,248 @@ export default function FicheroModule() {
     return mapa;
   }, [valoresUOYEP, periodoEscalaActivo]);
 
-  // Cálculo de horarios y horas extras (9hs normales, extras +50%, diurnas x1, nocturnas x1.5)
-  const calcularDatosCalendario = useCallback((nombreOp, fichadasList) => {
-    if (!nombreOp) return {};
+  // =========================================================================
+  // MOTOR DE CÁLCULO DE HORAS NORMALES Y EXTRAS CON SOPORTE PARA FERIADOS Y PACTADOS
+  // =========================================================================
+  const calcularHorasDelTurno = useCallback(
+    (dEnt, dSal, esNoche, esSiguienteDia, fechaISO, nombreOp) => {
+      const diaSemanaEnt = dEnt.getDay(); // 0 = Domingo, 5 = Viernes, 6 = Sábado
+      const hInReal = dEnt.getHours();
+      const mInReal = dEnt.getMinutes();
+      const hOut = dSal.getHours();
+      const mOut = dSal.getMinutes();
 
-    const fichadasDelOperario = fichadasList
-      .filter((f) => f.nombre === nombreOp)
-      .sort((a, b) => new Date(a.fecha_hora) - new Date(b.fecha_hora));
+      // Verificación de Feriado Global
+      const esFeriado = !!feriadosGlobales[fechaISO];
 
-    const mapaDias = {};
-    let entradaPendiente = null;
+      // Verificación de Ajuste Individual del Operario
+      const claveAjuste = `${nombreOp}_${fechaISO}`;
+      const ajuste = ajustesDias[claveAjuste] || null;
 
-    fichadasDelOperario.forEach((f) => {
-      const { fechaISO, horaVisual, horaNum, timestamp } = formatearFechaHora(
-        f.fecha_hora,
-      );
-      const horaCorta = horaVisual.slice(0, 5);
+      let hInEfec = hInReal;
+      let mInEfec = mInReal;
 
-      if (!mapaDias[fechaISO]) {
-        mapaDias[fechaISO] = {
-          ingreso: null,
-          egreso: null,
-          esNoche: false,
-          esSiguienteDia: false,
-          horasNormales: 0,
-          horasExtrasDiurnas: 0,
-          horasExtrasNocturnas: 0,
-          horasTotalesTurno: 0,
-        };
-      }
-
-      if (f.tipo === "ENTRADA") {
-        if (
-          entradaPendiente &&
-          timestamp - entradaPendiente.timestamp > 1 * 60 * 60 * 1000 &&
-          timestamp - entradaPendiente.timestamp <= 18 * 60 * 60 * 1000
-        ) {
-          const fechaEntrada = entradaPendiente.fechaISO;
-          mapaDias[fechaEntrada].egreso = horaCorta;
-          if (fechaEntrada !== fechaISO) {
-            mapaDias[fechaEntrada].esSiguienteDia = true;
-          }
-
-          const msTrabajados = timestamp - entradaPendiente.timestamp;
-          const totalHoras = msTrabajados / (1000 * 60 * 60);
-          mapaDias[fechaEntrada].horasTotalesTurno = totalHoras;
-
-          const normales = Math.min(totalHoras, 9);
-          const extras = Math.max(0, totalHoras - 9);
-          mapaDias[fechaEntrada].horasNormales = normales;
-
-          if (mapaDias[fechaEntrada].esNoche) {
-            mapaDias[fechaEntrada].horasExtrasNocturnas = extras * 1.5;
-          } else {
-            mapaDias[fechaEntrada].horasExtrasDiurnas = extras;
-          }
-
-          entradaPendiente = null;
-        } else {
-          if (!mapaDias[fechaISO].ingreso) {
-            mapaDias[fechaISO].ingreso = horaCorta;
-            if (horaNum >= 18 || horaNum < 6) mapaDias[fechaISO].esNoche = true;
-            entradaPendiente = { fechaISO, timestamp };
-          }
-        }
-      } else if (f.tipo === "SALIDA") {
-        if (
-          entradaPendiente &&
-          timestamp - entradaPendiente.timestamp <= 18 * 60 * 60 * 1000
-        ) {
-          const fechaEntrada = entradaPendiente.fechaISO;
-          mapaDias[fechaEntrada].egreso = horaCorta;
-          if (fechaEntrada !== fechaISO) {
-            mapaDias[fechaEntrada].esSiguienteDia = true;
-          }
-
-          const msTrabajados = timestamp - entradaPendiente.timestamp;
-          const totalHoras = msTrabajados / (1000 * 60 * 60);
-          mapaDias[fechaEntrada].horasTotalesTurno = totalHoras;
-
-          const normales = Math.min(totalHoras, 9);
-          const extras = Math.max(0, totalHoras - 9);
-          mapaDias[fechaEntrada].horasNormales = normales;
-
-          if (mapaDias[fechaEntrada].esNoche) {
-            mapaDias[fechaEntrada].horasExtrasNocturnas = extras * 1.5;
-          } else {
-            mapaDias[fechaEntrada].horasExtrasDiurnas = extras;
-          }
-
-          entradaPendiente = null;
-        } else {
-          if (!mapaDias[fechaISO].egreso) {
-            mapaDias[fechaISO].egreso = horaCorta;
-          }
+      // Si tiene hora de inicio pactada fija (ej: "15:00")
+      if (ajuste && ajuste.horaInicio) {
+        const [pactH, pactM] = ajuste.horaInicio.split(":").map(Number);
+        hInEfec = pactH;
+        mInEfec = pactM;
+      } else {
+        // Tolerancia estándar automática (45-59 a la hora siguiente; 0-10 a la hora en punto)
+        if (mInReal >= 45) {
+          hInEfec = (hInReal + 1) % 24;
+          mInEfec = 0;
+        } else if (mInReal <= 10) {
+          mInEfec = 0;
         }
       }
-    });
 
-    return mapaDias;
-  }, []);
+      let minutosIn = hInEfec * 60 + mInEfec;
+      let minutosOut = hOut * 60 + mOut;
+      if (esSiguienteDia || minutosOut < minutosIn) {
+        minutosOut += 24 * 60;
+      }
+
+      const duracionMinutos = Math.max(0, minutosOut - minutosIn);
+
+      // REGLA SÁBADO DIURNO O FERIADO GLOBAL: Todas las horas son 100% extra
+      const esSabadoDiurno = diaSemanaEnt === 6 && !esNoche;
+      const esTratamientoExtraTotal =
+        esSabadoDiurno || esFeriado || (ajuste && ajuste.todasExtra);
+
+      let hsNormales = 0;
+      let hsExtrasDiurnas = 0;
+      let hsExtrasNocturnas = 0;
+
+      if (esTratamientoExtraTotal) {
+        hsNormales = 0;
+        const totalHsExtras = Math.floor(duracionMinutos / 30) * 0.5;
+        if (esNoche) {
+          hsExtrasNocturnas = totalHsExtras;
+        } else {
+          hsExtrasDiurnas = totalHsExtras;
+        }
+      } else if (esNoche) {
+        // Turno nocturno estándar
+        const limiteNormalesMin =
+          ((ajuste ? ajuste.horasNormales : 9.0) || 9.0) * 60;
+        const minutosNormales = Math.min(duracionMinutos, limiteNormalesMin);
+        const minutosExtras = Math.max(0, duracionMinutos - limiteNormalesMin);
+
+        hsNormales = Math.floor(minutosNormales / 30) * 0.5;
+        const hsExtrasBase = Math.floor(minutosExtras / 30) * 0.5;
+
+        let hsExtrasLiquidadas = hsExtrasBase;
+        if (hsExtrasBase >= 3.0) {
+          const esViernesNoche = diaSemanaEnt === 5;
+          if (esViernesNoche) {
+            hsExtrasLiquidadas = hsExtrasBase * 1.5 * 2.0;
+          } else {
+            hsExtrasLiquidadas = hsExtrasBase * 1.5;
+          }
+        } else {
+          hsExtrasLiquidadas = hsExtrasBase;
+        }
+
+        hsExtrasNocturnas = hsExtrasLiquidadas;
+        hsExtrasDiurnas = 0;
+      } else {
+        // Turno diurno estándar
+        const limiteNormalesMin =
+          ((ajuste ? ajuste.horasNormales : 9.0) || 9.0) * 60;
+        const minutosNormales = Math.min(duracionMinutos, limiteNormalesMin);
+        const minutosExtras = Math.max(0, duracionMinutos - limiteNormalesMin);
+
+        hsNormales = Math.floor(minutosNormales / 30) * 0.5;
+        hsExtrasDiurnas = Math.floor(minutosExtras / 30) * 0.5;
+        hsExtrasNocturnas = 0;
+      }
+
+      return {
+        horasNormales: hsNormales,
+        horasExtrasDiurnas: hsExtrasDiurnas,
+        horasExtrasNocturnas: hsExtrasNocturnas,
+        horasTotalesTurno: hsNormales + hsExtrasDiurnas + hsExtrasNocturnas,
+        esFeriado,
+        tieneAjuste: !!ajuste,
+      };
+    },
+    [feriadosGlobales, ajustesDias],
+  );
+
+  const calcularDatosCalendario = useCallback(
+    (nombreOp, fichadasList) => {
+      if (!nombreOp) return {};
+
+      const fichadasDelOperario = fichadasList
+        .filter((f) => f.nombre === nombreOp)
+        .sort((a, b) => new Date(a.fecha_hora) - new Date(b.fecha_hora));
+
+      const mapaDias = {};
+      let entradaPendiente = null;
+
+      fichadasDelOperario.forEach((f) => {
+        const { fechaISO, horaVisual, horaNum, timestamp } = formatearFechaHora(
+          f.fecha_hora,
+        );
+        const horaCorta = horaVisual.slice(0, 5);
+
+        if (!mapaDias[fechaISO]) {
+          mapaDias[fechaISO] = {
+            ingreso: null,
+            egreso: null,
+            esNoche: false,
+            esSiguienteDia: false,
+            horasNormales: 0,
+            horasExtrasDiurnas: 0,
+            horasExtrasNocturnas: 0,
+            horasTotalesTurno: 0,
+            esFeriado: !!feriadosGlobales[fechaISO],
+            tieneAjuste: !!ajustesDias[`${nombreOp}_${fechaISO}`],
+          };
+        }
+
+        if (f.tipo === "ENTRADA") {
+          if (
+            entradaPendiente &&
+            timestamp - entradaPendiente.timestamp > 1 * 60 * 60 * 1000 &&
+            timestamp - entradaPendiente.timestamp <= 18 * 60 * 60 * 1000
+          ) {
+            const fechaEntrada = entradaPendiente.fechaISO;
+            mapaDias[fechaEntrada].egreso = horaCorta;
+            if (fechaEntrada !== fechaISO) {
+              mapaDias[fechaEntrada].esSiguienteDia = true;
+            }
+
+            const resultadoHoras = calcularHorasDelTurno(
+              new Date(entradaPendiente.timestamp),
+              new Date(timestamp),
+              mapaDias[fechaEntrada].esNoche,
+              mapaDias[fechaEntrada].esSiguienteDia,
+              fechaEntrada,
+              nombreOp,
+            );
+
+            Object.assign(mapaDias[fechaEntrada], resultadoHoras);
+            entradaPendiente = null;
+          } else {
+            if (!mapaDias[fechaISO].ingreso) {
+              mapaDias[fechaISO].ingreso = horaCorta;
+              if (horaNum >= 18 || horaNum < 6)
+                mapaDias[fechaISO].esNoche = true;
+              entradaPendiente = { fechaISO, timestamp };
+            }
+          }
+        } else if (f.tipo === "SALIDA") {
+          if (
+            entradaPendiente &&
+            timestamp - entradaPendiente.timestamp <= 18 * 60 * 60 * 1000
+          ) {
+            const fechaEntrada = entradaPendiente.fechaISO;
+            mapaDias[fechaEntrada].egreso = horaCorta;
+            if (fechaEntrada !== fechaISO) {
+              mapaDias[fechaEntrada].esSiguienteDia = true;
+            }
+
+            const resultadoHoras = calcularHorasDelTurno(
+              new Date(entradaPendiente.timestamp),
+              new Date(timestamp),
+              mapaDias[fechaEntrada].esNoche,
+              mapaDias[fechaEntrada].esSiguienteDia,
+              fechaEntrada,
+              nombreOp,
+            );
+
+            Object.assign(mapaDias[fechaEntrada], resultadoHoras);
+            entradaPendiente = null;
+          } else {
+            if (!mapaDias[fechaISO].egreso) {
+              mapaDias[fechaISO].egreso = horaCorta;
+            }
+          }
+        }
+      });
+
+      return mapaDias;
+    },
+    [calcularHorasDelTurno, feriadosGlobales, ajustesDias],
+  );
 
   const datosCalendarioOperario = useMemo(() => {
     return calcularDatosCalendario(operarioSeleccionado, fichadasSinRebotes);
   }, [operarioSeleccionado, fichadasSinRebotes, calcularDatosCalendario]);
 
-  const generarCeldasMes = useCallback((anio, mes, mapaDatos) => {
-    const primerDiaMes = new Date(anio, mes, 1);
-    const totalDias = new Date(anio, mes + 1, 0).getDate();
+  const generarCeldasMes = useCallback(
+    (anio, mes, mapaDatos) => {
+      const primerDiaMes = new Date(anio, mes, 1);
+      const totalDias = new Date(anio, mes + 1, 0).getDate();
 
-    let diaSemanaInicio = primerDiaMes.getDay() - 1;
-    if (diaSemanaInicio === -1) diaSemanaInicio = 6;
+      let diaSemanaInicio = primerDiaMes.getDay() - 1;
+      if (diaSemanaInicio === -1) diaSemanaInicio = 6;
 
-    const celdas = [];
-    for (let i = 0; i < diaSemanaInicio; i++) celdas.push(null);
+      const celdas = [];
+      for (let i = 0; i < diaSemanaInicio; i++) celdas.push(null);
 
-    for (let d = 1; d <= totalDias; d++) {
-      const diaNum = String(d).padStart(2, "0");
-      const mesNum = String(mes + 1).padStart(2, "0");
-      const fechaISO = `${anio}-${mesNum}-${diaNum}`;
+      for (let d = 1; d <= totalDias; d++) {
+        const diaNum = String(d).padStart(2, "0");
+        const mesNum = String(mes + 1).padStart(2, "0");
+        const fechaISO = `${anio}-${mesNum}-${diaNum}`;
 
-      celdas.push({
-        numero: d,
-        fechaISO,
-        data: (mapaDatos && mapaDatos[fechaISO]) || null,
-      });
-    }
+        celdas.push({
+          numero: d,
+          fechaISO,
+          data:
+            (mapaDatos && mapaDatos[fechaISO]) ||
+            (feriadosGlobales[fechaISO] ? { esFeriado: true } : null),
+        });
+      }
 
-    while (celdas.length % 7 !== 0) celdas.push(null);
+      while (celdas.length % 7 !== 0) celdas.push(null);
 
-    return { celdasMes: celdas, cantidadFilas: celdas.length / 7 };
-  }, []);
+      return { celdasMes: celdas, cantidadFilas: celdas.length / 7 };
+    },
+    [feriadosGlobales],
+  );
 
   const { celdasMes, cantidadFilas } = useMemo(() => {
     return generarCeldasMes(
@@ -454,16 +611,139 @@ export default function FicheroModule() {
     );
   }, [mesCalendario, datosCalendarioOperario, generarCeldasMes]);
 
+  const alternarTildeDia = (fechaISO) => {
+    const clave = `${operarioSeleccionado}_${fechaISO}`;
+    setDiasTildadosExtras((prev) => ({
+      ...prev,
+      [clave]: !prev[clave],
+    }));
+  };
+
+  const tildarTodasExtras = (tildar = true) => {
+    setDiasTildadosExtras((prev) => {
+      const nuevo = { ...prev };
+      celdasMes.forEach((celda) => {
+        if (celda?.data) {
+          const hsExt =
+            (celda.data.horasExtrasDiurnas || 0) +
+            (celda.data.horasExtrasNocturnas || 0);
+          if (hsExt > 0) {
+            nuevo[`${operarioSeleccionado}_${celda.fechaISO}`] = tildar;
+          }
+        }
+      });
+      return nuevo;
+    });
+  };
+
+  // Apertura del modal de configuración del día
+  const abrirConfiguracionDia = (celda) => {
+    if (!celda) return;
+    const fechaISO = celda.fechaISO;
+    const esFeriado = !!feriadosGlobales[fechaISO];
+    const claveAjuste = `${operarioSeleccionado}_${fechaISO}`;
+    const ajuste = ajustesDias[claveAjuste];
+
+    setDiaConfigurando(celda);
+    setFormFeriado(esFeriado);
+    setFormHoraInicio(ajuste ? ajuste.horaInicio : "");
+
+    if (ajuste && ajuste.todasExtra) {
+      setFormTipoHoras("TODAS_EXTRA");
+      setFormHsNormalesPersonalizadas(0);
+    } else if (ajuste && ajuste.horasNormales !== 9) {
+      setFormTipoHoras("PERSONALIZADO");
+      setFormHsNormalesPersonalizadas(ajuste.horasNormales);
+    } else {
+      setFormTipoHoras("ESTANDAR");
+      setFormHsNormalesPersonalizadas(9);
+    }
+  };
+
+  const guardarConfiguracionDia = async () => {
+    if (!diaConfigurando) return;
+    const fechaISO = diaConfigurando.fechaISO;
+
+    try {
+      // 1. Guardar estado de feriado global si cambió
+      const esFeriadoPrevio = !!feriadosGlobales[fechaISO];
+      if (esFeriadoPrevio !== formFeriado) {
+        await fetch(getApiUrl("/api/fichero/feriado"), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ fecha: fechaISO, es_feriado: formFeriado }),
+        });
+        setFeriadosGlobales((prev) => ({ ...prev, [fechaISO]: formFeriado }));
+      }
+
+      // 2. Guardar ajuste individual del operario
+      const tieneHoraPactada = !!formHoraInicio.trim();
+      const todasExtra = formTipoHoras === "TODAS_EXTRA";
+      const horasNormales =
+        formTipoHoras === "PERSONALIZADO"
+          ? parseFloat(formHsNormalesPersonalizadas)
+          : todasExtra
+            ? 0
+            : 9;
+      const esEstandar = !tieneHoraPactada && formTipoHoras === "ESTANDAR";
+
+      await fetch(getApiUrl("/api/fichero/ajuste-dia"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          nombre_operario: operarioSeleccionado,
+          fecha: fechaISO,
+          hora_inicio_pactada: tieneHoraPactada ? formHoraInicio : null,
+          horas_normales: horasNormales,
+          todas_extra: todasExtra,
+          eliminar: esEstandar,
+        }),
+      });
+
+      const claveAjuste = `${operarioSeleccionado}_${fechaISO}`;
+      setAjustesDias((prev) => {
+        const nuevo = { ...prev };
+        if (esEstandar) {
+          delete nuevo[claveAjuste];
+        } else {
+          nuevo[claveAjuste] = {
+            horaInicio: formHoraInicio,
+            horasNormales,
+            todasExtra,
+          };
+        }
+        return nuevo;
+      });
+
+      setDiaConfigurando(null);
+    } catch (err) {
+      console.error("Error guardando ajustes del día:", err);
+      alert("Error al guardar la configuración del día");
+    }
+  };
+
+  // CÁLCULO FINAL DE TOTALES: SOLO SE SUMAN LAS HORAS EXTRAS TILDADAS
   const totalesMesOperario = useMemo(() => {
     let normales = 0;
     let extrasDiurnas = 0;
     let extrasNocturnas = 0;
+    let cantidadDiasTildados = 0;
 
     celdasMes.forEach((celda) => {
       if (celda?.data) {
         normales += celda.data.horasNormales || 0;
-        extrasDiurnas += celda.data.horasExtrasDiurnas || 0;
-        extrasNocturnas += celda.data.horasExtrasNocturnas || 0;
+        const clave = `${operarioSeleccionado}_${celda.fechaISO}`;
+        const estaTildado = !!diasTildadosExtras[clave];
+
+        if (estaTildado) {
+          const extD = celda.data.horasExtrasDiurnas || 0;
+          const extN = celda.data.horasExtrasNocturnas || 0;
+          if (extD > 0 || extN > 0) {
+            cantidadDiasTildados += 1;
+          }
+          extrasDiurnas += extD;
+          extrasNocturnas += extN;
+        }
       }
     });
 
@@ -472,21 +752,21 @@ export default function FicheroModule() {
     const vNormal = mapaValoresPeriodoActivo[codigoCat] || 0;
     const vExtra = vNormal * 1.5;
 
-    const totalPesosNormales = normales * vNormal;
+    // TOTAL ESTIMADO: SOLO HORAS EXTRAS
     const totalPesosDiurnas = extrasDiurnas * vExtra;
     const totalPesosNocturnas = extrasNocturnas * vExtra;
-    const totalPesosMes =
-      totalPesosNormales + totalPesosDiurnas + totalPesosNocturnas;
+    const totalPesosExtras = totalPesosDiurnas + totalPesosNocturnas;
 
     return {
       normales,
       extrasDiurnas,
       extrasNocturnas,
       totalExtras: extrasDiurnas + extrasNocturnas,
+      cantidadDiasTildados,
       categoriaNombre: catObj ? catObj.nombre : "SIN CATEGORÍA",
       vNormal,
       vExtra,
-      totalPesosMes,
+      totalPesosMes: totalPesosExtras,
     };
   }, [
     celdasMes,
@@ -494,6 +774,7 @@ export default function FicheroModule() {
     asignaciones,
     categoriasUOYEP,
     mapaValoresPeriodoActivo,
+    diasTildadosExtras,
   ]);
 
   const cambiarAsignacion = async (nombreOperario, categoriaCodigo) => {
@@ -641,7 +922,6 @@ export default function FicheroModule() {
             </select>
           </div>
 
-          {/* BOTÓN SINCRONIZAR DIRECTAMENTE CON LA WEB */}
           <button
             onClick={sincronizarConWebUOYEP}
             disabled={sincronizandoWeb}
@@ -661,7 +941,6 @@ export default function FicheroModule() {
             </span>
           </button>
 
-          {/* BOTÓN ASIGNAR CATEGORÍAS */}
           <button
             onClick={() => setModalCategoriasAbierto(true)}
             className="bg-[#18181b] hover:bg-[#27272a] border border-zinc-700 text-white font-bold uppercase tracking-widest text-[10px] px-3.5 py-2.5 rounded flex items-center justify-center gap-2 transition-colors cursor-pointer shadow-sm"
@@ -674,6 +953,7 @@ export default function FicheroModule() {
             onClick={() => {
               cargarFichadas(false);
               cargarEscalaUOYEP();
+              cargarConfiguracionDias();
             }}
             disabled={isSyncing}
             className="bg-[#FFD700] hover:bg-white text-black font-bold uppercase tracking-widest text-[10px] px-4 py-2.5 rounded flex items-center justify-center gap-2 transition-colors disabled:opacity-50 cursor-pointer shadow-sm"
@@ -762,17 +1042,39 @@ export default function FicheroModule() {
           <div className="flex-1 bg-[#0A0A0A] print:bg-white print:border-none rounded-lg border border-zinc-850 p-3 md:p-4 print:p-0 print:pt-4 flex flex-col print:block min-h-0 overflow-hidden print:overflow-visible print:break-inside-avoid">
             <div className="flex flex-col gap-3 pb-3 mb-2 border-b border-zinc-900 print:border-gray-300 shrink-0">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <h2 className="text-xs md:text-sm font-black tracking-widest text-white print:text-black uppercase flex flex-col md:flex-row print:flex-row md:items-center print:items-center gap-1 md:gap-2">
-                  <span>
-                    {NOMBRES_MESES[mesCalendario.mes]} {mesCalendario.anio}
-                  </span>
-                  <span className="text-[#FF5A00]">
-                    ({operarioSeleccionado})
-                  </span>
-                  <span className="text-[10px] bg-zinc-800 text-zinc-300 px-2 py-0.5 rounded font-mono">
-                    {totalesMesOperario.categoriaNombre}
-                  </span>
-                </h2>
+                <div className="flex flex-wrap items-center gap-2">
+                  <h2 className="text-xs md:text-sm font-black tracking-widest text-white print:text-black uppercase flex items-center gap-1.5">
+                    <span>
+                      {NOMBRES_MESES[mesCalendario.mes]} {mesCalendario.anio}
+                    </span>
+                    <span className="text-[#FF5A00]">
+                      ({operarioSeleccionado})
+                    </span>
+                    <span className="text-[10px] bg-zinc-800 text-zinc-300 px-2 py-0.5 rounded font-mono">
+                      {totalesMesOperario.categoriaNombre}
+                    </span>
+                  </h2>
+
+                  {/* BOTONES RÁPIDOS PARA TILDAR / DESTILDAR EXTRAS */}
+                  <div className="flex items-center gap-1 ml-1 print:hidden">
+                    <button
+                      onClick={() => tildarTodasExtras(true)}
+                      className="text-[9px] font-bold uppercase tracking-wider text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 hover:bg-emerald-500/20 px-2 py-0.5 rounded cursor-pointer transition-colors flex items-center gap-1"
+                      title="Tildar todas las horas extra del mes"
+                    >
+                      <CheckSquare size={11} />
+                      <span>Tildar todas</span>
+                    </button>
+                    <button
+                      onClick={() => tildarTodasExtras(false)}
+                      className="text-[9px] font-bold uppercase tracking-wider text-zinc-400 bg-zinc-800/60 border border-zinc-700 hover:bg-zinc-800 px-2 py-0.5 rounded cursor-pointer transition-colors flex items-center gap-1"
+                      title="Destildar todas las horas extra"
+                    >
+                      <Square size={11} />
+                      <span>Destildar</span>
+                    </button>
+                  </div>
+                </div>
 
                 <div className="flex items-center justify-between sm:justify-end gap-3 print:hidden">
                   <div className="relative">
@@ -863,11 +1165,11 @@ export default function FicheroModule() {
                 </div>
               </div>
 
-              {/* CARD DE RESUMEN FINANCIERO DINÁMICO */}
+              {/* CARD DE RESUMEN: EL TOTAL ESTIMADO SOLO SUMA HORAS EXTRA */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 bg-[#121212] print:bg-gray-100 p-2.5 rounded-lg border border-zinc-800 print:border-gray-300 text-[10px]">
                 <div className="flex flex-col">
                   <span className="text-zinc-500 uppercase tracking-widest font-bold">
-                    Hs Normales (&le;9h)
+                    Hs Normales
                   </span>
                   <span className="text-white print:text-black font-black text-xs font-mono">
                     {totalesMesOperario.normales.toFixed(1)} hs
@@ -883,10 +1185,13 @@ export default function FicheroModule() {
 
                 <div className="flex flex-col">
                   <span className="text-amber-400 uppercase tracking-widest font-bold flex items-center gap-1">
-                    <Sun size={11} /> Extras Diurnas (x1)
+                    <Sun size={11} /> Extras Diurnas (Tildadas)
                   </span>
                   <span className="text-amber-300 print:text-amber-700 font-black text-xs font-mono">
-                    {totalesMesOperario.extrasDiurnas.toFixed(1)} hs
+                    {totalesMesOperario.extrasDiurnas % 1 === 0
+                      ? totalesMesOperario.extrasDiurnas
+                      : totalesMesOperario.extrasDiurnas.toFixed(1)}{" "}
+                    hs
                   </span>
                   <span className="text-zinc-500 font-mono text-[9px]">
                     $
@@ -899,19 +1204,26 @@ export default function FicheroModule() {
 
                 <div className="flex flex-col">
                   <span className="text-cyan-400 uppercase tracking-widest font-bold flex items-center gap-1">
-                    <Moon size={11} /> Extras Noct. (x1.5)
+                    <Moon size={11} /> Extras Noct. (Tildadas)
                   </span>
                   <span className="text-cyan-300 print:text-cyan-700 font-black text-xs font-mono">
-                    {totalesMesOperario.extrasNocturnas.toFixed(1)} hs
+                    {totalesMesOperario.extrasNocturnas % 1 === 0
+                      ? totalesMesOperario.extrasNocturnas
+                      : totalesMesOperario.extrasNocturnas.toFixed(1)}{" "}
+                    hs
                   </span>
                   <span className="text-zinc-500 font-mono text-[9px]">
-                    1.5x por hora extra
+                    L-J 1.5x / Vie 2x ($
+                    {totalesMesOperario.vExtra.toLocaleString("es-AR", {
+                      minimumFractionDigits: 2,
+                    })}
+                    /h)
                   </span>
                 </div>
 
                 <div className="flex flex-col border-l border-zinc-800 print:border-gray-300 pl-3">
                   <span className="text-[#FF5A00] uppercase tracking-widest font-bold">
-                    Total Estimado
+                    Total Extras Estimado
                   </span>
                   <span className="text-emerald-400 print:text-emerald-700 font-black text-sm font-mono leading-tight">
                     $
@@ -920,10 +1232,11 @@ export default function FicheroModule() {
                     })}
                   </span>
                   <span className="text-zinc-500 text-[9px]">
-                    Escala{" "}
-                    {periodosUOYEP.find(
-                      (p) => p.periodo === periodoEscalaActivo,
-                    )?.label || ""}
+                    Solo Horas Extras (
+                    {totalesMesOperario.totalExtras % 1 === 0
+                      ? totalesMesOperario.totalExtras
+                      : totalesMesOperario.totalExtras.toFixed(1)}{" "}
+                    hs)
                   </span>
                 </div>
               </div>
@@ -963,19 +1276,39 @@ export default function FicheroModule() {
                 const hayEgreso = !!celda.data?.egreso;
                 const tieneDatos = hayIngreso || hayEgreso;
                 const esNoche = celda.data?.esNoche;
+                const esFeriado = !!celda.data?.esFeriado;
+                const tieneAjuste = !!celda.data?.tieneAjuste;
                 const hsExtras =
                   (celda.data?.horasExtrasDiurnas || 0) +
                   (celda.data?.horasExtrasNocturnas || 0);
+
+                const claveTilde = `${operarioSeleccionado}_${celda.fechaISO}`;
+                const estaTildado = !!diasTildadosExtras[claveTilde];
 
                 if (!tieneDatos) {
                   return (
                     <div
                       key={celda.fechaISO}
-                      className="rounded border border-zinc-900/40 print:border-gray-200 bg-[#070707] print:bg-gray-50/60 flex items-center justify-center min-h-[60px] md:min-h-0 print:min-h-[88px]"
+                      onClick={() => abrirConfiguracionDia(celda)}
+                      title="Clic para configurar este día"
+                      className={`rounded border transition-colors flex flex-col justify-between p-1.5 md:p-2 cursor-pointer min-h-[60px] md:min-h-0 print:min-h-[88px] ${
+                        esFeriado
+                          ? "border-purple-600/60 bg-purple-950/20 hover:border-purple-500"
+                          : "border-zinc-900/40 print:border-gray-200 bg-[#070707] print:bg-gray-50/60 hover:border-zinc-700"
+                      }`}
                     >
-                      <span className="text-[10px] md:text-xs font-bold text-zinc-700 print:text-gray-400 print:text-sm">
-                        {celda.numero}
-                      </span>
+                      <div className="flex items-center justify-between">
+                        <span
+                          className={`text-[10px] md:text-xs font-bold ${esFeriado ? "text-purple-400 font-black" : "text-zinc-700 print:text-gray-400"}`}
+                        >
+                          {celda.numero}
+                        </span>
+                        {esFeriado && (
+                          <span className="text-[7px] bg-purple-900/60 text-purple-300 border border-purple-700/50 px-1 py-0.2 rounded font-black uppercase">
+                            FERIADO
+                          </span>
+                        )}
+                      </div>
                     </div>
                   );
                 }
@@ -983,22 +1316,68 @@ export default function FicheroModule() {
                 return (
                   <div
                     key={celda.fechaISO}
-                    className="rounded border border-zinc-750 print:border-gray-300 bg-[#111111] print:bg-white hover:border-[#FF5A00] transition-colors p-1 md:p-2 print:p-2.5 flex flex-col justify-between min-h-[60px] md:min-h-0 print:min-h-[88px] overflow-hidden shadow-sm"
+                    onClick={() => abrirConfiguracionDia(celda)}
+                    title="Clic para configurar día (hora pactada, feriado, normales)"
+                    className={`rounded border transition-colors p-1 md:p-2 print:p-2.5 flex flex-col justify-between min-h-[60px] md:min-h-0 print:min-h-[88px] overflow-hidden shadow-sm cursor-pointer ${
+                      esFeriado
+                        ? "border-purple-500 bg-purple-950/25"
+                        : estaTildado
+                          ? "border-[#FF5A00] bg-[#141414]"
+                          : "border-zinc-750 print:border-gray-300 bg-[#111111] print:bg-white hover:border-zinc-500"
+                    }`}
                   >
                     <div className="flex items-center justify-between shrink-0 mb-1 md:mb-0 print:mb-2">
-                      <span className="text-[10px] md:text-xs font-black text-white print:text-black">
-                        {celda.numero}
-                      </span>
+                      <div className="flex items-center gap-1.5">
+                        {/* CASILLA TILDABLE SOLO SI TIENE HORAS EXTRAS */}
+                        {hsExtras > 0 && (
+                          <input
+                            type="checkbox"
+                            checked={estaTildado}
+                            onClick={(e) => e.stopPropagation()}
+                            onChange={() => alternarTildeDia(celda.fechaISO)}
+                            title="Tildar para liquidar horas extras de este día"
+                            className="w-3.5 h-3.5 accent-[#FF5A00] rounded cursor-pointer print:hidden"
+                          />
+                        )}
+                        <span className="text-[10px] md:text-xs font-black text-white print:text-black">
+                          {celda.numero}
+                        </span>
+                        {esFeriado && (
+                          <span className="text-[7px] bg-purple-900/70 text-purple-300 border border-purple-700/60 px-1 py-0.2 rounded font-black uppercase">
+                            FERIADO
+                          </span>
+                        )}
+                        {tieneAjuste && !esFeriado && (
+                          <span
+                            className="text-[7px] bg-blue-900/50 text-blue-300 border border-blue-700/40 px-1 py-0.2 rounded font-mono font-bold"
+                            title="Día con ajuste particular de horario pactado"
+                          >
+                            AJUSTE
+                          </span>
+                        )}
+                      </div>
+
                       <div className="flex items-center gap-1">
                         {hsExtras > 0 && (
                           <span
-                            className={`text-[7px] md:text-[8px] font-mono px-1 py-0.2 rounded font-black ${
-                              esNoche
-                                ? "bg-cyan-500/20 text-cyan-300 border border-cyan-500/30"
-                                : "bg-amber-500/20 text-amber-300 border border-amber-500/30"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              alternarTildeDia(celda.fechaISO);
+                            }}
+                            title="Clic para tildar o destildar"
+                            className={`text-[7px] md:text-[8px] font-mono px-1 py-0.2 rounded font-black cursor-pointer transition-all ${
+                              estaTildado
+                                ? esNoche
+                                  ? "bg-cyan-500/25 text-cyan-300 border border-cyan-500/40"
+                                  : "bg-amber-500/25 text-amber-300 border border-amber-500/40"
+                                : "opacity-35 line-through bg-zinc-800 text-zinc-400 border border-zinc-700"
                             }`}
                           >
-                            +{hsExtras.toFixed(1)}h ext
+                            +
+                            {hsExtras % 1 === 0
+                              ? hsExtras
+                              : hsExtras.toFixed(1)}
+                            h ext
                           </span>
                         )}
                         {esNoche ? (
@@ -1260,6 +1639,164 @@ export default function FicheroModule() {
         </div>
       )}
 
+      {/* ========================================================================= */}
+      {/* MODAL: CONFIGURAR DÍA (FERIADO GLOBAL Y AJUSTE DE OPERARIO) */}
+      {/* ========================================================================= */}
+      {diaConfigurando && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+          <div className="bg-[#0D0D0D] border border-zinc-800 rounded-xl w-full max-w-md shadow-2xl flex flex-col overflow-hidden text-zinc-200">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-zinc-800 bg-[#121212]">
+              <div className="flex items-center gap-2.5">
+                <Sliders size={18} className="text-[#FF5A00]" />
+                <h3 className="text-xs font-black tracking-widest uppercase text-white">
+                  Configurar Día: {diaConfigurando.fechaISO}
+                </h3>
+              </div>
+              <button
+                onClick={() => setDiaConfigurando(null)}
+                className="text-zinc-500 hover:text-white transition-colors p-1 rounded hover:bg-zinc-800 cursor-pointer"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="p-5 flex flex-col gap-5 text-xs">
+              {/* SECCIÓN 1: FERIADO GLOBAL */}
+              <div className="bg-purple-950/20 border border-purple-800/40 p-3.5 rounded-lg">
+                <label className="flex items-start gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={formFeriado}
+                    onChange={(e) => setFormFeriado(e.target.checked)}
+                    className="w-4 h-4 accent-purple-500 mt-0.5 rounded cursor-pointer"
+                  />
+                  <div>
+                    <span className="font-black text-purple-300 uppercase tracking-wider block">
+                      Marcar como Día Feriado
+                    </span>
+                    <p className="text-[10px] text-zinc-400 mt-0.5">
+                      Aplica a{" "}
+                      <strong className="text-white">toda la empresa</strong>.
+                      Todo el tiempo trabajado en este día se liquidará como
+                      horas extras dobles (0 hs normales).
+                    </p>
+                  </div>
+                </label>
+              </div>
+
+              {/* SECCIÓN 2: AJUSTE INDIVIDUAL */}
+              <div className="border border-zinc-800 p-3.5 rounded-lg bg-[#121212] flex flex-col gap-4">
+                <div className="flex items-center gap-1.5 pb-2 border-b border-zinc-800">
+                  <span className="font-bold text-[#FF5A00] uppercase tracking-wider text-[11px]">
+                    Ajuste Individual: {operarioSeleccionado}
+                  </span>
+                </div>
+
+                <div>
+                  <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest block mb-1.5 flex items-center gap-1.5">
+                    <Clock size={12} className="text-[#FF5A00]" />
+                    Hora de inicio pactada (Opcional):
+                  </label>
+                  <input
+                    type="time"
+                    value={formHoraInicio}
+                    onChange={(e) => setFormHoraInicio(e.target.value)}
+                    placeholder="Ej: 15:00"
+                    className="w-full bg-[#18181b] border border-zinc-700 text-white font-mono font-bold text-xs p-2 rounded focus:border-[#FF5A00] outline-none"
+                  />
+                  <p className="text-[9px] text-zinc-500 mt-1">
+                    Dejá vacío si querés usar la fichada real con tolerancia
+                    automática.
+                  </p>
+                </div>
+
+                <div>
+                  <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest block mb-2">
+                    Régimen de Horas Normales:
+                  </label>
+
+                  <div className="space-y-2">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="tipoHoras"
+                        value="ESTANDAR"
+                        checked={formTipoHoras === "ESTANDAR"}
+                        onChange={() => setFormTipoHoras("ESTANDAR")}
+                        className="accent-[#FF5A00]"
+                      />
+                      <span>Estándar (9 horas normales)</span>
+                    </label>
+
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="tipoHoras"
+                        value="TODAS_EXTRA"
+                        checked={formTipoHoras === "TODAS_EXTRA"}
+                        onChange={() => setFormTipoHoras("TODAS_EXTRA")}
+                        className="accent-[#FF5A00]"
+                      />
+                      <span className="text-[#FF5A00] font-bold">
+                        Todas las horas son extras (0 hs normales)
+                      </span>
+                    </label>
+
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="tipoHoras"
+                        value="PERSONALIZADO"
+                        checked={formTipoHoras === "PERSONALIZADO"}
+                        onChange={() => setFormTipoHoras("PERSONALIZADO")}
+                        className="accent-[#FF5A00]"
+                      />
+                      <span>Personalizado</span>
+                    </label>
+
+                    {formTipoHoras === "PERSONALIZADO" && (
+                      <div className="pl-6 pt-1 flex items-center gap-2">
+                        <span className="text-[10px] text-zinc-400">
+                          Cantidad de hs normales:
+                        </span>
+                        <input
+                          type="number"
+                          step="0.5"
+                          min="0"
+                          max="12"
+                          value={formHsNormalesPersonalizadas}
+                          onChange={(e) =>
+                            setFormHsNormalesPersonalizadas(e.target.value)
+                          }
+                          className="w-20 bg-[#18181b] border border-zinc-700 text-white font-mono font-bold text-xs p-1.5 rounded focus:border-[#FF5A00] outline-none"
+                        />
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="p-4 border-t border-zinc-800 bg-[#121212] flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setDiaConfigurando(null)}
+                className="px-4 py-2 text-[10px] font-bold text-zinc-400 hover:text-white uppercase tracking-wider transition-colors cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={guardarConfiguracionDia}
+                className="bg-[#FF5A00] hover:bg-[#ff6e1f] text-white font-bold uppercase tracking-widest text-[10px] px-5 py-2 rounded transition cursor-pointer shadow-md"
+              >
+                Guardar Ajuste
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* MODAL: ASIGNACIÓN DE CATEGORÍAS */}
       {modalCategoriasAbierto && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-200">
@@ -1392,6 +1929,9 @@ export default function FicheroModule() {
                     const hayEgreso = !!celda.data?.egreso;
                     const tieneDatos = hayIngreso || hayEgreso;
                     const esNoche = celda.data?.esNoche;
+                    const hsExtras =
+                      (celda.data?.horasExtrasDiurnas || 0) +
+                      (celda.data?.horasExtrasNocturnas || 0);
 
                     if (!tieneDatos) {
                       return (
@@ -1415,11 +1955,22 @@ export default function FicheroModule() {
                           <span className="text-xs font-black text-black">
                             {celda.numero}
                           </span>
-                          {esNoche ? (
-                            <Moon size={14} className="text-cyan-600" />
-                          ) : (
-                            <Sun size={14} className="text-amber-500" />
-                          )}
+                          <div className="flex items-center gap-1">
+                            {hsExtras > 0 && (
+                              <span className="text-[8px] font-mono font-black text-zinc-800">
+                                +
+                                {hsExtras % 1 === 0
+                                  ? hsExtras
+                                  : hsExtras.toFixed(1)}
+                                h ext
+                              </span>
+                            )}
+                            {esNoche ? (
+                              <Moon size={14} className="text-cyan-600" />
+                            ) : (
+                              <Sun size={14} className="text-amber-500" />
+                            )}
+                          </div>
                         </div>
 
                         <div className="flex flex-col gap-1.5 min-h-0 justify-center font-mono">
