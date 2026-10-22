@@ -1,3 +1,4 @@
+import * as cheerio from "cheerio";
 const express = require("express");
 const cors = require("cors");
 const multer = require("multer");
@@ -4553,6 +4554,218 @@ app.put("/api/pedidos/:id/archivar", async (req, res) => {
 // ==========================
 // FICHERO
 // =========================
+
+import * as cheerio from "cheerio";
+
+// Helper para normalizar números argentinos ("6.738,02" -> 6738.02)
+const parsearMonedaArg = (str) => {
+  if (!str) return 0;
+  const limpio = str.replace(/[^\d,\.]/g, "").trim();
+  if (!limpio) return 0;
+  const estandar = limpio.replace(/\./g, "").replace(",", ".");
+  const num = parseFloat(estandar);
+  return isNaN(num) ? 0 : num;
+};
+
+// Helper para convertir nombres de mes a formato YYYY-MM
+const parsearMesAnio = (texto) => {
+  const mesesMap = {
+    enero: "01",
+    febrero: "02",
+    marzo: "03",
+    abril: "04",
+    mayo: "05",
+    junio: "06",
+    julio: "07",
+    agosto: "08",
+    septiembre: "09",
+    octubre: "10",
+    noviembre: "11",
+    diciembre: "12",
+  };
+  const match = texto
+    .toLowerCase()
+    .match(
+      /(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre)[^\d]*(\d{4})/,
+    );
+  if (!match) return null;
+  const mesNum = mesesMap[match[1]];
+  const anio = match[2];
+  const nombreMes = match[1].charAt(0).toUpperCase() + match[1].slice(1);
+  return {
+    periodo: `${anio}-${mesNum}`,
+    label: `${nombreMes} ${anio}`,
+  };
+};
+
+// 1. ENDPOINT DE SINCRONIZACIÓN AUTOMÁTICA CON UOYEP
+app.post("/api/fichero/sincronizar-uoyep", async (req, res) => {
+  try {
+    const respuestaWeb = await fetch(
+      "https://www.uoyepweb.org.ar/escala-salarial/",
+      {
+        headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)" },
+      },
+    );
+
+    if (!respuestaWeb.ok) {
+      throw new Error(`Error HTTP al consultar UOYEP: ${respuestaWeb.status}`);
+    }
+
+    const html = await respuestaWeb.text();
+    const $ = cheerio.load(html);
+
+    // Localizar la tabla salarial principal
+    const $tabla = $("table").first();
+    if (!$tabla.length) {
+      return res
+        .status(404)
+        .json({ error: "No se encontró tabla salarial en la web de UOYEP" });
+    }
+
+    // A) Mapear encabezados de períodos (Fila 1)
+    const periodosDetectados = [];
+    $tabla
+      .find("tr")
+      .first()
+      .find("th, td")
+      .each((idx, el) => {
+        const texto = $(el).text().trim();
+        const parsed = parsearMesAnio(texto);
+        if (parsed) {
+          periodosDetectados.push({
+            colIndex: idx,
+            periodo: parsed.periodo,
+            label: parsed.label,
+          });
+        }
+      });
+
+    if (periodosDetectados.length === 0) {
+      return res
+        .status(422)
+        .json({
+          error: "No se identificaron columnas de períodos válidas en la web",
+        });
+    }
+
+    // B) Insertar/Actualizar períodos en la base de datos
+    for (let i = 0; i < periodosDetectados.length; i++) {
+      const p = periodosDetectados[i];
+      await db.query(
+        `INSERT INTO fichero_uoyep_periodos (periodo, label, orden)
+         VALUES (?, ?, ?)
+         ON DUPLICATE KEY UPDATE label = VALUES(label), orden = VALUES(orden)`,
+        [p.periodo, p.label, i],
+      );
+    }
+
+    // C) Recorrer filas (Categorías y Tarifas)
+    let areaActual = "Producción";
+    const filas = $tabla.find("tr").slice(2); // Saltear encabezados
+
+    for (let r = 0; r < filas.length; r++) {
+      const celdas = $(filas[r]).find("td, th");
+      if (celdas.length === 0) continue;
+
+      const textoPrimeraCol = $(celdas[0]).text().trim();
+      if (!textoPrimeraCol) continue;
+
+      // Si la fila representa un subtítulo de área (ej: "Producción", "Mantenimiento")
+      if (
+        celdas.length === 1 ||
+        ["producción", "mantenimiento", "administración"].includes(
+          textoPrimeraCol.toLowerCase(),
+        )
+      ) {
+        areaActual = textoPrimeraCol;
+        continue;
+      }
+
+      const nombreCategoria = textoPrimeraCol.toUpperCase();
+      const codigoCategoria = nombreCategoria
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/[^A-Z0-9]/g, "_")
+        .replace(/_+/g, "_")
+        .slice(0, 50);
+
+      // Guardar categoría
+      await db.query(
+        `INSERT INTO fichero_uoyep_categorias (codigo, nombre, area)
+         VALUES (?, ?, ?)
+         ON DUPLICATE KEY UPDATE nombre = VALUES(nombre), area = VALUES(area)`,
+        [codigoCategoria, nombreCategoria, areaActual],
+      );
+
+      // Guardar los valores hora y no remunerativos correspondientes
+      let cIdx = 1;
+      for (const p of periodosDetectados) {
+        if (cIdx < celdas.length) {
+          const valHora = parsearMonedaArg($(celdas[cIdx]).text());
+          const sumaNoRem =
+            cIdx + 1 < celdas.length
+              ? parsearMonedaArg($(celdas[cIdx + 1]).text())
+              : 0;
+
+          await db.query(
+            `INSERT INTO fichero_uoyep_valores (categoria_codigo, periodo, valor_hora, suma_no_remunerativa)
+             VALUES (?, ?, ?, ?)
+             ON DUPLICATE KEY UPDATE valor_hora = VALUES(valor_hora), suma_no_remunerativa = VALUES(suma_no_remunerativa)`,
+            [codigoCategoria, p.periodo, valHora, sumaNoRem],
+          );
+        }
+        cIdx += 2;
+      }
+    }
+
+    res.json({
+      success: true,
+      periodosActualizados: periodosDetectados.length,
+    });
+  } catch (err) {
+    console.error("Error sincronizando con UOYEP:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 2. ENDPOINT PARA CONSULTAR LA ESCALA ACTIVA
+app.get("/api/fichero/escala-uoyep", async (req, res) => {
+  try {
+    const [periodos] = await db.query(
+      "SELECT periodo, label FROM fichero_uoyep_periodos ORDER BY orden ASC, periodo ASC",
+    );
+    const [categorias] = await db.query(
+      "SELECT codigo, nombre, area FROM fichero_uoyep_categorias ORDER BY area ASC, nombre ASC",
+    );
+    const [valores] = await db.query(
+      "SELECT categoria_codigo, periodo, valor_hora, suma_no_remunerativa FROM fichero_uoyep_valores",
+    );
+    const [asignaciones] = await db.query(
+      "SELECT nombre_operario, categoria_codigo FROM fichero_operarios_categorias",
+    );
+
+    res.json({ periodos, categorias, valores, asignaciones });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// 3. ASIGNAR CATEGORÍA A OPERARIO
+app.post("/api/fichero/asignar-categoria", async (req, res) => {
+  try {
+    const { nombre_operario, categoria_codigo } = req.body;
+    await db.query(
+      `INSERT INTO fichero_operarios_categorias (nombre_operario, categoria_codigo)
+       VALUES (?, ?)
+       ON DUPLICATE KEY UPDATE categoria_codigo = VALUES(categoria_codigo)`,
+      [nombre_operario, categoria_codigo || null],
+    );
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
 
 // 1. Obtener el último N° de registro almacenado en la base de datos
 app.get("/api/fichero/ultimo", async (req, res) => {
