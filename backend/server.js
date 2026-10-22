@@ -4592,7 +4592,7 @@ const parsearMesAnio = (texto) => {
   };
 };
 
-// 1. ENDPOINT DE SINCRONIZACIÓN AUTOMÁTICA CON UOYEP
+// ENDPOINT DE SINCRONIZACIÓN CORREGIDO (MANEJO EXACTO DE COLSPAN)
 app.post("/api/fichero/sincronizar-uoyep", async (req, res) => {
   try {
     const respuestaWeb = await fetch(
@@ -4609,7 +4609,6 @@ app.post("/api/fichero/sincronizar-uoyep", async (req, res) => {
     const html = await respuestaWeb.text();
     const $ = cheerio.load(html);
 
-    // Localizar la tabla salarial principal
     const $tabla = $("table").first();
     if (!$tabla.length) {
       return res
@@ -4617,33 +4616,38 @@ app.post("/api/fichero/sincronizar-uoyep", async (req, res) => {
         .json({ error: "No se encontró tabla salarial en la web de UOYEP" });
     }
 
-    // A) Mapear encabezados de períodos (Fila 1)
+    // 1. Mapeo dinámico de períodos teniendo en cuenta 'colspan'
     const periodosDetectados = [];
-    $tabla
-      .find("tr")
-      .first()
-      .find("th, td")
-      .each((idx, el) => {
-        const texto = $(el).text().trim();
-        const parsed = parsearMesAnio(texto);
-        if (parsed) {
-          periodosDetectados.push({
-            colIndex: idx,
-            periodo: parsed.periodo,
-            label: parsed.label,
-          });
-        }
-      });
+    let columnaActual = 1; // Columna 0 es 'Categorías'
+
+    const filaMeses = $tabla.find("tr").first().find("th, td");
+
+    filaMeses.each((idx, el) => {
+      // Ignoramos la primera celda que es "Anexo I / Categorías"
+      if (idx === 0) return;
+
+      const texto = $(el).text().trim();
+      const parsed = parsearMesAnio(texto);
+      const span = parseInt($(el).attr("colspan") || "2", 10);
+
+      if (parsed) {
+        periodosDetectados.push({
+          periodo: parsed.periodo,
+          label: parsed.label,
+          colValorHora: columnaActual, // El valor hora siempre es la primera columna del mes
+          colSumaFija: span > 1 ? columnaActual + 1 : null,
+        });
+        columnaActual += span;
+      }
+    });
 
     if (periodosDetectados.length === 0) {
       return res
         .status(422)
-        .json({
-          error: "No se identificaron columnas de períodos válidas en la web",
-        });
+        .json({ error: "No se identificaron columnas de períodos válidas" });
     }
 
-    // B) Insertar/Actualizar períodos en la base de datos
+    // 2. Guardar períodos en la base de datos
     for (let i = 0; i < periodosDetectados.length; i++) {
       const p = periodosDetectados[i];
       await db.query(
@@ -4654,9 +4658,9 @@ app.post("/api/fichero/sincronizar-uoyep", async (req, res) => {
       );
     }
 
-    // C) Recorrer filas (Categorías y Tarifas)
+    // 3. Recorrer filas de categorías
     let areaActual = "Producción";
-    const filas = $tabla.find("tr").slice(2); // Saltear encabezados
+    const filas = $tabla.find("tr").slice(2); // Salteamos fila de meses y fila de 'Valor Hora'
 
     for (let r = 0; r < filas.length; r++) {
       const celdas = $(filas[r]).find("td, th");
@@ -4665,12 +4669,13 @@ app.post("/api/fichero/sincronizar-uoyep", async (req, res) => {
       const textoPrimeraCol = $(celdas[0]).text().trim();
       if (!textoPrimeraCol) continue;
 
-      // Si la fila representa un subtítulo de área (ej: "Producción", "Mantenimiento")
+      // Detectar subtítulos de área ("Producción", "Mantenimiento", etc.)
+      const lower = textoPrimeraCol.toLowerCase();
       if (
-        celdas.length === 1 ||
-        ["producción", "mantenimiento", "administración"].includes(
-          textoPrimeraCol.toLowerCase(),
-        )
+        celdas.length <= 2 ||
+        lower.includes("producción") ||
+        lower.includes("mantenimiento") ||
+        lower.includes("administrativ")
       ) {
         areaActual = textoPrimeraCol;
         continue;
@@ -4692,14 +4697,13 @@ app.post("/api/fichero/sincronizar-uoyep", async (req, res) => {
         [codigoCategoria, nombreCategoria, areaActual],
       );
 
-      // Guardar los valores hora y no remunerativos correspondientes
-      let cIdx = 1;
+      // Guardar tarifas usando el índice de columna calculado para cada período
       for (const p of periodosDetectados) {
-        if (cIdx < celdas.length) {
-          const valHora = parsearMonedaArg($(celdas[cIdx]).text());
+        if (p.colValorHora < celdas.length) {
+          const valHora = parsearMonedaArg($(celdas[p.colValorHora]).text());
           const sumaNoRem =
-            cIdx + 1 < celdas.length
-              ? parsearMonedaArg($(celdas[cIdx + 1]).text())
+            p.colSumaFija !== null && p.colSumaFija < celdas.length
+              ? parsearMonedaArg($(celdas[p.colSumaFija]).text())
               : 0;
 
           await db.query(
@@ -4709,14 +4713,10 @@ app.post("/api/fichero/sincronizar-uoyep", async (req, res) => {
             [codigoCategoria, p.periodo, valHora, sumaNoRem],
           );
         }
-        cIdx += 2;
       }
     }
 
-    res.json({
-      success: true,
-      periodosActualizados: periodosDetectados.length,
-    });
+    res.json({ success: true, periodos: periodosDetectados });
   } catch (err) {
     console.error("Error sincronizando con UOYEP:", err);
     res.status(500).json({ error: err.message });
