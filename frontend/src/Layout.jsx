@@ -23,6 +23,7 @@ import {
   Wrench,
   Smartphone,
   ScanFace,
+  ShoppingCart,
 } from "lucide-react";
 
 import logo from "./assets/logo.svg";
@@ -41,6 +42,11 @@ export default function Layout({
   const ALL_MENU_ITEMS = [
     { id: "materias-primas", label: "Materias Primas", icon: Boxes },
     { id: "proveedores", label: "Proveedores", icon: Building2 },
+    {
+      id: "solicitudes-compra",
+      label: "Solicitudes de Compra",
+      icon: ShoppingCart,
+    },
     { id: "semielaborados", label: "Semielaborados", icon: Layers },
     { id: "reflectivas", label: "Reflectivas & Pegado", icon: Sparkles },
     { id: "ingenieria", label: "Ingeniería & BOM", icon: Cpu },
@@ -244,7 +250,7 @@ export default function Layout({
           <div className="flex items-center gap-3 sm:gap-4 min-w-0">
             <button
               onClick={() => setIsSidebarOpen(true)}
-              className="print:hidden p-2 sm:p-2.5 text-zinc-400 hover:text-[#FFD700] hover:border-[#FFD700] bg-black border border-zinc-800 rounded-lg shrink-0 transition-colors cursor-pointer print:hidden"
+              className="print:hidden p-2 sm:p-2.5 text-zinc-400 hover:text-[#FFD700] hover:border-[#FFD700] bg-black border border-zinc-800 rounded-lg shrink-0 transition-colors cursor-pointer"
             >
               <Menu size={22} />
             </button>

@@ -5125,6 +5125,141 @@ app.post("/api/estado-pedidos/sincronizar", async (req, res) => {
   }
 });
 
+// OBTENER TODAS LAS SOLICITUDES CON SUS ÍTEMS
+app.get("/api/compras/solicitudes", async (req, res) => {
+  try {
+    const [solicitudes] = await db.query(
+      "SELECT * FROM solicitudes_compra ORDER BY id DESC",
+    );
+    const [items] = await db.query("SELECT * FROM solicitudes_compra_items");
+
+    // Anidar los ítems dentro de cada solicitud
+    const solicitudesConItems = solicitudes.map((sc) => ({
+      ...sc,
+      items: items.filter((item) => item.solicitud_id === sc.id),
+    }));
+
+    res.json(solicitudesConItems);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// CREAR NUEVA SOLICITUD
+app.post("/api/compras/solicitudes", async (req, res) => {
+  const { fecha, items } = req.body;
+  try {
+    const [result] = await db.query(
+      "INSERT INTO solicitudes_compra (fecha, estado) VALUES (?, 'ABIERTA')",
+      [fecha],
+    );
+    const solicitudId = result.insertId;
+
+    for (let item of items) {
+      await db.query(
+        "INSERT INTO solicitudes_compra_items (solicitud_id, articulo, proveedor, cantidad_solicitada, prioridad) VALUES (?, ?, ?, ?, ?)",
+        [
+          solicitudId,
+          item.articulo,
+          item.proveedor,
+          item.cantidad_solicitada,
+          item.prioridad,
+        ],
+      );
+    }
+    res.json({ success: true, insertId: solicitudId });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ACTUALIZAR SOLICITUD COMPLETA (EDICIÓN)
+app.put("/api/compras/solicitudes/:id", async (req, res) => {
+  const { id } = req.params;
+  const { fecha, items } = req.body;
+
+  try {
+    await db.query("UPDATE solicitudes_compra SET fecha = ? WHERE id = ?", [
+      fecha,
+      id,
+    ]);
+    // Reemplazamos los ítems para hacer la edición más sencilla
+    await db.query(
+      "DELETE FROM solicitudes_compra_items WHERE solicitud_id = ?",
+      [id],
+    );
+
+    for (let item of items) {
+      await db.query(
+        "INSERT INTO solicitudes_compra_items (solicitud_id, articulo, proveedor, cantidad_solicitada, cantidad_recibida, prioridad, numero_oc) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        [
+          id,
+          item.articulo,
+          item.proveedor,
+          item.cantidad_solicitada,
+          item.cantidad_recibida || 0,
+          item.prioridad,
+          item.numero_oc,
+        ],
+      );
+    }
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// INGRESAR MERCADERÍA Y/O ASIGNAR O.C. A UN ÍTEM
+app.put("/api/compras/items/:itemId", async (req, res) => {
+  const { itemId } = req.params;
+  const { cantidad_recibida, numero_oc } = req.body;
+
+  try {
+    let query = "UPDATE solicitudes_compra_items SET ";
+    let params = [];
+
+    if (cantidad_recibida !== undefined) {
+      query += "cantidad_recibida = cantidad_recibida + ?, ";
+      params.push(parseFloat(cantidad_recibida));
+    }
+    if (numero_oc !== undefined) {
+      query += "numero_oc = ?, ";
+      params.push(numero_oc);
+    }
+
+    query = query.slice(0, -2) + " WHERE id = ?";
+    params.push(itemId);
+
+    await db.query(query, params);
+
+    // Revisar si la solicitud ya está completa para cambiar el estado automáticamente
+    const [item] = await db.query(
+      "SELECT solicitud_id FROM solicitudes_compra_items WHERE id = ?",
+      [itemId],
+    );
+    const [all_items] = await db.query(
+      "SELECT cantidad_solicitada, cantidad_recibida FROM solicitudes_compra_items WHERE solicitud_id = ?",
+      [item[0].solicitud_id],
+    );
+
+    const estaCompleta = all_items.every(
+      (i) =>
+        parseFloat(i.cantidad_recibida) >= parseFloat(i.cantidad_solicitada),
+    );
+
+    if (estaCompleta) {
+      await db.query(
+        "UPDATE solicitudes_compra SET estado = 'COMPLETADA' WHERE id = ?",
+        [item[0].solicitud_id],
+      );
+    }
+
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // ==========================================
 // CARGA Y PROCESAMIENTO DE PDFS DE CATEGORÍAS (CON BUSQUEDA INTELIGENTE)
 // ==========================================

@@ -20,6 +20,7 @@ import SimuladorLogistica from "./SimuladorLogistica";
 import LaboratorioEnsamblaje from "./LaboratorioEnsamblaje";
 import LaboratorioAR from "./LaboratorioAR";
 import VisorAR from "./VisorAR";
+import SolicitudesCompraModule from "./SolicitudesCompraModule";
 
 function App() {
   const [usuarioActual, setUsuarioActual] = useState(() => {
@@ -172,6 +173,9 @@ function App() {
       {hasAccess("proveedores") && activeModule === "proveedores" && (
         <Proveedores />
       )}
+
+      {hasAccess("solicitudes-compra") &&
+        activeModule === "solicitudes-compra" && <SolicitudesCompraModule />}
 
       {hasAccess("semielaborados") && activeModule === "semielaborados" && (
         <Semielaborados
