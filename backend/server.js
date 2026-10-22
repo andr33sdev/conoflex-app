@@ -4592,7 +4592,7 @@ const parsearMesAnio = (texto) => {
   };
 };
 
-// ENDPOINT DE SINCRONIZACIÓN CORREGIDO (MANEJO EXACTO DE COLSPAN)
+// ENDPOINT DE SINCRONIZACIÓN EXACTO (TABLEPRESS UOYEP)
 app.post("/api/fichero/sincronizar-uoyep", async (req, res) => {
   try {
     const respuestaWeb = await fetch(
@@ -4609,42 +4609,36 @@ app.post("/api/fichero/sincronizar-uoyep", async (req, res) => {
     const html = await respuestaWeb.text();
     const $ = cheerio.load(html);
 
-    const $tabla = $("table").first();
+    const $tabla = $("#tablepress-16").length
+      ? $("#tablepress-16")
+      : $("table").first();
     if (!$tabla.length) {
       return res
         .status(404)
-        .json({ error: "No se encontró tabla salarial en la web de UOYEP" });
+        .json({ error: "No se encontró la tabla de UOYEP" });
     }
 
-    // 1. Mapeo dinámico de períodos teniendo en cuenta 'colspan'
+    // 1. Detectar períodos y mapear el índice exacto de su columna
     const periodosDetectados = [];
-    let columnaActual = 1; // Columna 0 es 'Categorías'
+    const filaMeses = $tabla.find("tr.row-1").children();
 
-    const filaMeses = $tabla.find("tr").first().find("th, td");
-
-    filaMeses.each((idx, el) => {
-      // Ignoramos la primera celda que es "Anexo I / Categorías"
-      if (idx === 0) return;
-
+    filaMeses.each((colIdx, el) => {
       const texto = $(el).text().trim();
       const parsed = parsearMesAnio(texto);
-      const span = parseInt($(el).attr("colspan") || "2", 10);
-
       if (parsed) {
         periodosDetectados.push({
           periodo: parsed.periodo,
           label: parsed.label,
-          colValorHora: columnaActual, // El valor hora siempre es la primera columna del mes
-          colSumaFija: span > 1 ? columnaActual + 1 : null,
+          colValorHora: colIdx, // Índice directo de la columna Valor Hora (1, 4, 7, 10, 13, 16)
+          colSumaFija: colIdx + 1, // Suma fija contigua
         });
-        columnaActual += span;
       }
     });
 
     if (periodosDetectados.length === 0) {
       return res
         .status(422)
-        .json({ error: "No se identificaron columnas de períodos válidas" });
+        .json({ error: "No se pudieron detectar los períodos" });
     }
 
     // 2. Guardar períodos en la base de datos
@@ -4658,24 +4652,26 @@ app.post("/api/fichero/sincronizar-uoyep", async (req, res) => {
       );
     }
 
-    // 3. Recorrer filas de categorías
+    // Limpiar tabla de valores para remover datos desfasados previos
+    await db.query("DELETE FROM fichero_uoyep_valores");
+
+    // 3. Recorrer las filas del cuerpo
     let areaActual = "Producción";
-    const filas = $tabla.find("tr").slice(2); // Salteamos fila de meses y fila de 'Valor Hora'
+    const filas = $tabla.find("tbody tr");
 
     for (let r = 0; r < filas.length; r++) {
-      const celdas = $(filas[r]).find("td, th");
+      const celdas = $(filas[r]).children();
       if (celdas.length === 0) continue;
 
       const textoPrimeraCol = $(celdas[0]).text().trim();
-      if (!textoPrimeraCol) continue;
+      if (!textoPrimeraCol || textoPrimeraCol === "Categorías") continue;
 
-      // Detectar subtítulos de área ("Producción", "Mantenimiento", etc.)
+      // Detección de subtítulos de área ("Producción", "Mantenimiento", "Administrativas")
       const lower = textoPrimeraCol.toLowerCase();
       if (
-        celdas.length <= 2 ||
-        lower.includes("producción") ||
-        lower.includes("mantenimiento") ||
-        lower.includes("administrativ")
+        lower === "producción" ||
+        lower === "mantenimiento" ||
+        lower === "administrativas"
       ) {
         areaActual = textoPrimeraCol;
         continue;
@@ -4697,26 +4693,25 @@ app.post("/api/fichero/sincronizar-uoyep", async (req, res) => {
         [codigoCategoria, nombreCategoria, areaActual],
       );
 
-      // Guardar tarifas usando el índice de columna calculado para cada período
+      // Guardar tarifas leyendo el índice real de cada mes
       for (const p of periodosDetectados) {
         if (p.colValorHora < celdas.length) {
           const valHora = parsearMonedaArg($(celdas[p.colValorHora]).text());
           const sumaNoRem =
-            p.colSumaFija !== null && p.colSumaFija < celdas.length
+            p.colSumaFija < celdas.length
               ? parsearMonedaArg($(celdas[p.colSumaFija]).text())
               : 0;
 
           await db.query(
             `INSERT INTO fichero_uoyep_valores (categoria_codigo, periodo, valor_hora, suma_no_remunerativa)
-             VALUES (?, ?, ?, ?)
-             ON DUPLICATE KEY UPDATE valor_hora = VALUES(valor_hora), suma_no_remunerativa = VALUES(suma_no_remunerativa)`,
+             VALUES (?, ?, ?, ?)`,
             [codigoCategoria, p.periodo, valHora, sumaNoRem],
           );
         }
       }
     }
 
-    res.json({ success: true, periodos: periodosDetectados });
+    res.json({ success: true, totalPeriodos: periodosDetectados.length });
   } catch (err) {
     console.error("Error sincronizando con UOYEP:", err);
     res.status(500).json({ error: err.message });
