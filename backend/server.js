@@ -4551,12 +4551,6 @@ app.put("/api/pedidos/:id/archivar", async (req, res) => {
   }
 });
 
-// ==========================
-// FICHERO
-// =========================
-
-import * as cheerio from "cheerio";
-
 // Helper para normalizar números argentinos ("6.738,02" -> 6738.02)
 const parsearMonedaArg = (str) => {
   if (!str) return 0;
