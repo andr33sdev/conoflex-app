@@ -23,7 +23,6 @@ import {
   Check,
   PackageCheck,
   Share2,
-  PenTool,
 } from "lucide-react";
 
 import logo from "./assets/logo.svg";
@@ -215,7 +214,7 @@ function InputAutocompletado({
         >
           <div className="px-2.5 py-1 text-[8px] font-black text-zinc-500 uppercase tracking-widest border-b border-zinc-800/80 mb-1 flex items-center justify-between">
             <span>Coincidencias encontradas ({coincidencias.length})</span>
-            <span className="text-[8px] text-zinc-600  ">
+            <span className="text-[8px] text-zinc-600 font-mono">
               ENTER / CLIC
             </span>
           </div>
@@ -236,7 +235,7 @@ function InputAutocompletado({
                 <span className="text-zinc-100 group-hover:text-white break-words pr-2 leading-snug">
                   {textoItem}
                 </span>
-                <span className="text-[9px] text-zinc-500 group-hover:text-[#FF5A00] uppercase font-bold shrink-0 bg-black/60 px-2 py-0.5 rounded border border-zinc-800  ">
+                <span className="text-[9px] text-zinc-500 group-hover:text-[#FF5A00] uppercase font-bold shrink-0 bg-black/60 px-2 py-0.5 rounded border border-zinc-800 font-mono">
                   Seleccionar
                 </span>
               </button>
@@ -265,7 +264,7 @@ export default function SolicitudesCompraModule() {
   // Modales
   const [modalFormularioAbierto, setModalFormularioAbierto] = useState(false);
   const [modalGestionAbierto, setModalGestionAbierto] = useState(false);
-  const [modalFirmaManual, setModalFirmaManual] = useState(null); // { id, rol }
+  const [modalFirmaManual, setModalFirmaManual] = useState(null);
 
   // Edición
   const [solicitudEditando, setSolicitudEditando] = useState(null);
@@ -420,7 +419,6 @@ export default function SolicitudesCompraModule() {
     }, 300);
   };
 
-  // Función para enviar link de firma por WhatsApp
   const compartirPorWhatsApp = (scId, rol) => {
     const enlaceFirma = `${window.location.origin}/?firmar_sc=${scId}&rol=${rol}`;
     const rolTexto =
@@ -482,11 +480,16 @@ export default function SolicitudesCompraModule() {
 
   return (
     <div className="flex flex-col h-full bg-[#050505] text-zinc-100 p-4 md:p-6 select-none font-sans overflow-hidden print:bg-white print:p-0 print:m-0 print:h-auto print:overflow-visible">
-      {/* CSS DE IMPRESIÓN */}
+      {/* CSS DE IMPRESIÓN PROFESIONAL MULTIPÁGINA */}
       <style>{`
         @media print {
-          @page { size: A4 portrait; margin: 12mm 15mm; }
-          *, *::before, *::after { box-sizing: border-box; }
+          @page {
+            size: A4 portrait;
+            margin: 12mm 15mm;
+          }
+          *, *::before, *::after {
+            box-sizing: border-box;
+          }
           html, body, #root, #root > div, #root > div > div, main, main > div {
             display: block !important;
             height: auto !important;
@@ -500,17 +503,32 @@ export default function SolicitudesCompraModule() {
             box-shadow: none !important;
             background: white !important;
           }
-          .print-hidden, .bg-dots-orange, .animate-dots-drift { display: none !important; }
+          .print-hidden, .bg-dots-orange, .animate-dots-drift {
+            display: none !important;
+          }
           .print-visible {
-            display: flex !important;
-            flex-direction: column !important;
-            justify-content: space-between !important;
-            min-height: 268mm !important;
-            height: 268mm !important;
+            display: block !important;
             width: 100% !important;
+            height: auto !important;
+            min-height: 0 !important;
             margin: 0 !important;
             padding: 0 !important;
-            box-sizing: border-box !important;
+          }
+          table {
+            page-break-inside: auto !important;
+          }
+          thead {
+            display: table-header-group !important; /* Repite encabezados si pasa a otra hoja */
+          }
+          tr {
+            page-break-inside: avoid !important;
+            break-inside: avoid !important;
+          }
+          .bloque-firmas-print {
+            page-break-inside: avoid !important;
+            break-inside: avoid !important; /* NUNCA SE CORTA POR LA MITAD */
+            margin-top: 35px !important;
+            padding-top: 15px !important;
           }
         }
         @media screen {
@@ -665,10 +683,10 @@ export default function SolicitudesCompraModule() {
                       key={sc.id}
                       className="hover:bg-zinc-900/50 transition-colors h-[49px]"
                     >
-                      <td className="py-0 px-4 text-xs font-bold text-white  ">
+                      <td className="py-0 px-4 text-xs font-bold text-white font-mono">
                         SC-{String(sc.id).padStart(5, "0")}
                       </td>
-                      <td className="py-0 px-4 text-xs text-zinc-400   tracking-wide">
+                      <td className="py-0 px-4 text-xs text-zinc-400 font-mono tracking-wide">
                         {formatFecha(sc.fecha)}
                       </td>
                       <td
@@ -685,7 +703,7 @@ export default function SolicitudesCompraModule() {
                         )}
                       </td>
                       <td className="py-0 px-4 text-center">
-                        <div className="flex items-center justify-center gap-1.5 text-[8px]   font-bold uppercase">
+                        <div className="flex items-center justify-center gap-1.5 text-[8px] font-mono font-bold uppercase">
                           <span
                             className={`px-1.5 py-0.5 rounded border ${sc.firma_jefe ? "border-emerald-500/40 text-emerald-400 bg-emerald-500/10" : "border-zinc-800 text-zinc-500"}`}
                           >
@@ -700,7 +718,7 @@ export default function SolicitudesCompraModule() {
                       </td>
                       <td className="py-0 px-4">
                         <div className="flex items-center gap-2 justify-center">
-                          <span className="text-[10px]   font-bold text-zinc-400 w-8 text-right">
+                          <span className="text-[10px] font-mono font-bold text-zinc-400 w-8 text-right">
                             {porcentaje}%
                           </span>
                           <div className="w-24 h-1.5 bg-zinc-800 rounded-full overflow-hidden">
@@ -726,7 +744,6 @@ export default function SolicitudesCompraModule() {
                       </td>
                       <td className="py-0 px-4 text-right">
                         <div className="flex items-center justify-end gap-1">
-                          {/* BOTÓN WHATSAPP / COMPARTIR FIRMA */}
                           <div className="relative group">
                             <button
                               className="p-1.5 bg-emerald-950/40 border border-emerald-700/50 hover:bg-emerald-800/60 text-emerald-400 rounded transition cursor-pointer"
@@ -883,7 +900,7 @@ export default function SolicitudesCompraModule() {
                   type="date"
                   value={formFecha}
                   onChange={(e) => setFormFecha(e.target.value)}
-                  className="w-full bg-[#141418] border border-zinc-750 text-white   text-xs p-2 rounded focus:border-[#FF5A00] outline-none [color-scheme:dark]"
+                  className="w-full bg-[#141418] border border-zinc-750 text-white font-mono text-xs p-2 rounded focus:border-[#FF5A00] outline-none [color-scheme:dark]"
                   required
                 />
               </div>
@@ -948,7 +965,7 @@ export default function SolicitudesCompraModule() {
                             e.target.value,
                           )
                         }
-                        className="w-full bg-transparent border-none text-xs   font-bold text-white outline-none text-right"
+                        className="w-full bg-transparent border-none text-xs font-mono font-bold text-white outline-none text-right"
                         required
                       />
                     </div>
@@ -1001,7 +1018,6 @@ export default function SolicitudesCompraModule() {
       {modalGestionAbierto &&
         solicitudEditando &&
         (() => {
-          // Ordenamos los ítems de mayor a menor urgencia (5 a 1)
           const itemsOrdenados = [...solicitudEditando.items].sort(
             (a, b) => b.prioridad - a.prioridad,
           );
@@ -1036,7 +1052,7 @@ export default function SolicitudesCompraModule() {
                     <PackageCheck size={20} className="text-[#FF5A00]" />
                     <div>
                       <div className="flex items-center gap-2">
-                        <h3 className="text-xs font-black tracking-widest uppercase text-white  ">
+                        <h3 className="text-xs font-black tracking-widest uppercase text-white font-mono">
                           RECEPCIÓN DE MERCADERÍA • SC-
                           {String(solicitudEditando.id).padStart(5, "0")}
                         </h3>
@@ -1050,7 +1066,7 @@ export default function SolicitudesCompraModule() {
                           {solicitudEditando.estado}
                         </span>
                       </div>
-                      <span className="text-[10px] text-zinc-500  ">
+                      <span className="text-[10px] text-zinc-500 font-mono">
                         Emisión: {formatFecha(solicitudEditando.fecha)} •{" "}
                         {itemsCompletados} de {totalItems} ítems completos
                       </span>
@@ -1059,7 +1075,7 @@ export default function SolicitudesCompraModule() {
 
                   <div className="flex items-center gap-4">
                     <div className="flex items-center gap-2">
-                      <span className="text-[10px]   font-bold text-zinc-400">
+                      <span className="text-[10px] font-mono font-bold text-zinc-400">
                         {porcentajeGeneral}%
                       </span>
                       <div className="w-28 h-2 bg-zinc-800 rounded-full overflow-hidden border border-zinc-700">
@@ -1133,7 +1149,7 @@ export default function SolicitudesCompraModule() {
                               key={item.id}
                               className={`transition-colors ${completado ? "bg-emerald-950/10 hover:bg-emerald-950/20" : "hover:bg-zinc-850/40"}`}
                             >
-                              <td className="py-2 px-3 text-center text-zinc-500   text-[10px]">
+                              <td className="py-2 px-3 text-center text-zinc-500 font-mono text-[10px]">
                                 {idx + 1}
                               </td>
                               <td className="py-2 px-3 font-bold text-white uppercase text-xs">
@@ -1149,14 +1165,14 @@ export default function SolicitudesCompraModule() {
                                   {urgConfig.label}
                                 </span>
                               </td>
-                              <td className="py-2 px-3 text-right   font-bold text-zinc-200">
+                              <td className="py-2 px-3 text-right font-mono font-bold text-zinc-200">
                                 {cantPedida.toLocaleString("es-AR")}
                               </td>
-                              <td className="py-2 px-3 text-right   font-bold text-amber-400">
+                              <td className="py-2 px-3 text-right font-mono font-bold text-amber-400">
                                 {cantRecibida.toLocaleString("es-AR")}
                               </td>
                               <td
-                                className={`py-2 px-3 text-right   font-bold ${saldo === 0 ? "text-zinc-600" : "text-rose-400"}`}
+                                className={`py-2 px-3 text-right font-mono font-bold ${saldo === 0 ? "text-zinc-600" : "text-rose-400"}`}
                               >
                                 {saldo.toLocaleString("es-AR")}
                               </td>
@@ -1169,7 +1185,7 @@ export default function SolicitudesCompraModule() {
                                       actualizarOC(item.id, e.target.value);
                                   }}
                                   placeholder="Sin O.C."
-                                  className="w-full bg-[#050507] border border-zinc-700/80 text-white   text-[10px] px-2 py-1 rounded focus:border-[#FF5A00] outline-none text-center"
+                                  className="w-full bg-[#050507] border border-zinc-700/80 text-white font-mono text-[10px] px-2 py-1 rounded focus:border-[#FF5A00] outline-none text-center"
                                 />
                               </td>
                               <td className="py-1.5 px-3">
@@ -1187,7 +1203,7 @@ export default function SolicitudesCompraModule() {
                                       step="0.01"
                                       min="0.01"
                                       max={saldo}
-                                      className="w-20 bg-[#050507] border border-zinc-700 text-white   text-[11px] p-1 rounded focus:border-emerald-500 outline-none text-right font-bold"
+                                      className="w-20 bg-[#050507] border border-zinc-700 text-white font-mono text-[11px] p-1 rounded focus:border-emerald-500 outline-none text-right font-bold"
                                     />
                                     <button
                                       onClick={() => {
@@ -1239,7 +1255,7 @@ export default function SolicitudesCompraModule() {
                 </div>
 
                 <div className="px-5 py-3 border-t border-zinc-800 bg-[#101014] flex justify-between items-center text-xs text-zinc-500">
-                  <span className="  text-[10px]">
+                  <span className="font-mono text-[10px]">
                     Los cambios de número de O.C. se guardan automáticamente al
                     salir de la celda.
                   </span>
@@ -1259,158 +1275,161 @@ export default function SolicitudesCompraModule() {
         })()}
 
       {/* ========================================================= */}
-      {/* VISTA PARA IMPRESIÓN OFICIAL (PDF)                         */}
+      {/* VISTA PARA IMPRESIÓN OFICIAL (PDF MULTIPÁGINA INTELIGENTE)*/}
       {/* ========================================================= */}
       {solicitudImprimiendo &&
         (() => {
-          // Ordenamos los ítems en el PDF de 5 a 1 (más urgentes primero)
           const itemsOrdenadosPDF = [...solicitudImprimiendo.items].sort(
             (a, b) => b.prioridad - a.prioridad,
           );
 
           return (
             <div className="print-visible w-full bg-white text-zinc-900 font-sans leading-tight">
-              <div>
-                {/* CABECERA MEMBRETADA */}
-                <div className="flex items-center justify-between pb-5 border-b-2 border-zinc-900">
-                  <div className="flex items-center gap-4">
-                    <div className="w-14 h-14 rounded-full overflow-hidden border border-zinc-200 shrink-0">
-                      <img
-                        src={logo}
-                        alt="Conoflex Logo"
-                        className="w-full h-full object-cover"
-                      />
-                    </div>
-                    <div>
-                      <h1 className="text-xl font-black italic tracking-tighter uppercase text-zinc-950 leading-none">
-                        CONOFLEX APP
-                      </h1>
-                      <p className="text-[10px] font-bold text-[#FF5A00] tracking-widest uppercase mt-1">
-                        GESTIÓN DE PRODUCCIÓN
-                      </p>
-                    </div>
+              {/* CABECERA MEMBRETADA */}
+              <div className="flex items-center justify-between pb-5 border-b-2 border-zinc-900">
+                <div className="flex items-center gap-4">
+                  <div className="w-14 h-14 rounded-full overflow-hidden border border-zinc-200 shrink-0">
+                    <img
+                      src={logo}
+                      alt="Conoflex Logo"
+                      className="w-full h-full object-cover"
+                    />
                   </div>
-
-                  <div className="text-right border-l-2 border-zinc-200 pl-6">
-                    <span className="text-[9px] font-bold text-zinc-400 uppercase tracking-widest block">
-                      Comprobante Oficial
-                    </span>
-                    <h2 className="text-lg font-black tracking-tight uppercase text-zinc-950 leading-none mt-1">
-                      SOLICITUD DE COMPRA
-                    </h2>
-                    <div className="mt-2 flex items-center justify-end gap-3 text-xs   font-bold">
-                      <span className="bg-zinc-100 text-zinc-900 border border-zinc-300 px-2 py-0.5 rounded">
-                        Nº SC-{String(solicitudImprimiendo.id).padStart(5, "0")}
-                      </span>
-                      <span className="text-zinc-600">
-                        {formatFecha(solicitudImprimiendo.fecha)}
-                      </span>
-                    </div>
+                  <div>
+                    <h1 className="text-xl font-black italic tracking-tighter uppercase text-zinc-950 leading-none">
+                      CONOFLEX APP
+                    </h1>
+                    <p className="text-[10px] font-bold text-[#FF5A00] tracking-widest uppercase mt-1">
+                      GESTIÓN DE PRODUCCIÓN
+                    </p>
                   </div>
                 </div>
 
-                {/* FICHA DE CONTROL DE SECTORES */}
-                <div className="grid grid-cols-4 gap-3 my-5 p-3 rounded bg-zinc-50 border border-zinc-200 text-[10px]">
-                  <div>
-                    <span className="text-zinc-400 font-bold uppercase tracking-wider block text-[8px]">
-                      Sector Origen
+                <div className="text-right border-l-2 border-zinc-200 pl-6">
+                  <span className="text-[9px] font-bold text-zinc-400 uppercase tracking-widest block">
+                    Comprobante Oficial
+                  </span>
+                  <h2 className="text-lg font-black tracking-tight uppercase text-zinc-950 leading-none mt-1">
+                    SOLICITUD DE COMPRA
+                  </h2>
+                  <div className="mt-2 flex items-center justify-end gap-3 text-xs font-mono font-bold">
+                    <span className="bg-zinc-100 text-zinc-900 border border-zinc-300 px-2 py-0.5 rounded">
+                      Nº SC-{String(solicitudImprimiendo.id).padStart(5, "0")}
                     </span>
-                    <span className="font-bold text-zinc-800 uppercase mt-0.5 block">
-                      Planta Producción
-                    </span>
-                  </div>
-                  <div>
-                    <span className="text-zinc-400 font-bold uppercase tracking-wider block text-[8px]">
-                      Sector Destino
-                    </span>
-                    <span className="font-bold text-zinc-800 uppercase mt-0.5 block">
-                      Dpto. de Compras
-                    </span>
-                  </div>
-                  <div>
-                    <span className="text-zinc-400 font-bold uppercase tracking-wider block text-[8px]">
-                      Total de Ítems
-                    </span>
-                    <span className="font-bold text-zinc-800 uppercase mt-0.5 block  ">
-                      {solicitudImprimiendo.items.length} artículos
-                    </span>
-                  </div>
-                  <div>
-                    <span className="text-zinc-400 font-bold uppercase tracking-wider block text-[8px]">
-                      Estado de Gestión
-                    </span>
-                    <span className="font-bold text-zinc-900 uppercase mt-0.5 block">
-                      {solicitudImprimiendo.estado}
+                    <span className="text-zinc-600">
+                      {formatFecha(solicitudImprimiendo.fecha)}
                     </span>
                   </div>
                 </div>
-
-                {/* TABLA DE ARTÍCULOS ORDENADA DEL 5 AL 1 (MÁS URGENTES PRIMERO) */}
-                <table className="w-full text-left border-collapse border border-zinc-300 text-[11px] mt-4">
-                  <thead>
-                    <tr className="bg-zinc-100/90 text-zinc-800 border-b border-zinc-300 text-[9px] uppercase tracking-wider">
-                      <th className="py-2.5 px-3 border-r border-zinc-300 text-center w-12">
-                        #
-                      </th>
-                      <th className="py-2.5 px-3 border-r border-zinc-300 font-bold">
-                        Materia Prima
-                      </th>
-                      <th className="py-2.5 px-3 border-r border-zinc-300 w-64">
-                        Proveedor Sugerido / Marca
-                      </th>
-                      <th className="py-2.5 px-3 border-r border-zinc-300 text-right w-28">
-                        Cant. Pedida
-                      </th>
-                      <th className="py-2.5 px-3 text-center w-28">
-                        Prioridad
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-zinc-200">
-                    {itemsOrdenadosPDF.map((item, idx) => {
-                      const urgLabel =
-                        NIVELES_PRIORIDAD.find(
-                          (p) => p.valor === item.prioridad,
-                        )?.label || `Nivel ${item.prioridad}`;
-
-                      return (
-                        <tr
-                          key={idx}
-                          className={
-                            idx % 2 === 1 ? "bg-zinc-50/50" : "bg-white"
-                          }
-                        >
-                          <td className="py-2.5 px-3 border-r border-zinc-200 text-center text-zinc-500   text-[10px]">
-                            {String(idx + 1).padStart(2, "0")}
-                          </td>
-                          <td className="py-2.5 px-3 border-r border-zinc-200 font-bold text-zinc-950 uppercase text-[10px]">
-                            {item.articulo}
-                          </td>
-                          <td className="py-2.5 px-3 border-r border-zinc-200 text-zinc-700 text-[10px]">
-                            {item.proveedor || "-"}
-                          </td>
-                          <td className="py-2.5 px-3 border-r border-zinc-200 text-right   font-bold text-zinc-950">
-                            {parseFloat(
-                              item.cantidad_solicitada,
-                            ).toLocaleString("es-AR")}
-                          </td>
-                          <td className="py-2.5 px-3 text-center">
-                            <span
-                              className={`text-[9px] font-bold uppercase tracking-wider ${item.prioridad >= 4 ? "text-rose-600 font-black" : "text-zinc-800"}`}
-                            >
-                              {urgLabel}
-                            </span>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
               </div>
 
-              {/* PIE DE PÁGINA FIJO CON LAS DOS FIRMAS DIGITALES REALES ESTAMPADAS */}
-              <div className="mt-auto pt-6">
-                <div className="grid grid-cols-2 gap-20 text-center px-10 pb-6">
+              {/* FICHA DE CONTROL DE SECTORES */}
+              <div className="grid grid-cols-4 gap-3 my-5 p-3 rounded bg-zinc-50 border border-zinc-200 text-[10px]">
+                <div>
+                  <span className="text-zinc-400 font-bold uppercase tracking-wider block text-[8px]">
+                    Sector Origen
+                  </span>
+                  <span className="font-bold text-zinc-800 uppercase mt-0.5 block">
+                    Planta Producción
+                  </span>
+                </div>
+                <div>
+                  <span className="text-zinc-400 font-bold uppercase tracking-wider block text-[8px]">
+                    Sector Destino
+                  </span>
+                  <span className="font-bold text-zinc-800 uppercase mt-0.5 block">
+                    Dpto. de Compras
+                  </span>
+                </div>
+                <div>
+                  <span className="text-zinc-400 font-bold uppercase tracking-wider block text-[8px]">
+                    Total de Ítems
+                  </span>
+                  <span className="font-bold text-zinc-800 uppercase mt-0.5 block font-mono">
+                    {solicitudImprimiendo.items.length} artículos
+                  </span>
+                </div>
+                <div>
+                  <span className="text-zinc-400 font-bold uppercase tracking-wider block text-[8px]">
+                    Estado de Gestión
+                  </span>
+                  <span className="font-bold text-zinc-900 uppercase mt-0.5 block">
+                    {solicitudImprimiendo.estado}
+                  </span>
+                </div>
+              </div>
+
+              {/* TABLA DE ARTÍCULOS CON CONTROL DE SALTO DE PÁGINA */}
+              <table className="w-full text-left border-collapse border border-zinc-300 text-[11px] mt-4">
+                <thead>
+                  <tr className="bg-zinc-100/90 text-zinc-800 border-b border-zinc-300 text-[9px] uppercase tracking-wider">
+                    <th className="py-2.5 px-3 border-r border-zinc-300 text-center w-12">
+                      #
+                    </th>
+                    <th className="py-2.5 px-3 border-r border-zinc-300 font-bold">
+                      Descripción del Material / Materia Prima
+                    </th>
+                    <th className="py-2.5 px-3 border-r border-zinc-300 w-64">
+                      Proveedor Sugerido / Marca
+                    </th>
+                    <th className="py-2.5 px-3 border-r border-zinc-300 text-right w-28">
+                      Cant. Pedida
+                    </th>
+                    <th className="py-2.5 px-3 text-center w-28">Prioridad</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-zinc-200">
+                  {itemsOrdenadosPDF.map((item, idx) => {
+                    const urgLabel =
+                      NIVELES_PRIORIDAD.find((p) => p.valor === item.prioridad)
+                        ?.label || `Nivel ${item.prioridad}`;
+
+                    return (
+                      <tr
+                        key={idx}
+                        className={idx % 2 === 1 ? "bg-zinc-50/50" : "bg-white"}
+                      >
+                        <td className="py-2 px-3 border-r border-zinc-200 text-center text-zinc-500 font-mono text-[10px]">
+                          {String(idx + 1).padStart(2, "0")}
+                        </td>
+                        <td className="py-2 px-3 border-r border-zinc-200 font-bold text-zinc-950 uppercase text-[10px]">
+                          {item.articulo}
+                        </td>
+                        <td className="py-2 px-3 border-r border-zinc-200 text-zinc-700 text-[10px]">
+                          {item.proveedor || "-"}
+                        </td>
+                        <td className="py-2 px-3 border-r border-zinc-200 text-right font-mono font-bold text-zinc-950">
+                          {parseFloat(item.cantidad_solicitada).toLocaleString(
+                            "es-AR",
+                          )}
+                        </td>
+                        <td className="py-2 px-3 text-center">
+                          <span
+                            className={`text-[9px] font-bold uppercase tracking-wider ${item.prioridad >= 4 ? "text-rose-600 font-black" : "text-zinc-800"}`}
+                          >
+                            {urgLabel}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+
+              {/* ÁREA DE OBSERVACIONES */}
+              <div className="mt-5 p-3 border border-dashed border-zinc-300 rounded bg-zinc-50/30">
+                <span className="text-[8px] font-bold uppercase tracking-widest text-zinc-400 block mb-1">
+                  Observaciones / Justificación de Abastecimiento:
+                </span>
+                <div className="h-6 text-[10px] text-zinc-400 italic flex items-center">
+                  Requerimiento de materias primas para abastecimiento y
+                  cumplimiento del programa de producción de planta.
+                </div>
+              </div>
+
+              {/* BLOQUE DE FIRMAS BLINDADO CONTRA CORTES ENTRE HOJAS */}
+              <div className="bloque-firmas-print">
+                <div className="grid grid-cols-2 gap-20 text-center px-10 pb-4">
                   {/* FIRMA JEFE DE PRODUCCIÓN */}
                   <div>
                     <div className="h-16 flex items-end justify-center mb-1">
@@ -1421,12 +1440,12 @@ export default function SolicitudesCompraModule() {
                           className="max-h-16 max-w-[200px] object-contain"
                         />
                       ) : (
-                        <span className="text-[10px] text-zinc-400   italic">
+                        <span className="text-[10px] text-zinc-400 font-mono italic">
                           Firma Pendiente
                         </span>
                       )}
                     </div>
-                    <div className="border-t border-zinc-900 pt-2.5">
+                    <div className="border-t border-zinc-900 pt-2">
                       <span className="text-[11px] font-black uppercase tracking-wider text-zinc-950 block">
                         Jefe de Producción
                       </span>
@@ -1446,12 +1465,12 @@ export default function SolicitudesCompraModule() {
                           className="max-h-16 max-w-[200px] object-contain"
                         />
                       ) : (
-                        <span className="text-[10px] text-zinc-400   italic">
+                        <span className="text-[10px] text-zinc-400 font-mono italic">
                           Firma Pendiente
                         </span>
                       )}
                     </div>
-                    <div className="border-t border-zinc-900 pt-2.5">
+                    <div className="border-t border-zinc-900 pt-2">
                       <span className="text-[11px] font-black uppercase tracking-wider text-zinc-950 block">
                         Gerente de Producción
                       </span>
