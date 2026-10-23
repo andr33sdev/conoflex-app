@@ -163,7 +163,7 @@ export default function FirmaSolicitudPublica({
               />
             </div>
             <div>
-              <h1 className="text-xs font-black tracking-widest uppercase text-white font-mono">
+              <h1 className="text-xs font-black tracking-widest uppercase text-white  ">
                 SOLICITUD DE COMPRA • SC-{String(solicitud.id).padStart(5, "0")}
               </h1>
               <p className="text-[10px] text-[#FF5A00] font-bold uppercase tracking-wider">
@@ -201,7 +201,7 @@ export default function FirmaSolicitudPublica({
                   </p>
                 </div>
                 <div className="text-right shrink-0">
-                  <span className="font-mono font-bold text-white block">
+                  <span className="  font-bold text-white block">
                     {parseFloat(item.cantidad_solicitada).toLocaleString(
                       "es-AR",
                     )}{" "}

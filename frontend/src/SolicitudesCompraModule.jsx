@@ -215,7 +215,7 @@ function InputAutocompletado({
         >
           <div className="px-2.5 py-1 text-[8px] font-black text-zinc-500 uppercase tracking-widest border-b border-zinc-800/80 mb-1 flex items-center justify-between">
             <span>Coincidencias encontradas ({coincidencias.length})</span>
-            <span className="text-[8px] text-zinc-600 font-mono">
+            <span className="text-[8px] text-zinc-600  ">
               ENTER / CLIC
             </span>
           </div>
@@ -236,7 +236,7 @@ function InputAutocompletado({
                 <span className="text-zinc-100 group-hover:text-white break-words pr-2 leading-snug">
                   {textoItem}
                 </span>
-                <span className="text-[9px] text-zinc-500 group-hover:text-[#FF5A00] uppercase font-bold shrink-0 bg-black/60 px-2 py-0.5 rounded border border-zinc-800 font-mono">
+                <span className="text-[9px] text-zinc-500 group-hover:text-[#FF5A00] uppercase font-bold shrink-0 bg-black/60 px-2 py-0.5 rounded border border-zinc-800  ">
                   Seleccionar
                 </span>
               </button>
@@ -665,10 +665,10 @@ export default function SolicitudesCompraModule() {
                       key={sc.id}
                       className="hover:bg-zinc-900/50 transition-colors h-[49px]"
                     >
-                      <td className="py-0 px-4 text-xs font-bold text-white font-mono">
+                      <td className="py-0 px-4 text-xs font-bold text-white  ">
                         SC-{String(sc.id).padStart(5, "0")}
                       </td>
-                      <td className="py-0 px-4 text-xs text-zinc-400 font-mono tracking-wide">
+                      <td className="py-0 px-4 text-xs text-zinc-400   tracking-wide">
                         {formatFecha(sc.fecha)}
                       </td>
                       <td
@@ -685,7 +685,7 @@ export default function SolicitudesCompraModule() {
                         )}
                       </td>
                       <td className="py-0 px-4 text-center">
-                        <div className="flex items-center justify-center gap-1.5 text-[8px] font-mono font-bold uppercase">
+                        <div className="flex items-center justify-center gap-1.5 text-[8px]   font-bold uppercase">
                           <span
                             className={`px-1.5 py-0.5 rounded border ${sc.firma_jefe ? "border-emerald-500/40 text-emerald-400 bg-emerald-500/10" : "border-zinc-800 text-zinc-500"}`}
                           >
@@ -700,7 +700,7 @@ export default function SolicitudesCompraModule() {
                       </td>
                       <td className="py-0 px-4">
                         <div className="flex items-center gap-2 justify-center">
-                          <span className="text-[10px] font-mono font-bold text-zinc-400 w-8 text-right">
+                          <span className="text-[10px]   font-bold text-zinc-400 w-8 text-right">
                             {porcentaje}%
                           </span>
                           <div className="w-24 h-1.5 bg-zinc-800 rounded-full overflow-hidden">
@@ -883,7 +883,7 @@ export default function SolicitudesCompraModule() {
                   type="date"
                   value={formFecha}
                   onChange={(e) => setFormFecha(e.target.value)}
-                  className="w-full bg-[#141418] border border-zinc-750 text-white font-mono text-xs p-2 rounded focus:border-[#FF5A00] outline-none [color-scheme:dark]"
+                  className="w-full bg-[#141418] border border-zinc-750 text-white   text-xs p-2 rounded focus:border-[#FF5A00] outline-none [color-scheme:dark]"
                   required
                 />
               </div>
@@ -948,7 +948,7 @@ export default function SolicitudesCompraModule() {
                             e.target.value,
                           )
                         }
-                        className="w-full bg-transparent border-none text-xs font-mono font-bold text-white outline-none text-right"
+                        className="w-full bg-transparent border-none text-xs   font-bold text-white outline-none text-right"
                         required
                       />
                     </div>
@@ -1036,7 +1036,7 @@ export default function SolicitudesCompraModule() {
                     <PackageCheck size={20} className="text-[#FF5A00]" />
                     <div>
                       <div className="flex items-center gap-2">
-                        <h3 className="text-xs font-black tracking-widest uppercase text-white font-mono">
+                        <h3 className="text-xs font-black tracking-widest uppercase text-white  ">
                           RECEPCIÓN DE MERCADERÍA • SC-
                           {String(solicitudEditando.id).padStart(5, "0")}
                         </h3>
@@ -1050,7 +1050,7 @@ export default function SolicitudesCompraModule() {
                           {solicitudEditando.estado}
                         </span>
                       </div>
-                      <span className="text-[10px] text-zinc-500 font-mono">
+                      <span className="text-[10px] text-zinc-500  ">
                         Emisión: {formatFecha(solicitudEditando.fecha)} •{" "}
                         {itemsCompletados} de {totalItems} ítems completos
                       </span>
@@ -1059,7 +1059,7 @@ export default function SolicitudesCompraModule() {
 
                   <div className="flex items-center gap-4">
                     <div className="flex items-center gap-2">
-                      <span className="text-[10px] font-mono font-bold text-zinc-400">
+                      <span className="text-[10px]   font-bold text-zinc-400">
                         {porcentajeGeneral}%
                       </span>
                       <div className="w-28 h-2 bg-zinc-800 rounded-full overflow-hidden border border-zinc-700">
@@ -1133,7 +1133,7 @@ export default function SolicitudesCompraModule() {
                               key={item.id}
                               className={`transition-colors ${completado ? "bg-emerald-950/10 hover:bg-emerald-950/20" : "hover:bg-zinc-850/40"}`}
                             >
-                              <td className="py-2 px-3 text-center text-zinc-500 font-mono text-[10px]">
+                              <td className="py-2 px-3 text-center text-zinc-500   text-[10px]">
                                 {idx + 1}
                               </td>
                               <td className="py-2 px-3 font-bold text-white uppercase text-xs">
@@ -1149,14 +1149,14 @@ export default function SolicitudesCompraModule() {
                                   {urgConfig.label}
                                 </span>
                               </td>
-                              <td className="py-2 px-3 text-right font-mono font-bold text-zinc-200">
+                              <td className="py-2 px-3 text-right   font-bold text-zinc-200">
                                 {cantPedida.toLocaleString("es-AR")}
                               </td>
-                              <td className="py-2 px-3 text-right font-mono font-bold text-amber-400">
+                              <td className="py-2 px-3 text-right   font-bold text-amber-400">
                                 {cantRecibida.toLocaleString("es-AR")}
                               </td>
                               <td
-                                className={`py-2 px-3 text-right font-mono font-bold ${saldo === 0 ? "text-zinc-600" : "text-rose-400"}`}
+                                className={`py-2 px-3 text-right   font-bold ${saldo === 0 ? "text-zinc-600" : "text-rose-400"}`}
                               >
                                 {saldo.toLocaleString("es-AR")}
                               </td>
@@ -1169,7 +1169,7 @@ export default function SolicitudesCompraModule() {
                                       actualizarOC(item.id, e.target.value);
                                   }}
                                   placeholder="Sin O.C."
-                                  className="w-full bg-[#050507] border border-zinc-700/80 text-white font-mono text-[10px] px-2 py-1 rounded focus:border-[#FF5A00] outline-none text-center"
+                                  className="w-full bg-[#050507] border border-zinc-700/80 text-white   text-[10px] px-2 py-1 rounded focus:border-[#FF5A00] outline-none text-center"
                                 />
                               </td>
                               <td className="py-1.5 px-3">
@@ -1187,7 +1187,7 @@ export default function SolicitudesCompraModule() {
                                       step="0.01"
                                       min="0.01"
                                       max={saldo}
-                                      className="w-20 bg-[#050507] border border-zinc-700 text-white font-mono text-[11px] p-1 rounded focus:border-emerald-500 outline-none text-right font-bold"
+                                      className="w-20 bg-[#050507] border border-zinc-700 text-white   text-[11px] p-1 rounded focus:border-emerald-500 outline-none text-right font-bold"
                                     />
                                     <button
                                       onClick={() => {
@@ -1239,7 +1239,7 @@ export default function SolicitudesCompraModule() {
                 </div>
 
                 <div className="px-5 py-3 border-t border-zinc-800 bg-[#101014] flex justify-between items-center text-xs text-zinc-500">
-                  <span className="font-mono text-[10px]">
+                  <span className="  text-[10px]">
                     Los cambios de número de O.C. se guardan automáticamente al
                     salir de la celda.
                   </span>
@@ -1298,7 +1298,7 @@ export default function SolicitudesCompraModule() {
                     <h2 className="text-lg font-black tracking-tight uppercase text-zinc-950 leading-none mt-1">
                       SOLICITUD DE COMPRA
                     </h2>
-                    <div className="mt-2 flex items-center justify-end gap-3 text-xs font-mono font-bold">
+                    <div className="mt-2 flex items-center justify-end gap-3 text-xs   font-bold">
                       <span className="bg-zinc-100 text-zinc-900 border border-zinc-300 px-2 py-0.5 rounded">
                         Nº SC-{String(solicitudImprimiendo.id).padStart(5, "0")}
                       </span>
@@ -1331,7 +1331,7 @@ export default function SolicitudesCompraModule() {
                     <span className="text-zinc-400 font-bold uppercase tracking-wider block text-[8px]">
                       Total de Ítems
                     </span>
-                    <span className="font-bold text-zinc-800 uppercase mt-0.5 block font-mono">
+                    <span className="font-bold text-zinc-800 uppercase mt-0.5 block  ">
                       {solicitudImprimiendo.items.length} artículos
                     </span>
                   </div>
@@ -1353,7 +1353,7 @@ export default function SolicitudesCompraModule() {
                         #
                       </th>
                       <th className="py-2.5 px-3 border-r border-zinc-300 font-bold">
-                        Descripción del Material / Materia Prima
+                        Materia Prima
                       </th>
                       <th className="py-2.5 px-3 border-r border-zinc-300 w-64">
                         Proveedor Sugerido / Marca
@@ -1380,7 +1380,7 @@ export default function SolicitudesCompraModule() {
                             idx % 2 === 1 ? "bg-zinc-50/50" : "bg-white"
                           }
                         >
-                          <td className="py-2.5 px-3 border-r border-zinc-200 text-center text-zinc-500 font-mono text-[10px]">
+                          <td className="py-2.5 px-3 border-r border-zinc-200 text-center text-zinc-500   text-[10px]">
                             {String(idx + 1).padStart(2, "0")}
                           </td>
                           <td className="py-2.5 px-3 border-r border-zinc-200 font-bold text-zinc-950 uppercase text-[10px]">
@@ -1389,7 +1389,7 @@ export default function SolicitudesCompraModule() {
                           <td className="py-2.5 px-3 border-r border-zinc-200 text-zinc-700 text-[10px]">
                             {item.proveedor || "-"}
                           </td>
-                          <td className="py-2.5 px-3 border-r border-zinc-200 text-right font-mono font-bold text-zinc-950">
+                          <td className="py-2.5 px-3 border-r border-zinc-200 text-right   font-bold text-zinc-950">
                             {parseFloat(
                               item.cantidad_solicitada,
                             ).toLocaleString("es-AR")}
@@ -1421,7 +1421,7 @@ export default function SolicitudesCompraModule() {
                           className="max-h-16 max-w-[200px] object-contain"
                         />
                       ) : (
-                        <span className="text-[10px] text-zinc-400 font-mono italic">
+                        <span className="text-[10px] text-zinc-400   italic">
                           Firma Pendiente
                         </span>
                       )}
@@ -1446,7 +1446,7 @@ export default function SolicitudesCompraModule() {
                           className="max-h-16 max-w-[200px] object-contain"
                         />
                       ) : (
-                        <span className="text-[10px] text-zinc-400 font-mono italic">
+                        <span className="text-[10px] text-zinc-400   italic">
                           Firma Pendiente
                         </span>
                       )}
