@@ -591,7 +591,7 @@ export default function SolicitudesCompraModule() {
               <tr>
                 <th
                   onClick={() => alternarOrden("id")}
-                  className="py-3 px-4 text-[10px] font-bold text-zinc-400 uppercase tracking-widest cursor-pointer hover:text-white h-[40px] w-24"
+                  className="py-3 px-4 text-[10px] font-bold text-zinc-400 uppercase tracking-widest cursor-pointer hover:text-white h-[40px] w-36"
                 >
                   <div className="flex items-center gap-2">
                     Nro SC{" "}
