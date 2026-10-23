@@ -21,6 +21,7 @@ import LaboratorioEnsamblaje from "./LaboratorioEnsamblaje";
 import LaboratorioAR from "./LaboratorioAR";
 import VisorAR from "./VisorAR";
 import SolicitudesCompraModule from "./SolicitudesCompraModule";
+import FirmaSolicitudPublica from "./FirmaSolicitudPublica";
 
 function App() {
   const [usuarioActual, setUsuarioActual] = useState(() => {
@@ -53,6 +54,25 @@ function App() {
     }
     return "materias-primas";
   });
+
+  // Si abren desde el link de WhatsApp (ej: /?firmar_sc=258&rol=gerente)
+  const params = new URLSearchParams(window.location.search);
+  const firmarScId = params.get("firmar_sc");
+  const firmarRol = params.get("rol") || "gerente";
+
+  if (firmarScId) {
+    return (
+      <FirmaSolicitudPublica
+        id={firmarScId}
+        rol={firmarRol}
+        onVolver={() => (window.location.href = "/")}
+      />
+    );
+  }
+
+  if (!usuarioActual) {
+    return <Login onLogin={handleLoginSuccess} />;
+  }
 
   useEffect(() => {
     const checkUrl = () => {

@@ -5260,6 +5260,53 @@ app.put("/api/compras/items/:itemId", async (req, res) => {
   }
 });
 
+// OBTENER SOLICITUD PÚBLICA PARA FIRMAR
+app.get("/api/public/solicitudes-compra/:id", async (req, res) => {
+  const { id } = req.params;
+  try {
+    const [solicitudes] = await db.query(
+      "SELECT id, fecha, estado, firma_jefe, firma_gerente, fecha_firma_jefe, fecha_firma_gerente FROM solicitudes_compra WHERE id = ?",
+      [id],
+    );
+    if (solicitudes.length === 0)
+      return res.status(404).json({ error: "Solicitud no encontrada" });
+
+    const [items] = await db.query(
+      "SELECT * FROM solicitudes_compra_items WHERE solicitud_id = ? ORDER BY prioridad DESC",
+      [id],
+    );
+
+    res.json({ ...solicitudes[0], items });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// GUARDAR FIRMA DIGITAL (JEFE O GERENTE)
+app.post("/api/public/solicitudes-compra/:id/firmar", async (req, res) => {
+  const { id } = req.params;
+  const { rol, firma } = req.body; // rol: 'jefe' | 'gerente'
+
+  if (!firma) return res.status(400).json({ error: "Firma vacía" });
+
+  try {
+    if (rol === "gerente") {
+      await db.query(
+        "UPDATE solicitudes_compra SET firma_gerente = ?, fecha_firma_gerente = NOW() WHERE id = ?",
+        [firma, id],
+      );
+    } else {
+      await db.query(
+        "UPDATE solicitudes_compra SET firma_jefe = ?, fecha_firma_jefe = NOW() WHERE id = ?",
+        [firma, id],
+      );
+    }
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // ==========================================
 // CARGA Y PROCESAMIENTO DE PDFS DE CATEGORÍAS (CON BUSQUEDA INTELIGENTE)
 // ==========================================
