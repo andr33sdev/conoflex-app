@@ -25,9 +25,7 @@ import {
   CheckSquare,
   Square,
   Sliders,
-  Calendar,
   Clock,
-  Sparkles,
 } from "lucide-react";
 
 const API_BASE_URL = import.meta.env?.VITE_API_URL || "";
@@ -72,10 +70,10 @@ export default function FicheroModule() {
   const [ajustesDias, setAjustesDias] = useState({});
 
   // Modal de configuración de día
-  const [diaConfigurando, setDiaConfigurando] = useState(null); // { fechaISO, numero, data }
+  const [diaConfigurando, setDiaConfigurando] = useState(null);
   const [formFeriado, setFormFeriado] = useState(false);
   const [formHoraInicio, setFormHoraInicio] = useState("");
-  const [formTipoHoras, setFormTipoHoras] = useState("ESTANDAR"); // 'ESTANDAR' | 'TODAS_EXTRA' | 'PERSONALIZADO'
+  const [formTipoHoras, setFormTipoHoras] = useState("ESTANDAR");
   const [formHsNormalesPersonalizadas, setFormHsNormalesPersonalizadas] =
     useState(9);
 
@@ -98,6 +96,15 @@ export default function FicheroModule() {
   });
   const [imprimiendoLote, setImprimiendoLote] = useState(false);
   const [mostrarOperariosMobile, setMostrarOperariosMobile] = useState(false);
+
+  // Fecha actual de referencia en formato ISO (YYYY-MM-DD)
+  const hoyISO = useMemo(() => {
+    const d = new Date();
+    const anio = d.getFullYear();
+    const mes = String(d.getMonth() + 1).padStart(2, "0");
+    const dia = String(d.getDate()).padStart(2, "0");
+    return `${anio}-${mes}-${dia}`;
+  }, []);
 
   const NOMBRES_MESES = useMemo(
     () => [
@@ -132,7 +139,6 @@ export default function FicheroModule() {
     });
   };
 
-  // 1. CARGA DE CONFIGURACIÓN DE DÍAS Y FERIADOS DESDE BD
   const cargarConfiguracionDias = useCallback(async () => {
     try {
       const res = await fetch(getApiUrl("/api/fichero/configuracion-dias"));
@@ -159,7 +165,6 @@ export default function FicheroModule() {
     }
   }, []);
 
-  // 2. CARGA DE ESCALA DESDE BD
   const cargarEscalaUOYEP = useCallback(async () => {
     try {
       const res = await fetch(getApiUrl("/api/fichero/escala-uoyep"));
@@ -360,34 +365,26 @@ export default function FicheroModule() {
     return mapa;
   }, [valoresUOYEP, periodoEscalaActivo]);
 
-  // =========================================================================
-  // MOTOR DE CÁLCULO DE HORAS NORMALES Y EXTRAS CON SOPORTE PARA FERIADOS Y PACTADOS
-  // =========================================================================
   const calcularHorasDelTurno = useCallback(
     (dEnt, dSal, esNoche, esSiguienteDia, fechaISO, nombreOp) => {
-      const diaSemanaEnt = dEnt.getDay(); // 0 = Domingo, 5 = Viernes, 6 = Sábado
+      const diaSemanaEnt = dEnt.getDay();
       const hInReal = dEnt.getHours();
       const mInReal = dEnt.getMinutes();
       const hOut = dSal.getHours();
       const mOut = dSal.getMinutes();
 
-      // Verificación de Feriado Global
       const esFeriado = !!feriadosGlobales[fechaISO];
-
-      // Verificación de Ajuste Individual del Operario
       const claveAjuste = `${nombreOp}_${fechaISO}`;
       const ajuste = ajustesDias[claveAjuste] || null;
 
       let hInEfec = hInReal;
       let mInEfec = mInReal;
 
-      // Si tiene hora de inicio pactada fija (ej: "15:00")
       if (ajuste && ajuste.horaInicio) {
         const [pactH, pactM] = ajuste.horaInicio.split(":").map(Number);
         hInEfec = pactH;
         mInEfec = pactM;
       } else {
-        // Tolerancia estándar automática (45-59 a la hora siguiente; 0-10 a la hora en punto)
         if (mInReal >= 45) {
           hInEfec = (hInReal + 1) % 24;
           mInEfec = 0;
@@ -404,7 +401,6 @@ export default function FicheroModule() {
 
       const duracionMinutos = Math.max(0, minutosOut - minutosIn);
 
-      // REGLA SÁBADO DIURNO O FERIADO GLOBAL: Todas las horas son 100% extra
       const esSabadoDiurno = diaSemanaEnt === 6 && !esNoche;
       const esTratamientoExtraTotal =
         esSabadoDiurno || esFeriado || (ajuste && ajuste.todasExtra);
@@ -422,7 +418,6 @@ export default function FicheroModule() {
           hsExtrasDiurnas = totalHsExtras;
         }
       } else if (esNoche) {
-        // Turno nocturno estándar
         const limiteNormalesMin =
           ((ajuste ? ajuste.horasNormales : 9.0) || 9.0) * 60;
         const minutosNormales = Math.min(duracionMinutos, limiteNormalesMin);
@@ -446,7 +441,6 @@ export default function FicheroModule() {
         hsExtrasNocturnas = hsExtrasLiquidadas;
         hsExtrasDiurnas = 0;
       } else {
-        // Turno diurno estándar
         const limiteNormalesMin =
           ((ajuste ? ajuste.horasNormales : 9.0) || 9.0) * 60;
         const minutosNormales = Math.min(duracionMinutos, limiteNormalesMin);
@@ -636,7 +630,6 @@ export default function FicheroModule() {
     });
   };
 
-  // Apertura del modal de configuración del día
   const abrirConfiguracionDia = (celda) => {
     if (!celda) return;
     const fechaISO = celda.fechaISO;
@@ -665,7 +658,6 @@ export default function FicheroModule() {
     const fechaISO = diaConfigurando.fechaISO;
 
     try {
-      // 1. Guardar estado de feriado global si cambió
       const esFeriadoPrevio = !!feriadosGlobales[fechaISO];
       if (esFeriadoPrevio !== formFeriado) {
         await fetch(getApiUrl("/api/fichero/feriado"), {
@@ -676,7 +668,6 @@ export default function FicheroModule() {
         setFeriadosGlobales((prev) => ({ ...prev, [fechaISO]: formFeriado }));
       }
 
-      // 2. Guardar ajuste individual del operario
       const tieneHoraPactada = !!formHoraInicio.trim();
       const todasExtra = formTipoHoras === "TODAS_EXTRA";
       const horasNormales =
@@ -722,7 +713,6 @@ export default function FicheroModule() {
     }
   };
 
-  // CÁLCULO FINAL DE TOTALES: SOLO SE SUMAN LAS HORAS EXTRAS TILDADAS
   const totalesMesOperario = useMemo(() => {
     let normales = 0;
     let extrasDiurnas = 0;
@@ -752,7 +742,6 @@ export default function FicheroModule() {
     const vNormal = mapaValoresPeriodoActivo[codigoCat] || 0;
     const vExtra = vNormal * 1.5;
 
-    // TOTAL ESTIMADO: SOLO HORAS EXTRAS
     const totalPesosDiurnas = extrasDiurnas * vExtra;
     const totalPesosNocturnas = extrasNocturnas * vExtra;
     const totalPesosExtras = totalPesosDiurnas + totalPesosNocturnas;
@@ -900,7 +889,6 @@ export default function FicheroModule() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          {/* DESPLEGABLE DINÁMICO DE PERÍODOS DE ESCALA */}
           <div className="flex items-center gap-2 bg-[#121212] border border-zinc-800 px-3 py-1.5 rounded">
             <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest hidden sm:inline">
               Escala Salarial:
@@ -1055,7 +1043,6 @@ export default function FicheroModule() {
                     </span>
                   </h2>
 
-                  {/* BOTONES RÁPIDOS PARA TILDAR / DESTILDAR EXTRAS */}
                   <div className="flex items-center gap-1 ml-1 print:hidden">
                     <button
                       onClick={() => tildarTodasExtras(true)}
@@ -1165,7 +1152,7 @@ export default function FicheroModule() {
                 </div>
               </div>
 
-              {/* CARD DE RESUMEN: EL TOTAL ESTIMADO SOLO SUMA HORAS EXTRA */}
+              {/* CARD DE RESUMEN */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 bg-[#121212] print:bg-gray-100 p-2.5 rounded-lg border border-zinc-800 print:border-gray-300 text-[10px]">
                 <div className="flex flex-col">
                   <span className="text-zinc-500 uppercase tracking-widest font-bold">
@@ -1285,21 +1272,48 @@ export default function FicheroModule() {
                 const claveTilde = `${operarioSeleccionado}_${celda.fechaISO}`;
                 const estaTildado = !!diasTildadosExtras[claveTilde];
 
+                // CÁLCULO DE DÍA DE LA SEMANA (1 = Lunes ... 5 = Viernes)
+                const [anioC, mesC, diaC] = celda.fechaISO
+                  .split("-")
+                  .map(Number);
+                const diaSemanaNum = new Date(anioC, mesC - 1, diaC).getDay();
+                const esLunesAViernes = diaSemanaNum >= 1 && diaSemanaNum <= 5;
+
+                // CONDICIÓN: Sólo se marca ausente si es día de semana, no tiene datos, no es feriado Y EL DÍA YA PASÓ
+                const yaPaso = celda.fechaISO < hoyISO;
+                const esAusenteSemana =
+                  esLunesAViernes && !tieneDatos && !esFeriado && yaPaso;
+
+                // CASO SIN DATOS (DÍA VACÍO)
                 if (!tieneDatos) {
                   return (
                     <div
                       key={celda.fechaISO}
                       onClick={() => abrirConfiguracionDia(celda)}
-                      title="Clic para configurar este día"
+                      title={
+                        esFeriado
+                          ? "Día Feriado"
+                          : esAusenteSemana
+                            ? "Sin fichada registrada (Día laboral pasado)"
+                            : "Clic para configurar este día"
+                      }
                       className={`rounded border transition-colors flex flex-col justify-between p-1.5 md:p-2 cursor-pointer min-h-[60px] md:min-h-0 print:min-h-[88px] ${
                         esFeriado
                           ? "border-purple-600/60 bg-purple-950/20 hover:border-purple-500"
-                          : "border-zinc-900/40 print:border-gray-200 bg-[#070707] print:bg-gray-50/60 hover:border-zinc-700"
+                          : esAusenteSemana
+                            ? "border-rose-900/40 bg-rose-950/20 hover:border-rose-700/60 print:bg-rose-50/60 print:border-rose-200"
+                            : "border-zinc-900/40 print:border-gray-200 bg-[#070707] print:bg-gray-50/60 hover:border-zinc-700"
                       }`}
                     >
                       <div className="flex items-center justify-between">
                         <span
-                          className={`text-[10px] md:text-xs font-bold ${esFeriado ? "text-purple-400 font-black" : "text-zinc-700 print:text-gray-400"}`}
+                          className={`text-[10px] md:text-xs font-bold ${
+                            esFeriado
+                              ? "text-purple-400 font-black"
+                              : esAusenteSemana
+                                ? "text-rose-400/80 font-bold print:text-rose-700"
+                                : "text-zinc-700 print:text-gray-400"
+                          }`}
                         >
                           {celda.numero}
                         </span>
@@ -1313,6 +1327,7 @@ export default function FicheroModule() {
                   );
                 }
 
+                // CASO CON DATOS (FICHADA REGISTRADA)
                 return (
                   <div
                     key={celda.fechaISO}
@@ -1328,7 +1343,6 @@ export default function FicheroModule() {
                   >
                     <div className="flex items-center justify-between shrink-0 mb-1 md:mb-0 print:mb-2">
                       <div className="flex items-center gap-1.5">
-                        {/* CASILLA TILDABLE SOLO SI TIENE HORAS EXTRAS */}
                         {hsExtras > 0 && (
                           <input
                             type="checkbox"
@@ -1639,9 +1653,7 @@ export default function FicheroModule() {
         </div>
       )}
 
-      {/* ========================================================================= */}
-      {/* MODAL: CONFIGURAR DÍA (FERIADO GLOBAL Y AJUSTE DE OPERARIO) */}
-      {/* ========================================================================= */}
+      {/* MODAL: CONFIGURAR DÍA */}
       {diaConfigurando && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-200">
           <div className="bg-[#0D0D0D] border border-zinc-800 rounded-xl w-full max-w-md shadow-2xl flex flex-col overflow-hidden text-zinc-200">
@@ -1661,7 +1673,6 @@ export default function FicheroModule() {
             </div>
 
             <div className="p-5 flex flex-col gap-5 text-xs">
-              {/* SECCIÓN 1: FERIADO GLOBAL */}
               <div className="bg-purple-950/20 border border-purple-800/40 p-3.5 rounded-lg">
                 <label className="flex items-start gap-3 cursor-pointer">
                   <input
@@ -1684,7 +1695,6 @@ export default function FicheroModule() {
                 </label>
               </div>
 
-              {/* SECCIÓN 2: AJUSTE INDIVIDUAL */}
               <div className="border border-zinc-800 p-3.5 rounded-lg bg-[#121212] flex flex-col gap-4">
                 <div className="flex items-center gap-1.5 pb-2 border-b border-zinc-800">
                   <span className="font-bold text-[#FF5A00] uppercase tracking-wider text-[11px]">
@@ -1929,17 +1939,41 @@ export default function FicheroModule() {
                     const hayEgreso = !!celda.data?.egreso;
                     const tieneDatos = hayIngreso || hayEgreso;
                     const esNoche = celda.data?.esNoche;
+                    const esFeriado = !!celda.data?.esFeriado;
                     const hsExtras =
                       (celda.data?.horasExtrasDiurnas || 0) +
                       (celda.data?.horasExtrasNocturnas || 0);
+
+                    const [anioL, mesL, diaL] = celda.fechaISO
+                      .split("-")
+                      .map(Number);
+                    const diaSemanaL = new Date(anioL, mesL - 1, diaL).getDay();
+                    const esLunesAViernesL = diaSemanaL >= 1 && diaSemanaL <= 5;
+                    const yaPasoL = celda.fechaISO < hoyISO;
+                    const esAusenteSemanaL =
+                      esLunesAViernesL && !tieneDatos && !esFeriado && yaPasoL;
 
                     if (!tieneDatos) {
                       return (
                         <div
                           key={celda.fechaISO}
-                          className="rounded border border-gray-200 bg-gray-50/60 flex items-center justify-center min-h-[88px]"
+                          className={`rounded border flex items-center justify-center min-h-[88px] ${
+                            esFeriado
+                              ? "border-purple-300 bg-purple-50"
+                              : esAusenteSemanaL
+                                ? "border-red-200 bg-red-50/60"
+                                : "border-gray-200 bg-gray-50/60"
+                          }`}
                         >
-                          <span className="text-sm font-bold text-gray-400">
+                          <span
+                            className={`text-sm font-bold ${
+                              esFeriado
+                                ? "text-purple-600"
+                                : esAusenteSemanaL
+                                  ? "text-red-500"
+                                  : "text-gray-400"
+                            }`}
+                          >
                             {celda.numero}
                           </span>
                         </div>
