@@ -1,119 +1,202 @@
 "use strict";
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { liquidarMes, construirDias, calcularImporteHoras, controlesLCT } = require("../liquidacion");
+const { liquidarTurno, liquidarPeriodo, emparejarTurnos, CATEGORIAS } = require("../liquidacion");
 const { normalizarGrafico, graficoDesdeTabla } = require("../graficos");
 const { calcular } = require("../calculadora");
-const { elegirPeriodo, rangoMes } = require("../liquidacionDb");
+const { resolverFechas, elegirPeriodo } = require("../liquidacionDb");
+
+const VH = 10000;
+const ts = (fecha, hora) => {
+  const [y, m, d] = fecha.split("-").map(Number);
+  const [h, mi] = hora.split(":").map(Number);
+  return new Date(y, m - 1, d, h, mi).getTime();
+};
+// 2026-10-05 lunes, 06 martes, 09 viernes, 10 sábado, 11 domingo, 12 lunes
+const turno = (f1, h1, f2, h2, extra = {}) =>
+  liquidarTurno({ entradaTs: ts(f1, h1), salidaTs: ts(f2, h2), valorHora: VH, ...extra });
+const horas = (liq, cat) => liq.porCategoria[cat]?.horas ?? 0;
+
+test("factores de las categorías", () => {
+  assert.equal(CATEGORIAS.normal_diurna.factor, 1);
+  assert.equal(CATEGORIAS.normal_nocturna.factor, 1.1333);
+  assert.equal(CATEGORIAS.extra50_diurna.factor, 1.5);
+  assert.ok(Math.abs(CATEGORIAS.extra50_nocturna.factor - 1.69995) < 1e-9);
+  assert.equal(CATEGORIAS.extra100_diurna.factor, 2);
+  assert.ok(Math.abs(CATEGORIAS.extra100_nocturna.factor - 2.2666) < 1e-9);
+});
+
+test("lunes 07 a 16 (9 hs): todo normal diurno", () => {
+  const l = turno("2026-10-05", "07:00", "2026-10-05", "16:00");
+  assert.equal(horas(l, "normal_diurna"), 9);
+  assert.equal(l.importe, 90000);
+});
+
+test("lunes 07 a 18: 9 normales + 2 extras al 50% diurnas", () => {
+  const l = turno("2026-10-05", "07:00", "2026-10-05", "18:00");
+  assert.equal(horas(l, "normal_diurna"), 9);
+  assert.equal(horas(l, "extra50_diurna"), 2);
+  assert.equal(l.importe, 120000);
+});
+
+test("lunes 07 a 22: las extras que pasan las 21 son extra nocturna al 50% (sobre la hora nocturna)", () => {
+  const l = turno("2026-10-05", "07:00", "2026-10-05", "22:00");
+  assert.equal(horas(l, "normal_diurna"), 9);
+  assert.equal(horas(l, "extra50_diurna"), 5);
+  assert.equal(horas(l, "extra50_nocturna"), 1);
+  assert.equal(l.importe, 90000 + 75000 + 16999.5);
+});
+
+test("noche de lunes 22 a martes 06: 8 hs normales nocturnas (+13,33%)", () => {
+  const l = turno("2026-10-05", "22:00", "2026-10-06", "06:00");
+  assert.equal(horas(l, "normal_nocturna"), 8);
+  assert.equal(l.importe, 90664);
+});
+
+test("viernes 21 a sábado 09: 9 normales nocturnas y 3 extras al 50% diurnas (sábado antes de las 13)", () => {
+  const l = turno("2026-10-09", "21:00", "2026-10-10", "09:00");
+  assert.equal(horas(l, "normal_nocturna"), 9);
+  assert.equal(horas(l, "extra50_diurna"), 3);
+  assert.equal(l.importe, 101997 + 45000);
+});
+
+test("sábado 07 a 17: hasta las 13 normales; desde las 13, extra al 100%", () => {
+  const l = turno("2026-10-10", "07:00", "2026-10-10", "17:00");
+  assert.equal(horas(l, "normal_diurna"), 6);
+  assert.equal(horas(l, "extra100_diurna"), 4);
+  assert.equal(l.importe, 60000 + 80000);
+});
+
+test("domingo 08 a 12: todo extra al 100%", () => {
+  const l = turno("2026-10-11", "08:00", "2026-10-11", "12:00");
+  assert.equal(horas(l, "extra100_diurna"), 4);
+  assert.equal(l.importe, 80000);
+});
+
+test("feriado: todo al 100%", () => {
+  const l = turno("2026-10-12", "07:00", "2026-10-12", "15:00", { esFeriado: (f) => f === "2026-10-12" });
+  assert.equal(horas(l, "extra100_diurna"), 8);
+  assert.equal(l.importe, 160000);
+});
+
+test("sábado 20 a domingo 04: pasa a 100% nocturno; el domingo es 100% desde las 00:00", () => {
+  const l = turno("2026-10-10", "20:00", "2026-10-11", "04:00");
+  assert.equal(horas(l, "extra100_diurna"), 1);
+  assert.equal(horas(l, "extra100_nocturna"), 7);
+  assert.equal(l.importe, 20000 + 7 * 22666);
+});
+
+test("turno que cruza a un feriado: desde las 00:00 del feriado es 100%", () => {
+  // domingo-noche no; usamos lunes 11 -> martes 12 feriado
+  const l = turno("2026-10-11", "22:00", "2026-10-12", "06:00", { esFeriado: (f) => f === "2026-10-12" });
+  // domingo 22 a 24 = 2 hs al 100% nocturnas; feriado 00 a 06 = 6 hs al 100% nocturnas
+  assert.equal(horas(l, "extra100_nocturna"), 8);
+});
+
+test("ajuste: todas extra y jornada normal pactada", () => {
+  const a = turno("2026-10-05", "07:00", "2026-10-05", "15:00", { ajuste: { horaInicio: null, horasNormales: null, todasExtra: true } });
+  assert.equal(horas(a, "extra50_diurna"), 8);
+  const b = turno("2026-10-05", "07:00", "2026-10-05", "16:00", { ajuste: { horaInicio: null, horasNormales: 8, todasExtra: false } });
+  assert.equal(horas(b, "normal_diurna"), 8);
+  assert.equal(horas(b, "extra50_diurna"), 1);
+  const c = turno("2026-10-05", "06:30", "2026-10-05", "16:00", { ajuste: { horaInicio: "07:00", horasNormales: null, todasExtra: false } });
+  assert.equal(c.horasTotales, 9);
+});
+
+test("sin tope de horas extra: 16 hs un lunes se pagan todas", () => {
+  const l = turno("2026-10-05", "07:00", "2026-10-05", "23:00");
+  assert.equal(l.horasTotales, 16);
+  assert.equal(horas(l, "extra50_diurna") + horas(l, "extra50_nocturna"), 7);
+});
+
+test("al minuto, sin redondeos", () => {
+  const l = turno("2026-10-05", "07:00", "2026-10-05", "16:20");
+  assert.equal(horas(l, "extra50_diurna"), 0.33);
+  assert.equal(l.porCategoria.extra50_diurna.hhmm, "0:20");
+});
+
+test("desglose por tramos: horario, día, tipo, valor hora aplicado e importe", () => {
+  const l = turno("2026-10-10", "07:00", "2026-10-10", "17:00");
+  assert.equal(l.segmentos.length, 2);
+  assert.match(l.segmentos[0].motivo, /dentro de las 9 hs/);
+  assert.match(l.segmentos[1].motivo, /sábado desde las 13:00/);
+  assert.deepEqual(
+    { d: l.segmentos[1].desde, h: l.segmentos[1].hasta, dia: l.segmentos[1].dia, cat: l.segmentos[1].categoria, v: l.segmentos[1].valor_hora_aplicado, i: l.segmentos[1].importe },
+    { d: "13:00", h: "17:00", dia: "sábado", cat: "extra100_diurna", v: 20000, i: 80000 },
+  );
+});
 
 const f = (fecha_hora, tipo) => ({ fecha_hora, tipo });
-// 2026-10-05 es lunes
-const turno = (dia, hi, hs) => [f(`2026-10-${dia} ${hi}`, "ENTRADA"), f(`2026-10-${dia} ${hs}`, "SALIDA")];
+const par = (dia, hi, hs) => [f(`2026-10-${dia} ${hi}:00`, "ENTRADA"), f(`2026-10-${dia} ${hs}:00`, "SALIDA")];
 
-test("día normal de 9 hs: todo normal, sin extras", () => {
-  const d = construirDias(turno("05", "07:00:00", "16:00:00"))["2026-10-05"];
-  assert.equal(d.horasNormales, 9);
-  assert.equal(d.extrasDiurnas, 0);
+test("emparejamiento: turno nocturno se asigna al día de ingreso", () => {
+  const t = emparejarTurnos([f("2026-10-05 22:00:00", "ENTRADA"), f("2026-10-06 06:00:00", "SALIDA")]);
+  assert.equal(t.length, 1);
+  assert.equal(t[0].fecha, "2026-10-05");
+  assert.equal(t[0].egreso, "06:00");
 });
 
-test("lunes con 2 hs extra: 9 normales + 2 extras diurnas", () => {
-  const d = construirDias(turno("05", "07:00:00", "18:00:00"))["2026-10-05"];
-  assert.equal(d.horasNormales, 9);
-  assert.equal(d.extrasDiurnas, 2);
-});
-
-test("redondeo: la hora de entrada 07:50 cuenta desde las 08:00; media hora cumplida", () => {
-  const d = construirDias(turno("05", "07:50:00", "17:20:00"))["2026-10-05"];
-  // 08:00 a 17:20 = 9h20 -> 9 normales, 20 min de extra no completan media hora
-  assert.equal(d.horasNormales, 9);
-  assert.equal(d.extrasDiurnas, 0);
-});
-
-test("sábado diurno y feriado: todo es extra", () => {
-  const sab = construirDias(turno("10", "07:00:00", "13:00:00"))["2026-10-10"];
-  assert.equal(sab.horasNormales, 0);
-  assert.equal(sab.extrasDiurnas, 6);
-  const fer = construirDias(turno("06", "07:00:00", "15:00:00"), { feriados: new Set(["2026-10-06"]) })["2026-10-06"];
-  assert.equal(fer.horasNormales, 0);
-  assert.equal(fer.extrasDiurnas, 8);
-});
-
-test("turno nocturno cruza la medianoche y se asigna al día de entrada", () => {
-  const d = construirDias([f("2026-10-05 22:00:00", "ENTRADA"), f("2026-10-06 06:00:00", "SALIDA")])["2026-10-05"];
-  assert.equal(d.esNoche, true);
-  assert.equal(d.esSiguienteDia, true);
-  assert.equal(d.horasNormales, 8);
-});
-
-test("viernes noche con 3 hs extra: x1,5 x2 (regla de la casa)", () => {
-  // viernes 2026-10-09 21:00 -> sábado 09:00 = 12 hs: 9 normales + 3 extras reales
-  const d = construirDias([f("2026-10-09 21:00:00", "ENTRADA"), f("2026-10-10 09:00:00", "SALIDA")])["2026-10-09"];
-  assert.equal(d.extrasRealesNocturnas, 3);
-  assert.equal(d.extrasNocturnas, 9);
-});
-
-test("ajuste del día: horas normales pactadas y 'todas extra'", () => {
-  const aj = { "2026-10-05": { horaInicio: null, horasNormales: 8, todasExtra: false }, "2026-10-07": { horaInicio: null, horasNormales: null, todasExtra: true } };
-  const dias = construirDias([...turno("05", "07:00:00", "16:00:00"), ...turno("07", "07:00:00", "15:00:00")], { ajustes: aj });
-  assert.equal(dias["2026-10-05"].horasNormales, 8);
-  assert.equal(dias["2026-10-05"].extrasDiurnas, 1);
-  assert.equal(dias["2026-10-07"].horasNormales, 0);
-  assert.equal(dias["2026-10-07"].extrasDiurnas, 8);
-});
-
-test("liquidarMes: importes con valor hora y extras x1,5", () => {
-  const r = liquidarMes({
-    mes: "2026-10",
-    fichadas: [...turno("05", "07:00:00", "18:00:00"), ...turno("06", "07:00:00", "16:00:00")],
-    feriados: new Set(), ajustes: {}, valorHora: 10000,
+test("liquidarPeriodo: solo cuenta los días pedidos, desglosa cada uno y suma bien", () => {
+  const fichadas = [...par("05", "07:00", "18:00"), ...par("06", "07:00", "16:00"), ...par("10", "07:00", "17:00")];
+  const r = liquidarPeriodo({
+    fichadas, fechasIncluidas: new Set(["2026-10-05", "2026-10-10"]), valorHoraDe: () => VH, detalle: "completo",
   });
-  assert.equal(r.horas_normales, 18);
-  assert.equal(r.horas_extra_diurnas, 2);
-  assert.equal(r.importe_normales, 180000);
-  assert.equal(r.importe_extras, 30000); // 2 x 15000
-  assert.equal(r.importe_total, 210000);
-  assert.equal(r.dias_trabajados, 2);
+  assert.equal(r.turnos_liquidados, 2);
+  assert.deepEqual(r.dias.map((d) => d.fecha), ["2026-10-05", "2026-10-10"]);
+  assert.equal(r.dias[0].importe, 120000);
+  assert.equal(r.dias[1].importe, 140000);
+  assert.equal(r.importe_total, 260000);
+  assert.ok(r.dias[1].desglose.length === 2);
+  assert.equal(r.por_categoria.extra100_diurna.horas, 4);
+  assert.equal(r.horas_normales, 15);
+  assert.equal(r.horas_extra, 6);
 });
 
-test("liquidarMes: ignora días de otro mes (borde) y avisa salida sin registrar", () => {
-  const r = liquidarMes({
-    mes: "2026-10",
-    fichadas: [...turno("30", "07:00:00", "16:00:00"), f("2026-10-12 07:00:00", "ENTRADA")],
-    feriados: new Set(), ajustes: {}, valorHora: 1000,
+test("liquidarPeriodo: feriado agrega nota y salida sin registrar avisa", () => {
+  const r = liquidarPeriodo({
+    fichadas: [...par("12", "07:00", "15:00"), f("2026-10-13 07:00:00", "ENTRADA")],
+    fechasIncluidas: new Set(["2026-10-12", "2026-10-13"]), feriados: new Set(["2026-10-12"]), valorHoraDe: () => VH, detalle: "completo",
   });
-  assert.ok(r.controles.some((c) => /no se registró la salida/.test(c)));
-  const nov = liquidarMes({ mes: "2026-11", fichadas: turno("30", "07:00:00", "16:00:00"), feriados: new Set(), ajustes: {}, valorHora: 1000 });
-  assert.equal(nov.horas_normales, 0);
+  assert.ok(r.dias[0].notas.includes("feriado"));
+  assert.match(r.dias[0].desglose[0].motivo, /feriado: todas las horas son extra al 100%/);
+  assert.ok(r.avisos.some((a) => /no se registró la salida/.test(a)));
+  assert.equal(r.dias[1].sin_salida, true);
 });
 
-test("controles LCT: más de 3 hs extra por día y descanso menor a 12 hs", () => {
-  const dias = Object.values(construirDias([
-    ...turno("05", "07:00:00", "20:00:00"),
-    f("2026-10-06 06:00:00", "ENTRADA"), f("2026-10-06 15:00:00", "SALIDA"),
-  ]));
-  const { avisos } = controlesLCT(dias);
-  assert.ok(avisos.some((a) => /límite legal es 3 hs diarias/.test(a)));
-  assert.ok(avisos.some((a) => /12 hs/.test(a)));
+test("liquidarPeriodo: el valor hora puede cambiar según el día (escala por mes)", () => {
+  const r = liquidarPeriodo({
+    fichadas: [...par("05", "07:00", "16:00")], fechasIncluidas: new Set(["2026-10-05"]),
+    valorHoraDe: (fecha) => (fecha.startsWith("2026-10") ? 12000 : 9000),
+  });
+  assert.equal(r.importe_total, 108000);
 });
 
-test("calcularImporteHoras: 50% y 100% con aportes del 17%", () => {
-  const r = calcularImporteHoras({ valor_hora: 10000, horas_normales: 10, horas_extra_50: 2, horas_extra_100: 3 });
-  assert.equal(r.importe_normales, 100000);
-  assert.equal(r.importe_extra_50, 30000);
-  assert.equal(r.importe_extra_100, 60000);
-  assert.equal(r.bruto, 190000);
-  assert.equal(r.aportes_estimados, 32300);
-  assert.equal(r.neto_estimado, 157700);
-  assert.ok(calcularImporteHoras({ valor_hora: 0 }).error);
-  assert.equal(calcularImporteHoras({ valor_hora: 1000, horas_extra_50: 1, adicional_porcentaje: 10 }).importe_extra_50, 1650);
+test("resolverFechas: quincenas, mes, rango y días sueltos (todo inclusive)", () => {
+  const q1 = resolverFechas({ mes: "2026-10", quincena: 1 });
+  assert.equal(q1.fechas.size, 15);
+  assert.ok(q1.fechas.has("2026-10-01") && q1.fechas.has("2026-10-15") && !q1.fechas.has("2026-10-16"));
+  const q2 = resolverFechas({ mes: "2026-10", quincena: 2 });
+  assert.equal(q2.fechas.size, 16);
+  assert.ok(q2.fechas.has("2026-10-16") && q2.fechas.has("2026-10-31"));
+  assert.equal(resolverFechas({ mes: "2026-02", quincena: 2 }).fechas.size, 13); // 16..28
+  assert.equal(resolverFechas({ mes: "2028-02", quincena: 2 }).fechas.size, 14); // bisiesto: 16..29
+  assert.equal(resolverFechas({ mes: "2026-10" }).fechas.size, 31);
+  assert.equal(resolverFechas({ desde: "2026-10-05", hasta: "2026-10-05" }).fechas.size, 1);
+  assert.equal(resolverFechas({ desde: "2026-10-05", hasta: "2026-10-09" }).fechas.size, 5);
+  const sueltas = resolverFechas({ fechas: ["2026-10-07", "2026-10-03", "2026-10-07"] });
+  assert.equal(sueltas.fechas.size, 2);
+  assert.equal(sueltas.sueltas, true);
+  assert.ok(resolverFechas({ mes: "2026-10", quincena: 3 }).error);
+  assert.ok(resolverFechas({ desde: "2026-02-31", hasta: "2026-03-01" }).error);
+  assert.ok(resolverFechas({ desde: "2026-10-09", hasta: "2026-10-05" }).error);
+  assert.ok(resolverFechas({}).error);
 });
 
-test("elegirPeriodo y rangoMes", () => {
+test("elegirPeriodo", () => {
   const per = [{ periodo: "2026-08" }, { periodo: "2026-10" }];
   assert.equal(elegirPeriodo(per, "2026-10"), "2026-10");
   assert.equal(elegirPeriodo(per, "2026-09"), "2026-08");
-  assert.equal(elegirPeriodo(per, "2026-01"), "2026-10"); // no hay anterior: el más nuevo
-  assert.equal(rangoMes("2026-10").desde, "2026-09-29 00:00:00");
+  assert.equal(elegirPeriodo(per, "2026-01"), "2026-10");
 });
 
 test("gráficos: validación y normalización", () => {
