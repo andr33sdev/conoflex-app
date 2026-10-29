@@ -1,5 +1,6 @@
 "use strict";
 // Carga de datos (fichadas, feriados, ajustes, escala de valor hora) y liquidación.
+const { HORAS_MENSUALES, esMensual, valorHoraOrdinaria, asegurarColumnaPagoMensual } = require("./escala");
 const { liquidarPeriodo, liquidarTurno, redondear, REGLAS, CATEGORIAS, DIAS } = require("./liquidacion");
 
 const sinAcentos = (s) => String(s).normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().trim();
@@ -83,7 +84,8 @@ async function cargarContexto(pool) {
     "SELECT nombre_operario, DATE_FORMAT(fecha, '%Y-%m-%d') AS fecha, TIME_FORMAT(hora_inicio_pactada, '%H:%i') AS hora_inicio_pactada, horas_normales, todas_extra FROM fichero_ajustes_dias",
   );
   const [asigRows] = await pool.query("SELECT nombre_operario, categoria_codigo FROM fichero_operarios_categorias");
-  const [catRows] = await pool.query("SELECT codigo, nombre FROM fichero_uoyep_categorias");
+  const conMarca = await asegurarColumnaPagoMensual(pool);
+  const [catRows] = await pool.query(`SELECT codigo, nombre${conMarca ? ", pago_mensual" : ""} FROM fichero_uoyep_categorias`);
   const [perRows] = await pool.query("SELECT periodo, label FROM fichero_uoyep_periodos");
   const [valRows] = await pool.query("SELECT categoria_codigo, periodo, valor_hora, suma_no_remunerativa FROM fichero_uoyep_valores");
   return {
@@ -91,20 +93,37 @@ async function cargarContexto(pool) {
     ajustes: ajustesRows,
     asignaciones: new Map(asigRows.map((a) => [a.nombre_operario, a.categoria_codigo])),
     categorias: new Map(catRows.map((c) => [c.codigo, c.nombre])),
+    marcasPago: new Map(catRows.map((c) => [c.codigo, c.pago_mensual == null ? null : Number(c.pago_mensual)])),
     periodos: perRows,
     valores: valRows,
   };
 }
 
-/** valorHoraDe(fecha) para una categoría: usa el período de la escala del mes de esa fecha. */
+/**
+ * Valor de la escala de una categoría para la fecha (período del mes de esa fecha) y cómo se paga:
+ * por hora o mensual (sueldo del mes; la hora ordinaria es sueldo / 180).
+ */
+function infoValor(ctx, codigo, fecha) {
+  if (!codigo) return null;
+  const periodo = elegirPeriodo(ctx.periodos, fecha.slice(0, 7));
+  if (!periodo) return null;
+  const v = ctx.valores.find((x) => x.categoria_codigo === codigo && x.periodo === periodo);
+  if (!v) return null;
+  const valorEscala = Number(v.valor_hora);
+  const mensual = esMensual(ctx.marcasPago.get(codigo), valorEscala);
+  return { periodo, valorEscala, mensual, valorHora: valorHoraOrdinaria(valorEscala, mensual) };
+}
+
+/** valorHoraDe(fecha) (hora diurna ordinaria) y mensualDe(fecha) para una categoría. */
 function valorHoraPara(ctx, codigo, periodosUsados) {
-  return (fecha) => {
-    if (!codigo) return 0;
-    const periodo = elegirPeriodo(ctx.periodos, fecha.slice(0, 7));
-    if (!periodo) return 0;
-    periodosUsados.add(periodo);
-    const v = ctx.valores.find((x) => x.categoria_codigo === codigo && x.periodo === periodo);
-    return v ? Number(v.valor_hora) : 0;
+  return {
+    valorHoraDe: (fecha) => {
+      const i = infoValor(ctx, codigo, fecha);
+      if (!i) return 0;
+      periodosUsados.add(i.periodo);
+      return i.valorHora;
+    },
+    mensualDe: (fecha) => !!infoValor(ctx, codigo, fecha)?.mensual,
   };
 }
 
@@ -122,7 +141,7 @@ function ajustesDe(ctx, nombre) {
 }
 
 const NOTA_REGLAS =
-  "Reglas de Conoflex: hora diurna 06:00–21:00, nocturna 21:00–06:00 con +13,33%; jornada normal de 9 hs desde el ingreso, el resto es extra al 50% (sobre la hora diurna o nocturna que corresponda); si el turno ingresa un sábado, hasta las 13:00 todas las horas son extra al 50% (un turno que ingresa de lunes a viernes mantiene sus primeras 9 hs normales aunque crucen al sábado); sábados desde las 13:00, domingos y feriados todo es extra al 100%; sin tope de horas extra. Un turno dura desde el ingreso hasta la primera salida registrada (hasta 30 hs después, p. ej. entra 19:00 y sale 17:00 del día siguiente = 22 hs seguidas). Cada minuto se clasifica por su fecha y hora reales y cada turno se asigna al día en que ingresó. Redondeo: ingreso de :45 a :10 va a la hora en punto (06:57 -> 07:00, 07:08 -> 07:00; de :11 a :44 se respeta) y la duración se cuenta en bloques de media hora completos (salida 19:08 con ingreso 07:00 = 12 hs).";
+  "Reglas de Conoflex: hora diurna 06:00–21:00, nocturna 21:00–06:00 con +13,33%; jornada normal de 9 hs desde el ingreso, el resto es extra al 50% (sobre la hora diurna o nocturna que corresponda); si el turno ingresa un sábado, hasta las 13:00 todas las horas son extra al 50% (un turno que ingresa de lunes a viernes mantiene sus primeras 9 hs normales aunque crucen al sábado); sábados desde las 13:00, domingos y feriados todo es extra al 100%; sin tope de horas extra. Operarios MENSUALES (categoría con sueldo mensual): la hora normal ordinaria es el sueldo mensual / 180 y los recargos se aplican sobre esa hora; las horas normales ya están en el sueldo. Un turno dura desde el ingreso hasta la primera salida registrada (hasta 30 hs después, p. ej. entra 19:00 y sale 17:00 del día siguiente = 22 hs seguidas). Cada minuto se clasifica por su fecha y hora reales y cada turno se asigna al día en que ingresó. Redondeo: ingreso de :45 a :10 va a la hora en punto (06:57 -> 07:00, 07:08 -> 07:00; de :11 a :44 se respeta) y la duración se cuenta en bloques de media hora completos (salida 19:08 con ingreso 07:00 = 12 hs).";
 
 async function liquidarDesdeBD(pool, { operario, mes, quincena, desde, hasta, fechas, detalle, solo_con_categoria } = {}) {
   const rango = resolverFechas({ fechas, desde, hasta, mes, quincena });
@@ -168,18 +187,22 @@ async function liquidarDesdeBD(pool, { operario, mes, quincena, desde, hasta, fe
 
   const resultados = elegidos.map((nombre) => {
     const codigo = ctx.asignaciones.get(nombre) || null;
+    const vh = valorHoraPara(ctx, codigo, periodosUsados);
     const liq = liquidarPeriodo({
       fichadas: filas.filter((f) => f.nombre === nombre),
       fechasIncluidas: rango.fechas,
       feriados: new Set(ctx.feriados.keys()),
       ajustes: ajustesDe(ctx, nombre),
-      valorHoraDe: valorHoraPara(ctx, codigo, periodosUsados),
+      valorHoraDe: vh.valorHoraDe,
+      mensualDe: vh.mensualDe,
       detalle: operario ? modoDetalle : "compacto",
     });
+    const ref = infoValor(ctx, codigo, rango.hasta);
     const sinValor = !codigo || (liq.importe_total === 0 && liq.horas_totales > 0);
     return {
       operario: nombre,
       categoria: codigo ? ctx.categorias.get(codigo) || codigo : "SIN CATEGORÍA ASIGNADA",
+      ...(ref ? { pago: descripcionPago(ref) } : {}),
       ...liq,
       ...(sinValor ? { aviso_importes: "El operario no tiene categoría asignada o la escala no tiene valor de hora para el período: los importes salen en 0 (las horas sí están calculadas)." } : {}),
     };
@@ -198,7 +221,7 @@ async function liquidarDesdeBD(pool, { operario, mes, quincena, desde, hasta, fe
   };
   if (operario) {
     const r = resultados[0];
-    return { ...base, ...r, valor_hora_diurno: valorReferencia(ctx, ctx.asignaciones.get(r.operario), rango.hasta) };
+    return { ...base, ...r, valor_hora_diurno: r.pago ? r.pago.valor_hora_ordinaria : null };
   }
   // El detalle por día va solo si no es enorme; si no, se pide por operario. Así el modelo nunca
   // tiene que inventar días: o están en el resultado o no se muestran.
@@ -220,18 +243,23 @@ async function liquidarDesdeBD(pool, { operario, mes, quincena, desde, hasta, fe
   };
 }
 
-function valorReferencia(ctx, codigo, fecha) {
-  if (!codigo) return null;
-  const periodo = elegirPeriodo(ctx.periodos, fecha.slice(0, 7));
-  const v = ctx.valores.find((x) => x.categoria_codigo === codigo && x.periodo === periodo);
-  return v ? Number(v.valor_hora) : null;
+function descripcionPago(i) {
+  return i.mensual
+    ? {
+        tipo: "mensual",
+        sueldo_mensual: i.valorEscala,
+        divisor_horas_mensuales: HORAS_MENSUALES,
+        valor_hora_ordinaria: redondear(i.valorHora),
+        nota: `Categoría mensual: la hora normal ordinaria es el sueldo mensual dividido ${HORAS_MENSUALES}; los recargos (nocturno, 50%, 100%) se aplican sobre esa hora. Las horas normales ya están incluidas en el sueldo (de ellas solo se paga el recargo nocturno).`,
+      }
+    : { tipo: "por hora", valor_hora_ordinaria: redondear(i.valorHora) };
 }
 
 /**
  * Simula UN turno hipotético con el mismo motor: "si entra el sábado 7 a las 22 y sale a las 6,
  * ¿cuánto cobra?". Usa valor_hora o la categoría de un operario.
  */
-async function simularTurno(pool, { fecha, entrada, salida, valor_hora, operario, feriado, horas_normales, todas_extra } = {}) {
+async function simularTurno(pool, { fecha, entrada, salida, valor_hora, sueldo_mensual, operario, feriado, horas_normales, todas_extra } = {}) {
   if (!RE_FECHA.test(String(fecha || "")) || !fechaDe(String(fecha))) return { error: "fecha debe ser AAAA-MM-DD." };
   const re = /^([01]?\d|2[0-3]):([0-5]\d)$/;
   if (!re.test(String(entrada || "")) || !re.test(String(salida || ""))) return { error: "entrada y salida deben ser HH:MM (24 hs)." };
@@ -244,6 +272,13 @@ async function simularTurno(pool, { fecha, entrada, salida, valor_hora, operario
 
   const ctx = await cargarContexto(pool);
   let vh = Number(valor_hora) || 0;
+  let mensual = false;
+  let pago = null;
+  if (Number(sueldo_mensual) > 0) {
+    mensual = true;
+    vh = valorHoraOrdinaria(Number(sueldo_mensual), true);
+    pago = descripcionPago({ mensual: true, valorEscala: Number(sueldo_mensual), valorHora: vh });
+  }
   let categoria = null;
   if (operario) {
     const nombres = [...ctx.asignaciones.keys()];
@@ -252,7 +287,10 @@ async function simularTurno(pool, { fecha, entrada, salida, valor_hora, operario
     if (hit.length !== 1) return { error: hit.length ? `"${operario}" coincide con varios operarios: ${hit.join(", ")}.` : `No encuentro al operario "${operario}" con categoría asignada.` };
     const codigo = ctx.asignaciones.get(hit[0]);
     categoria = `${hit[0]} – ${ctx.categorias.get(codigo) || codigo}`;
-    vh = valorReferencia(ctx, codigo, fecha) || 0;
+    const info = infoValor(ctx, codigo, fecha);
+    vh = info ? info.valorHora : 0;
+    mensual = !!info?.mensual;
+    if (info) pago = descripcionPago(info);
   }
   if (!(vh > 0)) return { error: "Falta el valor hora: pasá valor_hora o un operario con categoría y escala cargada." };
 
@@ -261,13 +299,14 @@ async function simularTurno(pool, { fecha, entrada, salida, valor_hora, operario
   const liq = liquidarTurno({
     entradaTs, salidaTs, esFeriado: (f) => feriadosSet.has(f),
     ajuste: { horaInicio: null, horasNormales: horas_normales ? Number(horas_normales) : null, todasExtra: !!todas_extra },
-    valorHora: vh,
+    valorHora: vh, mensual,
   });
   return {
     fecha, dia: DIAS[new Date(y, m - 1, d).getDay()], entrada, salida,
     feriado: feriadosSet.has(String(fecha)) || undefined,
     ...(categoria ? { categoria } : {}),
-    valor_hora_diurno: vh,
+    valor_hora_diurno: redondear(vh),
+    ...(pago ? { pago } : {}),
     horas_totales: liq.horasTotales,
     desglose: liq.segmentos,
     por_categoria: Object.fromEntries(Object.entries(liq.porCategoria).map(([k, v]) => [k, { horas: v.horas, importe: v.importe }])),

@@ -640,6 +640,7 @@ function crearEjecutor(pool, obtenerEsquema) {
 const { liquidarDesdeBD, simularTurno } = require("./liquidacionDb");
 const { normalizarGrafico, graficoDesdeTabla } = require("./graficos");
 const { calcular } = require("./calculadora");
+const { demandaSemielaborados } = require("./demanda");
 
 function fechaHoyArgentina() {
   const ahora = new Date();
@@ -680,11 +681,13 @@ CÓMO TRABAJAR
 HORAS TRABAJADAS Y LIQUIDACIONES
 - Para horas trabajadas, normales y extras de un operario o del plantel, y para lo que le corresponde cobrar, usá SIEMPRE la herramienta liquidar_horas. No calcules horas con SQL sobre la tabla de fichadas ni a mano.
 - REGLA DE ORO con liquidar_horas: los nombres de operarios, las horas, los días y los importes que escribas tienen que salir TEXTUALMENTE del resultado de la herramienta. Nunca completes, estimes ni inventes un operario, un día o un importe. Si el resultado no trae algo que te piden (por ejemplo el desglose de un operario), volvé a llamar a la herramienta con 'operario'. Listá exactamente a los operarios que devolvió, ni uno más ni uno menos, y usá 'cantidad_de_operarios' para decir cuántos son. Si el pedido es \"los operarios que tienen categoría\", usá solo_con_categoria=true. Para \"las extras\" usá importe_extras y horas_extra de cada operario (y total_importe_extras).
+- Hay categorías MENSUALES: en la escala (tabla fichero_uoyep_valores, campo valor_hora) su valor es el SUELDO DEL MES, no una hora. La hora normal ordinaria es ese sueldo dividido 180, y sobre esa hora se aplican el recargo nocturno (13,33%) y las extras al 50% o 100%. liquidar_horas ya lo hace solo (el resultado trae 'pago' con tipo, sueldo_mensual y valor_hora_ordinaria; las horas normales de un mensual ya están incluidas en su sueldo). Nunca multipliques por 1,5 ni por 2 un valor de la escala sin saber si es por hora o mensual; para cuentas con valores de la escala usá liquidar_horas / simular_turno, o dividí por 180 primero si es mensual (valor de 100.000 o más).
 - liquidar_horas liquida desde un día hasta el mes entero. Elegí los parámetros según lo que pida el usuario: un día = desde y hasta iguales; varios días sueltos (por ejemplo "el 3, el 7 y el 12") = fechas; "primera quincena" = mes con quincena 1 (del 1 al 15, ambos inclusive); "segunda quincena" = mes con quincena 2 (del 16 hasta el último día del mes, inclusive); "el mes" = solo mes; cualquier otro tramo = desde/hasta (ambos inclusive). Si el usuario no dice el año, usá el actual; si no dice el mes, el mes en curso.
 - Si pide días determinados, mostrá cada día por separado: ingreso, egreso, tramos con su tipo de hora (normal, extra al 50%, extra al 100%, diurna o nocturna), horas, valor hora aplicado, importe y por qué le corresponde eso (por ejemplo "sábado desde las 13:00: extra al 100%"). Después el total. Para una quincena o un mes, resumí por tipo de hora y listá los días solo si te lo piden o si hay pocos; ofrecé el desglose día por día.
 - Si no hay operario, la herramienta devuelve el resumen de todo el plantel; si piden el detalle de uno, volvé a llamarla con ese operario.
 - Reglas de liquidación de Conoflex (son las que mandan y ya las aplica la herramienta; usalas para explicar el porqué): hora diurna de 06:00 a 21:00; hora nocturna de 21:00 a 06:00, con un recargo base de 13,33% sobre la hora diurna; jornada normal de 9 horas desde el ingreso, de ahí en más son horas extra hasta que se retira; extras al 50% sobre la hora diurna o nocturna que corresponda (en días de semana, lo que pasa de las 9 hs; si el turno ingresa un sábado, hasta las 13:00 TODAS las horas son extra al 50%; un turno que ingresa de lunes a viernes tiene sus primeras 9 hs normales aunque pasen a sábado); sábados desde las 13:00, domingos completos y feriados: todas las horas son extra al 100% (dobles, diurnas o nocturnas). Conoflex no tiene tope de horas extra, ni diario ni mensual (acuerdo con los operarios): nunca lo marques como un problema ni lo menciones.
 - Los valores de hora salen de la escala salarial cargada en la base para la categoría de cada operario. De ahí no conocés ningún adicional más (antigüedad, presentismo, etc.): no los inventes ni los sumes; si preguntan, decí que no están cargados.
+- DEMANDA DE SEMIELABORADOS: para "demanda mensual", cuánto se necesita o cuánto stock cubre, usá SIEMPRE demanda_semielaborados (no la armes con SQL). Parte de las ventas (la tabla estado_pedidos: acá "pedidos" y "ventas" son lo mismo) de los últimos N meses (por defecto 3; usá los que pida el usuario), mira de qué semielaborados está compuesto cada producto terminado (su ingeniería activa) y suma el aporte de todos los productos en los que participa cada semielaborado. Si preguntan por uno, pasá 'semielaborado'; si preguntan "qué demanda un producto", pasá 'producto'. Mostrá siempre el período usado y, para cada semielaborado importante, en qué productos se usa y cuánto aporta cada uno. Avisá si el resultado trae productos vendidos sin ingeniería activa o modelos vendidos que no están cargados como producto, porque esa demanda no entra en el cálculo.
 - Para escenarios hipotéticos ("¿cuánto cobraría si entra el sábado a las 7 y sale a las 22?") usá simular_turno. Para otras cuentas que no sean una consulta, usá calculadora.
 - Si faltan fichadas de salida o un operario no tiene categoría, la herramienta lo avisa: decíselo al usuario en una línea.
 - Tené presentes la Ley de Contrato de Trabajo y la reforma laboral de 2026 (Ley de Modernización Laboral, sancionada el 27/02/2026: banco de horas por acuerdo escrito individual y voluntario, art. 197 bis; los recargos del 50% y 100% se mantienen; algunos cambios siguen en discusión judicial) y respondé consultas legales generales con precisión, aclarando que conviene confirmar con el contador o un abogado laboralista lo que tenga consecuencias legales. No sos abogada ni contadora.
@@ -762,10 +765,25 @@ const HERRAMIENTAS = [
             entrada: { type: "STRING", description: "HH:MM 24 hs." },
             salida: { type: "STRING", description: "HH:MM 24 hs." },
             valor_hora: { type: "NUMBER", description: "Valor de la hora diurna en pesos." },
+            sueldo_mensual: { type: "NUMBER", description: "Alternativa a valor_hora: sueldo mensual de una categoría mensual (la hora ordinaria sale de dividirlo por 180)." },
             operario: { type: "STRING", description: "Para usar el valor hora de su categoría." },
             feriado: { type: "BOOLEAN", description: "Tratar ese día como feriado." },
           },
           required: ["fecha", "entrada", "salida"],
+        },
+      },
+      {
+        name: "demanda_semielaborados",
+        description:
+          "Calcula la demanda mensual de semielaborados: toma las ventas (tabla estado_pedidos, que son los pedidos) de los últimos N meses, ve de qué semielaborados se compone cada producto terminado (ingeniería activa) y suma el aporte de todos los productos en los que participa cada semielaborado. Incluye stock total y días de stock. Por defecto 3 meses.",
+        parameters: {
+          type: "OBJECT",
+          properties: {
+            meses: { type: "INTEGER", description: "Cantidad de meses hacia atrás desde hoy (1 a 36). Por defecto 3." },
+            semielaborado: { type: "STRING", description: "Nombre o código (o parte) de un semielaborado para ver solo ese." },
+            producto: { type: "STRING", description: "Nombre o código (o parte) de un producto terminado: devuelve los semielaborados que necesita y la demanda por ese producto." },
+            incluir_cancelados: { type: "BOOLEAN", description: "Contar también los pedidos cancelados. Por defecto no." },
+          },
         },
       },
       {
@@ -958,6 +976,20 @@ function crearConnie({ pool, ai, obtenerDolar }) {
         } catch (e) {
           console.error("[Connie simular_turno]", e.message);
           return { error: "No pude simular el turno." };
+        }
+      }
+      if (llamada.name === "demanda_semielaborados") {
+        try {
+          const r = await demandaSemielaborados(pool, llamada.args || {});
+          consultas.push({
+            proposito: `Demanda mensual de semielaborados – ${r.periodo || "período"}`,
+            sql: "Ventas de estado_pedidos por modelo x composición (ingeniería activa) de cada producto terminado.",
+            error: r.error || undefined,
+          });
+          return r;
+        } catch (e) {
+          console.error("[Connie demanda_semielaborados]", e.message);
+          return { error: "No pude leer los datos para calcular la demanda." };
         }
       }
       if (llamada.name === "calculadora") return calcular(llamada.args?.expresion);
