@@ -13,6 +13,7 @@ const crypto = require("crypto");
 const { crearConnie } = require("./connie");
 const { separarDuplicadas, asegurarTablaDuplicadas } = require("./fichero");
 const { asegurarColumnaPagoMensual } = require("./escala");
+const { migrarPermisoConnie } = require("./permisos");
 require("dotenv").config();
 
 const app = express();
@@ -5671,9 +5672,10 @@ const connie = crearConnie({
   ai,
   obtenerDolar: obtenerDolarOficial,
 });
-app.post("/api/chat-ia", requirePermiso("metricas"), connie.manejador());
+app.post("/api/chat-ia", requirePermiso("connie"), connie.manejador());
 
 app.listen(PORT, () => {
   console.log(`🚀 Servidor Conoflex unificado ejecutándose en puerto ${PORT}`);
+  migrarPermisoConnie(db);
   connie.calentarEsquema();
 });

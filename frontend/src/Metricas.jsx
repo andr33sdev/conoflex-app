@@ -1,6 +1,4 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
-import AIAvatar from "./AIAvatar";
-import GraficoConnie from "./GraficoConnie";
 import {
   Calendar,
   RefreshCw,
@@ -19,8 +17,6 @@ import {
   BarChart3,
   Activity,
   Shield,
-  Bot,
-  Send,
   DownloadCloud,
   Scale,
   AlertOctagon,
@@ -187,7 +183,6 @@ function inferCategoryFrontend(codigo, articulo) {
 }
 
 export default function Metricas() {
-  const [activeTab, setActiveTab] = useState("kpis");
   const [produccion, setProduccion] = useState([]);
   const [semielaborados, setSemielaborados] = useState([]);
   const [materiasPrimas, setMateriasPrimas] = useState([]);
@@ -237,17 +232,6 @@ export default function Metricas() {
     return d.toISOString().split("T")[0];
   });
 
-  const [mensajes, setMensajes] = useState([
-    {
-      rol: "assistant",
-      texto:
-        "¡Hola! Soy Connie, la asistente de Conoflex. ¿En qué te puedo ayudar hoy?",
-    },
-  ]);
-  const [inputChat, setInputChat] = useState("");
-  const [enviandoChat, setEnviandoChat] = useState(false);
-  const chatBottomRef = useRef(null);
-
   useEffect(() => {
     const handleClickOutside = (event) => {
       if (syncMenuRef.current && !syncMenuRef.current.contains(event.target)) {
@@ -261,10 +245,6 @@ export default function Metricas() {
   useEffect(() => {
     fetchAllData();
   }, []);
-
-  useEffect(() => {
-    chatBottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [mensajes, enviandoChat]);
 
   const handleSyncEstadoPedidos = async () => {
     setIsSyncingPedidos(true);
@@ -351,59 +331,6 @@ export default function Metricas() {
       console.error("Error cargando datos:", err);
     } finally {
       setLoading(false);
-    }
-  };
-
-  const enviarMensajeChat = async (promptDirecto) => {
-    const textoAEnviar = promptDirecto || inputChat;
-    if (!textoAEnviar.trim() || enviandoChat) return;
-
-    const nuevosMensajes = [...mensajes, { rol: "user", texto: textoAEnviar }];
-    setMensajes(nuevosMensajes);
-    setInputChat("");
-    setEnviandoChat(true);
-
-    try {
-      const res = await fetch("/api/chat-ia", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          mensaje: textoAEnviar,
-          historial: nuevosMensajes.map(({ rol, texto }) => ({ rol, texto })),
-        }),
-      });
-
-      const data = await res.json();
-      if (data.success) {
-        setMensajes([
-          ...nuevosMensajes,
-          {
-            rol: "assistant",
-            texto: data.respuesta,
-            consultas: data.consultas || [],
-            graficos: data.graficos || [],
-          },
-        ]);
-      } else {
-        setMensajes([
-          ...nuevosMensajes,
-          {
-            rol: "assistant",
-            texto:
-              "Error: " + (data.error || "No se pudo procesar la solicitud."),
-          },
-        ]);
-      }
-    } catch (err) {
-      setMensajes([
-        ...nuevosMensajes,
-        {
-          rol: "assistant",
-          texto: "Error de conexión con el servidor de la IA.",
-        },
-      ]);
-    } finally {
-      setEnviandoChat(false);
     }
   };
 
@@ -662,467 +589,295 @@ export default function Metricas() {
 
   return (
     <div className="flex-1 flex flex-col h-full min-h-0 bg-black font-sans text-zinc-200 overflow-hidden relative selection:bg-[#FF5A00]/30">
-      {/* 1. HEADER HERO: SE OCULTA SI ESTÁ ACTIVO EL ASISTENTE */}
-      {activeTab !== "chat" && (
-        <div className="border-b border-zinc-800/50 p-6 md:p-10 flex flex-col md:flex-row md:items-end justify-between gap-6 shrink-0 bg-[#050505] relative overflow-hidden transition-all duration-300">
-          <div className="z-10">
-            <h1 className="text-4xl md:text-5xl font-extrabold italic tracking-tighter text-white uppercase leading-none">
-              Métricas <span className="text-[#FF5A00]">& KPI</span>
-            </h1>
-            <p className="text-zinc-500 text-sm mt-2 max-w-md uppercase tracking-widest font-bold flex items-center gap-2">
-              PANEL DE CONTROL OPERATIVO E INTERACCIÓN
-            </p>
-          </div>
+      {/* 1. HEADER HERO */}
+      <div className="border-b border-zinc-800/50 p-6 md:p-10 flex flex-col md:flex-row md:items-end justify-between gap-6 shrink-0 bg-[#050505] relative overflow-hidden transition-all duration-300">
+        <div className="z-10">
+          <h1 className="text-4xl md:text-5xl font-extrabold italic tracking-tighter text-white uppercase leading-none">
+            Métricas <span className="text-[#FF5A00]">& KPI</span>
+          </h1>
+          <p className="text-zinc-500 text-sm mt-2 max-w-md uppercase tracking-widest font-bold flex items-center gap-2">
+            PANEL DE CONTROL OPERATIVO E INTERACCIÓN
+          </p>
         </div>
-      )}
+      </div>
 
-      {/* 2. BARRA DE NAVEGACIÓN Y FILTROS: LIMPIA EN EL MODO ASISTENTE */}
-      <div
-        className={`border-b border-zinc-800/50 flex flex-col md:flex-row items-center shrink-0 bg-black relative z-20 transition-all duration-300 ${
-          activeTab === "chat"
-            ? "px-4 py-2.5 justify-between"
-            : "px-4 py-4 md:px-8 justify-between gap-4"
-        }`}
-      >
-        {activeTab === "chat" ? (
-          <div className="flex items-center gap-2.5">
-            <span className="w-2 h-2 rounded-full bg-[#FF5A00] shadow-[0_0_8px_#FF5A00]" />
-            <span className="text-xs font-black uppercase tracking-wider text-white">
-              CONNIE IA
-            </span>
-            <span className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest hidden sm:inline">
-              • ASISTENTE OPERATIVO &amp; COMERCIAL
-            </span>
-          </div>
-        ) : (
-          <div className="flex flex-col sm:flex-row items-center gap-4 w-full md:w-auto flex-1 min-w-0">
-            {/* BOTÓN DESPLEGABLE "SINCRONIZAR" */}
-            <div
-              className="relative shrink-0 w-full sm:w-auto"
-              ref={syncMenuRef}
+      {/* 2. BARRA DE FILTROS */}
+      <div className="border-b border-zinc-800/50 flex flex-col md:flex-row items-center shrink-0 bg-black relative z-20 px-4 py-4 md:px-8 justify-between gap-4">
+        <div className="flex flex-col sm:flex-row items-center gap-4 w-full md:w-auto flex-1 min-w-0">
+          {/* BOTÓN DESPLEGABLE "SINCRONIZAR" */}
+          <div className="relative shrink-0 w-full sm:w-auto" ref={syncMenuRef}>
+            <button
+              onClick={() => setIsSyncMenuOpen(!isSyncMenuOpen)}
+              className="w-full sm:w-auto flex items-center justify-between gap-3 px-6 py-2.5 font-bold text-xs uppercase tracking-widest transition-all bg-[#FFD700] hover:bg-white text-black active:scale-95 cursor-pointer"
             >
-              <button
-                onClick={() => setIsSyncMenuOpen(!isSyncMenuOpen)}
-                className="w-full sm:w-auto flex items-center justify-between gap-3 px-6 py-2.5 font-bold text-xs uppercase tracking-widest transition-all bg-[#FFD700] hover:bg-white text-black active:scale-95 cursor-pointer"
-              >
-                <RefreshCw
-                  size={16}
-                  className={
-                    isSyncing || isSyncingPedidos ? "animate-spin" : ""
-                  }
-                  strokeWidth={3}
-                />
-                <span>SINCRONIZAR</span>
-                <ChevronDown
-                  size={14}
-                  className={`transition-transform duration-200 ${isSyncMenuOpen ? "rotate-180" : ""}`}
-                />
-              </button>
-
-              {isSyncMenuOpen && (
-                <div className="absolute top-full left-0 mt-2 w-full sm:w-64 bg-[#050505] border border-zinc-800 shadow-2xl z-50 p-2 flex flex-col gap-2">
-                  <button
-                    onClick={() => {
-                      setIsSyncMenuOpen(false);
-                      handleSyncEstadoPedidos();
-                    }}
-                    disabled={isSyncingPedidos}
-                    className="w-full text-left p-3.5 bg-black hover:bg-zinc-900 border border-zinc-800 hover:border-[#FF5A00] text-white text-xs font-bold uppercase tracking-widest transition-colors flex items-center justify-between cursor-pointer disabled:opacity-50"
-                  >
-                    <span>SINCRONIZAR PEDIDOS</span>
-                    <DownloadCloud size={16} className="text-[#FF5A00]" />
-                  </button>
-
-                  <button
-                    onClick={() => {
-                      setIsSyncMenuOpen(false);
-                      handleSyncSheets();
-                    }}
-                    disabled={isSyncing}
-                    className="w-full text-left p-3.5 bg-black hover:bg-zinc-900 border border-zinc-800 hover:border-[#FFD700] text-white text-xs font-bold uppercase tracking-widest transition-colors flex items-center justify-between cursor-pointer disabled:opacity-50"
-                  >
-                    <span>SINCRONIZAR PRODUCCIÓN</span>
-                    <RefreshCw size={16} className="text-[#FFD700]" />
-                  </button>
-                </div>
-              )}
-            </div>
-
-            {/* RANGO DE FECHAS */}
-            <div className="flex items-center gap-2 bg-[#050505] border border-zinc-800 px-3 py-2 shrink-0 w-full sm:w-auto">
-              <Calendar size={13} className="text-[#FF5A00]" />
-              <input
-                type="date"
-                value={fechaDesde}
-                onChange={(e) => setFechaDesde(e.target.value)}
-                className="bg-transparent text-white outline-none text-[11px] uppercase"
-                style={{ colorScheme: "dark" }}
+              <RefreshCw
+                size={16}
+                className={isSyncing || isSyncingPedidos ? "animate-spin" : ""}
+                strokeWidth={3}
               />
-              <span className="text-zinc-600">-</span>
-              <input
-                type="date"
-                value={fechaHasta}
-                onChange={(e) => setFechaHasta(e.target.value)}
-                className="bg-transparent text-white outline-none text-[11px] uppercase"
-                style={{ colorScheme: "dark" }}
+              <span>SINCRONIZAR</span>
+              <ChevronDown
+                size={14}
+                className={`transition-transform duration-200 ${isSyncMenuOpen ? "rotate-180" : ""}`}
               />
-            </div>
+            </button>
+
+            {isSyncMenuOpen && (
+              <div className="absolute top-full left-0 mt-2 w-full sm:w-64 bg-[#050505] border border-zinc-800 shadow-2xl z-50 p-2 flex flex-col gap-2">
+                <button
+                  onClick={() => {
+                    setIsSyncMenuOpen(false);
+                    handleSyncEstadoPedidos();
+                  }}
+                  disabled={isSyncingPedidos}
+                  className="w-full text-left p-3.5 bg-black hover:bg-zinc-900 border border-zinc-800 hover:border-[#FF5A00] text-white text-xs font-bold uppercase tracking-widest transition-colors flex items-center justify-between cursor-pointer disabled:opacity-50"
+                >
+                  <span>SINCRONIZAR PEDIDOS</span>
+                  <DownloadCloud size={16} className="text-[#FF5A00]" />
+                </button>
+
+                <button
+                  onClick={() => {
+                    setIsSyncMenuOpen(false);
+                    handleSyncSheets();
+                  }}
+                  disabled={isSyncing}
+                  className="w-full text-left p-3.5 bg-black hover:bg-zinc-900 border border-zinc-800 hover:border-[#FFD700] text-white text-xs font-bold uppercase tracking-widest transition-colors flex items-center justify-between cursor-pointer disabled:opacity-50"
+                >
+                  <span>SINCRONIZAR PRODUCCIÓN</span>
+                  <RefreshCw size={16} className="text-[#FFD700]" />
+                </button>
+              </div>
+            )}
           </div>
-        )}
 
-        {/* TABS DE MÓDULO */}
-        <div className="flex items-center gap-0 w-full sm:w-auto border border-zinc-800 bg-[#050505] shrink-0">
-          <button
-            onClick={() => setActiveTab("kpis")}
-            className={`px-6 py-2.5 text-xs font-bold transition-all cursor-pointer whitespace-nowrap uppercase tracking-widest border-r border-zinc-800 flex items-center gap-2 ${
-              activeTab === "kpis"
-                ? "bg-[#FF5A00] text-black"
-                : "text-zinc-500 hover:text-white hover:bg-zinc-900"
-            }`}
-          >
-            <Activity size={14} /> TABLERO
-          </button>
-
-          <button
-            onClick={() => setActiveTab("chat")}
-            className={`px-6 py-2.5 text-xs font-bold transition-all cursor-pointer whitespace-nowrap uppercase tracking-widest flex items-center gap-2 ${
-              activeTab === "chat"
-                ? "bg-[#FF5A00] text-black"
-                : "text-zinc-500 hover:text-white hover:bg-zinc-900"
-            }`}
-          >
-            <Bot size={14} /> ASISTENTE
-          </button>
+          {/* RANGO DE FECHAS */}
+          <div className="flex items-center gap-2 bg-[#050505] border border-zinc-800 px-3 py-2 shrink-0 w-full sm:w-auto">
+            <Calendar size={13} className="text-[#FF5A00]" />
+            <input
+              type="date"
+              value={fechaDesde}
+              onChange={(e) => setFechaDesde(e.target.value)}
+              className="bg-transparent text-white outline-none text-[11px] uppercase"
+              style={{ colorScheme: "dark" }}
+            />
+            <span className="text-zinc-600">-</span>
+            <input
+              type="date"
+              value={fechaHasta}
+              onChange={(e) => setFechaHasta(e.target.value)}
+              className="bg-transparent text-white outline-none text-[11px] uppercase"
+              style={{ colorScheme: "dark" }}
+            />
+          </div>
         </div>
       </div>
 
       {/* ÁREA DE CONTENIDO */}
-      <div
-        className={`flex-1 min-h-0 bg-black flex flex-col ${
-          activeTab === "chat"
-            ? "p-2 sm:p-4 overflow-hidden"
-            : "p-4 md:p-8 overflow-y-auto custom-scrollbar"
-        }`}
-      >
-        {/* VISTA 1: TABLERO GENERAL DE KPIS */}
-        {activeTab === "kpis" && (
-          <div className="flex-1 flex flex-col gap-6 w-full max-w-[1400px] mx-auto transition-all duration-300 ease-out">
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              <div className="bg-[#050505] border border-zinc-800 p-5 flex flex-col justify-between gap-3 shadow-sm group hover:border-[#FF5A00]/50 transition-colors">
-                <div className="flex justify-between items-center text-zinc-500 text-[10px] font-bold uppercase tracking-widest">
-                  <span>TOTAL PIEZAS PROCESADAS</span>
-                  <TrendingUp size={14} className="text-[#FF5A00]" />
-                </div>
-                <div className="text-3xl font-extrabold italic tracking-tighter text-white uppercase font-sans">
-                  {loading
-                    ? "..."
-                    : globalStats.totalPiezasProcesadas.toLocaleString()}{" "}
-                  <span className="text-sm text-zinc-600 font-medium not-italic tracking-normal">
-                    u.
-                  </span>
-                </div>
-                <p className="text-[10px] text-zinc-500 uppercase tracking-widest font-bold">
-                  Buenas + Malas acumuladas
-                </p>
+      <div className="flex-1 min-h-0 bg-black flex flex-col p-4 md:p-8 overflow-y-auto custom-scrollbar">
+        {/* TABLERO GENERAL DE KPIS */}
+        <div className="flex-1 flex flex-col gap-6 w-full max-w-[1400px] mx-auto transition-all duration-300 ease-out">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="bg-[#050505] border border-zinc-800 p-5 flex flex-col justify-between gap-3 shadow-sm group hover:border-[#FF5A00]/50 transition-colors">
+              <div className="flex justify-between items-center text-zinc-500 text-[10px] font-bold uppercase tracking-widest">
+                <span>TOTAL PIEZAS PROCESADAS</span>
+                <TrendingUp size={14} className="text-[#FF5A00]" />
               </div>
-
-              <div className="bg-[#050505] border border-zinc-800 p-5 flex flex-col justify-between gap-3 shadow-sm group hover:border-emerald-500/50 transition-colors">
-                <div className="flex justify-between items-center text-zinc-500 text-[10px] font-bold uppercase tracking-widest">
-                  <span>TOTAL PIEZAS BUENAS</span>
-                  <CheckCircle2 size={14} className="text-emerald-400" />
-                </div>
-                <div className="text-3xl font-extrabold italic tracking-tighter text-emerald-400 uppercase font-sans">
-                  {loading
-                    ? "..."
-                    : globalStats.totalPiezasBuenas.toLocaleString()}{" "}
-                  <span className="text-sm text-zinc-600 font-medium not-italic tracking-normal">
-                    u.
-                  </span>
-                </div>
-                <p className="text-[10px] text-zinc-500 uppercase tracking-widest font-bold">
-                  Primera y Segunda Calidad
-                </p>
+              <div className="text-3xl font-extrabold italic tracking-tighter text-white uppercase font-sans">
+                {loading
+                  ? "..."
+                  : globalStats.totalPiezasProcesadas.toLocaleString()}{" "}
+                <span className="text-sm text-zinc-600 font-medium not-italic tracking-normal">
+                  u.
+                </span>
               </div>
-
-              <div className="bg-[#050505] border border-zinc-800 p-5 flex flex-col justify-between gap-3 shadow-sm group hover:border-[#FF0055]/50 transition-colors">
-                <div className="flex justify-between items-center text-zinc-500 text-[10px] font-bold uppercase tracking-widest">
-                  <span>TOTAL PIEZAS NO CONFORME</span>
-                  <Shield size={14} className="text-[#FF0055]" />
-                </div>
-                <div className="text-3xl font-extrabold italic tracking-tighter text-[#FF0055] uppercase font-sans">
-                  {loading
-                    ? "..."
-                    : globalStats.totalPiezasMalas.toLocaleString()}{" "}
-                  <span className="text-sm text-zinc-600 font-medium not-italic tracking-normal">
-                    u.
-                  </span>
-                </div>
-                <p className="text-[10px] text-zinc-500 uppercase tracking-widest font-bold">
-                  Piezas descartadas del período
-                </p>
-              </div>
-
-              <div className="bg-[#050505] border border-zinc-800 p-5 flex flex-col justify-between gap-3 shadow-sm group hover:border-[#FFD700]/50 transition-colors">
-                <div className="flex justify-between items-center text-zinc-500 text-[10px] font-bold uppercase tracking-widest">
-                  <span>PORCENTAJE DE FALLAS (U)</span>
-                  <AlertTriangle
-                    size={14}
-                    className={
-                      Number(globalStats.porcDefectuosasPiezas) > 5
-                        ? "text-[#FF0055]"
-                        : "text-[#FFD700]"
-                    }
-                  />
-                </div>
-                <div className="text-3xl font-extrabold italic tracking-tighter text-[#FFD700] uppercase font-sans">
-                  {loading ? "..." : `${globalStats.porcDefectuosasPiezas}%`}
-                </div>
-                <p className="text-[10px] text-zinc-500 uppercase tracking-widest font-bold">
-                  Proporción sobre el total
-                </p>
-              </div>
+              <p className="text-[10px] text-zinc-500 uppercase tracking-widest font-bold">
+                Buenas + Malas acumuladas
+              </p>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              <div className="bg-[#050505] border border-zinc-800 p-5 flex flex-col justify-between gap-3 shadow-sm group hover:border-[#FF5A00]/50 transition-colors">
-                <div className="flex justify-between items-center text-zinc-500 text-[10px] font-bold uppercase tracking-widest">
-                  <span>CANTIDAD KG TOTAL</span>
-                  <Scale size={14} className="text-[#FF5A00]" />
-                </div>
-                <div className="text-3xl font-extrabold italic tracking-tighter text-white uppercase font-sans">
-                  {loading
-                    ? "..."
-                    : globalStats.cantidadKgTotal.toLocaleString()}{" "}
-                  <span className="text-sm text-zinc-600 font-medium not-italic tracking-normal">
-                    Kg
-                  </span>
-                </div>
-                <p className="text-[10px] text-zinc-500 uppercase tracking-widest font-bold">
-                  Materia prima procesada
-                </p>
+            <div className="bg-[#050505] border border-zinc-800 p-5 flex flex-col justify-between gap-3 shadow-sm group hover:border-emerald-500/50 transition-colors">
+              <div className="flex justify-between items-center text-zinc-500 text-[10px] font-bold uppercase tracking-widest">
+                <span>TOTAL PIEZAS BUENAS</span>
+                <CheckCircle2 size={14} className="text-emerald-400" />
               </div>
-
-              <div className="bg-[#050505] border border-zinc-800 p-5 flex flex-col justify-between gap-3 shadow-sm group hover:border-emerald-500/50 transition-colors">
-                <div className="flex justify-between items-center text-zinc-500 text-[10px] font-bold uppercase tracking-widest">
-                  <span>CANTIDAD KG BUENAS</span>
-                  <CheckCircle2 size={14} className="text-emerald-400" />
-                </div>
-                <div className="text-3xl font-extrabold italic tracking-tighter text-emerald-400 uppercase font-sans">
-                  {loading
-                    ? "..."
-                    : globalStats.cantidadKgBuenas.toLocaleString()}{" "}
-                  <span className="text-sm text-zinc-600 font-medium not-italic tracking-normal">
-                    Kg
-                  </span>
-                </div>
-                <p className="text-[10px] text-zinc-500 uppercase tracking-widest font-bold">
-                  Plástico efectivo aprovechado
-                </p>
+              <div className="text-3xl font-extrabold italic tracking-tighter text-emerald-400 uppercase font-sans">
+                {loading
+                  ? "..."
+                  : globalStats.totalPiezasBuenas.toLocaleString()}{" "}
+                <span className="text-sm text-zinc-600 font-medium not-italic tracking-normal">
+                  u.
+                </span>
               </div>
-
-              <div className="bg-[#050505] border border-zinc-800 p-5 flex flex-col justify-between gap-3 shadow-sm group hover:border-[#FF0055]/50 transition-colors">
-                <div className="flex justify-between items-center text-zinc-500 text-[10px] font-bold uppercase tracking-widest">
-                  <span>CANTIDAD KG FALLAS</span>
-                  <AlertOctagon size={14} className="text-[#FF0055]" />
-                </div>
-                <div className="text-3xl font-extrabold italic tracking-tighter text-[#FF0055] uppercase font-sans">
-                  {loading
-                    ? "..."
-                    : globalStats.cantidadKgFallas.toLocaleString()}{" "}
-                  <span className="text-sm text-zinc-600 font-medium not-italic tracking-normal">
-                    Kg
-                  </span>
-                </div>
-                <p className="text-[10px] text-zinc-500 uppercase tracking-widest font-bold">
-                  Scrap o desecho generado
-                </p>
-              </div>
-
-              <div className="bg-[#050505] border border-zinc-800 p-5 flex flex-col justify-between gap-3 shadow-sm group hover:border-[#FFD700]/50 transition-colors">
-                <div className="flex justify-between items-center text-zinc-500 text-[10px] font-bold uppercase tracking-widest">
-                  <span>PORCENTAJE DE FALLAS (KG)</span>
-                  <AlertTriangle
-                    size={14}
-                    className={
-                      Number(globalStats.porcDefectuosasKg) > 5
-                        ? "text-[#FF0055]"
-                        : "text-[#FFD700]"
-                    }
-                  />
-                </div>
-                <div className="text-3xl font-extrabold italic tracking-tighter text-[#FFD700] uppercase font-sans">
-                  {loading ? "..." : `${globalStats.porcDefectuosasKg}%`}
-                </div>
-                <p className="text-[10px] text-zinc-500 uppercase tracking-widest font-bold">
-                  Merma en peso de material
-                </p>
-              </div>
+              <p className="text-[10px] text-zinc-500 uppercase tracking-widest font-bold">
+                Primera y Segunda Calidad
+              </p>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="bg-[#050505] border border-zinc-800 p-6 sm:p-8 flex flex-col justify-between gap-6 transition-colors">
-                <div className="space-y-3">
-                  <div className="p-2 border border-zinc-800 bg-black w-fit">
-                    <BarChart3 size={20} className="text-[#FF5A00]" />
-                  </div>
-                  <h3 className="text-sm font-extrabold italic text-white uppercase tracking-tighter">
-                    COMPARADOR EVOLUTIVO DRAG & DROP
-                  </h3>
-                  <p className="text-xs text-zinc-400 leading-relaxed font-medium">
-                    Visualizá curvas Bézier suaves de tasa de fallas por
-                    tecnología (Extrusión, Inyección y Rotomoldeo). Podés
-                    arrastrar cartuchos y fusionar promedios.
-                  </p>
-                </div>
-                <button
-                  onClick={() => setIsChartModalOpen(true)}
-                  className="w-full bg-black hover:bg-zinc-900 border border-zinc-800 text-[#FF5A00] hover:text-white py-3.5 text-xs font-bold uppercase tracking-widest transition cursor-pointer flex items-center justify-center gap-2"
-                >
-                  <Maximize2 size={14} />
-                  <span>ABRIR COMPARADOR BÉZIER</span>
-                </button>
+            <div className="bg-[#050505] border border-zinc-800 p-5 flex flex-col justify-between gap-3 shadow-sm group hover:border-[#FF0055]/50 transition-colors">
+              <div className="flex justify-between items-center text-zinc-500 text-[10px] font-bold uppercase tracking-widest">
+                <span>TOTAL PIEZAS NO CONFORME</span>
+                <Shield size={14} className="text-[#FF0055]" />
               </div>
+              <div className="text-3xl font-extrabold italic tracking-tighter text-[#FF0055] uppercase font-sans">
+                {loading
+                  ? "..."
+                  : globalStats.totalPiezasMalas.toLocaleString()}{" "}
+                <span className="text-sm text-zinc-600 font-medium not-italic tracking-normal">
+                  u.
+                </span>
+              </div>
+              <p className="text-[10px] text-zinc-500 uppercase tracking-widest font-bold">
+                Piezas descartadas del período
+              </p>
+            </div>
 
-              <div className="bg-[#050505] border border-zinc-800 p-6 sm:p-8 flex flex-col justify-between gap-6 transition-colors">
-                <div className="space-y-3">
-                  <div className="p-2 border border-zinc-800 bg-black w-fit">
-                    <Calculator size={20} className="text-[#FFD700]" />
-                  </div>
-                  <h3 className="text-sm font-extrabold italic text-white uppercase tracking-tighter">
-                    MATRIZ Y PLANIFICACIÓN DE COBERTURA
-                  </h3>
-                  <p className="text-xs text-zinc-400 leading-relaxed font-medium">
-                    Cruza stock de semielaborados con promedio mensual de ventas
-                    para calcular días de cobertura y simular ingresos de lotes
-                    proyectados a futuro.
-                  </p>
-                </div>
-                <button
-                  onClick={() => {
-                    setCurrentPageSE(1);
-                    setIsMatrizModalOpen(true);
-                  }}
-                  className="w-full bg-[#FFD700] hover:bg-white text-black py-3.5 text-xs font-bold uppercase tracking-widest transition cursor-pointer flex items-center justify-center gap-2"
-                >
-                  <Maximize2 size={14} />
-                  <span>ABRIR MATRIZ & SIMULADOR</span>
-                </button>
+            <div className="bg-[#050505] border border-zinc-800 p-5 flex flex-col justify-between gap-3 shadow-sm group hover:border-[#FFD700]/50 transition-colors">
+              <div className="flex justify-between items-center text-zinc-500 text-[10px] font-bold uppercase tracking-widest">
+                <span>PORCENTAJE DE FALLAS (U)</span>
+                <AlertTriangle
+                  size={14}
+                  className={
+                    Number(globalStats.porcDefectuosasPiezas) > 5
+                      ? "text-[#FF0055]"
+                      : "text-[#FFD700]"
+                  }
+                />
               </div>
+              <div className="text-3xl font-extrabold italic tracking-tighter text-[#FFD700] uppercase font-sans">
+                {loading ? "..." : `${globalStats.porcDefectuosasPiezas}%`}
+              </div>
+              <p className="text-[10px] text-zinc-500 uppercase tracking-widest font-bold">
+                Proporción sobre el total
+              </p>
             </div>
           </div>
-        )}
 
-        {/* VISTA 2: CHAT FULLSCREEN EXPANDIDO */}
-        {activeTab === "chat" && (
-          <div className="h-full flex-1 flex flex-col min-h-0 bg-[#030303] border border-zinc-800 shadow-[0_0_60px_rgba(0,0,0,0.95)] relative overflow-hidden">
-            {/* CABECERA CON EL AVATAR REDISEÑADO */}
-            <div className="border-b border-zinc-800 bg-[#050505] flex flex-col sm:flex-row items-stretch sm:items-center justify-between shrink-0">
-              <AIAvatar estado={enviandoChat ? "thinking" : "idle"} />
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="bg-[#050505] border border-zinc-800 p-5 flex flex-col justify-between gap-3 shadow-sm group hover:border-[#FF5A00]/50 transition-colors">
+              <div className="flex justify-between items-center text-zinc-500 text-[10px] font-bold uppercase tracking-widest">
+                <span>CANTIDAD KG TOTAL</span>
+                <Scale size={14} className="text-[#FF5A00]" />
+              </div>
+              <div className="text-3xl font-extrabold italic tracking-tighter text-white uppercase font-sans">
+                {loading ? "..." : globalStats.cantidadKgTotal.toLocaleString()}{" "}
+                <span className="text-sm text-zinc-600 font-medium not-italic tracking-normal">
+                  Kg
+                </span>
+              </div>
+              <p className="text-[10px] text-zinc-500 uppercase tracking-widest font-bold">
+                Materia prima procesada
+              </p>
             </div>
 
-            {/* ÁREA DE MENSAJES (REDONDEADAS, LEGIBLES Y LIMPIAS) */}
-            <div className="flex-1 overflow-y-auto p-3 sm:p-6 space-y-4 min-h-0 bg-black custom-scrollbar">
-              {mensajes.map((m, i) => {
-                const esUsuario = m.rol === "user";
-                return (
-                  <div
-                    key={i}
-                    className={`flex items-start gap-2 sm:gap-3 w-full animate-in fade-in duration-200 ${
-                      esUsuario ? "justify-end" : "justify-start"
-                    }`}
-                  >
-                    {!esUsuario && (
-                      <div className="hidden sm:flex w-9 h-9 rounded-xl border border-zinc-800 bg-[#0A0A0A] items-center justify-center text-[#FF5A00] shrink-0 mt-0.5 shadow-sm">
-                        <Bot size={18} />
-                      </div>
-                    )}
+            <div className="bg-[#050505] border border-zinc-800 p-5 flex flex-col justify-between gap-3 shadow-sm group hover:border-emerald-500/50 transition-colors">
+              <div className="flex justify-between items-center text-zinc-500 text-[10px] font-bold uppercase tracking-widest">
+                <span>CANTIDAD KG BUENAS</span>
+                <CheckCircle2 size={14} className="text-emerald-400" />
+              </div>
+              <div className="text-3xl font-extrabold italic tracking-tighter text-emerald-400 uppercase font-sans">
+                {loading
+                  ? "..."
+                  : globalStats.cantidadKgBuenas.toLocaleString()}{" "}
+                <span className="text-sm text-zinc-600 font-medium not-italic tracking-normal">
+                  Kg
+                </span>
+              </div>
+              <p className="text-[10px] text-zinc-500 uppercase tracking-widest font-bold">
+                Plástico efectivo aprovechado
+              </p>
+            </div>
 
-                    {esUsuario ? (
-                      /* BURBUJA DEL USUARIO: NARANJA CONOFLEX, REDONDEADA, TEXTO NEGRO CLARO, SIN ICONO U */
-                      <div className="max-w-[88%] sm:max-w-[70%] bg-[#FF5A00] text-black font-semibold text-sm leading-relaxed px-4 sm:px-5 py-3 sm:py-3.5 rounded-2xl rounded-tr-sm shadow-lg shadow-[#FF5A00]/10 break-words">
-                        {m.texto}
-                      </div>
-                    ) : (
-                      /* BURBUJA DE CONNIE: NEGRA INDUSTRIAL, BORDES SUTILES, TEXTO GRANDE Y LEGIBLE */
-                      <div className="min-w-0 max-w-full sm:max-w-[75%] bg-[#0A0A0A] border border-zinc-800 text-zinc-100 font-medium text-sm leading-relaxed px-4 sm:px-5 py-3.5 sm:py-4 rounded-2xl rounded-tl-sm shadow-md whitespace-pre-wrap break-words">
-                        {m.texto}
-                        {m.graficos?.map((g, k) => (
-                          <GraficoConnie key={k} grafico={g} />
-                        ))}
-                        {m.consultas?.length > 0 && (
-                          <details className="mt-3 pt-3 border-t border-zinc-800 text-xs text-zinc-400 whitespace-normal">
-                            <summary className="cursor-pointer select-none hover:text-zinc-200 font-semibold">
-                              Ver cómo lo calculé ({m.consultas.length}{" "}
-                              {m.consultas.length === 1
-                                ? "consulta"
-                                : "consultas"}
-                              )
-                            </summary>
-                            {m.consultas.map((c, j) => (
-                              <div key={j} className="mt-2">
-                                {c.proposito && (
-                                  <div className="font-semibold text-zinc-300">
-                                    {c.proposito}
-                                  </div>
-                                )}
-                                <pre className="mt-1 p-2 bg-black border border-zinc-800 rounded-lg overflow-x-auto text-[11px] text-zinc-300 whitespace-pre-wrap font-mono">
-                                  {c.sql}
-                                </pre>
-                                {c.error && (
-                                  <div className="mt-1 text-amber-500">
-                                    No pudo ejecutarse: {c.error}
-                                  </div>
-                                )}
-                              </div>
-                            ))}
-                          </details>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
+            <div className="bg-[#050505] border border-zinc-800 p-5 flex flex-col justify-between gap-3 shadow-sm group hover:border-[#FF0055]/50 transition-colors">
+              <div className="flex justify-between items-center text-zinc-500 text-[10px] font-bold uppercase tracking-widest">
+                <span>CANTIDAD KG FALLAS</span>
+                <AlertOctagon size={14} className="text-[#FF0055]" />
+              </div>
+              <div className="text-3xl font-extrabold italic tracking-tighter text-[#FF0055] uppercase font-sans">
+                {loading
+                  ? "..."
+                  : globalStats.cantidadKgFallas.toLocaleString()}{" "}
+                <span className="text-sm text-zinc-600 font-medium not-italic tracking-normal">
+                  Kg
+                </span>
+              </div>
+              <p className="text-[10px] text-zinc-500 uppercase tracking-widest font-bold">
+                Scrap o desecho generado
+              </p>
+            </div>
 
-              {/* INDICADOR DE PENSAMIENTO */}
-              {enviandoChat && (
-                <div className="flex items-center gap-3 justify-start animate-in fade-in duration-200">
-                  <div className="w-9 h-9 rounded-xl border border-zinc-800 bg-[#0A0A0A] flex items-center justify-center text-[#FF5A00] shrink-0">
-                    <Bot size={18} className="animate-spin" />
-                  </div>
-                  <div className="bg-[#0A0A0A] border border-zinc-800 px-5 py-3.5 rounded-2xl rounded-tl-sm text-xs font-semibold text-zinc-400 flex items-center gap-2.5">
-                    <span className="w-2 h-2 rounded-full bg-[#FF5A00] animate-ping" />
-                    <span className="tracking-wide">
-                      Connie está analizando la base de datos...
-                    </span>
-                  </div>
+            <div className="bg-[#050505] border border-zinc-800 p-5 flex flex-col justify-between gap-3 shadow-sm group hover:border-[#FFD700]/50 transition-colors">
+              <div className="flex justify-between items-center text-zinc-500 text-[10px] font-bold uppercase tracking-widest">
+                <span>PORCENTAJE DE FALLAS (KG)</span>
+                <AlertTriangle
+                  size={14}
+                  className={
+                    Number(globalStats.porcDefectuosasKg) > 5
+                      ? "text-[#FF0055]"
+                      : "text-[#FFD700]"
+                  }
+                />
+              </div>
+              <div className="text-3xl font-extrabold italic tracking-tighter text-[#FFD700] uppercase font-sans">
+                {loading ? "..." : `${globalStats.porcDefectuosasKg}%`}
+              </div>
+              <p className="text-[10px] text-zinc-500 uppercase tracking-widest font-bold">
+                Merma en peso de material
+              </p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="bg-[#050505] border border-zinc-800 p-6 sm:p-8 flex flex-col justify-between gap-6 transition-colors">
+              <div className="space-y-3">
+                <div className="p-2 border border-zinc-800 bg-black w-fit">
+                  <BarChart3 size={20} className="text-[#FF5A00]" />
                 </div>
-              )}
-
-              <div ref={chatBottomRef} />
+                <h3 className="text-sm font-extrabold italic text-white uppercase tracking-tighter">
+                  COMPARADOR EVOLUTIVO DRAG & DROP
+                </h3>
+                <p className="text-xs text-zinc-400 leading-relaxed font-medium">
+                  Visualizá curvas Bézier suaves de tasa de fallas por
+                  tecnología (Extrusión, Inyección y Rotomoldeo). Podés
+                  arrastrar cartuchos y fusionar promedios.
+                </p>
+              </div>
+              <button
+                onClick={() => setIsChartModalOpen(true)}
+                className="w-full bg-black hover:bg-zinc-900 border border-zinc-800 text-[#FF5A00] hover:text-white py-3.5 text-xs font-bold uppercase tracking-widest transition cursor-pointer flex items-center justify-center gap-2"
+              >
+                <Maximize2 size={14} />
+                <span>ABRIR COMPARADOR BÉZIER</span>
+              </button>
             </div>
 
-            {/* BARRA DE ENTRADA CHAT: SIN FORZAR MAYÚSCULAS */}
-            <div className="p-3 sm:p-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] bg-[#050505] border-t border-zinc-800 flex items-center gap-2 sm:gap-3">
-              <input
-                type="text"
-                value={inputChat}
-                onChange={(e) => setInputChat(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && enviarMensajeChat()}
-                placeholder="Preguntale a Connie..."
-                className="flex-1 min-w-0 bg-black border border-zinc-800 hover:border-zinc-700 focus:border-[#FF5A00] rounded-xl px-4 sm:px-5 py-3.5 text-sm text-white placeholder-zinc-500 outline-none transition-colors font-sans"
-              />
+            <div className="bg-[#050505] border border-zinc-800 p-6 sm:p-8 flex flex-col justify-between gap-6 transition-colors">
+              <div className="space-y-3">
+                <div className="p-2 border border-zinc-800 bg-black w-fit">
+                  <Calculator size={20} className="text-[#FFD700]" />
+                </div>
+                <h3 className="text-sm font-extrabold italic text-white uppercase tracking-tighter">
+                  MATRIZ Y PLANIFICACIÓN DE COBERTURA
+                </h3>
+                <p className="text-xs text-zinc-400 leading-relaxed font-medium">
+                  Cruza stock de semielaborados con promedio mensual de ventas
+                  para calcular días de cobertura y simular ingresos de lotes
+                  proyectados a futuro.
+                </p>
+              </div>
               <button
-                onClick={() => enviarMensajeChat()}
-                disabled={enviandoChat || !inputChat.trim()}
-                aria-label="Enviar"
-                className="bg-[#FF5A00] hover:bg-white text-black font-bold px-4 sm:px-6 py-3.5 rounded-xl transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2 text-xs uppercase tracking-widest shrink-0 shadow-lg shadow-[#FF5A00]/20 active:scale-95"
+                onClick={() => {
+                  setCurrentPageSE(1);
+                  setIsMatrizModalOpen(true);
+                }}
+                className="w-full bg-[#FFD700] hover:bg-white text-black py-3.5 text-xs font-bold uppercase tracking-widest transition cursor-pointer flex items-center justify-center gap-2"
               >
-                <span className="hidden sm:inline">ENVIAR</span>
-                <Send size={15} />
+                <Maximize2 size={14} />
+                <span>ABRIR MATRIZ & SIMULADOR</span>
               </button>
             </div>
           </div>
-        )}
+        </div>
       </div>
 
       {/* MODAL 1: COMPARADOR BÉZIER */}
