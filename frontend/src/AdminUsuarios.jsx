@@ -21,6 +21,7 @@ const MODULOS_SISTEMA = [
   { id: "reflectivas", nombre: "Reflectivas & Pegado" },
   { id: "ingenieria", nombre: "Ingeniería & BOM" },
   { id: "metricas", nombre: "Métricas & KPI" },
+  { id: "connie", nombre: "Connie IA" },
   { id: "planificacion", nombre: "Planificación OT" },
   { id: "carga-produccion", nombre: "Carga Producción" },
   { id: "pedidos", nombre: "Pedidos" },

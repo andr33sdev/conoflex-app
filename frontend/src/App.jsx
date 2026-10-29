@@ -7,6 +7,7 @@ import Proveedores from "./Proveedores";
 import Semielaborados from "./Semielaborados";
 import Reflectivas from "./Reflectivas";
 import Metricas from "./Metricas";
+import Connie from "./Connie";
 import Ingenieria from "./Ingenieria";
 import PlanificacionProduccion from "./PlanificacionProduccion";
 import CargaProduccion from "./CargaProduccion";
@@ -222,6 +223,8 @@ function App() {
       {hasAccess("metricas") && activeModule === "metricas" && (
         <Metricas key={reloadKey} />
       )}
+
+      {hasAccess("connie") && activeModule === "connie" && <Connie />}
 
       {hasAccess("ingenieria") && activeModule === "ingenieria" && (
         <Ingenieria />

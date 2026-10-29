@@ -24,6 +24,7 @@ import {
   Smartphone,
   ScanFace,
   ShoppingCart,
+  MessageSquareText,
 } from "lucide-react";
 
 import logo from "./assets/logo.svg";
@@ -54,6 +55,12 @@ export default function Layout({
       id: "metricas",
       label: "Métricas & KPI",
       icon: BarChart3,
+      highlight: true,
+    },
+    {
+      id: "connie",
+      label: "Connie IA",
+      icon: MessageSquareText,
       highlight: true,
     },
     {
