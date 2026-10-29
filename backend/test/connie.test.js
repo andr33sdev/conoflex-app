@@ -7,6 +7,8 @@ const {
   validarSQL,
   limpiarMarkdown,
   normalizarHistorial,
+  esquemaATexto,
+  analizarResultado,
 } = require("../connie");
 
 // ---------------------------------------------------------------------------
@@ -293,4 +295,119 @@ test("manejador: limita pedidos por usuario y valida el mensaje", async () => {
   const excedido = await llamar({ mensaje: "hola" });
   assert.equal(excedido.estado, 429);
   assert.equal((await llamar({ mensaje: "hola" }, { id: 88 })).estado, 200, "otro usuario no se ve afectado");
+});
+
+// ---------------------------------------------------------------------------
+// Rigor: no concluir "no hay datos" con un filtro inventado
+// ---------------------------------------------------------------------------
+const col = (nombre, valores = null, distintos = valores ? valores.length : 0, tipo = "varchar") => ({
+  nombre, tipo, largo: 30, clave: "", comentario: "", valores, rango: null, distintos,
+});
+
+test("esquema: lista hasta 20 valores, marca ~N si hay más, y no ensucia columnas casi únicas", () => {
+  const quince = Array.from({ length: 15 }, (_, i) => `E${i}`);
+  const texto = esquemaATexto({
+    tablas: new Map([["t", { filas: 10, columnas: [
+      col("estado", quince),
+      col("cliente", null, 35),
+      col("op", null, 3000),
+    ] }]]),
+  });
+  assert.match(texto, /estado texto\{E0\|E1\|/);
+  assert.match(texto, /E14\}/);
+  assert.match(texto, /cliente texto\{~35 valores distintos\}/);
+  assert.ok(!/op texto\{/.test(texto), "columnas casi únicas no llevan marca");
+});
+
+const datosEstados = {
+  tablas: new Map([["estado_pedidos", { filas: 10, columnas: [col("estado", ["PENDIENTE", "ENTREGADO", "CANCELADO"])] }]]),
+};
+
+test("analizarResultado: valor inexistente + resultado NULL -> avisa con los valores reales", () => {
+  const av = analizarResultado({
+    filas: [[null, null]],
+    sql: "SELECT SUM(cantidad) FROM estado_pedidos WHERE estado = 'COMPLETADO'",
+    datos: datosEstados,
+  });
+  assert.equal(av.length, 2);
+  assert.match(av[0], /'COMPLETADO' NO existe en la columna estado/);
+  assert.match(av[0], /PENDIENTE, ENTREGADO, CANCELADO/);
+  assert.match(av[1], /vacío o en cero\/NULL/);
+});
+
+test("analizarResultado: detecta también IN (...) y backticks, sin importar mayúsculas", () => {
+  const av = analizarResultado({
+    filas: [],
+    sql: "SELECT 1 FROM estado_pedidos WHERE `estado` IN ('entregado', 'FACTURADO')",
+    datos: datosEstados,
+  });
+  assert.ok(av.some((a) => /'FACTURADO' NO existe/.test(a)));
+  assert.ok(!av.some((a) => /'entregado' NO existe/.test(a)), "entregado sí existe (sin distinguir mayúsculas)");
+});
+
+test("analizarResultado: misma columna en otra tabla (sin lista) no anula el aviso de la tabla consultada", () => {
+  const datos = { tablas: new Map([
+    ["estado_pedidos", { filas: 10, columnas: [col("estado", ["PENDIENTE", "ENTREGADO"])] }],
+    ["ordenes_trabajo", { filas: 0, columnas: [col("estado", null, 0)] }],
+  ]) };
+  const av = analizarResultado({ filas: [[null]], sql: "SELECT SUM(x) FROM estado_pedidos WHERE estado = 'COMPLETADO'", datos });
+  assert.match(av[0], /'COMPLETADO' NO existe en la columna estado\. Valores reales de estado: PENDIENTE, ENTREGADO/);
+  const otra = analizarResultado({ filas: [[null]], sql: "SELECT SUM(x) FROM ordenes_trabajo WHERE estado = 'COMPLETADO'", datos });
+  assert.ok(!otra.some((a) => /NO existe/.test(a)), "sin lista conocida no se acusa");
+});
+
+test("analizarResultado: valor válido con resultado 0 -> solo el aviso general (sin acusar al valor)", () => {
+  const av = analizarResultado({ filas: [[0]], sql: "SELECT COUNT(*) FROM estado_pedidos WHERE estado = 'ENTREGADO'", datos: datosEstados });
+  assert.equal(av.length, 1);
+  assert.ok(!/NO existe/.test(av[0]));
+});
+
+test("analizarResultado: resultado con datos -> sin avisos", () => {
+  assert.deepEqual(analizarResultado({ filas: [[120, 5000]], sql: "SELECT 1 WHERE estado = 'COMPLETADO'", datos: datosEstados }), []);
+  assert.deepEqual(analizarResultado({ filas: [["ML", 0], ["Directa", 3]], sql: "SELECT 1", datos: datosEstados }), []);
+});
+
+test("analizarResultado: si la columna existe en otra tabla sin lista completa, no acusa (evita falsas alarmas)", () => {
+  const datos = { tablas: new Map([
+    ["a", { filas: 1, columnas: [col("estado", ["X", "Y"])] }],
+    ["b", { filas: 1, columnas: [col("estado", null, 50)] }],
+  ]) };
+  const av = analizarResultado({ filas: [], sql: "SELECT 1 FROM b WHERE estado = 'Z'", datos });
+  assert.ok(!av.some((a) => /NO existe/.test(a)));
+});
+
+test("agente: el caso 'ventas de la semana' con estado inventado -> recibe la pista y se corrige", async () => {
+  const { pool } = crearEntornoFalso({
+    onSelect: (sql) => {
+      if (sql.includes("'COMPLETADO'")) return [[[null, null]], [{ name: "unidades" }, { name: "total" }]];
+      return [[[120, 8450000]], [{ name: "unidades" }, { name: "total" }]];
+    },
+  });
+  const pedidos = [];
+  const guion = [
+    respuestaConLlamadas([{ name: "consultar_sql", args: { proposito: "ventas de la semana", consulta: "SELECT SUM(cantidad), SUM(punisiva) FROM estado_pedidos WHERE fecha >= '2026-10-26' AND estado = 'COMPLETADO'" } }]),
+    respuestaConLlamadas([{ name: "consultar_sql", args: { proposito: "ventas de la semana (sin cancelados)", consulta: "SELECT SUM(cantidad), SUM(cantidad * punisiva) FROM estado_pedidos WHERE fecha >= '2026-10-26' AND estado <> 'CANCELADO'" } }]),
+    respuestaTexto("Del lunes 26 al jueves 29 se vendieron 120 unidades por $ 8.450.000."),
+  ];
+  const ai = { models: { async generateContent(req) { pedidos.push(JSON.parse(JSON.stringify(req))); return guion.shift(); } } };
+  const connie = crearConnie({ pool, ai, obtenerDolar: async () => null });
+  const r = await connie.responder({ mensaje: "Dame las ventas de la semana", historial: [] });
+
+  // Lo que el modelo vio tras su primera consulta fallida:
+  const visto = JSON.stringify(pedidos[1].contents);
+  assert.match(visto, /COMPLETADO/);
+  assert.match(visto, /NO existe en la columna estado/);
+  assert.match(visto, /PENDIENTE, ENTREGADO, CANCELADO/);
+  assert.match(visto, /Antes de concluir que no hay datos/);
+  // Y la segunda consulta (con datos) no trae advertencias
+  const ultimoResultado = pedidos[2].contents[pedidos[2].contents.length - 1];
+  assert.ok(!JSON.stringify(ultimoResultado).includes("advertencias"));
+  assert.equal(r.consultas.length, 2);
+  assert.match(r.respuesta, /120 unidades/);
+  // Las pautas generales están en el prompt, sin fórmulas del negocio
+  const prompt = pedidos[0].config.systemInstruction;
+  assert.match(prompt, /NUNCA supongas el valor de una columna de estado/);
+  assert.match(prompt, /resultado vacío, en 0 o en NULL/);
+  assert.match(prompt, /unitaria o ya es total/);
+  assert.ok(!/estado\s*!=\s*'CANCELADO'|cantidad \* punisiva/.test(prompt), "sin fórmulas del negocio escritas");
 });
