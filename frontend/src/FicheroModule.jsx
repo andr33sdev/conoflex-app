@@ -475,7 +475,7 @@ export default function FicheroModule() {
         } else if (f.tipo === "SALIDA") {
           if (
             entradaPendiente &&
-            timestamp - entradaPendiente.timestamp <= 18 * 60 * 60 * 1000
+            timestamp - entradaPendiente.timestamp <= 30 * 60 * 60 * 1000
           ) {
             const fechaEntrada = entradaPendiente.fechaISO;
             mapaDias[fechaEntrada].egreso = horaCorta;

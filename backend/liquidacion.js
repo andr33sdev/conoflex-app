@@ -33,6 +33,8 @@ const REGLAS = {
   sabadoCorteHora: 13,
 };
 
+// Una SALIDA cierra el turno pendiente si llega dentro de este tiempo (hay turnos de 22 hs seguidas).
+const MAX_TURNO_MS = 30 * 3600000;
 const VENTANA_TOQUE_MS = 3 * 60 * 1000;
 const pad = (n) => String(n).padStart(2, "0");
 const redondear = (n, d = 2) => Math.round((Number(n) + Number.EPSILON) * 10 ** d) / 10 ** d;
@@ -69,6 +71,7 @@ const hhmm = (min) => `${Math.floor(min / 60)}:${pad(Math.round(min % 60))}`;
  * Devuelve [{ fecha, ingreso, egreso, entradaTs, salidaTs|null }] por fecha de ingreso.
  * Es el mismo emparejamiento que usa el módulo Fichero: una ENTRADA que llega entre 1 y
  * 18 hs después de otra sin salida se toma como la salida (el reloj a veces rotula mal).
+ * Una SALIDA cierra el turno si llega hasta 30 hs después del ingreso (un turno puede durar 22 hs seguidas).
  */
 function emparejarTurnos(fichadas) {
   const todas = fichadas
@@ -107,7 +110,7 @@ function emparejarTurnos(fichadas) {
         pendiente = t;
       }
     } else if (f.tipo === "SALIDA") {
-      if (pendiente && ts - pendiente.entradaTs <= 18 * 3600000) cerrar(f.p, ts);
+      if (pendiente && ts - pendiente.entradaTs <= MAX_TURNO_MS) cerrar(f.p, ts);
     }
   }
   const turnos = [...porFecha.values()].sort((a, b) => a.entradaTs - b.entradaTs);
