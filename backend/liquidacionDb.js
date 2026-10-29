@@ -1,7 +1,8 @@
 "use strict";
 // Carga de datos (fichadas, feriados, ajustes, escala de valor hora) y liquidación.
 const { HORAS_MENSUALES, esMensual, valorHoraOrdinaria, asegurarColumnaPagoMensual } = require("./escala");
-const { liquidarPeriodo, liquidarTurno, redondear, REGLAS, CATEGORIAS, DIAS } = require("./liquidacion");
+const { analizarPresentismo } = require("./presentismo");
+const { emparejarTurnos, liquidarPeriodo, liquidarTurno, redondear, REGLAS, CATEGORIAS, DIAS } = require("./liquidacion");
 
 const sinAcentos = (s) => String(s).normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().trim();
 const pad = (n) => String(n).padStart(2, "0");
@@ -52,7 +53,7 @@ function resolverFechas({ fechas, desde, hasta, mes, quincena }) {
     else if (q === 2) { d1 = `${mes}-16`; d2 = `${mes}-${pad(ult)}`; desc = `segunda quincena de ${mes} (del 16 al ${ult}, ambos inclusive)`; }
     else { d1 = `${mes}-01`; d2 = `${mes}-${pad(ult)}`; desc = `mes completo ${mes} (del 1 al ${ult})`; }
   } else {
-    return { error: "Indicá qué liquidar: 'mes' (con 'quincena' opcional), 'desde'/'hasta' o 'fechas'." };
+    return { error: "No se indicó el período a liquidar. NO elijas uno por tu cuenta: preguntale al usuario de qué fechas quiere la información (un día, días sueltos, una quincena, el mes o un rango).", faltaPeriodo: true };
   }
   const set = new Set();
   for (let f = fechaDe(d1); iso(f) <= d2; f = new Date(f.getFullYear(), f.getMonth(), f.getDate() + 1)) {
@@ -73,8 +74,9 @@ function elegirPeriodo(periodos, mes) {
 function margen(desde, hasta) {
   const a = fechaDe(desde);
   const b = fechaDe(hasta);
-  const ini = new Date(a.getFullYear(), a.getMonth(), a.getDate() - 2);
-  const fin = new Date(b.getFullYear(), b.getMonth(), b.getDate() + 3);
+  // Se leen los meses completos (el presentismo se evalúa por mes) y unos días de margen para los turnos que cruzan.
+  const ini = new Date(a.getFullYear(), a.getMonth(), 1 - 2);
+  const fin = new Date(b.getFullYear(), b.getMonth() + 1, 3);
   return { ini: `${iso(ini)} 00:00:00`, fin: `${iso(fin)} 00:00:00` };
 }
 
@@ -143,16 +145,23 @@ function ajustesDe(ctx, nombre) {
 const NOTA_REGLAS =
   "Reglas de Conoflex: hora diurna 06:00–21:00, nocturna 21:00–06:00 con +13,33%; jornada normal de 9 hs desde el ingreso, el resto es extra al 50% (sobre la hora diurna o nocturna que corresponda); si el turno ingresa un sábado, hasta las 13:00 todas las horas son extra al 50% (un turno que ingresa de lunes a viernes mantiene sus primeras 9 hs normales aunque crucen al sábado); sábados desde las 13:00, domingos y feriados todo es extra al 100%; sin tope de horas extra. Operarios MENSUALES (categoría con sueldo mensual): la hora normal ordinaria es el sueldo mensual / 180 y los recargos se aplican sobre esa hora; las horas normales ya están en el sueldo. Un turno dura desde el ingreso hasta la primera salida registrada (hasta 30 hs después, p. ej. entra 19:00 y sale 17:00 del día siguiente = 22 hs seguidas). Cada minuto se clasifica por su fecha y hora reales y cada turno se asigna al día en que ingresó. Redondeo: ingreso de :45 a :10 va a la hora en punto (06:57 -> 07:00, 07:08 -> 07:00; de :11 a :44 se respeta) y la duración se cuenta en bloques de media hora completos (salida 19:08 con ingreso 07:00 = 12 hs).";
 
-async function liquidarDesdeBD(pool, { operario, mes, quincena, desde, hasta, fechas, detalle, solo_con_categoria } = {}) {
+async function liquidarDesdeBD(pool, { operario, mes, quincena, desde, hasta, fechas, detalle, solo_con_categoria, solo_extras } = {}) {
   const rango = resolverFechas({ fechas, desde, hasta, mes, quincena });
-  if (rango.error) return { error: rango.error };
+  if (rango.error) return { error: rango.error, ...(rango.faltaPeriodo ? { falta_periodo: true } : {}) };
 
   const { ini, fin } = margen(rango.desde, rango.hasta);
   const [filas] = await pool.query(
     "SELECT nombre, tipo, fecha_hora FROM fichadas WHERE fecha_hora >= ? AND fecha_hora < ? ORDER BY fecha_hora",
     [ini, fin],
   );
-  const nombres = [...new Set(filas.map((f) => f.nombre))].sort();
+  // Los operarios del período son los que tienen fichadas en el rango pedido (el resto del mes se lee solo
+  // para evaluar el presentismo).
+  const diaDe = (f) => {
+    const v = f.fecha_hora;
+    return v instanceof Date ? iso(v) : String(v).slice(0, 10);
+  };
+  const hastaMas1 = iso(new Date(fechaDe(rango.hasta).getFullYear(), fechaDe(rango.hasta).getMonth(), fechaDe(rango.hasta).getDate() + 1));
+  const nombres = [...new Set(filas.filter((f) => diaDe(f) >= rango.desde && diaDe(f) <= hastaMas1).map((f) => f.nombre))].sort();
 
   let elegidos = nombres.slice();
   if (operario) {
@@ -198,23 +207,67 @@ async function liquidarDesdeBD(pool, { operario, mes, quincena, desde, hasta, fe
       detalle: operario ? modoDetalle : "compacto",
     });
     const ref = infoValor(ctx, codigo, rango.hasta);
-    const sinValor = !codigo || (liq.importe_total === 0 && liq.horas_totales > 0);
+    const fichadasOp = filas.filter((f) => f.nombre === nombre);
+    const ajustesOp = ajustesDe(ctx, nombre);
+    const pres = analizarPresentismo({
+      turnos: emparejarTurnos(fichadasOp).map((t) => ({ fecha: t.fecha, ingreso: t.ingreso })),
+      esFeriado: (f) => ctx.feriados.has(f),
+      getAjuste: (f) => ajustesOp[f] || null,
+      desde: rango.desde,
+      hasta: rango.hasta,
+    });
+    const sinValor = !codigo || (liq.importe_total === 0 && liq.horas_totales > 0 && !(infoValor(ctx, codigo, rango.hasta)?.mensual));
     return {
       operario: nombre,
       categoria: codigo ? ctx.categorias.get(codigo) || codigo : "SIN CATEGORÍA ASIGNADA",
       ...(ref ? { pago: descripcionPago(ref) } : {}),
       ...liq,
+      presentismo: pres.meses.length ? pres : { llegadas_tarde_en_el_periodo: 0, pierde_presentismo: false, nota: "Sin llegadas tarde (más de 5 min) en el mes." },
       ...(sinValor ? { aviso_importes: "El operario no tiene categoría asignada o la escala no tiene valor de hora para el período: los importes salen en 0 (las horas sí están calculadas)." } : {}),
     };
   });
+
+  // Resumen que siempre se muestra por operario: horas y valor de normales y de extras (o solo extras).
+  for (const r of resultados) {
+    const mensual = r.pago?.tipo === "mensual";
+    r.resumen = solo_extras
+      ? { horas_extra: r.horas_extra, valor_extras: r.importe_extras }
+      : {
+          horas_normales: r.horas_normales,
+          horas_extra: r.horas_extra,
+          horas_totales: r.horas_totales,
+          valor_normales: r.importe_normales,
+          valor_extras: r.importe_extras,
+          total: r.importe_total,
+          ...(mensual ? { nota_mensual: `Categoría mensual: las horas normales están incluidas en el sueldo mensual de $${r.pago.sueldo_mensual}; el valor de normales es solo el recargo nocturno.` } : {}),
+        };
+    if (solo_extras) {
+      delete r.horas_normales; delete r.importe_normales; delete r.horas_totales; delete r.importe_total; delete r.turnos_liquidados;
+      r.por_categoria = Object.fromEntries(Object.entries(r.por_categoria).filter(([k]) => k.startsWith("extra")));
+      r.dias = r.dias
+        .filter((d) => d.sin_salida || d.horas_extra > 0)
+        .map((d) => {
+          if (d.sin_salida) return d;
+          const { horas_totales, horas_normales, importe_normales, importe, ...resto } = d;
+          return {
+            ...resto,
+            horas_por_categoria: Object.fromEntries(Object.entries(d.horas_por_categoria).filter(([k]) => k.startsWith("extra"))),
+            ...(d.desglose ? { desglose: d.desglose.filter((x) => x.categoria.startsWith("extra")) } : {}),
+          };
+        });
+    }
+  }
 
   const feriadosEnRango = [...ctx.feriados.entries()]
     .filter(([f]) => f >= rango.desde && f <= rango.hasta)
     .map(([f, d]) => `${f}${d ? " (" + d + ")" : ""}`);
 
+  const avisosPresentismo = resultados.filter((r) => r.presentismo?.pierde_presentismo).map((r) => `${r.operario}: ${r.presentismo.aviso}`);
   const base = {
     liquidacion_de: rango.descripcion,
     modo_detalle: operario ? modoDetalle : "resumen por operario",
+    informe: solo_extras ? "SOLO HORAS EXTRA (no mostrar horas ni valores de horas normales)" : "horas normales y extra, con el valor de normales y de extras",
+    ...(avisosPresentismo.length ? { avisos_presentismo: avisosPresentismo } : {}),
     periodos_de_escala_usados: [...periodosUsados].sort(),
     feriados_en_el_rango: feriadosEnRango,
     reglas: NOTA_REGLAS,
@@ -237,9 +290,13 @@ async function liquidarDesdeBD(pool, { operario, mes, quincena, desde, hasta, fe
     operarios: resumen,
     ...(!solo_con_categoria && sinCategoria.length ? { operarios_sin_categoria: sinCategoria } : {}),
     ...(conDias ? {} : { aviso_detalle: "Son demasiados turnos para listar día por día: no hay detalle diario en este resultado. Si lo piden, volvé a llamar con 'operario'." }),
-    total_importe_normales: redondear(resultados.reduce((a, r) => a + r.importe_normales, 0)),
+    total_horas_extra: redondear(resultados.reduce((a, r) => a + r.horas_extra, 0)),
     total_importe_extras: redondear(resultados.reduce((a, r) => a + r.importe_extras, 0)),
-    total_importe: redondear(resultados.reduce((a, r) => a + r.importe_total, 0)),
+    ...(solo_extras ? {} : {
+      total_horas_normales: redondear(resultados.reduce((a, r) => a + r.horas_normales, 0)),
+      total_importe_normales: redondear(resultados.reduce((a, r) => a + r.importe_normales, 0)),
+      total_importe: redondear(resultados.reduce((a, r) => a + r.importe_total, 0)),
+    }),
   };
 }
 
