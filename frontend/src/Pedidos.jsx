@@ -97,6 +97,16 @@ export default function Pedidos({ usuarioActual }) {
     historial: [],
   });
   const [loadingDetalles, setLoadingDetalles] = useState(false);
+  // < 768 px: lista de tarjetas en vez de tabla (la tabla cortaba Avance/Estado/Acciones)
+  const [esMovil, setEsMovil] = useState(
+    () => typeof window !== "undefined" && window.innerWidth < 768,
+  );
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 767px)");
+    const fn = () => setEsMovil(mq.matches);
+    mq.addEventListener("change", fn);
+    return () => mq.removeEventListener("change", fn);
+  }, []);
 
   // FORMULARIO CREACIÓN
   const [opInput, setOpInput] = useState("");
@@ -125,7 +135,7 @@ export default function Pedidos({ usuarioActual }) {
 
   // CÁLCULO DINÁMICO DE FILAS EXACTAS SIN SCROLL
   useEffect(() => {
-    if (loading) return;
+    if (loading || esMovil) return;
 
     const updatePageSize = () => {
       if (!tableContainerRef.current) return;
@@ -159,7 +169,7 @@ export default function Pedidos({ usuarioActual }) {
       observer.disconnect();
       window.removeEventListener("resize", updatePageSize);
     };
-  }, [loading]);
+  }, [loading, esMovil]);
 
   const fetchPedidos = async () => {
     try {
@@ -418,7 +428,8 @@ export default function Pedidos({ usuarioActual }) {
       );
   }, [pedidos, busqueda, tabActual, isAdmin]);
 
-  const totalPages = Math.ceil(pedidosFiltrados.length / itemsPerPage) || 1;
+  const porPagina = esMovil ? 20 : itemsPerPage;
+  const totalPages = Math.ceil(pedidosFiltrados.length / porPagina) || 1;
 
   useEffect(() => {
     if (currentPage > totalPages && totalPages > 0) {
@@ -427,9 +438,9 @@ export default function Pedidos({ usuarioActual }) {
   }, [totalPages, currentPage]);
 
   const currentItems = useMemo(() => {
-    const start = (currentPage - 1) * itemsPerPage;
-    return pedidosFiltrados.slice(start, start + itemsPerPage);
-  }, [pedidosFiltrados, currentPage, itemsPerPage]);
+    const start = (currentPage - 1) * porPagina;
+    return pedidosFiltrados.slice(start, start + porPagina);
+  }, [pedidosFiltrados, currentPage, porPagina]);
 
   const getEstadoBadge = (estado) => {
     if (estado === "COMPLETADO")
@@ -442,12 +453,12 @@ export default function Pedidos({ usuarioActual }) {
   return (
     <div className="flex-1 flex flex-col h-full min-h-0 bg-black font-sans text-zinc-200 overflow-hidden relative selection:bg-[#FF5A00]/30">
       {/* HEADER HERO */}
-      <div className="border-b border-zinc-800/50 p-4 sm:p-6 md:p-8 flex flex-col sm:flex-row sm:items-end justify-between gap-4 shrink-0 bg-[#050505] relative overflow-hidden">
+      <div className="border-b border-zinc-800/50 px-4 py-3 sm:p-6 md:px-8 md:py-6 flex flex-row items-center sm:items-end justify-between gap-3 shrink-0 bg-[#050505] relative overflow-hidden">
         <div className="z-10">
-          <h1 className="text-3xl sm:text-4xl md:text-5xl font-extrabold italic tracking-tighter text-white uppercase leading-none">
+          <h1 className="text-2xl sm:text-4xl md:text-5xl font-extrabold italic tracking-tighter text-white uppercase leading-none">
             PEDIDOS
           </h1>
-          <p className="text-zinc-500 text-xs sm:text-sm mt-1.5 max-w-md uppercase tracking-widest font-bold">
+          <p className="text-zinc-500 text-[10px] sm:text-sm mt-1 sm:mt-1.5 max-w-md uppercase tracking-widest font-bold">
             ROL DE VISUALIZACIÓN: <span className="text-white">{rolUpper}</span>
           </p>
         </div>
@@ -455,9 +466,11 @@ export default function Pedidos({ usuarioActual }) {
         {isAdmin && (
           <button
             onClick={() => setModalNuevoOpen(true)}
-            className="flex items-center justify-between gap-3 px-6 py-3 bg-[#FFD700] hover:bg-white text-black font-bold text-xs uppercase tracking-widest transition-all cursor-pointer shadow-lg shadow-[#FFD700]/10 w-full sm:w-auto shrink-0 rounded-sm"
+            className="flex items-center justify-between gap-2 sm:gap-3 px-3.5 sm:px-6 py-2.5 sm:py-3 bg-[#FFD700] hover:bg-white text-black font-bold text-[11px] sm:text-xs uppercase tracking-widest transition-all cursor-pointer shadow-lg shadow-[#FFD700]/10 shrink-0 rounded-sm"
           >
-            <span>NUEVO PEDIDO</span>
+            <span>
+              NUEVO<span className="hidden sm:inline"> PEDIDO</span>
+            </span>
             <Plus size={18} strokeWidth={3} />
           </button>
         )}
@@ -529,6 +542,93 @@ export default function Pedidos({ usuarioActual }) {
                 ? "No hay pedidos archivados."
                 : "No hay pedidos activos registrados."}
             </p>
+          </div>
+        ) : esMovil ? (
+          <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar flex flex-col gap-2.5 pb-1">
+            {currentItems.map((p) => {
+              const esArchivado = Boolean(p.archivado);
+              const total = Number(p.cantidad_total) || 0;
+              const hecho = Number(p.cantidad_completada) || 0;
+              const pct =
+                total > 0
+                  ? Math.min(100, Math.round((hecho / total) * 100))
+                  : 0;
+              return (
+                <div
+                  key={p.id}
+                  className={`border border-zinc-800/90 bg-[#050505] rounded-sm p-3 flex flex-col gap-2.5 ${esArchivado ? "opacity-75" : ""}`}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[#FF5A00] bg-[#FF5A00]/10 border border-[#FF5A00]/20 px-1.5 py-1 text-[10px] font-bold rounded-sm">
+                      OP-{String(p.op).replace(/^OP-/i, "")}
+                    </span>
+                    <span className="text-zinc-500 font-bold text-[10px]">
+                      {formatFechaArg(p.fecha)}
+                    </span>
+                    <span
+                      className={`ml-auto text-[8px] px-2 py-0.5 border font-bold uppercase tracking-widest rounded-sm ${getEstadoBadge(p.estado)}`}
+                    >
+                      {p.estado}
+                    </span>
+                  </div>
+                  <div className="min-w-0">
+                    <p className="font-bold text-white uppercase text-xs leading-snug break-words">
+                      {p.cliente}
+                    </p>
+                    <p className="font-bold text-zinc-400 text-[11px] mt-0.5 break-words">
+                      {p.articulo || "SIN ESPECIFICAR"}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <div className="flex-1 h-1.5 bg-zinc-900 rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-emerald-500"
+                        style={{ width: `${pct}%` }}
+                      />
+                    </div>
+                    <span className="font-bold text-[11px] text-zinc-300 whitespace-nowrap">
+                      <span className="text-emerald-400">{hecho}</span>{" "}
+                      <span className="text-zinc-600">/</span> {total}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => handleOpenDetalles(p)}
+                      className="flex-1 min-h-[40px] border border-zinc-800 bg-[#0a0a0a] text-zinc-200 active:border-[#FF5A00] active:text-[#FF5A00] text-[10px] font-bold uppercase tracking-widest flex items-center justify-center gap-1.5 rounded-sm cursor-pointer"
+                    >
+                      <ListChecks size={14} className="shrink-0" />
+                      <span>DETALLES</span>
+                    </button>
+                    {isAdmin && (
+                      <button
+                        onClick={() => handleToggleArchivar(p.id, !esArchivado)}
+                        title={
+                          esArchivado
+                            ? "Restaurar a Activos"
+                            : "Archivar Pedido"
+                        }
+                        aria-label={
+                          esArchivado
+                            ? "Restaurar a Activos"
+                            : "Archivar Pedido"
+                        }
+                        className={`w-10 min-h-[40px] flex items-center justify-center border rounded-sm cursor-pointer ${
+                          esArchivado
+                            ? "border-emerald-800/80 text-emerald-400"
+                            : "border-zinc-800 text-zinc-400"
+                        }`}
+                      >
+                        {esArchivado ? (
+                          <ArchiveRestore size={15} />
+                        ) : (
+                          <Archive size={15} />
+                        )}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
           </div>
         ) : (
           <div
@@ -677,7 +777,7 @@ export default function Pedidos({ usuarioActual }) {
       {/* MODAL NUEVO PEDIDO */}
       {modalNuevoOpen && (
         <div className="fixed inset-0 bg-black/90 backdrop-blur-sm z-[100] flex items-center justify-center p-2 sm:p-4 font-sans animate-in fade-in duration-200">
-          <div className="bg-[#050505] border border-zinc-800 w-full max-w-xl max-h-[92vh] overflow-hidden flex flex-col relative shadow-2xl rounded-sm">
+          <div className="bg-[#050505] border border-zinc-800 w-full max-w-xl max-h-[92dvh] overflow-hidden flex flex-col relative shadow-2xl rounded-sm">
             <div className="p-5 sm:p-6 border-b border-zinc-800 flex justify-between items-center bg-[#020202]">
               <h3 className="text-xl sm:text-2xl font-extrabold italic uppercase tracking-tighter text-white">
                 Agregar <span className="text-[#FF5A00]">Pedido</span>
@@ -794,13 +894,13 @@ export default function Pedidos({ usuarioActual }) {
       {/* MODAL DETALLES */}
       {modalDetalleOpen && (
         <div className="fixed inset-0 bg-black/90 backdrop-blur-md z-[100] flex items-center justify-center p-2 sm:p-6 font-sans animate-in fade-in duration-200">
-          <div className="bg-[#050505] border border-zinc-800/80 w-full max-w-6xl max-h-[95vh] overflow-hidden flex flex-col relative shadow-[0_0_80px_rgba(0,0,0,0.95)] rounded-md">
+          <div className="bg-[#050505] border border-zinc-800/80 w-full max-w-6xl max-h-[95dvh] overflow-hidden flex flex-col relative shadow-[0_0_80px_rgba(0,0,0,0.95)] rounded-md">
             <div className="px-5 sm:px-6 py-4 border-b border-zinc-800 flex justify-between items-center bg-[#020202] shrink-0">
-              <div className="flex items-center gap-4 min-w-0">
+              <div className="flex items-center gap-2.5 sm:gap-4 min-w-0">
                 <span className="text-[#FF5A00] bg-[#FF5A00]/10 border border-[#FF5A00]/30 px-3 py-1 text-xs font-black tracking-widest uppercase rounded-sm shrink-0">
                   OP-{String(modalDetalleOpen.op).replace(/^OP-/i, "")}
                 </span>
-                <h3 className="text-base sm:text-xl font-extrabold text-white font-sans uppercase truncate max-w-[200px] sm:max-w-md">
+                <h3 className="text-sm sm:text-xl font-extrabold text-white font-sans uppercase leading-tight line-clamp-2 sm:line-clamp-none sm:truncate min-w-0 sm:max-w-md">
                   {modalDetalleOpen.cliente}
                 </h3>
                 {Boolean(modalDetalleOpen.archivado) && (
@@ -810,7 +910,7 @@ export default function Pedidos({ usuarioActual }) {
                 )}
               </div>
 
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2 sm:gap-3 shrink-0">
                 {isAdmin && (
                   <button
                     onClick={() =>
@@ -826,7 +926,7 @@ export default function Pedidos({ usuarioActual }) {
                     ) : (
                       <Archive size={14} />
                     )}
-                    <span>
+                    <span className="hidden sm:inline">
                       {modalDetalleOpen.archivado ? "Restaurar" : "Archivar"}
                     </span>
                   </button>
