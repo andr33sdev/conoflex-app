@@ -9,3 +9,7 @@ build/
 *.db-journal
 *.sqlite
 *.sqlite3
+
+# Tokens de Google (Gmail) y archivos temporales generados por el backend
+token.json
+backend/uploads/

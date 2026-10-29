@@ -51,8 +51,59 @@ if (!fs.existsSync(IMAGENES_DIR))
   fs.mkdirSync(IMAGENES_DIR, { recursive: true });
 if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 
+// Las imágenes de productos se muestran en <img> (no pueden enviar token): públicas.
+// /uploads (archivos temporales de importación) ya NO se sirve públicamente.
 app.use("/imagenes", express.static(IMAGENES_DIR));
-app.use("/uploads", express.static(path.join(__dirname, "uploads")));
+
+// ---------------------------------------------------------------------------
+// AUTENTICACIÓN: todas las rutas exigen un JWT válido salvo las públicas.
+// ---------------------------------------------------------------------------
+const RUTAS_PUBLICAS = [
+  // Login
+  { method: "POST", path: "/api/auth/login" },
+  // Flujo OAuth de Google (son redirecciones del navegador, no llevan token)
+  { method: "GET", path: "/auth/google" },
+  { method: "GET", path: "/auth/google/callback" },
+];
+// Firma de solicitudes de compra desde el link de WhatsApp (sin sesión)
+const PREFIJOS_PUBLICOS = ["/api/public/"];
+
+function requireAuth(req, res, next) {
+  if (req.method === "OPTIONS") return next();
+
+  const esPublica =
+    RUTAS_PUBLICAS.some((r) => r.method === req.method && r.path === req.path) ||
+    PREFIJOS_PUBLICOS.some((p) => req.path.startsWith(p));
+  if (esPublica) return next();
+
+  const [esquema, token] = (req.headers.authorization || "").split(" ");
+  // `codigo` permite al frontend distinguir "tu sesión no es válida" de otros
+  // 401 propios de rutas (ej: Gmail no conectado en /api/mails).
+  if (esquema !== "Bearer" || !token) {
+    return res
+      .status(401)
+      .json({ error: "Sesión no iniciada.", codigo: "SESION_INVALIDA" });
+  }
+  try {
+    req.user = jwt.verify(token, JWT_SECRET, { algorithms: ["HS256"] });
+    next();
+  } catch (e) {
+    return res
+      .status(401)
+      .json({ error: "Sesión inválida o vencida.", codigo: "SESION_INVALIDA" });
+  }
+}
+
+function requireAdmin(req, res, next) {
+  if (String(req.user?.rol || "").toUpperCase() !== "ADMIN") {
+    return res
+      .status(403)
+      .json({ error: "Solo un administrador puede realizar esta acción." });
+  }
+  next();
+}
+
+app.use(requireAuth);
 
 // Multer Config
 const uploadTemp = multer({ dest: UPLOADS_DIR });
@@ -914,7 +965,7 @@ app.get("/api/roles", async (req, res) => {
 });
 
 // CREAR UN NUEVO ROL
-app.post("/api/roles", async (req, res) => {
+app.post("/api/roles", requireAdmin, async (req, res) => {
   const { nombre } = req.body;
   if (!nombre || !nombre.trim()) {
     return res.status(400).json({ error: "El nombre del rol es requerido." });
@@ -954,7 +1005,7 @@ app.get("/api/permisos", async (req, res) => {
 });
 
 // GUARDAR PERMISOS DE UN ROL
-app.put("/api/permisos/:rol", async (req, res) => {
+app.put("/api/permisos/:rol", requireAdmin, async (req, res) => {
   const { rol } = req.params;
   const { modulos } = req.body;
 
@@ -1074,7 +1125,7 @@ app.get("/api/usuarios", async (req, res) => {
 });
 
 // 3. CREAR USUARIO (con rol y vendedores)
-app.post("/api/usuarios", async (req, res) => {
+app.post("/api/usuarios", requireAdmin, async (req, res) => {
   const { nombre, email, password, rol, vendedores } = req.body;
   if (!nombre || !email || !password) {
     return res.status(400).json({ error: "Faltan campos obligatorios." });
@@ -1113,7 +1164,7 @@ app.post("/api/usuarios", async (req, res) => {
 });
 
 // 4. ACTUALIZAR VENDEDORES DE UN USUARIO
-app.put("/api/usuarios/:id/vendedores", async (req, res) => {
+app.put("/api/usuarios/:id/vendedores", requireAdmin, async (req, res) => {
   const { vendedores } = req.body;
   const vendedoresJson = JSON.stringify(
     Array.isArray(vendedores) ? vendedores : [],
@@ -1132,7 +1183,7 @@ app.put("/api/usuarios/:id/vendedores", async (req, res) => {
 });
 
 // 1. CAMBIAR ROL DE USUARIO (Dinamico)
-app.put("/api/usuarios/:id/rol", async (req, res) => {
+app.put("/api/usuarios/:id/rol", requireAdmin, async (req, res) => {
   const { rol } = req.body;
   if (!rol || typeof rol !== "string") {
     return res.status(400).json({ error: "El rol es requerido." });
@@ -1166,7 +1217,7 @@ app.put("/api/usuarios/:id/rol", async (req, res) => {
 });
 
 // 5. CAMBIAR CONTRASEÑA DE USUARIO
-app.put("/api/usuarios/:id/password", async (req, res) => {
+app.put("/api/usuarios/:id/password", requireAdmin, async (req, res) => {
   const { password } = req.body;
   if (!password) {
     return res.status(400).json({ error: "Contraseña requerida" });
@@ -1210,7 +1261,7 @@ app.get("/api/permisos", async (req, res) => {
 });
 
 // 7. GUARDAR PERMISOS DE UN ROL
-app.put("/api/permisos/:rol", async (req, res) => {
+app.put("/api/permisos/:rol", requireAdmin, async (req, res) => {
   const { rol } = req.params;
   const { modulos } = req.body;
 
