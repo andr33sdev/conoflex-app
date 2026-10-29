@@ -94,13 +94,23 @@ function requireAuth(req, res, next) {
   }
 }
 
-function requireAdmin(req, res, next) {
-  if (String(req.user?.rol || "").toUpperCase() !== "ADMIN") {
-    return res
-      .status(403)
-      .json({ error: "Solo un administrador puede realizar esta acción." });
+// El rol se consulta en la base (no en el token): como los tokens no vencen,
+// si a alguien le quitan el rol ADMIN pierde el acceso de inmediato.
+async function requireAdmin(req, res, next) {
+  try {
+    const [rows] = await db.query("SELECT rol FROM usuarios WHERE id = ?", [
+      req.user?.id,
+    ]);
+    if (String(rows[0]?.rol || "").toUpperCase() !== "ADMIN") {
+      return res
+        .status(403)
+        .json({ error: "Solo un administrador puede realizar esta acción." });
+    }
+    next();
+  } catch (error) {
+    console.error("Error verificando rol de administrador:", error);
+    res.status(500).json({ error: "No se pudo verificar el rol." });
   }
-  next();
 }
 
 app.use(requireAuth);
@@ -1084,10 +1094,12 @@ app.post("/api/auth/login", async (req, res) => {
 
     const vendedoresArr = parseVendedoresUser(user.vendedores);
 
+    // Sin `expiresIn`: la sesión no vence nunca (el usuario queda logueado hasta
+    // que cierre sesión o se cambie JWT_SECRET). Por eso el rol que viaja en el
+    // token NO se usa para autorizar acciones de administrador (ver requireAdmin).
     const token = jwt.sign(
       { id: user.id, email: user.email, rol: user.rol, nombre: user.nombre },
       JWT_SECRET,
-      { expiresIn: "12h" },
     );
 
     res.json({
