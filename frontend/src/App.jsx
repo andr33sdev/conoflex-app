@@ -70,10 +70,6 @@ function App() {
     );
   }
 
-  if (!usuarioActual) {
-    return <Login onLogin={handleLoginSuccess} />;
-  }
-
   useEffect(() => {
     const checkUrl = () => {
       const path = window.location.pathname;
