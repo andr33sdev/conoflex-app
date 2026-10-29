@@ -329,12 +329,15 @@ function liquidarPeriodo({
   const horasNormales = Object.entries(resumen).filter(([k]) => k.startsWith("normal")).reduce((a, [, v]) => a + v.horas, 0);
   const horasExtra = Object.entries(resumen).filter(([k]) => k.startsWith("extra")).reduce((a, [, v]) => a + v.horas, 0);
 
+  const importeDe = (pref) => Object.entries(resumen).filter(([k]) => k.startsWith(pref)).reduce((a, [, v]) => a + v.importe, 0);
   return {
     turnos_liquidados: dias.filter((d) => !d.sin_salida).length,
     horas_totales: redondear(minTotal / 60),
     horas_normales: redondear(horasNormales),
     horas_extra: redondear(horasExtra),
     por_categoria: resumen,
+    importe_normales: redondear(importeDe("normal")),
+    importe_extras: redondear(importeDe("extra")),
     importe_total: redondear(dias.reduce((a, d) => a + d.importe, 0)),
     dias,
     avisos,

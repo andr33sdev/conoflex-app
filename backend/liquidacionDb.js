@@ -124,7 +124,7 @@ function ajustesDe(ctx, nombre) {
 const NOTA_REGLAS =
   "Reglas de Conoflex: hora diurna 06:00–21:00, nocturna 21:00–06:00 con +13,33%; jornada normal de 9 hs desde el ingreso, el resto es extra al 50% (sobre la hora diurna o nocturna que corresponda); si el turno ingresa un sábado, hasta las 13:00 todas las horas son extra al 50% (un turno que ingresa de lunes a viernes mantiene sus primeras 9 hs normales aunque crucen al sábado); sábados desde las 13:00, domingos y feriados todo es extra al 100%; sin tope de horas extra. Un turno dura desde el ingreso hasta la primera salida registrada (hasta 30 hs después, p. ej. entra 19:00 y sale 17:00 del día siguiente = 22 hs seguidas). Cada minuto se clasifica por su fecha y hora reales y cada turno se asigna al día en que ingresó. Redondeo: ingreso de :45 a :10 va a la hora en punto (06:57 -> 07:00, 07:08 -> 07:00; de :11 a :44 se respeta) y la duración se cuenta en bloques de media hora completos (salida 19:08 con ingreso 07:00 = 12 hs).";
 
-async function liquidarDesdeBD(pool, { operario, mes, quincena, desde, hasta, fechas, detalle } = {}) {
+async function liquidarDesdeBD(pool, { operario, mes, quincena, desde, hasta, fechas, detalle, solo_con_categoria } = {}) {
   const rango = resolverFechas({ fechas, desde, hasta, mes, quincena });
   if (rango.error) return { error: rango.error };
 
@@ -135,7 +135,7 @@ async function liquidarDesdeBD(pool, { operario, mes, quincena, desde, hasta, fe
   );
   const nombres = [...new Set(filas.map((f) => f.nombre))].sort();
 
-  let elegidos = nombres;
+  let elegidos = nombres.slice();
   if (operario) {
     const q = sinAcentos(operario);
     const exactos = nombres.filter((n) => sinAcentos(n) === q);
@@ -155,6 +155,16 @@ async function liquidarDesdeBD(pool, { operario, mes, quincena, desde, hasta, fe
   const modoDetalle = detalle === "compacto" || detalle === "completo"
     ? detalle
     : operario && rango.fechas.size <= 8 ? "completo" : "compacto";
+
+  const ctx0 = ctx;
+  const sinCategoria = [];
+  if (!operario) {
+    // Sin 'operario' se liquida al plantel; con solo_con_categoria se dejan afuera los que no tienen categoría.
+    const con = elegidos.filter((n) => ctx0.asignaciones.get(n));
+    for (const n of elegidos) if (!ctx0.asignaciones.get(n)) sinCategoria.push(n);
+    if (solo_con_categoria) elegidos = con;
+    if (!elegidos.length) return { error: "No hay operarios con categoría asignada con fichadas en ese período.", operarios_sin_categoria: sinCategoria };
+  }
 
   const resultados = elegidos.map((nombre) => {
     const codigo = ctx.asignaciones.get(nombre) || null;
@@ -190,13 +200,22 @@ async function liquidarDesdeBD(pool, { operario, mes, quincena, desde, hasta, fe
     const r = resultados[0];
     return { ...base, ...r, valor_hora_diurno: valorReferencia(ctx, ctx.asignaciones.get(r.operario), rango.hasta) };
   }
+  // El detalle por día va solo si no es enorme; si no, se pide por operario. Así el modelo nunca
+  // tiene que inventar días: o están en el resultado o no se muestran.
+  const totalTurnos = resultados.reduce((a, r) => a + r.dias.length, 0);
+  const conDias = totalTurnos <= 450;
   const resumen = resultados.map((r) => {
     const { dias, ...resto } = r;
-    return { ...resto, dias_con_turno: dias.length };
+    return { ...resto, dias_con_turno: dias.length, ...(conDias ? { dias } : {}) };
   });
   return {
     ...base,
+    cantidad_de_operarios: resumen.length,
     operarios: resumen,
+    ...(!solo_con_categoria && sinCategoria.length ? { operarios_sin_categoria: sinCategoria } : {}),
+    ...(conDias ? {} : { aviso_detalle: "Son demasiados turnos para listar día por día: no hay detalle diario en este resultado. Si lo piden, volvé a llamar con 'operario'." }),
+    total_importe_normales: redondear(resultados.reduce((a, r) => a + r.importe_normales, 0)),
+    total_importe_extras: redondear(resultados.reduce((a, r) => a + r.importe_extras, 0)),
     total_importe: redondear(resultados.reduce((a, r) => a + r.importe_total, 0)),
   };
 }
