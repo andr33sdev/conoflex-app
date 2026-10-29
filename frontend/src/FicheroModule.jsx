@@ -32,7 +32,9 @@ import {
   FACTORES,
   HORAS_MENSUALES,
   esMensual,
+  evaluarIngreso,
   liquidarTurnoMinutos,
+  PRESENTISMO,
   valorHoraOrdinaria,
 } from "./liquidacionTurno";
 const API_BASE_URL = import.meta.env?.VITE_API_URL || "";
@@ -727,6 +729,26 @@ export default function FicheroModule() {
     diasTildadosExtras,
   ]);
 
+  // Presentismo del mes que se está viendo: llegadas tarde (más de 5 min) del operario seleccionado.
+  const presentismoMes = useMemo(() => {
+    const tardes = [];
+    celdasMes.forEach((celda) => {
+      const ing = celda?.data?.ingreso;
+      if (!ing) return;
+      const aj = ajustesDias[`${operarioSeleccionado}_${celda.fechaISO}`];
+      const ev = evaluarIngreso({
+        fecha: celda.fechaISO,
+        ingreso: ing,
+        horaPactada: aj?.horaInicio || null,
+        esFeriado: !!celda.data.esFeriado,
+      });
+      if (ev?.tarde) {
+        tardes.push({ dia: celda.numero, ingreso: ing, fuera: ev.fueraDeTolerancia });
+      }
+    });
+    return { tardes, pierde: tardes.length > PRESENTISMO.permitidas };
+  }, [celdasMes, ajustesDias, operarioSeleccionado]);
+
   const cambiarPagoCategoria = async (codigo, pago) => {
     try {
       const res = await fetch(getApiUrl("/api/fichero/categoria-pago"), {
@@ -1203,6 +1225,30 @@ export default function FicheroModule() {
                   </span>
                 </div>
               </div>
+
+              {presentismoMes.tardes.length > 0 && (
+                <div
+                  className={`text-[10px] px-2.5 py-1.5 rounded border print:border-gray-300 ${
+                    presentismoMes.pierde
+                      ? "bg-rose-500/10 border-rose-500/40 text-rose-300 print:text-rose-700"
+                      : "bg-amber-500/10 border-amber-500/30 text-amber-300 print:text-amber-700"
+                  }`}
+                >
+                  <span className="font-bold uppercase tracking-wider">
+                    Llegadas tarde (más de 5 min): {presentismoMes.tardes.length}
+                  </span>{" "}
+                  —{" "}
+                  {presentismoMes.tardes
+                    .map(
+                      (t) =>
+                        `${t.dia} (${t.ingreso}${t.fuera ? ", fuera de tolerancia" : ""})`,
+                    )
+                    .join(" · ")}
+                  {presentismoMes.pierde
+                    ? ". PIERDE EL PRESENTISMO del mes (3.ª llegada tarde)."
+                    : `. Hasta ${PRESENTISMO.permitidas} por mes; la tercera hace perder el presentismo.`}
+                </div>
+              )}
             </div>
 
             {/* VISTA CELULAR: una fila por día (el calendario de 7 columnas no entra) */}

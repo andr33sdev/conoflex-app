@@ -250,6 +250,17 @@ function liquidarTurno({ entradaTs, salidaTs, esFeriado = () => false, ajuste = 
   };
 }
 
+/** Horas e importes del turno separados en normales y extra. */
+function sumasPorTipo(porCategoria) {
+  const t = { horas_normales: 0, horas_extra: 0, importe_normales: 0, importe_extras: 0 };
+  for (const [cat, v] of Object.entries(porCategoria)) {
+    const k = cat.startsWith("normal") ? "normales" : "extra";
+    t[k === "normales" ? "horas_normales" : "horas_extra"] += v.horas;
+    t[k === "normales" ? "importe_normales" : "importe_extras"] += v.importe;
+  }
+  return Object.fromEntries(Object.entries(t).map(([k, v]) => [k, redondear(v)]));
+}
+
 /** Notas del día (feriado, ajustes manuales aplicados). */
 function notasDelDia({ feriado, ajuste }) {
   const notas = [];
@@ -310,6 +321,7 @@ function liquidarPeriodo({
       ...(esFeriado(t.fecha) ? { feriado: true } : {}),
       horas_totales: liq.horasTotales,
       horas_por_categoria: Object.fromEntries(Object.entries(liq.porCategoria).map(([k, v]) => [k, v.horas])),
+      ...sumasPorTipo(liq.porCategoria),
       importe: liq.importe,
     };
     if (detalle === "completo") {

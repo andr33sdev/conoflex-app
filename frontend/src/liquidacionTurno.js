@@ -98,3 +98,40 @@ export function liquidarTurnoMinutos({ entradaTs, salidaTs, esFeriado = () => fa
   }
   return { min, totalMin, inicioTs: inicio, finTs: inicio + totalMin * 60000 };
 }
+
+// Presentismo: llegadas tarde. Espejo de backend/presentismo.js.
+//  Entrada 07:00 (diurno) o 19:00 (nocturno), tolerancia de 15 min; es llegada tarde ingresar más
+//  de 5 min después (07:06 o más). Hasta 2 por mes; la tercera en el mismo mes hace perder el presentismo.
+export const PRESENTISMO = { gracia: 5, tolerancia: 15, permitidas: 2, ventana: 180 };
+const aMinutos = (hhmm) => {
+  const [h, m] = String(hhmm).split(":").map(Number);
+  return h * 60 + m;
+};
+export function evaluarIngreso({ fecha, ingreso, horaPactada = null, esFeriado = false }) {
+  const [y, m, d] = String(fecha).split("-").map(Number);
+  const dow = new Date(y, m - 1, d).getDay();
+  if (dow === 0 || esFeriado) return null;
+  const real = aMinutos(ingreso);
+  let prog;
+  if (horaPactada) {
+    prog = aMinutos(horaPactada);
+  } else {
+    let mejor = null;
+    for (const p of [7 * 60, 19 * 60]) {
+      let dif = real - p;
+      if (dif > 720) dif -= 1440;
+      if (dif < -720) dif += 1440;
+      if (!mejor || Math.abs(dif) < Math.abs(mejor.dif)) mejor = { dif, p };
+    }
+    if (Math.abs(mejor.dif) > PRESENTISMO.ventana) return null;
+    prog = mejor.p;
+  }
+  let tarde = real - prog;
+  if (tarde > 720) tarde -= 1440;
+  if (tarde < -720) tarde += 1440;
+  return {
+    minutosTarde: Math.max(0, tarde),
+    tarde: tarde > PRESENTISMO.gracia,
+    fueraDeTolerancia: tarde > PRESENTISMO.tolerancia,
+  };
+}
