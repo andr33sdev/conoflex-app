@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import AIAvatar from "./AIAvatar";
+import GraficoConnie from "./GraficoConnie";
 import {
   Calendar,
   RefreshCw,
@@ -240,7 +241,7 @@ export default function Metricas() {
     {
       rol: "assistant",
       texto:
-        "¡Hola! Soy Connie. Tengo la base de datos de Conoflex conectada en tiempo real. ¿Qué querés analizar hoy?",
+        "¡Hola! Soy Connie. Tengo la base de Conoflex conectada en tiempo real: puedo analizar ventas, stock y producción, armar gráficos y liquidar horas normales y extras según el convenio UOYEP y la Ley de Contrato de Trabajo. ¿Qué querés ver hoy?",
     },
   ]);
   const [inputChat, setInputChat] = useState("");
@@ -380,6 +381,7 @@ export default function Metricas() {
             rol: "assistant",
             texto: data.respuesta,
             consultas: data.consultas || [],
+            graficos: data.graficos || [],
           },
         ]);
       } else {
@@ -1019,31 +1021,34 @@ export default function Metricas() {
             </div>
 
             {/* ÁREA DE MENSAJES (REDONDEADAS, LEGIBLES Y LIMPIAS) */}
-            <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 min-h-0 bg-black custom-scrollbar">
+            <div className="flex-1 overflow-y-auto p-3 sm:p-6 space-y-4 min-h-0 bg-black custom-scrollbar">
               {mensajes.map((m, i) => {
                 const esUsuario = m.rol === "user";
                 return (
                   <div
                     key={i}
-                    className={`flex items-start gap-3 w-full animate-in fade-in duration-200 ${
+                    className={`flex items-start gap-2 sm:gap-3 w-full animate-in fade-in duration-200 ${
                       esUsuario ? "justify-end" : "justify-start"
                     }`}
                   >
                     {!esUsuario && (
-                      <div className="w-9 h-9 rounded-xl border border-zinc-800 bg-[#0A0A0A] flex items-center justify-center text-[#FF5A00] shrink-0 mt-0.5 shadow-sm">
+                      <div className="hidden sm:flex w-9 h-9 rounded-xl border border-zinc-800 bg-[#0A0A0A] items-center justify-center text-[#FF5A00] shrink-0 mt-0.5 shadow-sm">
                         <Bot size={18} />
                       </div>
                     )}
 
                     {esUsuario ? (
                       /* BURBUJA DEL USUARIO: NARANJA CONOFLEX, REDONDEADA, TEXTO NEGRO CLARO, SIN ICONO U */
-                      <div className="max-w-[85%] sm:max-w-[70%] bg-[#FF5A00] text-black font-semibold text-sm leading-relaxed px-5 py-3.5 rounded-2xl rounded-tr-sm shadow-lg shadow-[#FF5A00]/10">
+                      <div className="max-w-[88%] sm:max-w-[70%] bg-[#FF5A00] text-black font-semibold text-sm leading-relaxed px-4 sm:px-5 py-3 sm:py-3.5 rounded-2xl rounded-tr-sm shadow-lg shadow-[#FF5A00]/10 break-words">
                         {m.texto}
                       </div>
                     ) : (
                       /* BURBUJA DE CONNIE: NEGRA INDUSTRIAL, BORDES SUTILES, TEXTO GRANDE Y LEGIBLE */
-                      <div className="max-w-[85%] sm:max-w-[75%] bg-[#0A0A0A] border border-zinc-800 text-zinc-100 font-medium text-sm leading-relaxed px-5 py-4 rounded-2xl rounded-tl-sm shadow-md whitespace-pre-wrap">
+                      <div className="min-w-0 max-w-full sm:max-w-[75%] bg-[#0A0A0A] border border-zinc-800 text-zinc-100 font-medium text-sm leading-relaxed px-4 sm:px-5 py-3.5 sm:py-4 rounded-2xl rounded-tl-sm shadow-md whitespace-pre-wrap break-words">
                         {m.texto}
+                        {m.graficos?.map((g, k) => (
+                          <GraficoConnie key={k} grafico={g} />
+                        ))}
                         {m.consultas?.length > 0 && (
                           <details className="mt-3 pt-3 border-t border-zinc-800 text-xs text-zinc-400 whitespace-normal">
                             <summary className="cursor-pointer select-none hover:text-zinc-200 font-semibold">
@@ -1097,21 +1102,41 @@ export default function Metricas() {
             </div>
 
             {/* BARRA DE ENTRADA CHAT: SIN FORZAR MAYÚSCULAS */}
-            <div className="p-3.5 sm:p-4 bg-[#050505] border-t border-zinc-800 flex items-center gap-3">
+            {mensajes.length <= 1 && !enviandoChat && (
+              <div className="px-3 sm:px-4 pt-3 bg-[#050505] border-t border-zinc-800 flex gap-2 overflow-x-auto">
+                {[
+                  "Dame las ventas de la semana",
+                  "Gráfico de ventas por mes de este año",
+                  "Liquidame las horas de octubre de todo el plantel",
+                  "¿Qué insumos están por quedarse sin stock?",
+                  "¿Cuánto es una hora extra al 100% de la categoría más alta?",
+                ].map((sug) => (
+                  <button
+                    key={sug}
+                    onClick={() => enviarMensajeChat(sug)}
+                    className="shrink-0 text-xs text-zinc-300 hover:text-black hover:bg-[#FF5A00] border border-zinc-700 hover:border-[#FF5A00] rounded-full px-3.5 py-2 transition-colors cursor-pointer whitespace-nowrap"
+                  >
+                    {sug}
+                  </button>
+                ))}
+              </div>
+            )}
+            <div className="p-3 sm:p-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] bg-[#050505] border-t border-zinc-800 flex items-center gap-2 sm:gap-3">
               <input
                 type="text"
                 value={inputChat}
                 onChange={(e) => setInputChat(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && enviarMensajeChat()}
-                placeholder="Preguntale a Connie sobre insumos, semielaborados, ventas o pedidos..."
-                className="flex-1 bg-black border border-zinc-800 hover:border-zinc-700 focus:border-[#FF5A00] rounded-xl px-5 py-3.5 text-sm text-white placeholder-zinc-500 outline-none transition-colors font-sans"
+                placeholder="Preguntale a Connie..."
+                className="flex-1 min-w-0 bg-black border border-zinc-800 hover:border-zinc-700 focus:border-[#FF5A00] rounded-xl px-4 sm:px-5 py-3.5 text-sm text-white placeholder-zinc-500 outline-none transition-colors font-sans"
               />
               <button
                 onClick={() => enviarMensajeChat()}
                 disabled={enviandoChat || !inputChat.trim()}
-                className="bg-[#FF5A00] hover:bg-white text-black font-bold px-6 py-3.5 rounded-xl transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2 text-xs uppercase tracking-widest shrink-0 shadow-lg shadow-[#FF5A00]/20 active:scale-95"
+                aria-label="Enviar"
+                className="bg-[#FF5A00] hover:bg-white text-black font-bold px-4 sm:px-6 py-3.5 rounded-xl transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2 text-xs uppercase tracking-widest shrink-0 shadow-lg shadow-[#FF5A00]/20 active:scale-95"
               >
-                <span>ENVIAR</span>
+                <span className="hidden sm:inline">ENVIAR</span>
                 <Send size={15} />
               </button>
             </div>

@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
-    "test": "node --test test/connie.test.js test/fichero.test.js"
+    "test": "node --test test/connie.test.js test/fichero.test.js test/liquidacion.test.js"
   },
   "keywords": [],
   "author": "",

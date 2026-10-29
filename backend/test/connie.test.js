@@ -9,6 +9,7 @@ const {
   normalizarHistorial,
   esquemaATexto,
   analizarResultado,
+  CONFIG,
 } = require("../connie");
 
 // ---------------------------------------------------------------------------
@@ -255,7 +256,7 @@ test("agente: si agota las rondas fuerza una respuesta final sin herramientas", 
   const connie = crearConnie({ pool, ai, obtenerDolar: async () => null });
   const r = await connie.responder({ mensaje: "pregunta infinita", historial: [] });
   assert.equal(r.respuesta, "Con lo reunido: 1.");
-  assert.equal(llamadas.length, 6 + 1); // maxRondas + respuesta final forzada
+  assert.equal(llamadas.length, CONFIG.maxRondas + 1); // maxRondas + respuesta final forzada
 });
 
 test("agente: ejecuta consultas en paralelo y usa la cotización del dólar cacheada", async () => {
@@ -410,4 +411,58 @@ test("agente: el caso 'ventas de la semana' con estado inventado -> recibe la pi
   assert.match(prompt, /resultado vacío, en 0 o en NULL/);
   assert.match(prompt, /unitaria o ya es total/);
   assert.ok(!/estado\s*!=\s*'CANCELADO'|cantidad \* punisiva/.test(prompt), "sin fórmulas del negocio escritas");
+});
+
+test("agente: graficar con SQL devuelve el gráfico en la respuesta y la calculadora responde", async () => {
+  const { pool } = crearEntornoFalso({
+    onSelect: () => [[["Ene", 10], ["Feb", 25], ["Mar", 17]], [{ name: "mes" }, { name: "total" }]],
+  });
+  const resultadosTool = [];
+  let paso = 0;
+  const ai = {
+    models: {
+      async generateContent(req) {
+        paso++;
+        for (const c of req.contents) {
+          for (const part of c.parts || []) if (part.functionResponse) resultadosTool.push(part.functionResponse);
+        }
+        if (paso === 1) {
+          return respuestaConLlamadas([
+            { name: "graficar", args: { tipo: "lineas", titulo: "Ventas", unidad: "$", consulta: "SELECT mes, total FROM t" } },
+            { name: "calculadora", args: { expresion: "10 + 25 + 17" } },
+          ]);
+        }
+        return respuestaTexto("Febrero fue el mejor mes.");
+      },
+    },
+  };
+  const connie = crearConnie({ pool, ai, obtenerDolar: async () => null });
+  const r = await connie.responder({ mensaje: "graficame las ventas", historial: [] });
+  assert.equal(r.graficos.length, 1);
+  assert.equal(r.graficos[0].tipo, "lineas");
+  assert.deepEqual(r.graficos[0].etiquetas, ["Ene", "Feb", "Mar"]);
+  assert.deepEqual(r.graficos[0].series[0].valores, [10, 25, 17]);
+  const calc = resultadosTool.find((x) => x.name === "calculadora");
+  assert.equal(calc.response.resultado.resultado, 52);
+  assert.equal(r.respuesta, "Febrero fue el mejor mes.");
+});
+
+test("agente: gráfico inválido devuelve el error al modelo y no muestra nada", async () => {
+  const { pool } = crearEntornoFalso({ onSelect: () => [[[1]], [{ name: "x" }]] });
+  let paso = 0;
+  const vistos = [];
+  const ai = {
+    models: {
+      async generateContent(req) {
+        paso++;
+        for (const c of req.contents) for (const part of c.parts || []) if (part.functionResponse) vistos.push(part.functionResponse.response);
+        if (paso === 1) return respuestaConLlamadas([{ name: "graficar", args: { tipo: "radar", titulo: "x", etiquetas: ["a"], series: [{ valores: [1] }] } }]);
+        return respuestaTexto("Listo.");
+      },
+    },
+  };
+  const connie = crearConnie({ pool, ai, obtenerDolar: async () => null });
+  const r = await connie.responder({ mensaje: "x", historial: [] });
+  assert.equal(r.graficos.length, 0);
+  assert.match(JSON.stringify(vistos), /Tipo de gráfico inválido/);
 });
