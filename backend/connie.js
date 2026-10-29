@@ -679,6 +679,7 @@ CÓMO TRABAJAR
 
 HORAS TRABAJADAS Y LIQUIDACIONES
 - Para horas trabajadas, normales y extras de un operario o del plantel, y para lo que le corresponde cobrar, usá SIEMPRE la herramienta liquidar_horas. No calcules horas con SQL sobre la tabla de fichadas ni a mano.
+- REGLA DE ORO con liquidar_horas: los nombres de operarios, las horas, los días y los importes que escribas tienen que salir TEXTUALMENTE del resultado de la herramienta. Nunca completes, estimes ni inventes un operario, un día o un importe. Si el resultado no trae algo que te piden (por ejemplo el desglose de un operario), volvé a llamar a la herramienta con 'operario'. Listá exactamente a los operarios que devolvió, ni uno más ni uno menos, y usá 'cantidad_de_operarios' para decir cuántos son. Si el pedido es \"los operarios que tienen categoría\", usá solo_con_categoria=true. Para \"las extras\" usá importe_extras y horas_extra de cada operario (y total_importe_extras).
 - liquidar_horas liquida desde un día hasta el mes entero. Elegí los parámetros según lo que pida el usuario: un día = desde y hasta iguales; varios días sueltos (por ejemplo "el 3, el 7 y el 12") = fechas; "primera quincena" = mes con quincena 1 (del 1 al 15, ambos inclusive); "segunda quincena" = mes con quincena 2 (del 16 hasta el último día del mes, inclusive); "el mes" = solo mes; cualquier otro tramo = desde/hasta (ambos inclusive). Si el usuario no dice el año, usá el actual; si no dice el mes, el mes en curso.
 - Si pide días determinados, mostrá cada día por separado: ingreso, egreso, tramos con su tipo de hora (normal, extra al 50%, extra al 100%, diurna o nocturna), horas, valor hora aplicado, importe y por qué le corresponde eso (por ejemplo "sábado desde las 13:00: extra al 100%"). Después el total. Para una quincena o un mes, resumí por tipo de hora y listá los días solo si te lo piden o si hay pocos; ofrecé el desglose día por día.
 - Si no hay operario, la herramienta devuelve el resumen de todo el plantel; si piden el detalle de uno, volvé a llamarla con ese operario.
@@ -735,7 +736,7 @@ const HERRAMIENTAS = [
       {
         name: "liquidar_horas",
         description:
-          "Liquida horas trabajadas y lo que corresponde cobrar, desde un día hasta el mes entero, con las reglas de Conoflex (diurna/nocturna, jornada de 9 hs, extras al 50% y 100%) y el valor hora de la categoría de cada operario. Indicá UNA forma de elegir el período: 'fechas' (días sueltos), 'desde'+'hasta' (un día o un tramo), o 'mes' (con 'quincena' opcional). Todas las puntas son inclusive. Con 'operario' devuelve el detalle por día con el porqué de cada tramo; sin 'operario' devuelve el resumen del plantel.",
+          "Liquida horas trabajadas y lo que corresponde cobrar, desde un día hasta el mes entero, con las reglas de Conoflex (diurna/nocturna, jornada de 9 hs, extras al 50% y 100%) y el valor hora de la categoría de cada operario. Indicá UNA forma de elegir el período: 'fechas' (días sueltos), 'desde'+'hasta' (un día o un tramo), o 'mes' (con 'quincena' opcional). Todas las puntas son inclusive. Con 'operario' devuelve el detalle por día con el porqué de cada tramo; sin 'operario' liquida a todos los que tienen fichadas (con solo_con_categoria=true, solo a los que tienen categoría) y devuelve, por operario, totales por tipo de hora, importe de normales y de extras, y los días.",
         parameters: {
           type: "OBJECT",
           properties: {
@@ -745,6 +746,7 @@ const HERRAMIENTAS = [
             desde: { type: "STRING", description: "Primer día AAAA-MM-DD (inclusive)." },
             hasta: { type: "STRING", description: "Último día AAAA-MM-DD (inclusive). Igual a 'desde' para un solo día." },
             fechas: { type: "ARRAY", items: { type: "STRING" }, description: "Días sueltos AAAA-MM-DD; se desglosa cada uno." },
+            solo_con_categoria: { type: "BOOLEAN", description: "Sin 'operario': true = liquidar solo a los operarios que tienen categoría asignada." },
             detalle: { type: "STRING", description: "'completo' = tramos de cada día; 'compacto' = solo totales por día. Por defecto se elige solo." },
           },
         },
