@@ -9,7 +9,9 @@ const { GoogleGenAI } = require("@google/genai");
 const fs = require("fs");
 const path = require("path");
 const jwt = require("jsonwebtoken");
+const crypto = require("crypto");
 const { crearConnie } = require("./connie");
+const { separarDuplicadas, asegurarTablaDuplicadas } = require("./fichero");
 require("dotenv").config();
 
 const app = express();
@@ -85,8 +87,26 @@ const RUTAS_PUBLICAS = [
 // Firma de solicitudes de compra desde el link de WhatsApp (sin sesión)
 const PREFIJOS_PUBLICOS = ["/api/public/"];
 
+// El script del reloj (corre en una PC, sin usuario) se identifica con un
+// token propio, solo válido para estas dos rutas. Se define en el .env con
+// FICHERO_SYNC_TOKEN; si no está definido, estas rutas exigen JWT como todas.
+const RUTAS_SYNC_FICHERO = [
+  { method: "GET", path: "/api/fichero/ultimo" },
+  { method: "POST", path: "/api/fichero/sync" },
+];
+function esSyncFicheroValido(req) {
+  const esperado = process.env.FICHERO_SYNC_TOKEN;
+  const recibido = req.headers["x-sync-token"];
+  if (!esperado || esperado.length < 16 || typeof recibido !== "string") return false;
+  if (!RUTAS_SYNC_FICHERO.some((r) => r.method === req.method && r.path === req.path)) return false;
+  const a = Buffer.from(recibido);
+  const b = Buffer.from(esperado);
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
+
 function requireAuth(req, res, next) {
   if (req.method === "OPTIONS") return next();
+  if (esSyncFicheroValido(req)) return next();
 
   const esPublica =
     RUTAS_PUBLICAS.some((r) => r.method === req.method && r.path === req.path) ||
@@ -4875,7 +4895,17 @@ app.get("/api/fichero/ultimo", async (req, res) => {
     const [rows] = await db.query(
       "SELECT MAX(rec_no) AS ultimo_rec FROM fichadas",
     );
-    const ultimo = rows[0]?.ultimo_rec || 0;
+    let ultimo = rows[0]?.ultimo_rec || 0;
+    // Las marcas descartadas como duplicadas también cuentan como "ya leídas",
+    // si no el script las volvería a pedir al reloj en cada ciclo.
+    try {
+      const [dup] = await db.query(
+        "SELECT MAX(rec_no) AS ultimo_rec FROM fichadas_duplicadas",
+      );
+      ultimo = Math.max(ultimo, dup[0]?.ultimo_rec || 0);
+    } catch {
+      /* la tabla aún no existe: no hay duplicadas */
+    }
     return res.json({ ultimo_rec: ultimo });
   } catch (error) {
     console.error("Error al consultar último registro:", error);
@@ -4885,7 +4915,7 @@ app.get("/api/fichero/ultimo", async (req, res) => {
 
 // 2. Recibir e insertar las fichadas nuevas
 app.post("/api/fichero/sync", async (req, res) => {
-  const { registros } = req.body;
+  let { registros } = req.body;
 
   if (!registros || !Array.isArray(registros) || registros.length === 0) {
     return res.json({
@@ -4895,30 +4925,72 @@ app.post("/api/fichero/sync", async (req, res) => {
   }
 
   try {
-    const valores = registros.map((r) => [
+    await asegurarTablaDuplicadas(db);
+    const fila = (r) => [
       r.rec_no,
       r.empleado_id,
       r.nombre,
       r.fecha_hora,
       r.tipo,
       r.metodo || "Facial",
-    ]);
+    ];
 
-    // INSERT IGNORE descarta registros si el rec_no ya existe
-    const sql = `
-      INSERT IGNORE INTO fichadas 
-      (rec_no, empleado_id, nombre, fecha_hora, tipo, metodo) 
-      VALUES ?
-    `;
+    // Registros ya procesados antes (guardados o descartados): se ignoran, así
+    // un reenvío no se confunde con un duplicado de sí mismo.
+    const recs = registros.map((r) => r.rec_no);
+    const [yaG] = await db.query("SELECT rec_no FROM fichadas WHERE rec_no IN (?)", [recs]);
+    const [yaD] = await db.query("SELECT rec_no FROM fichadas_duplicadas WHERE rec_no IN (?)", [recs]);
+    const conocidos = new Set([...yaG, ...yaD].map((x) => Number(x.rec_no)));
+    registros = registros.filter((r) => !conocidos.has(Number(r.rec_no)));
+    if (!registros.length) {
+      return res.json({ ok: true, insertados: 0, duplicadas_descartadas: 0 });
+    }
 
-    const [resultado] = await db.query(sql, [valores]);
+    // Fichadas ya guardadas cerca de las que llegan (para comparar contra ellas)
+    const ids = [...new Set(registros.map((r) => r.empleado_id))];
+    const tiempos = registros.map((r) => new Date(String(r.fecha_hora).replace(" ", "T")).getTime());
+    const margen = 10 * 60 * 1000;
+    const desde = new Date(Math.min(...tiempos) - margen);
+    const hasta = new Date(Math.max(...tiempos) + margen);
+    const fmt = (d) => {
+      const p = (n) => String(n).padStart(2, "0");
+      return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+    };
+    const [existentes] = await db.query(
+      `SELECT empleado_id, nombre, tipo, fecha_hora FROM fichadas
+       WHERE empleado_id IN (?) AND fecha_hora BETWEEN ? AND ?`,
+      [ids, fmt(desde), fmt(hasta)],
+    );
+
+    const { nuevos, duplicados } = separarDuplicadas(registros, existentes);
+
+    let insertados = 0;
+    if (nuevos.length) {
+      // INSERT IGNORE descarta registros si el rec_no ya existe
+      const [resultado] = await db.query(
+        `INSERT IGNORE INTO fichadas
+         (rec_no, empleado_id, nombre, fecha_hora, tipo, metodo)
+         VALUES ?`,
+        [nuevos.map(fila)],
+      );
+      insertados = resultado.affectedRows;
+    }
+    if (duplicados.length) {
+      await db.query(
+        `INSERT IGNORE INTO fichadas_duplicadas
+         (rec_no, empleado_id, nombre, fecha_hora, tipo, metodo)
+         VALUES ?`,
+        [duplicados.map(fila)],
+      );
+    }
     console.log(
-      `✔ Sincronización exitosa: ${resultado.affectedRows} fichadas insertadas.`,
+      `✔ Sincronización: ${insertados} fichadas insertadas, ${duplicados.length} duplicadas descartadas.`,
     );
 
     return res.json({
       ok: true,
-      insertados: resultado.affectedRows,
+      insertados,
+      duplicadas_descartadas: duplicados.length,
     });
   } catch (error) {
     console.error("Error al guardar fichadas:", error);

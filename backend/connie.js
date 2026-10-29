@@ -57,6 +57,7 @@ const extraBloqueado = (process.env.CONNIE_BLOQUEADO || "")
   .filter(Boolean);
 
 const TABLAS_BLOQUEADAS = new Set([
+  "fichadas_duplicadas", // marcas descartadas: no cuentan para ningún cálculo
   "usuarios",
   "roles",
   "permisos_roles",
