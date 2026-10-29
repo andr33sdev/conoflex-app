@@ -9,6 +9,7 @@ const { GoogleGenAI } = require("@google/genai");
 const fs = require("fs");
 const path = require("path");
 const jwt = require("jsonwebtoken");
+const { crearConnie } = require("./connie");
 require("dotenv").config();
 
 const app = express();
@@ -35,6 +36,22 @@ const db = mysql.createPool({
   waitForConnections: true,
   connectionLimit: 10,
   queueLimit: 0,
+});
+
+// Pool PROPIO de Connie: sus ajustes de sesión (límites de tiempo/filas) no se
+// mezclan con el resto de la app. Si definís CONNIE_DB_USER / CONNIE_DB_PASSWORD
+// (un usuario MySQL con permiso SOLO de lectura) lo usa; si no, usa el usuario
+// normal (las protecciones por software y de transacción READ ONLY siguen activas).
+const dbConnie = mysql.createPool({
+  host: process.env.DB_HOST || "localhost",
+  user: process.env.CONNIE_DB_USER || process.env.DB_USER,
+  password: process.env.CONNIE_DB_PASSWORD || process.env.DB_PASSWORD,
+  database: process.env.DB_NAME,
+  waitForConnections: true,
+  connectionLimit: 3,
+  queueLimit: 0,
+  dateStrings: true, // fechas como "2026-10-29" (sin corrimientos de zona horaria)
+  decimalNumbers: true, // DECIMAL como número, no como texto
 });
 
 // URL Dinámica para Frontend (Local vs Producción)
@@ -111,6 +128,33 @@ async function requireAdmin(req, res, next) {
     console.error("Error verificando rol de administrador:", error);
     res.status(500).json({ error: "No se pudo verificar el rol." });
   }
+}
+
+// Acceso a un módulo: ADMIN siempre; el resto solo si su rol tiene ese módulo
+// asignado en permisos_roles (mismo criterio que usa el login para el menú).
+function requirePermiso(moduloId) {
+  return async (req, res, next) => {
+    try {
+      const [usuarios] = await db.query("SELECT rol FROM usuarios WHERE id = ?", [
+        req.user?.id,
+      ]);
+      const rol = usuarios[0]?.rol;
+      if (String(rol || "").toUpperCase() === "ADMIN") return next();
+      if (rol) {
+        const [permisos] = await db.query(
+          "SELECT 1 FROM permisos_roles WHERE rol_nombre = ? AND (modulo_id = ? OR modulo_id = '*') LIMIT 1",
+          [rol, moduloId],
+        );
+        if (permisos.length) return next();
+      }
+      return res
+        .status(403)
+        .json({ error: "Tu rol no tiene acceso a este módulo." });
+    } catch (error) {
+      console.error("Error verificando permiso de módulo:", error);
+      res.status(500).json({ error: "No se pudo verificar el permiso." });
+    }
+  };
 }
 
 app.use(requireAuth);
@@ -5530,345 +5574,17 @@ app.post(
 );
 
 // ==========================================
-// 1. ESQUEMA DINÁMICO EN CACHÉ DE MYSQL
+// CONNIE: analista de datos con acceso de solo lectura a toda la base
+// (la lógica vive en ./connie.js)
 // ==========================================
-let cacheEsquemaBD = null;
-async function obtenerEsquemaBaseDeDatosMySQL() {
-  if (cacheEsquemaBD) return cacheEsquemaBD;
-  try {
-    const [tablas] = await db.query(
-      `SELECT TABLE_NAME FROM information_schema.tables WHERE TABLE_SCHEMA = DATABASE()`,
-    );
-
-    const esquemas = [];
-    for (const t of tablas) {
-      const [columnas] = await db.query(
-        `SELECT COLUMN_NAME, DATA_TYPE FROM information_schema.columns 
-         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?`,
-        [t.TABLE_NAME],
-      );
-      const colDefs = columnas
-        .map((c) => `${c.COLUMN_NAME} (${c.DATA_TYPE})`)
-        .join(", ");
-      esquemas.push(`TABLA ${t.TABLE_NAME}: [${colDefs}]`);
-    }
-
-    cacheEsquemaBD = esquemas.join("\n\n");
-    return cacheEsquemaBD;
-  } catch (err) {
-    console.error("Error obteniendo esquema MySQL:", err);
-    return "";
-  }
-}
-
-// ==========================================
-// 2. EJECUTOR ASÍNCRONO DE CONSULTAS SQL (SOLO LECTURA)
-// ==========================================
-async function ejecutarSQLSoloLectura(sqlQuery) {
-  const query = (sqlQuery || "").trim();
-
-  const esLectura = /^select\b|^with\b|^show\b|^describe\b/i.test(query);
-  const esPeligrosa =
-    /insert|update|delete|drop|alter|truncate|create|grant|revoke/i.test(query);
-
-  if (!esLectura || esPeligrosa) {
-    return {
-      error: "Acceso denegado: Solo se permiten consultas de lectura (SELECT).",
-    };
-  }
-
-  try {
-    console.log("👉 SQL ejecutado por Connie:", query);
-    const [filas] = await db.query(query);
-
-    if (Array.isArray(filas) && filas.length > 50) {
-      return {
-        total_encontrados: filas.length,
-        filas: filas.slice(0, 50),
-        aviso: "Mostrando los primeros 50 registros.",
-      };
-    }
-    return { total: filas.length, filas };
-  } catch (error) {
-    return { error: `Error SQL MySQL: ${error.message}` };
-  }
-}
-
-// ==========================================
-// 3. DECLARACIÓN DE HERRAMIENTAS COMBINADAS
-// ==========================================
-const toolsConnie = [
-  {
-    functionDeclarations: [
-      {
-        name: "obtenerReporteVentas",
-        description:
-          "Obtiene y agrupa ventas de productos terminados en 'estado_pedidos' según filtros flexibles de fecha, canal o modelo. Usar siempre para ventas y facturación.",
-        parameters: {
-          type: "OBJECT",
-          properties: {
-            fecha_inicio: {
-              type: "STRING",
-              description: "Fecha inicio YYYY-MM-DD (ej: '2026-10-01').",
-            },
-            fecha_fin: {
-              type: "STRING",
-              description: "Fecha fin YYYY-MM-DD (ej: '2026-10-31').",
-            },
-            canal: {
-              type: "STRING",
-              description:
-                "Canal de venta: 'MercadoLibre', 'Venta Directa' o 'Todos'.",
-            },
-            modelo_filtro: {
-              type: "STRING",
-              description:
-                "Modelo o código de producto (ej: '2071LE-2R NA' o '4000').",
-            },
-            agrupar_por: {
-              type: "STRING",
-              description:
-                "Campo de agrupación: 'modelo', 'dia', 'mes' o 'sin_agrupar'.",
-            },
-            limite: {
-              type: "NUMBER",
-              description: "Límite de resultados (por defecto 50).",
-            },
-          },
-        },
-      },
-      {
-        name: "ejecutarConsultaSQL",
-        description:
-          "Ejecuta consultas SQL SELECT en toda la base de datos de Conoflex para consultar asistencias de operarios en 'fichadas', inventario en 'materias_primas', stock en 'semielaborados', producción en 'registro_produccion', etc.",
-        parameters: {
-          type: "OBJECT",
-          properties: {
-            consultaSQL: {
-              type: "STRING",
-              description: "Consulta SQL SELECT válida para MySQL.",
-            },
-          },
-          required: ["consultaSQL"],
-        },
-      },
-    ],
-  },
-];
-
-// ==========================================
-// 1. EJECUTOR UNIVERSAL SQL (SOLO LECTURA)
-// ==========================================
-async function ejecutarConsultaSQLConnie(sqlQuery) {
-  const query = (sqlQuery || "").trim();
-
-  // Candado de seguridad: solo permitir lectura
-  const esLectura = /^select\b|^with\b|^show\b|^describe\b/i.test(query);
-  const esPeligrosa =
-    /insert|update|delete|drop|alter|truncate|create|grant|revoke/i.test(query);
-
-  if (!esLectura || esPeligrosa) {
-    return {
-      error: "Acceso denegado: Solo se permiten consultas de lectura (SELECT).",
-    };
-  }
-
-  try {
-    console.log("👉 [Connie SQL]:", query);
-    const [filas] = await db.query(query);
-
-    if (Array.isArray(filas) && filas.length > 60) {
-      return {
-        total_encontrados: filas.length,
-        filas: filas.slice(0, 60),
-        aviso: "Se limitó a 60 filas para optimizar la respuesta.",
-      };
-    }
-    return { total: filas.length, filas };
-  } catch (error) {
-    console.error("Error SQL Connie:", error.message);
-    return { error: `Error en la consulta MySQL: ${error.message}` };
-  }
-}
-
-// ==========================================
-// 2. HERRAMIENTA LIBRE DE CONSULTA PARA GEMINI
-// ==========================================
-const toolConnieSQL = {
-  functionDeclarations: [
-    {
-      name: "ejecutarConsultaSQL",
-      description:
-        "Ejecuta cualquier consulta SQL SELECT en la base de datos MySQL de Conoflex para consultar ventas, pedidos, asistencias, fichadas, stock de materias primas, semielaborados o producción.",
-      parameters: {
-        type: "OBJECT",
-        properties: {
-          consultaSQL: {
-            type: "STRING",
-            description:
-              "Sentencia SQL SELECT válida para MySQL. Podés usar SUM, COUNT, AVG, GROUP BY, WHERE y LIKE.",
-          },
-        },
-        required: ["consultaSQL"],
-      },
-    },
-  ],
-};
-
-// ==========================================
-// 3. CHAT AUTÓNOMO MULTI-TURNO CON ACCESO TOTAL
-// ==========================================
-app.post("/api/chat-ia", async (req, res) => {
-  try {
-    const { mensaje, historial = [] } = req.body;
-
-    const ahora = new Date();
-    const hoyISO = ahora.toISOString().split("T")[0];
-    const hoyFormateado = ahora.toLocaleDateString("es-AR", {
-      timeZone: "America/Argentina/Buenos_Aires",
-      weekday: "long",
-      year: "numeric",
-      month: "long",
-      day: "numeric",
-    });
-
-    const dolarOficial = await obtenerDolarOficial();
-    const tcVenta = dolarOficial?.venta || 1500;
-
-    const systemInstruction = `
-Sos Connie, la Analista Operativa, Comercial e Industrial de Conoflex Argentina.
-
-REGLAS DE IDENTIDAD:
-- Vos te llamás Connie.
-- La persona que te habla es un directivo/operador de la planta. NUNCA lo llames Connie a él.
-
-ENTORNO EN TIEMPO REAL:
-- FECHA DE HOY: ${hoyFormateado} (${hoyISO}).
-- DÓLAR OFICIAL VENTA: $${tcVenta} ARS.
-
-TABLAS Y REGLAS DE CONSULTA EN MYSQL:
-1. 'estado_pedidos' (Ventas, Pedidos y Despachos):
-   - COLUMNAS REALES: fecha (DATE 'YYYY-MM-DD'), op, cliente, modelo, detalles, cantidad, estado, punisiva (ARS sin IVA), cosusd (USD costo), vendedor, despachado, comentarios.
-   - ⚠️ ¡NO EXISTE LA COLUMNA 'canal'!: El canal de venta se determina EXCLUSIVAMENTE a través de la columna 'detalles':
-     * Para filtrar ventas de MercadoLibre (cualquiera sea su forma de escritura):
-       (LOWER(detalles) LIKE '%mercadolibre%' OR LOWER(detalles) LIKE '%mercado libre%' OR LOWER(detalles) LIKE '%ml%')
-     * Para filtrar Venta Directa (fuera de MercadoLibre):
-       (LOWER(detalles) NOT LIKE '%mercadolibre%' AND LOWER(detalles) NOT LIKE '%mercado libre%' AND LOWER(detalles) NOT LIKE '%ml%')
-     * Si querés agrupar por canal podés usar:
-       IF(LOWER(detalles) LIKE '%mercadolibre%' OR LOWER(detalles) LIKE '%mercado libre%' OR LOWER(detalles) LIKE '%ml%', 'MercadoLibre', 'Venta Directa') AS canal
-   - BÚSQUEDA DE MODELOS: El código y las variantes/colores ('NA', 'NARANJA', 'X5', 'X10') pueden estar en 'modelo' o en 'detalles'. Buscá siempre en ambos con LIKE:
-     WHERE (modelo LIKE '%2071LE-2R%' OR detalles LIKE '%2071LE-2R%')
-       AND (modelo LIKE '%NA%' OR detalles LIKE '%NA%' OR detalles LIKE '%NARANJA%')
-   - Excluí siempre pedidos cancelados: estado != 'CANCELADO'.
-   - Unidades: SUM(cantidad) | Facturación ARS: SUM(cantidad * punisiva) | Costo USD: SUM(cosusd).
-
-2. 'fichadas' (Asistencias de Operarios):
-   - Columnas: rec_no, empleado_id, nombre, fecha_hora, tipo ('ENTRADA' o 'SALIDA'), metodo.
-
-3. 'materias_primas':
-   - Columnas: codigo, nombre, stock_actual, unidad_medida.
-
-4. 'semielaborados':
-   - Columnas: codigo, nombre, stock_33, stock_26, stock_ayolas, stock_37.
-
-INSTRUCCIONES DE RESPUESTA:
-- Usá SIEMPRE la herramienta "ejecutarConsultaSQL" para consultar datos reales.
-- Si una consulta te devuelve un error de columna, no te rindas ni le traslades el error técnico al usuario; analizá las columnas reales y volvé a consultar.
-- Respondé en español argentino fluido, con tono ejecutivo y seguro, mostrando los números consolidados en viñetas claras.
-`;
-
-    // SANEAMIENTO ESTRICTO DE TURNOS (Evita roles user/user consecutivos y 500)
-    const turnosPrevios = [];
-    let ultimoRol = null;
-
-    // Tomamos el historial excluyendo el mensaje actual si ya vino adjunto
-    const historialLimpio = historial.filter(
-      (h) => h.texto && h.texto.trim() !== (mensaje || "").trim(),
-    );
-
-    for (const h of historialLimpio.slice(-6)) {
-      const rol = h.rol === "user" ? "user" : "model";
-      if (rol !== ultimoRol) {
-        turnosPrevios.push({
-          role: rol,
-          parts: [{ text: h.texto }],
-        });
-        ultimoRol = rol;
-      }
-    }
-
-    // Gemini exige que la conversación comience con un turno 'user'
-    while (turnosPrevios.length > 0 && turnosPrevios[0].role !== "user") {
-      turnosPrevios.shift();
-    }
-
-    // Y debe terminar en 'model' antes de enviar la nueva pregunta del usuario
-    while (
-      turnosPrevios.length > 0 &&
-      turnosPrevios[turnosPrevios.length - 1].role !== "model"
-    ) {
-      turnosPrevios.pop();
-    }
-
-    // Armamos la conversación con alternancia garantizada: user -> model -> user
-    const contents = [
-      ...turnosPrevios,
-      { role: "user", parts: [{ text: mensaje }] },
-    ];
-
-    // Paso 1: Gemini analiza la consulta y redacta el SQL
-    let response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
-      contents: contents,
-      config: {
-        systemInstruction: systemInstruction,
-        tools: [toolConnieSQL],
-      },
-    });
-
-    // Paso 2: Si Gemini decide ejecutar la consulta SQL
-    const functionCalls = response.functionCalls;
-    if (functionCalls && functionCalls.length > 0) {
-      contents.push(response.candidates[0].content);
-
-      const toolResponses = [];
-      for (const call of functionCalls) {
-        let resultado = null;
-        if (call.name === "ejecutarConsultaSQL") {
-          resultado = await ejecutarConsultaSQLConnie(call.args.consultaSQL);
-        }
-
-        toolResponses.push({
-          functionResponse: {
-            name: call.name,
-            response: { resultado: resultado || "Sin resultados encontrados." },
-          },
-        });
-      }
-
-      contents.push({
-        role: "user",
-        parts: toolResponses,
-      });
-
-      // Paso 3: Gemini recibe los datos de MySQL, realiza los cálculos y responde
-      response = await ai.models.generateContent({
-        model: "gemini-2.5-flash",
-        contents: contents,
-        config: {
-          systemInstruction: systemInstruction,
-          tools: [toolConnieSQL],
-        },
-      });
-    }
-
-    return res.json({ success: true, respuesta: response.text });
-  } catch (error) {
-    console.error("Error en chat Connie:", error);
-    return res.status(500).json({ error: "Error al procesar consulta." });
-  }
+const connie = crearConnie({
+  pool: dbConnie,
+  ai,
+  obtenerDolar: obtenerDolarOficial,
 });
+app.post("/api/chat-ia", requirePermiso("metricas"), connie.manejador());
 
-app.listen(PORT, () =>
-  console.log(`🚀 Servidor Conoflex unificado ejecutándose en puerto ${PORT}`),
-);
+app.listen(PORT, () => {
+  console.log(`🚀 Servidor Conoflex unificado ejecutándose en puerto ${PORT}`);
+  connie.calentarEsquema();
+});
