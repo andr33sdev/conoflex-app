@@ -1,15 +1,16 @@
 "use strict";
 // Rentabilidad por producto, calculada con los datos reales de la tabla estado_pedidos.
 //
-// Regla de Conoflex (la que manda):
-//   - punisiva = precio UNITARIO sin IVA, en PESOS, al que se vendió ese artículo en ese pedido.
+// Regla de Conoflex (la que manda), confirmada con datos reales (OP 41142: 377 u. con punisiva
+// 162.009.223,40; el precio de una unidad ronda $ 430.000):
+//   - punisiva = IMPORTE TOTAL sin IVA del renglón, en PESOS (ya es precio x cantidad).
 //   - cosusd   = costo UNITARIO en DÓLARES.
-//   - Como las monedas no se pueden comparar, el precio en pesos SIEMPRE se pasa a dólares con el
-//     tipo de cambio, y recién ahí se multiplica por la cantidad vendida de ese renglón:
-//         ingreso_usd  = (punisiva / tipo_cambio) x cantidad
+//   - Las monedas no se pueden comparar: el importe en pesos SIEMPRE se pasa a dólares con el tipo de
+//     cambio. El costo unitario se multiplica por la cantidad vendida de ese renglón:
+//         ingreso_usd  = punisiva / tipo_cambio              (no se vuelve a multiplicar por la cantidad)
 //         costo_usd    = cosusd x cantidad
 //         rentabilidad = ingreso_usd - costo_usd
-//   - Un renglón sin precio o sin costo cargado (0 o vacío) NO entra al cálculo: con costo 0 la
+//   - Un renglón sin importe o sin costo cargado (0 o vacío) NO entra al cálculo: con costo 0 la
 //     "rentabilidad" sería todo el ingreso y falsearía el ranking. Se informa aparte.
 
 const redondear = (n, d = 2) => Math.round((Number(n) + Number.EPSILON) * 10 ** d) / 10 ** d;
@@ -21,7 +22,7 @@ const num = (v) => {
 
 /**
  * Cálculo puro.
- *  filas: [{ modelo, cantidad, punisiva, cosusd }]  (un renglón de pedido cada una)
+ *  filas: [{ op, fecha, modelo, cantidad, punisiva, cosusd }]  (un renglón de pedido cada una)
  *  tipoCambio: pesos por dólar (> 0)
  */
 function calcularRentabilidad({ filas, tipoCambio, top = 10, orden = "rentabilidad", ascendente = false }) {
@@ -47,9 +48,10 @@ function calcularRentabilidad({ filas, tipoCambio, top = 10, orden = "rentabilid
       continue;
     }
     lineasValidas += 1;
-    const ingreso = (precio / tc) * cant;
+    const ingreso = precio / tc;
     const costoTotal = costo * cant;
-    const a = porModelo.get(modelo) || { modelo, unidades: 0, ingresos_usd: 0, costos_usd: 0 };
+    const a = porModelo.get(modelo) || { modelo, unidades: 0, ingresos_usd: 0, costos_usd: 0, renglones: [] };
+    a.renglones.push({ op: f.op ?? null, fecha: f.fecha instanceof Date ? f.fecha.toISOString().slice(0, 10) : f.fecha ? String(f.fecha).slice(0, 10) : null, cantidad: cant, importe_total_pesos: precio, precio_unitario_pesos: redondear(precio / cant), costo_unitario_usd: costo, rentabilidad_usd: redondear(ingreso - costoTotal) });
     a.unidades += cant;
     a.ingresos_usd += ingreso;
     a.costos_usd += costoTotal;
@@ -70,6 +72,7 @@ function calcularRentabilidad({ filas, tipoCambio, top = 10, orden = "rentabilid
       precio_unitario_promedio_pesos: redondear((a.ingresos_usd * tc) / a.unidades),
       costo_unitario_promedio_usd: redondear(a.costos_usd / a.unidades),
       _rent: rent,
+      _renglones: a.renglones,
     };
   });
 
@@ -86,17 +89,19 @@ function calcularRentabilidad({ filas, tipoCambio, top = 10, orden = "rentabilid
   const totalCostos = lista.reduce((s, x) => s + x.costos_usd, 0);
   const n = Math.max(1, Math.min(100, Math.round(num(top)) || 10));
   const devueltos = lista.slice(0, n).map((x, i) => {
-    const { _rent, ...resto } = x;
-    return { puesto: i + 1, ...resto };
+    const { _rent, _renglones, ...resto } = x;
+    // Los 3 renglones que más pesan, tal cual están en la planilla, para poder auditar la cuenta
+    const ejemplos = [..._renglones].sort((p, q) => Math.abs(q.rentabilidad_usd) - Math.abs(p.rentabilidad_usd)).slice(0, 3);
+    return { puesto: i + 1, ...resto, renglones_que_mas_pesan: ejemplos };
   });
 
   // Un margen de 90% o más en la fábrica no es creíble: casi seguro hay datos mal cargados en la planilla
-  // (precio cargado como total del renglón en vez de unitario, costo incompleto, etc.).
+  // (costo incompleto, importe de otro tipo, etc.).
   const sospechosos = lista.filter((x) => x.margen_porcentual != null && x.margen_porcentual >= 90);
   const advertencias = [];
   if (sospechosos.length) {
     advertencias.push(
-      `${sospechosos.length} de ${lista.length} productos tienen un margen de 90% o más, lo cual no es creíble: probablemente el precio (punisiva) está cargado como total del renglón en vez de unitario, o el costo (cosusd) está incompleto. Mostrá el precio y el costo unitario promedio de esos productos y avisá que conviene revisar la planilla antes de confiar en el ranking.`,
+      `${sospechosos.length} de ${lista.length} productos tienen un margen de 90% o más, lo cual no es creíble: probablemente el costo (cosusd) está incompleto o el importe (punisiva) no corresponde al renglón. Mostrá el precio y el costo unitario promedio de esos productos y avisá que conviene revisar la planilla antes de confiar en el ranking.`,
     );
   }
 
@@ -157,7 +162,7 @@ async function rentabilidadProductos(pool, { mes, desde, hasta, top, modelo, ord
     params.push(`%${String(modelo).trim().toUpperCase().replace(/[%_]/g, "")}%`);
   }
   const [filas] = await pool.query(
-    `SELECT modelo, cantidad, punisiva, cosusd
+    `SELECT op, fecha, modelo, cantidad, punisiva, cosusd
        FROM estado_pedidos
       WHERE fecha >= ? AND fecha <= ?
         ${incluir_cancelados ? "" : "AND (estado IS NULL OR UPPER(TRIM(estado)) NOT LIKE 'CANCELAD%')"}
@@ -174,7 +179,7 @@ async function rentabilidadProductos(pool, { mes, desde, hasta, top, modelo, ord
     datos_disponibles_de: f(rango?.primera),
     datos_disponibles_hasta: f(rango?.ultima),
     renglones_leidos: filas.length,
-    formula: "rentabilidad = (precio unitario sin IVA en pesos / tipo de cambio − costo unitario en dólares) × cantidad, sumado por producto",
+    formula: "rentabilidad = importe total sin IVA del renglón (punisiva, pesos) / tipo de cambio − costo unitario en dólares (cosusd) × cantidad, sumado por producto",
     ...r,
   };
 }
