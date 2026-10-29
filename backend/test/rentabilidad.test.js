@@ -89,3 +89,15 @@ test("rentabilidadProductos lee la tabla con el período y excluye cancelados", 
   const sinPeriodo = await rentabilidadProductos(pool, { tipoCambio: 1000 });
   assert.match(sinPeriodo.error, /período/);
 });
+
+test("muestra precio y costo unitario promedio y advierte márgenes de 90% o más", () => {
+  const r = calcularRentabilidad({ filas, tipoCambio: 1000 });
+  const a = r.productos.find((p) => p.modelo === "A-1");
+  assert.equal(a.precio_unitario_promedio_pesos, 5333.33); // (50 + 30) USD x 1000 / 15 u.
+  assert.equal(a.costo_unitario_promedio_usd, 3.17);
+  assert.equal(r.advertencias, undefined);
+  // precio cargado como total del renglón: el margen se va a 99% y debe avisar
+  const raro = calcularRentabilidad({ filas: [{ modelo: "Z", cantidad: 1000, punisiva: 5000000, cosusd: 4 }], tipoCambio: 1000 });
+  assert.ok(raro.productos[0].margen_porcentual >= 99);
+  assert.match(raro.advertencias[0], /no es creíble/);
+});

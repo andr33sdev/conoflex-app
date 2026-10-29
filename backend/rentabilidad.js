@@ -66,6 +66,9 @@ function calcularRentabilidad({ filas, tipoCambio, top = 10, orden = "rentabilid
       rentabilidad_usd: redondear(rent),
       rentabilidad_pesos: redondear(rent * tc),
       margen_porcentual: a.ingresos_usd > 0 ? redondear((rent / a.ingresos_usd) * 100, 1) : null,
+      // Para que se pueda auditar a simple vista: ¿tiene sentido el precio y el costo por unidad?
+      precio_unitario_promedio_pesos: redondear((a.ingresos_usd * tc) / a.unidades),
+      costo_unitario_promedio_usd: redondear(a.costos_usd / a.unidades),
       _rent: rent,
     };
   });
@@ -87,6 +90,16 @@ function calcularRentabilidad({ filas, tipoCambio, top = 10, orden = "rentabilid
     return { puesto: i + 1, ...resto };
   });
 
+  // Un margen de 90% o más en la fábrica no es creíble: casi seguro hay datos mal cargados en la planilla
+  // (precio cargado como total del renglón en vez de unitario, costo incompleto, etc.).
+  const sospechosos = lista.filter((x) => x.margen_porcentual != null && x.margen_porcentual >= 90);
+  const advertencias = [];
+  if (sospechosos.length) {
+    advertencias.push(
+      `${sospechosos.length} de ${lista.length} productos tienen un margen de 90% o más, lo cual no es creíble: probablemente el precio (punisiva) está cargado como total del renglón en vez de unitario, o el costo (cosusd) está incompleto. Mostrá el precio y el costo unitario promedio de esos productos y avisá que conviene revisar la planilla antes de confiar en el ranking.`,
+    );
+  }
+
   const topExcluidos = [...excluidos.modelos.entries()].sort((a, b) => b[1] - a[1]).slice(0, 10).map(([modelo, unidades]) => ({ modelo, unidades }));
 
   return {
@@ -102,6 +115,7 @@ function calcularRentabilidad({ filas, tipoCambio, top = 10, orden = "rentabilid
       rentabilidad_pesos: redondear(totalRent * tc),
       margen_porcentual: totalIng > 0 ? redondear((totalRent / totalIng) * 100, 1) : null,
     },
+    ...(advertencias.length ? { advertencias } : {}),
     excluidos_por_datos_incompletos: {
       renglones: excluidos.lineas,
       unidades: excluidos.unidades,
