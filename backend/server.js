@@ -12,6 +12,7 @@ const jwt = require("jsonwebtoken");
 const crypto = require("crypto");
 const { crearConnie } = require("./connie");
 const { separarDuplicadas, asegurarTablaDuplicadas } = require("./fichero");
+const { asegurarColumnaPagoMensual } = require("./escala");
 require("dotenv").config();
 
 const app = express();
@@ -4854,11 +4855,12 @@ app.post("/api/fichero/sincronizar-uoyep", async (req, res) => {
 // 2. ENDPOINT PARA CONSULTAR LA ESCALA ACTIVA
 app.get("/api/fichero/escala-uoyep", async (req, res) => {
   try {
+    const conMarcaPago = await asegurarColumnaPagoMensual(db);
     const [periodos] = await db.query(
       "SELECT periodo, label FROM fichero_uoyep_periodos ORDER BY orden ASC, periodo ASC",
     );
     const [categorias] = await db.query(
-      "SELECT codigo, nombre, area FROM fichero_uoyep_categorias ORDER BY area ASC, nombre ASC",
+      `SELECT codigo, nombre, area${conMarcaPago ? ", pago_mensual" : ""} FROM fichero_uoyep_categorias ORDER BY area ASC, nombre ASC`,
     );
     const [valores] = await db.query(
       "SELECT categoria_codigo, periodo, valor_hora, suma_no_remunerativa FROM fichero_uoyep_valores",
@@ -4868,6 +4870,21 @@ app.get("/api/fichero/escala-uoyep", async (req, res) => {
     );
 
     res.json({ periodos, categorias, valores, asignaciones });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// MARCAR UNA CATEGORÍA COMO MENSUAL / POR HORA / AUTOMÁTICA
+app.post("/api/fichero/categoria-pago", async (req, res) => {
+  try {
+    const { codigo, pago } = req.body || {};
+    const valor = pago === "MENSUAL" ? 1 : pago === "HORA" ? 0 : null;
+    if (!codigo) return res.status(400).json({ error: "Falta la categoría." });
+    await asegurarColumnaPagoMensual(db);
+    const [r] = await db.query("UPDATE fichero_uoyep_categorias SET pago_mensual = ? WHERE codigo = ?", [valor, codigo]);
+    if (!r.affectedRows) return res.status(404).json({ error: "Categoría inexistente." });
+    res.json({ success: true });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

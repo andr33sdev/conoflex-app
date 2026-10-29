@@ -292,3 +292,41 @@ test("una ENTRADA 24 hs después sigue siendo un turno nuevo (no cierra al anter
   assert.equal(t[0].salidaTs, null);
   assert.equal(t[1].egreso, "16:00");
 });
+
+const { esMensual, valorHoraOrdinaria, HORAS_MENSUALES } = require("../escala");
+
+test("escala: categoría mensual -> hora ordinaria = sueldo / 180", () => {
+  assert.equal(HORAS_MENSUALES, 180);
+  assert.equal(esMensual(null, 1722532), true);
+  assert.equal(esMensual(null, 14422.19), false);
+  assert.equal(esMensual(0, 1722532), false); // marca manual manda
+  assert.equal(esMensual(1, 9000), true);
+  assert.equal(Math.round(valorHoraOrdinaria(1722532, true) * 100) / 100, 9569.62);
+  assert.equal(valorHoraOrdinaria(9000, false), 9000);
+});
+
+test("mensual: extras sobre la hora ordinaria (sueldo/180), no sobre el sueldo entero", () => {
+  const vh = 1722532 / 180;
+  // lunes 07 a 18: 9 normales (incluidas en el sueldo) + 2 extras al 50%
+  const l = turno("2026-10-05", "07:00", "2026-10-05", "18:00", { valorHora: vh, mensual: true });
+  assert.equal(l.porCategoria.normal_diurna.importe, 0);
+  assert.equal(l.importe, Math.round(2 * vh * 1.5 * 100) / 100);
+  assert.ok(l.importe < 30000); // y no ~5 millones
+});
+
+test("mensual: de las horas normales nocturnas se paga solo el recargo nocturno", () => {
+  const vh = 9000;
+  const l = turno("2026-10-05", "21:00", "2026-10-06", "06:00", { valorHora: vh, mensual: true });
+  assert.equal(l.porCategoria.normal_nocturna.horas, 9);
+  assert.equal(Math.round(l.importe), Math.round(9 * vh * 0.1333));
+});
+
+test("liquidarPeriodo: mensualDe se aplica por día", () => {
+  const r = liquidarPeriodo({
+    fichadas: [...par("05", "07:00", "18:00")], fechasIncluidas: new Set(["2026-10-05"]),
+    valorHoraDe: () => 9569.62, mensualDe: () => true, detalle: "completo",
+  });
+  assert.equal(r.importe_normales, 0);
+  assert.equal(r.importe_extras, Math.round(2 * 9569.62 * 1.5 * 100) / 100);
+  assert.match(r.dias[0].desglose[0].motivo, /incluida en el sueldo mensual/);
+});

@@ -148,7 +148,9 @@ function ingresoRedondeado(entradaTs) {
   return d.getTime();
 }
 
-function liquidarTurno({ entradaTs, salidaTs, esFeriado = () => false, ajuste = null, valorHora = 0, redondeo = true }) {
+function liquidarTurno({ entradaTs, salidaTs, esFeriado = () => false, ajuste = null, valorHora = 0, redondeo = true, mensual = false }) {
+  // Categoría mensual: las horas normales ya están en el sueldo; solo se paga su recargo nocturno.
+  const factorPago = (cat) => (mensual && cat.startsWith("normal") ? CATEGORIAS[cat].factor - 1 : CATEGORIAS[cat].factor);
   let inicio = entradaTs;
   if (ajuste && ajuste.horaInicio) {
     const [ph, pm] = String(ajuste.horaInicio).split(":").map(Number);
@@ -207,7 +209,7 @@ function liquidarTurno({ entradaTs, salidaTs, esFeriado = () => false, ajuste = 
   const porCategoria = {};
   let importe = 0;
   for (const [cat, min] of Object.entries(minutos)) {
-    const factor = CATEGORIAS[cat].factor;
+    const factor = factorPago(cat);
     const horas = min / 60;
     const imp = horas * valorHora * factor;
     importe += imp;
@@ -219,7 +221,7 @@ function liquidarTurno({ entradaTs, salidaTs, esFeriado = () => false, ajuste = 
     return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
   };
   const lineas = segmentos.map((s) => {
-    const factor = CATEGORIAS[s.cat].factor;
+    const factor = factorPago(s.cat);
     const horas = s.min / 60;
     return {
       desde: horaDe(s.inicioTs),
@@ -228,7 +230,7 @@ function liquidarTurno({ entradaTs, salidaTs, esFeriado = () => false, ajuste = 
       dia: DIAS[s.dow],
       categoria: s.cat,
       detalle: CATEGORIAS[s.cat].etiqueta,
-      motivo: s.motivo,
+      motivo: mensual && s.cat.startsWith("normal") ? `${s.motivo} (incluida en el sueldo mensual${s.cat === "normal_nocturna" ? "; se paga solo el recargo nocturno" : ""})` : s.motivo,
       horas: redondear(horas),
       hhmm: hhmm(s.min),
       valor_hora_aplicado: redondear(valorHora * factor),
@@ -264,7 +266,7 @@ function notasDelDia({ feriado, ajuste }) {
  * valorHoraDe(fecha) -> valor hora diurno vigente ese día.
  */
 function liquidarPeriodo({
-  fichadas, fechasIncluidas, feriados = new Set(), ajustes = {}, valorHoraDe = () => 0, detalle = "completo",
+  fichadas, fechasIncluidas, feriados = new Set(), ajustes = {}, valorHoraDe = () => 0, mensualDe = () => false, detalle = "completo",
 }) {
   const esFeriado = (f) => (feriados instanceof Set ? feriados.has(f) : !!feriados[f]);
   const getAj = (f) => (ajustes instanceof Map ? ajustes.get(f) : ajustes[f]) || null;
@@ -290,7 +292,7 @@ function liquidarPeriodo({
     }
     const vh = valorHoraDe(t.fecha) || 0;
     const ajuste = getAj(t.fecha);
-    const liq = liquidarTurno({ entradaTs: t.entradaTs, salidaTs: t.salidaTs, esFeriado, ajuste, valorHora: vh });
+    const liq = liquidarTurno({ entradaTs: t.entradaTs, salidaTs: t.salidaTs, esFeriado, ajuste, valorHora: vh, mensual: !!mensualDe(t.fecha) });
     const notas = notasDelDia({ feriado: esFeriado(t.fecha), ajuste });
 
     minTotal += liq.minutosTotales;

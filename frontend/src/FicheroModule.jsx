@@ -28,7 +28,13 @@ import {
   Clock,
 } from "lucide-react";
 
-import { FACTORES, liquidarTurnoMinutos } from "./liquidacionTurno";
+import {
+  FACTORES,
+  HORAS_MENSUALES,
+  esMensual,
+  liquidarTurnoMinutos,
+  valorHoraOrdinaria,
+} from "./liquidacionTurno";
 const API_BASE_URL = import.meta.env?.VITE_API_URL || "";
 const getApiUrl = (path) =>
   `${API_BASE_URL}${path.startsWith("/") ? path : "/" + path}`;
@@ -670,7 +676,10 @@ export default function FicheroModule() {
 
     const codigoCat = asignaciones[operarioSeleccionado];
     const catObj = categoriasUOYEP.find((c) => c.codigo === codigoCat);
-    const vNormal = mapaValoresPeriodoActivo[codigoCat] || 0;
+    const valorEscala = mapaValoresPeriodoActivo[codigoCat] || 0;
+    const mensual = esMensual(catObj?.pago_mensual, valorEscala);
+    // Categoría mensual: la hora ordinaria es el sueldo del mes / 180.
+    const vNormal = valorHoraOrdinaria(valorEscala, mensual);
 
     celdasMes.forEach((celda) => {
       if (celda?.data) {
@@ -705,6 +714,8 @@ export default function FicheroModule() {
       cantidadDiasTildados,
       categoriaNombre: catObj ? catObj.nombre : "SIN CATEGORÍA",
       vNormal,
+      mensual,
+      valorEscala,
       totalPesosMes: pesosExtras50 + pesosExtras100,
     };
   }, [
@@ -715,6 +726,24 @@ export default function FicheroModule() {
     mapaValoresPeriodoActivo,
     diasTildadosExtras,
   ]);
+
+  const cambiarPagoCategoria = async (codigo, pago) => {
+    try {
+      const res = await fetch(getApiUrl("/api/fichero/categoria-pago"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ codigo, pago }),
+      });
+      if (res.ok) {
+        const marca = pago === "MENSUAL" ? 1 : pago === "HORA" ? 0 : null;
+        setCategoriasUOYEP((prev) =>
+          prev.map((c) => (c.codigo === codigo ? { ...c, pago_mensual: marca } : c)),
+        );
+      }
+    } catch (err) {
+      console.error("Error actualizando el tipo de pago de la categoría:", err);
+    }
+  };
 
   const cambiarAsignacion = async (nombreOperario, categoriaCodigo) => {
     try {
@@ -1115,8 +1144,11 @@ export default function FicheroModule() {
                     $
                     {totalesMesOperario.vNormal.toLocaleString("es-AR", {
                       minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
                     })}
                     /h
+                    {totalesMesOperario.mensual &&
+                      ` (mensual $${totalesMesOperario.valorEscala.toLocaleString("es-AR")} ÷ ${HORAS_MENSUALES})`}
                     {totalesMesOperario.normalesNocturnas > 0 &&
                       ` · ${totalesMesOperario.normalesNocturnas.toFixed(1)} noct.`}
                   </span>
@@ -1855,6 +1887,54 @@ export default function FicheroModule() {
                 período seleccionado en la cabecera.
               </div>
 
+              <details className="bg-[#121212] rounded-lg border border-zinc-800 text-[11px] text-zinc-400">
+                <summary className="p-3 cursor-pointer font-bold uppercase tracking-wider text-zinc-300">
+                  Categorías de sueldo mensual
+                </summary>
+                <div className="p-3 pt-0 space-y-2">
+                  <p>
+                    En una categoría mensual el valor de la escala es el sueldo
+                    del mes: la hora normal se calcula dividiéndolo por{" "}
+                    {HORAS_MENSUALES} y sobre esa hora se aplican los recargos.
+                    En “Automático” se considera mensual un valor de $100.000 o
+                    más.
+                  </p>
+                  {categoriasUOYEP.map((c) => {
+                    const val = mapaValoresPeriodoActivo[c.codigo] || 0;
+                    const marca =
+                      c.pago_mensual === 1 || c.pago_mensual === true
+                        ? "MENSUAL"
+                        : c.pago_mensual === 0 || c.pago_mensual === false
+                          ? "HORA"
+                          : "";
+                    return (
+                      <div
+                        key={c.codigo}
+                        className="flex items-center justify-between gap-3"
+                      >
+                        <span className="truncate flex-1 text-zinc-300 uppercase">
+                          {c.nombre} (${val.toLocaleString("es-AR")})
+                        </span>
+                        <select
+                          value={marca}
+                          onChange={(e) =>
+                            cambiarPagoCategoria(c.codigo, e.target.value)
+                          }
+                          className="bg-[#18181b] border border-zinc-700 text-xs font-bold text-white rounded p-1.5 outline-none cursor-pointer"
+                        >
+                          <option value="">
+                            Automático (
+                            {esMensual(null, val) ? "mensual" : "por hora"})
+                          </option>
+                          <option value="HORA">Por hora</option>
+                          <option value="MENSUAL">Mensual</option>
+                        </select>
+                      </div>
+                    );
+                  })}
+                </div>
+              </details>
+
               <div className="divide-y divide-zinc-800/80 border border-zinc-800 rounded-lg overflow-hidden bg-[#101010]">
                 {listaOperarios.map((op) => {
                   const categoriaAsignada = asignaciones[op.nombre] || "";
@@ -1868,7 +1948,7 @@ export default function FicheroModule() {
                         {op.nombre}
                       </span>
 
-                      <div className="w-64 shrink-0">
+                      <div className="w-72 shrink-0">
                         <select
                           value={categoriaAsignada}
                           onChange={(e) =>
@@ -1879,9 +1959,11 @@ export default function FicheroModule() {
                           <option value="">-- Sin categoría --</option>
                           {categoriasUOYEP.map((c) => {
                             const val = mapaValoresPeriodoActivo[c.codigo] || 0;
+                            const mens = esMensual(c.pago_mensual, val);
                             return (
                               <option key={c.codigo} value={c.codigo}>
-                                {c.nombre} (${val.toLocaleString("es-AR")})
+                                {c.nombre} (${val.toLocaleString("es-AR")}
+                                {mens ? "/mes" : ""})
                               </option>
                             );
                           })}

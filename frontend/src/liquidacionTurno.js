@@ -11,6 +11,20 @@
 //  - Redondeo: ingreso :45–:59 -> hora siguiente, :00–:10 -> en punto, :11–:44 tal cual;
 //    duración en bloques de media hora completos.
 
+// Categorías MENSUALES: el "valor hora" de la escala es el sueldo del mes; la hora normal
+// ordinaria es ese sueldo / 180 (45 hs semanales). Espejo de backend/escala.js.
+export const HORAS_MENSUALES = 180;
+export const UMBRAL_MENSUAL = 100000;
+export function esMensual(marca, valorEscala) {
+  if (marca === 1 || marca === true || marca === "1") return true;
+  if (marca === 0 || marca === false || marca === "0") return false;
+  return Number(valorEscala) >= UMBRAL_MENSUAL;
+}
+export function valorHoraOrdinaria(valorEscala, mensual) {
+  const v = Number(valorEscala) || 0;
+  return mensual ? v / HORAS_MENSUALES : v;
+}
+
 export const REGLAS = {
   jornadaNormalHoras: 9,
   nocturnoDesde: 21,
