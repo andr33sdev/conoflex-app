@@ -368,7 +368,7 @@ export default function Metricas() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           mensaje: textoAEnviar,
-          historial: nuevosMensajes,
+          historial: nuevosMensajes.map(({ rol, texto }) => ({ rol, texto })),
         }),
       });
 
@@ -376,7 +376,11 @@ export default function Metricas() {
       if (data.success) {
         setMensajes([
           ...nuevosMensajes,
-          { rol: "assistant", texto: data.respuesta },
+          {
+            rol: "assistant",
+            texto: data.respuesta,
+            consultas: data.consultas || [],
+          },
         ]);
       } else {
         setMensajes([
@@ -1040,6 +1044,34 @@ export default function Metricas() {
                       /* BURBUJA DE CONNIE: NEGRA INDUSTRIAL, BORDES SUTILES, TEXTO GRANDE Y LEGIBLE */
                       <div className="max-w-[85%] sm:max-w-[75%] bg-[#0A0A0A] border border-zinc-800 text-zinc-100 font-medium text-sm leading-relaxed px-5 py-4 rounded-2xl rounded-tl-sm shadow-md whitespace-pre-wrap">
                         {m.texto}
+                        {m.consultas?.length > 0 && (
+                          <details className="mt-3 pt-3 border-t border-zinc-800 text-xs text-zinc-400 whitespace-normal">
+                            <summary className="cursor-pointer select-none hover:text-zinc-200 font-semibold">
+                              Ver cómo lo calculé ({m.consultas.length}{" "}
+                              {m.consultas.length === 1
+                                ? "consulta"
+                                : "consultas"}
+                              )
+                            </summary>
+                            {m.consultas.map((c, j) => (
+                              <div key={j} className="mt-2">
+                                {c.proposito && (
+                                  <div className="font-semibold text-zinc-300">
+                                    {c.proposito}
+                                  </div>
+                                )}
+                                <pre className="mt-1 p-2 bg-black border border-zinc-800 rounded-lg overflow-x-auto text-[11px] text-zinc-300 whitespace-pre-wrap font-mono">
+                                  {c.sql}
+                                </pre>
+                                {c.error && (
+                                  <div className="mt-1 text-amber-500">
+                                    No pudo ejecutarse: {c.error}
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+                          </details>
+                        )}
                       </div>
                     )}
                   </div>
