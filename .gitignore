@@ -3,3 +3,9 @@ dist/
 build/
 .env
 *.log
+
+# Bases de datos locales (no subir datos al repo)
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3

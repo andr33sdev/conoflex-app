@@ -18,7 +18,13 @@ app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ limit: "50mb", extended: true }));
 
 const PORT = process.env.PORT || 3001;
-const JWT_SECRET = process.env.JWT_SECRET || "conoflex_secreto_super_seguro";
+const JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET) {
+  console.error(
+    "FATAL: falta la variable de entorno JWT_SECRET. Definila en el .env (local) o en el panel del hosting antes de iniciar el servidor.",
+  );
+  process.exit(1);
+}
 
 // Configuración de la base de datos MySQL en Ferozo / Local
 const db = mysql.createPool({
