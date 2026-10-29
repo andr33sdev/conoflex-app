@@ -1,3 +1,4 @@
+import CountUp from "./CountUp";
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import {
   Calendar,
@@ -684,9 +685,11 @@ export default function Metricas() {
                 <TrendingUp size={14} className="text-[#FF5A00]" />
               </div>
               <div className="text-3xl font-extrabold italic tracking-tighter text-white uppercase font-sans">
-                {loading
-                  ? "..."
-                  : globalStats.totalPiezasProcesadas.toLocaleString()}{" "}
+                {loading ? (
+                  "..."
+                ) : (
+                  <CountUp value={globalStats.totalPiezasProcesadas} />
+                )}{" "}
                 <span className="text-sm text-zinc-600 font-medium not-italic tracking-normal">
                   u.
                 </span>
@@ -702,9 +705,11 @@ export default function Metricas() {
                 <CheckCircle2 size={14} className="text-emerald-400" />
               </div>
               <div className="text-3xl font-extrabold italic tracking-tighter text-emerald-400 uppercase font-sans">
-                {loading
-                  ? "..."
-                  : globalStats.totalPiezasBuenas.toLocaleString()}{" "}
+                {loading ? (
+                  "..."
+                ) : (
+                  <CountUp value={globalStats.totalPiezasBuenas} />
+                )}{" "}
                 <span className="text-sm text-zinc-600 font-medium not-italic tracking-normal">
                   u.
                 </span>
@@ -720,9 +725,11 @@ export default function Metricas() {
                 <Shield size={14} className="text-[#FF0055]" />
               </div>
               <div className="text-3xl font-extrabold italic tracking-tighter text-[#FF0055] uppercase font-sans">
-                {loading
-                  ? "..."
-                  : globalStats.totalPiezasMalas.toLocaleString()}{" "}
+                {loading ? (
+                  "..."
+                ) : (
+                  <CountUp value={globalStats.totalPiezasMalas} />
+                )}{" "}
                 <span className="text-sm text-zinc-600 font-medium not-italic tracking-normal">
                   u.
                 </span>
@@ -760,7 +767,11 @@ export default function Metricas() {
                 <Scale size={14} className="text-[#FF5A00]" />
               </div>
               <div className="text-3xl font-extrabold italic tracking-tighter text-white uppercase font-sans">
-                {loading ? "..." : globalStats.cantidadKgTotal.toLocaleString()}{" "}
+                {loading ? (
+                  "..."
+                ) : (
+                  <CountUp value={globalStats.cantidadKgTotal} />
+                )}{" "}
                 <span className="text-sm text-zinc-600 font-medium not-italic tracking-normal">
                   Kg
                 </span>
@@ -776,9 +787,11 @@ export default function Metricas() {
                 <CheckCircle2 size={14} className="text-emerald-400" />
               </div>
               <div className="text-3xl font-extrabold italic tracking-tighter text-emerald-400 uppercase font-sans">
-                {loading
-                  ? "..."
-                  : globalStats.cantidadKgBuenas.toLocaleString()}{" "}
+                {loading ? (
+                  "..."
+                ) : (
+                  <CountUp value={globalStats.cantidadKgBuenas} />
+                )}{" "}
                 <span className="text-sm text-zinc-600 font-medium not-italic tracking-normal">
                   Kg
                 </span>
@@ -794,9 +807,11 @@ export default function Metricas() {
                 <AlertOctagon size={14} className="text-[#FF0055]" />
               </div>
               <div className="text-3xl font-extrabold italic tracking-tighter text-[#FF0055] uppercase font-sans">
-                {loading
-                  ? "..."
-                  : globalStats.cantidadKgFallas.toLocaleString()}{" "}
+                {loading ? (
+                  "..."
+                ) : (
+                  <CountUp value={globalStats.cantidadKgFallas} />
+                )}{" "}
                 <span className="text-sm text-zinc-600 font-medium not-italic tracking-normal">
                   Kg
                 </span>

@@ -1,58 +1,128 @@
-@import url('https://fonts.googleapis.com/css2?family=Sora:wght@100..800&display=swap');
+@import '@fontsource-variable/archivo/wdth.css';
+@import '@fontsource-variable/archivo/wdth-italic.css';
 
 @import "tailwindcss";
 
-/* 2. Redefinir la variable interna de Tailwind CSS */
+/* ============ Sistema visual Conoflex ============
+   Asfalto, cono y línea de calzada. */
 :root {
-  --font-sans: 'Sora', sans-serif !important;
+  --font-sans: 'Archivo Variable', 'Archivo', system-ui, sans-serif;
+  --asfalto: #0a0a0c;
+  --cordon: #0e0e11;
+  --superficie: #111114;
+  --elevado: #17171c;
+  --linea: rgba(255, 255, 255, 0.08);
+  --cono: #FF5A00;
+  --calzada: #FFD60A;
 }
 
-/* 3. Forzar a que la clase .font-sans use Sora */
-.font-sans {
-  font-family: 'Sora', sans-serif !important;
+html, body, #root, .font-sans {
+  font-family: 'Archivo Variable', 'Archivo', system-ui, sans-serif !important;
+  font-stretch: 100%;
 }
 
-/* 4. Aplicar globalmente al documento */
-html, body, #root {
-  font-family: 'Sora', sans-serif !important;
-}
-
-/* Fondo Grafito Industrial con Patrón de Puntos Muted (Gris Oscuro) */
 body {
-  background-color: #0f1015;
-  background-image: radial-gradient(#1e212b 1.5px, transparent 1.5px);
-  background-size: 16px 16px;
-  color: #e2e8f0;
-  font-family: 'Sora', sans-serif;
+  background-color: var(--asfalto);
+  color: #e4e4e7;
   overflow-x: hidden;
+  font-optical-sizing: auto;
 }
 
-/* Scrollbar Pixel Art Naranja / Gris */
-::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+/* Títulos con el ancho expandido de Archivo: carácter industrial sin gritar */
+h1, h2, h3 { font-stretch: 112%; letter-spacing: -0.015em; }
+
+/* Números alineados en tablas y cifras */
+td, th, .font-mono, [class*="tabular"] { font-variant-numeric: tabular-nums; }
+.font-mono { font-family: 'Archivo Variable', ui-monospace, monospace !important; }
+
+::selection { background: rgba(255, 90, 0, 0.35); color: #fff; }
+
+/* Scrollbar discreta */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #2a2a31; border-radius: 10px; border: 2px solid transparent; background-clip: padding-box; }
+::-webkit-scrollbar-thumb:hover { background: var(--cono); background-clip: padding-box; border: 2px solid transparent; }
+
+/* Foco visible para quien navega con teclado */
+:focus-visible:not([class*="outline-none"]) { outline: 2px solid var(--cono); outline-offset: 2px; }
+input:focus-visible:not([class*="outline-none"]), select:focus-visible, textarea:focus-visible { outline-offset: 0; }
+
+/* ---------- Capa de modernización de los módulos ----------
+   Los módulos ya existentes usan clases fijas (bordes cuadrados, negros puros);
+   acá se suavizan en un solo lugar. */
+button:not([class*="rounded-full"]):not([class*="rounded-none"]),
+input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not([class*="rounded-full"]),
+select, textarea {
+  border-radius: 10px;
 }
-::-webkit-scrollbar-track {
-  background: #14161f;
+[class*="bg-[#050505]"][class*="border"]:not([class*="rounded-full"]):not(table):not(tr):not(td):not(th):not(button),
+[class*="bg-[#080808]"][class*="border"]:not([class*="rounded-full"]):not(table):not(tr):not(td):not(th):not(button) {
+  border-radius: 14px;
 }
-::-webkit-scrollbar-thumb {
-  background: #f05a28;
-  border: 1px solid #14161f;
-}
-::-webkit-scrollbar-thumb:hover {
-  background: #ff6d3b;
+.bg-\[\#050505\], .bg-\[\#080808\], .bg-\[\#0a0a0a\], .bg-\[\#0A0A0A\] { background-color: var(--superficie); }
+.bg-\[\#160c2b\], .bg-\[\#1a0f2e\], .bg-\[\#070a12\], .bg-\[\#090d16\] { background-color: var(--cordon); }
+.bg-\[\#24173e\], .bg-\[\#39215e\] { background-color: var(--elevado); }
+.border-\[\#432874\] { border-color: rgba(255, 255, 255, 0.1); }
+.border-zinc-800, .border-zinc-900 { border-color: var(--linea); }
+.border-zinc-800\/50, .border-zinc-800\/60, .border-zinc-800\/90 { border-color: rgba(255, 255, 255, 0.06); }
+
+/* Títulos de cada módulo: mismo peso industrial, sin cursiva ni tamaño de cartel */
+main h1[class*="uppercase"] { font-style: normal; font-size: clamp(1.6rem, 2.6vw, 2.25rem); letter-spacing: -0.02em; line-height: 1.05; }
+.tracking-widest { letter-spacing: 0.08em; }
+
+/* Respuesta al toque: se hunde apenas, sin rebote */
+button:not(:disabled):active { transform: scale(0.98); }
+button { transition-property: background-color, border-color, color, opacity, transform, box-shadow; transition-duration: 160ms; }
+
+/* Ventanas emergentes: entran, no aparecen de golpe */
+@keyframes cf-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes cf-pop { from { opacity: 0; transform: translateY(10px) scale(0.985); } to { opacity: 1; transform: none; } }
+.fixed.inset-0:not([class*="pointer-events-none"]) { animation: cf-fade 160ms ease-out both; }
+.fixed.inset-0 > [class*="max-w-"], .fixed.inset-0 > div > [class*="max-w-"] { animation: cf-pop 220ms cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+
+/* Esqueletos de carga: un brillo suave en lugar de parpadeo */
+@keyframes cf-shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+.animate-pulse { animation: cf-shimmer 1.8s linear infinite !important; background-image: linear-gradient(100deg, transparent 30%, rgba(255,255,255,0.05) 50%, transparent 70%); background-size: 200% 100%; }
+
+/* Detalle de marca: línea de calzada discontinua que avanza lento */
+@keyframes cf-calzada { to { background-position: 40px 0; } }
+.cf-calzada {
+  background-image: repeating-linear-gradient(90deg, var(--calzada) 0 20px, transparent 20px 40px);
+  background-size: 40px 100%;
+  animation: cf-calzada 2.4s linear infinite;
+  opacity: 0.9;
 }
 
-/* Keyframes de Animaciones */
-@keyframes pixel-bounce {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-4px); }
+/* Login: línea central de la ruta */
+@keyframes cf-ruta { to { background-position: 0 -120px; } }
+.cf-ruta { background-image: repeating-linear-gradient(to bottom, var(--calzada) 0 60px, transparent 60px 120px); background-size: 100% 120px; animation: cf-ruta 1.1s linear infinite; }
+/* Botón principal: brillo retrorreflectivo al pasar el cursor */
+.cf-brillo { position: relative; overflow: hidden; }
+.cf-brillo::after { content: ""; position: absolute; inset: 0; background: linear-gradient(105deg, transparent 35%, rgba(255,255,255,0.45) 50%, transparent 65%); transform: translateX(-120%); }
+.cf-brillo:hover:not(:disabled)::after { transform: translateX(120%); transition: transform 0.7s ease; }
+
+/* Connie: los mensajes entran, los puntos respiran */
+@keyframes cf-msg { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+.cf-msg { animation: cf-msg 260ms cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+@keyframes cf-punto { 0%, 80%, 100% { opacity: 0.25; transform: translateY(0); } 40% { opacity: 1; transform: translateY(-3px); } }
+.cf-punto { animation: cf-punto 1s ease-in-out infinite; }
+
+/* Animaciones heredadas que usan algunos módulos */
+@keyframes pixel-bounce { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-4px); } }
+@keyframes scanline { 0% { transform: translateY(-100%); } 100% { transform: translateY(1000%); } }
+.animate-pixel-bounce { animation: pixel-bounce 1.6s infinite ease-in-out; }
+.animate-scanline { animation: scanline 2.5s linear infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
+  .cf-calzada, .cf-ruta, .cf-punto { animation: none; }
 }
 
-@keyframes scanline {
-  0% { transform: translateY(-100%); }
-  100% { transform: translateY(1000%); }
+@media print {
+  body { background: #fff !important; }
+  .fixed.inset-0 { animation: none !important; }
 }
+
 
 .animate-pixel-bounce {
   animation: pixel-bounce 1.6s infinite ease-in-out;

@@ -8,6 +8,7 @@ import Semielaborados from "./Semielaborados";
 import Reflectivas from "./Reflectivas";
 import Metricas from "./Metricas";
 import Connie from "./Connie";
+import Home from "./Home";
 import Ingenieria from "./Ingenieria";
 import PlanificacionProduccion from "./PlanificacionProduccion";
 import CargaProduccion from "./CargaProduccion";
@@ -53,7 +54,7 @@ function App() {
     if (path.startsWith("/carga-produccion")) {
       return "carga-produccion";
     }
-    return "materias-primas";
+    return "inicio";
   });
 
   // Si abren desde el link de WhatsApp (ej: /?firmar_sc=258&rol=gerente)
@@ -97,6 +98,7 @@ function App() {
     if (usuarioActual && usuarioActual.rol?.toUpperCase() !== "ADMIN") {
       // EXCEPCIÓN: Permitir siempre el acceso a los módulos experimentales 3D/AR
       if (
+        activeModule === "inicio" ||
         activeModule === "visor-ar" ||
         activeModule === "lab-ar" ||
         activeModule === "lab-ensamblaje" ||
@@ -173,6 +175,10 @@ function App() {
       usuarioActual={usuarioActual}
       onLogout={handleLogout}
     >
+      {activeModule === "inicio" && (
+        <Home usuarioActual={usuarioActual} onIr={setActiveModule} />
+      )}
+
       {usuarioActual.rol?.toUpperCase() === "ADMIN" &&
         activeModule === "admin-usuarios" && <AdminUsuarios />}
 

@@ -1,13 +1,5 @@
 import { useState } from "react";
-import {
-  Lock,
-  Mail,
-  ShieldCheck,
-  ChevronRight,
-  KeyRound,
-  Cpu,
-  Terminal,
-} from "lucide-react";
+import { Lock, Mail, ArrowRight, Eye, EyeOff } from "lucide-react";
 
 import logo from "./assets/logo.svg"; // <-- IMPORTACIÓN DEL LOGO PARA EL LOGIN
 
@@ -24,6 +16,7 @@ export default function Login({ onLogin }) {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [verClave, setVerClave] = useState(false);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -57,110 +50,151 @@ export default function Login({ onLogin }) {
   };
 
   return (
-    <div className="min-h-dvh bg-black flex items-center justify-center p-4 md:p-8 font-sans selection:bg-[#FF5A00]/40 selection:text-white relative overflow-hidden select-none">
-      {/* 1. ILUMINACIÓN Y RETÍCULA INDUSTRIAL DE FONDO */}
-      <div className="absolute inset-0 bg-[radial-gradient(#27272a_1px,transparent_1px)] [background-size:28px_28px] opacity-40 pointer-events-none" />
-      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[650px] h-[650px] bg-[#FF5A00]/15 rounded-full blur-[160px] pointer-events-none animate-pulse" />
-      <div className="absolute top-1/4 left-1/2 -translate-x-1/2 w-[400px] h-[400px] bg-[#FFD700]/10 rounded-full blur-[130px] pointer-events-none" />
+    <div className="min-h-dvh bg-[#0a0a0c] text-zinc-100 font-sans grid lg:grid-cols-[1.1fr_1fr]">
+      {/* Escena: una ruta de noche. La línea central avanza hacia quien mira. */}
+      <aside className="relative hidden lg:flex flex-col overflow-hidden bg-[#08080a] p-12 border-r border-white/[0.06]">
+        <div
+          className="absolute inset-0"
+          style={{
+            background:
+              "radial-gradient(700px 420px at 50% 78%, rgba(255,90,0,0.28), transparent 70%)",
+          }}
+        />
+        <div className="absolute inset-x-0 bottom-0 h-[44%] [perspective:520px] overflow-hidden">
+          <div className="absolute left-1/2 -translate-x-1/2 bottom-[-20%] w-[160%] h-[190%] origin-bottom [transform:rotateX(62deg)] bg-[#121216]">
+            <div className="cf-ruta absolute left-1/2 -translate-x-1/2 top-0 bottom-0 w-[3.2%]" />
+            <div className="absolute left-[18%] top-0 bottom-0 w-[1.2%] bg-white/70" />
+            <div className="absolute right-[18%] top-0 bottom-0 w-[1.2%] bg-white/70" />
+          </div>
+          <div className="absolute inset-x-0 top-0 h-1/2 bg-gradient-to-b from-[#08080a] to-transparent" />
+        </div>
+        <div className="relative flex items-center gap-3">
+          <img src={logo} alt="" className="w-11 h-11 rounded-full" />
+          <span className="font-extrabold italic text-xl tracking-tight">
+            Conoflex
+          </span>
+        </div>
+        <div className="relative max-w-md mt-[14vh]">
+          <h2
+            className="text-5xl font-extrabold leading-[1.02] tracking-tight"
+            style={{ fontStretch: "118%" }}
+          >
+            Toda la planta,
+            <br />
+            en una sola pantalla.
+          </h2>
+          <p className="mt-4 text-zinc-400 text-base leading-relaxed">
+            Producción, stock, pedidos y personal de Conoflex, con Connie para
+            responder en el momento.
+          </p>
+        </div>
+      </aside>
 
-      {/* 2. CARD MÁXIMA PRESENCIA */}
-      <div className="w-full max-w-lg bg-[#050505] border-2 border-zinc-800 shadow-[0_0_80px_rgba(0,0,0,0.9)] relative z-10 overflow-hidden">
-        {/* FRANJA DE ACENTO SUPERIOR MULTICOLOR INDUSTRIAL */}
-        <div className="h-2 bg-gradient-to-r from-[#FF5A00] via-[#FFD700] to-[#FF5A00]" />
-
-        <div className="p-8 md:p-12 space-y-8">
-          {/* BRANDING HERO LLAMATIVO */}
-          <div className="flex flex-col items-center text-center space-y-3">
-            <div className="w-20 h-20 flex items-center justify-center mb-2 shadow-[0_0_35px_rgba(255,90,0,0.2)] group transition-all duration-300 hover:border-[#FF5A00] hover:scale-105">
-              <img srcset={logo} alt="Logo"/>
-            </div>
-
-            <div>
-              <h1 className="text-4xl md:text-5xl font-black italic tracking-tighter text-white uppercase font-sans leading-none">
-                CONOFLEX<span className="text-[#FF5A00]">.</span>
-              </h1>
-              <div className="inline-block mt-3 px-3.5 py-1 bg-[#FF5A00]/10 border border-[#FF5A00]/30 text-[#FF5A00] text-xs font-black tracking-[0.25em] uppercase">
-                App de Gestión
-              </div>
-            </div>
+      <main className="relative flex items-center justify-center p-6 md:p-12 pt-[max(1.5rem,env(safe-area-inset-top))]">
+        <div
+          className="lg:hidden absolute inset-x-0 top-0 h-48 pointer-events-none"
+          style={{
+            background:
+              "radial-gradient(420px 200px at 50% 0%, rgba(255,90,0,0.22), transparent 70%)",
+          }}
+        />
+        <div className="relative w-full max-w-[400px]">
+          <div className="lg:hidden flex flex-col items-center mb-8">
+            <img src={logo} alt="Conoflex" className="w-16 h-16 rounded-full" />
+            <span className="mt-3 font-extrabold italic text-2xl tracking-tight">
+              Conoflex
+            </span>
           </div>
 
-          {/* FORMULARIO CON CAMPOS Y BOTONES GRANDES */}
-          <form onSubmit={handleSubmit} className="space-y-6">
-            {/* CAMPO EMAIL / USUARIO */}
-            <div className="space-y-2">
-              <label className="text-xs font-black text-zinc-400 uppercase tracking-widest flex items-center justify-between">
-                <span>EMAIL / USUARIO</span>
-                <span className="text-[#FF5A00] text-[10px]">* REQUERIDO</span>
-              </label>
-              <div className="relative">
+          <h1
+            className="text-3xl font-extrabold tracking-tight"
+            style={{ fontStretch: "112%" }}
+          >
+            Ingresá a tu cuenta
+          </h1>
+          <p className="mt-1.5 text-sm text-zinc-500">
+            Usá el email y la contraseña que te dio el administrador.
+          </p>
+
+          <form onSubmit={handleSubmit} className="mt-8 space-y-5">
+            <label className="block">
+              <span className="text-sm font-medium text-zinc-300">Email</span>
+              <div className="relative mt-1.5">
                 <Mail
-                  size={20}
-                  className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500 transition-colors"
+                  size={18}
+                  className="absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-500"
                 />
                 <input
                   type="email"
                   required
+                  autoComplete="username"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="w-full bg-black border-2 border-zinc-800 text-white pl-12 pr-4 py-4 text-sm font-bold focus:outline-none focus:border-[#FF5A00] transition-all uppercase tracking-wider"
-                  placeholder="USUARIO@CONOFLEX.COM.AR"
+                  className="w-full h-12 bg-white/[0.04] border border-white/10 rounded-xl text-white pl-11 pr-4 text-[15px] focus:outline-none focus:border-[#FF5A00] focus:bg-white/[0.06] transition-colors"
+                  placeholder="nombre@conoflex.com.ar"
                 />
               </div>
-            </div>
+            </label>
 
-            {/* CAMPO CONTRASEÑA */}
-            <div className="space-y-2">
-              <label className="text-xs font-black text-zinc-400 uppercase tracking-widest flex items-center justify-between">
-                <span>CONTRASEÑA</span>
-                <KeyRound size={12} className="text-zinc-600" />
-              </label>
-              <div className="relative">
+            <label className="block">
+              <span className="text-sm font-medium text-zinc-300">
+                Contraseña
+              </span>
+              <div className="relative mt-1.5">
                 <Lock
-                  size={20}
-                  className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500 transition-colors"
+                  size={18}
+                  className="absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-500"
                 />
                 <input
-                  type="password"
+                  type={verClave ? "text" : "password"}
                   required
+                  autoComplete="current-password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="w-full bg-black border-2 border-zinc-800 text-white pl-12 pr-4 py-4 text-sm font-bold focus:outline-none focus:border-[#FF5A00] transition-all tracking-widest"
-                  placeholder="••••••••••••"
+                  className="w-full h-12 bg-white/[0.04] border border-white/10 rounded-xl text-white pl-11 pr-12 text-[15px] focus:outline-none focus:border-[#FF5A00] focus:bg-white/[0.06] transition-colors"
+                  placeholder="Tu contraseña"
                 />
+                <button
+                  type="button"
+                  onClick={() => setVerClave((v) => !v)}
+                  aria-label={
+                    verClave ? "Ocultar contraseña" : "Mostrar contraseña"
+                  }
+                  className="absolute right-2 top-1/2 -translate-y-1/2 p-2 text-zinc-500 hover:text-white"
+                >
+                  {verClave ? <EyeOff size={18} /> : <Eye size={18} />}
+                </button>
               </div>
-            </div>
+            </label>
 
-            {/* BANNER DE ERROR ROJO NEÓN POTENTE */}
             {error && (
-              <div className="bg-[#FF0055]/15 border-2 border-[#FF0055] text-[#FF0055] text-xs font-extrabold text-center py-3.5 px-4 uppercase tracking-widest shadow-[0_0_25px_rgba(255,0,85,0.2)]">
+              <div
+                role="alert"
+                className="rounded-xl border border-rose-500/40 bg-rose-500/10 text-rose-300 text-sm px-4 py-3"
+              >
                 {error}
               </div>
             )}
 
-            {/* BOTÓN PRINCIPAL GIGANTE (AMARILLO NEÓN CON DESTEC DE HOVER) */}
             <button
               type="submit"
               disabled={loading || !email || !password}
-              className="w-full bg-[#FFD700] hover:bg-white text-black font-black text-sm md:text-base uppercase tracking-widest py-5 transition-all duration-200 flex items-center justify-center gap-3 cursor-pointer disabled:opacity-40 active:scale-[0.98] shadow-[0_0_30px_rgba(255,215,0,0.25)] mt-4"
+              className="cf-brillo w-full h-12 rounded-xl bg-[#FF5A00] hover:bg-[#ff6d1f] text-black font-bold text-[15px] flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
             >
-              <span>
-                {loading
-                  ? "VERIFICANDO CREDANCIALES..."
-                  : "INGRESAR AL SISTEMA"}
-              </span>
-              {!loading && <ChevronRight size={22} strokeWidth={3.5} />}
+              {loading ? (
+                "Verificando…"
+              ) : (
+                <>
+                  Ingresar <ArrowRight size={18} strokeWidth={2.5} />
+                </>
+              )}
             </button>
           </form>
-
-          {/* FOOTER TÉCNICO INFORMATIVO */}
-          <div className="pt-6 border-t border-zinc-800/80 flex items-center justify-between text-[10px] font-extrabold text-zinc-500 uppercase tracking-widest">
-            <span className="flex items-center gap-1.5 text-zinc-400">
-              <Terminal size={12} className="text-[#FF5A00]" /> CONOFLEX®
-            </span>
-          </div>
+          <p className="mt-10 text-xs text-zinc-600 text-center">
+            Conoflex Argentina · Seguridad vial
+          </p>
         </div>
-      </div>
+      </main>
     </div>
   );
 }
