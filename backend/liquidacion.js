@@ -7,8 +7,10 @@
 //  - Jornada normal: 9 horas desde el ingreso. De ahí en más son horas extra
 //    hasta que el operario se retira.
 //  - Extras sobre horas comunes: 50% sobre la hora diurna o nocturna, según corresponda.
-//    Pasadas las 9 hs de jornada (días de semana) y TODAS las horas de los sábados
-//    hasta las 13:00 (el sábado no tiene horas normales).
+//    Pasadas las 9 hs de jornada, y TODAS las horas de un turno que ingresa un
+//    sábado hasta las 13:00 (ese sábado no tiene horas normales).
+//  - Un turno que ingresa de lunes a viernes tiene sus primeras 9 hs normales aunque
+//    crucen la medianoche hacia el sábado (viernes 19:00: 9 hs normales hasta las 04:00).
 //  - Sábados desde las 13:00, domingos completos y feriados: todo es hora extra
 //    al 100% (doble, diurna o nocturna según corresponda).
 //  - No hay tope de horas extra, ni diario ni mensual.
@@ -163,6 +165,9 @@ function liquidarTurno({ entradaTs, salidaTs, esFeriado = () => false, ajuste = 
   if (redondeo) totalMin = Math.floor(totalMin / 30) * 30;
   const limiteNormalMin = ((ajuste && ajuste.horasNormales) || REGLAS.jornadaNormalHoras) * 60;
   const todasExtra = !!(ajuste && ajuste.todasExtra);
+  // Un turno que ingresa un sábado no tiene horas normales; uno que ingresa de lunes a viernes
+  // conserva sus primeras 9 hs normales aunque crucen la medianoche hacia el sábado.
+  const entradaSabado = new Date(entradaTs).getDay() === 6;
 
   const minutos = {}; // categoría -> minutos
   const segmentos = [];
@@ -176,7 +181,7 @@ function liquidarTurno({ entradaTs, salidaTs, esFeriado = () => false, ajuste = 
     if (c.doble) {
       cat = c.noche ? "extra100_nocturna" : "extra100_diurna";
       motivo = `${c.motivoDoble}: todas las horas son extra al 100%`;
-    } else if (c.sabado50) {
+    } else if (c.sabado50 && entradaSabado) {
       cat = c.noche ? "extra50_nocturna" : "extra50_diurna";
       motivo = "sábado hasta las 13:00: todas las horas son extra al 50%";
     } else if (todasExtra) {
