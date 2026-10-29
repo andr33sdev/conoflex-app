@@ -4,14 +4,14 @@ const assert = require("node:assert/strict");
 const { calcularRentabilidad, rentabilidadProductos, resolverPeriodo } = require("../rentabilidad");
 
 const filas = [
-  { modelo: "a-1", cantidad: 10, punisiva: 5000, cosusd: 3 }, // $5 - 3 = 2 x 10 = 20
-  { modelo: "A-1 ", cantidad: 5, punisiva: 6000, cosusd: 3.5 }, // $6 - 3,5 = 2,5 x 5 = 12,5 (otro precio en otro pedido)
-  { modelo: "B-2", cantidad: 4, punisiva: 2000, cosusd: 2.5 }, // $2 - 2,5 = -0,5 x 4 = -2
+  { modelo: "a-1", cantidad: 10, punisiva: 50000, cosusd: 3 }, // importe total $ 50.000 = USD 50; costo 3 x 10 = 30; rentabilidad 20
+  { modelo: "A-1 ", cantidad: 5, punisiva: 30000, cosusd: 3.5 }, // USD 30 - 17,5 = 12,5 (otro precio en otro pedido)
+  { modelo: "B-2", cantidad: 4, punisiva: 8000, cosusd: 2.5 }, // USD 8 - 10 = -2
   { modelo: "C-3", cantidad: 100, punisiva: 9000, cosusd: 0 }, // sin costo: no entra
   { modelo: "D-4", cantidad: 7, punisiva: 0, cosusd: 1 }, // sin precio: no entra
 ];
 
-test("convierte el precio a dólares antes de multiplicar y suma renglón por renglón", () => {
+test("pasa el importe total a dólares, multiplica solo el costo por la cantidad y suma renglón por renglón", () => {
   const r = calcularRentabilidad({ filas, tipoCambio: 1000 });
   const a = r.productos.find((p) => p.modelo === "A-1");
   assert.equal(a.unidades_vendidas, 15);
@@ -51,8 +51,8 @@ test("los renglones sin precio o sin costo quedan afuera y se informan", () => {
 });
 
 test("el tipo de cambio cambia el resultado y es obligatorio", () => {
-  const r = calcularRentabilidad({ filas: [{ modelo: "X", cantidad: 2, punisiva: 3000, cosusd: 1 }], tipoCambio: 1500 });
-  assert.equal(r.productos[0].rentabilidad_usd, 2); // (3000/1500 - 1) x 2
+  const r = calcularRentabilidad({ filas: [{ modelo: "X", cantidad: 2, punisiva: 6000, cosusd: 1 }], tipoCambio: 1500 });
+  assert.equal(r.productos[0].rentabilidad_usd, 2); // 6000/1500 - 1 x 2
   assert.ok(calcularRentabilidad({ filas, tipoCambio: 0 }).error);
   assert.ok(calcularRentabilidad({ filas, tipoCambio: null }).error);
 });
@@ -96,8 +96,19 @@ test("muestra precio y costo unitario promedio y advierte márgenes de 90% o má
   assert.equal(a.precio_unitario_promedio_pesos, 5333.33); // (50 + 30) USD x 1000 / 15 u.
   assert.equal(a.costo_unitario_promedio_usd, 3.17);
   assert.equal(r.advertencias, undefined);
-  // precio cargado como total del renglón: el margen se va a 99% y debe avisar
-  const raro = calcularRentabilidad({ filas: [{ modelo: "Z", cantidad: 1000, punisiva: 5000000, cosusd: 4 }], tipoCambio: 1000 });
+  // un importe desproporcionado frente al costo: margen irreal, debe avisar
+  const raro = calcularRentabilidad({ filas: [{ modelo: "Z", cantidad: 1000, punisiva: 500000000, cosusd: 4 }], tipoCambio: 1000 });
   assert.ok(raro.productos[0].margen_porcentual >= 99);
   assert.match(raro.advertencias[0], /no es creíble/);
+});
+
+test("caso real de producción: OP 41142, 377 u., importe total $ 162.009.223,40, costo USD 101,17 c/u", () => {
+  const r = calcularRentabilidad({ filas: [{ op: "41142", modelo: "2702-8R RO", cantidad: 377, punisiva: 162009223.4, cosusd: 101.17 }], tipoCambio: 1560 });
+  const p = r.productos[0];
+  assert.equal(p.ingresos_usd, 103852.07); // 162.009.223,40 / 1560
+  assert.equal(p.costos_usd, 38141.09); // 101,17 x 377
+  assert.equal(p.rentabilidad_usd, 65710.98);
+  assert.equal(p.margen_porcentual, 63.3);
+  assert.equal(p.precio_unitario_promedio_pesos, 429732.69); // lo que cuesta una unidad
+  assert.equal(r.advertencias, undefined); // 63% ya no es irreal
 });
