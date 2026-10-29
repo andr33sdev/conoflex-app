@@ -6,8 +6,9 @@
 //    recargo base de 13,33% sobre la hora diurna.
 //  - Jornada normal: 9 horas desde el ingreso. De ahí en más son horas extra
 //    hasta que el operario se retira.
-//  - Extras sobre horas comunes (días de semana y sábados hasta las 13:00):
-//    50% sobre la hora diurna o nocturna, según corresponda.
+//  - Extras sobre horas comunes: 50% sobre la hora diurna o nocturna, según corresponda.
+//    Pasadas las 9 hs de jornada (días de semana) y TODAS las horas de los sábados
+//    hasta las 13:00 (el sábado no tiene horas normales).
 //  - Sábados desde las 13:00, domingos completos y feriados: todo es hora extra
 //    al 100% (doble, diurna o nocturna según corresponda).
 //  - No hay tope de horas extra, ni diario ni mensual.
@@ -112,7 +113,7 @@ function clasificarMinuto(ts, esFeriado) {
   else if (dow === 0) motivoDoble = "domingo";
   else if (dow === 6 && hora >= REGLAS.sabadoCorteHora) motivoDoble = "sábado desde las 13:00";
   const noche = hora >= REGLAS.nocturnoDesde || hora < REGLAS.nocturnoHasta;
-  return { doble: !!motivoDoble, motivoDoble, noche, dow, fecha };
+  return { doble: !!motivoDoble, motivoDoble, sabado50: !motivoDoble && dow === 6, noche, dow, fecha };
 }
 
 /**
@@ -159,6 +160,9 @@ function liquidarTurno({ entradaTs, salidaTs, esFeriado = () => false, ajuste = 
     if (c.doble) {
       cat = c.noche ? "extra100_nocturna" : "extra100_diurna";
       motivo = `${c.motivoDoble}: todas las horas son extra al 100%`;
+    } else if (c.sabado50) {
+      cat = c.noche ? "extra50_nocturna" : "extra50_diurna";
+      motivo = "sábado hasta las 13:00: todas las horas son extra al 50%";
     } else if (todasExtra) {
       cat = c.noche ? "extra50_nocturna" : "extra50_diurna";
       motivo = "ajuste del día: todas las horas son extra al 50%";

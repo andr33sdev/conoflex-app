@@ -53,18 +53,20 @@ test("noche de lunes 22 a martes 06: 8 hs normales nocturnas (+13,33%)", () => {
   assert.equal(l.importe, 90664);
 });
 
-test("viernes 21 a sábado 09: 9 normales nocturnas y 3 extras al 50% diurnas (sábado antes de las 13)", () => {
+test("viernes 21 a sábado 09: el sábado hasta las 13 es todo extra al 50%, aunque no se hayan cumplido 9 hs", () => {
   const l = turno("2026-10-09", "21:00", "2026-10-10", "09:00");
-  assert.equal(horas(l, "normal_nocturna"), 9);
-  assert.equal(horas(l, "extra50_diurna"), 3);
-  assert.equal(l.importe, 101997 + 45000);
+  assert.equal(horas(l, "normal_nocturna"), 3); // viernes 21 a 24
+  assert.equal(horas(l, "extra50_nocturna"), 6); // sábado 00 a 06
+  assert.equal(horas(l, "extra50_diurna"), 3); // sábado 06 a 09
+  assert.equal(l.importe, 33999 + 101997 + 45000);
 });
 
-test("sábado 07 a 17: hasta las 13 normales; desde las 13, extra al 100%", () => {
+test("sábado 07 a 17: hasta las 13 extra al 50%; desde las 13, extra al 100% (no hay horas normales)", () => {
   const l = turno("2026-10-10", "07:00", "2026-10-10", "17:00");
-  assert.equal(horas(l, "normal_diurna"), 6);
+  assert.equal(horas(l, "normal_diurna"), 0);
+  assert.equal(horas(l, "extra50_diurna"), 6);
   assert.equal(horas(l, "extra100_diurna"), 4);
-  assert.equal(l.importe, 60000 + 80000);
+  assert.equal(l.importe, 90000 + 80000);
 });
 
 test("domingo 08 a 12: todo extra al 100%", () => {
@@ -130,7 +132,7 @@ test("redondeo del ingreso: :45+ sube, :00-:10 baja, :11-:44 se respeta", () => 
 test("desglose por tramos: horario, día, tipo, valor hora aplicado e importe", () => {
   const l = turno("2026-10-10", "07:00", "2026-10-10", "17:00");
   assert.equal(l.segmentos.length, 2);
-  assert.match(l.segmentos[0].motivo, /dentro de las 9 hs/);
+  assert.match(l.segmentos[0].motivo, /sábado hasta las 13:00: todas las horas son extra al 50%/);
   assert.match(l.segmentos[1].motivo, /sábado desde las 13:00/);
   assert.deepEqual(
     { d: l.segmentos[1].desde, h: l.segmentos[1].hasta, dia: l.segmentos[1].dia, cat: l.segmentos[1].categoria, v: l.segmentos[1].valor_hora_aplicado, i: l.segmentos[1].importe },
@@ -156,12 +158,12 @@ test("liquidarPeriodo: solo cuenta los días pedidos, desglosa cada uno y suma b
   assert.equal(r.turnos_liquidados, 2);
   assert.deepEqual(r.dias.map((d) => d.fecha), ["2026-10-05", "2026-10-10"]);
   assert.equal(r.dias[0].importe, 120000);
-  assert.equal(r.dias[1].importe, 140000);
-  assert.equal(r.importe_total, 260000);
+  assert.equal(r.dias[1].importe, 170000);
+  assert.equal(r.importe_total, 290000);
   assert.ok(r.dias[1].desglose.length === 2);
   assert.equal(r.por_categoria.extra100_diurna.horas, 4);
-  assert.equal(r.horas_normales, 15);
-  assert.equal(r.horas_extra, 6);
+  assert.equal(r.horas_normales, 9);
+  assert.equal(r.horas_extra, 12);
 });
 
 test("liquidarPeriodo: feriado agrega nota y salida sin registrar avisa", () => {
