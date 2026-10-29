@@ -51,7 +51,7 @@ function calcularRentabilidad({ filas, tipoCambio, top = 10, orden = "rentabilid
     const ingreso = precio / tc;
     const costoTotal = costo * cant;
     const a = porModelo.get(modelo) || { modelo, unidades: 0, ingresos_usd: 0, costos_usd: 0, renglones: [] };
-    a.renglones.push({ op: f.op ?? null, fecha: f.fecha instanceof Date ? f.fecha.toISOString().slice(0, 10) : f.fecha ? String(f.fecha).slice(0, 10) : null, cantidad: cant, importe_total_pesos: precio, precio_unitario_pesos: redondear(precio / cant), costo_unitario_usd: costo, rentabilidad_usd: redondear(ingreso - costoTotal) });
+    a.renglones.push({ op: f.op ?? null, fecha: f.fecha instanceof Date ? f.fecha.toISOString().slice(0, 10) : f.fecha ? String(f.fecha).slice(0, 10) : null, cantidad: cant, importe_total_usd: redondear(ingreso), precio_unitario_usd: redondear(ingreso / cant), costo_unitario_usd: costo, rentabilidad_usd: redondear(ingreso - costoTotal) });
     a.unidades += cant;
     a.ingresos_usd += ingreso;
     a.costos_usd += costoTotal;
@@ -66,10 +66,9 @@ function calcularRentabilidad({ filas, tipoCambio, top = 10, orden = "rentabilid
       ingresos_usd: redondear(a.ingresos_usd),
       costos_usd: redondear(a.costos_usd),
       rentabilidad_usd: redondear(rent),
-      rentabilidad_pesos: redondear(rent * tc),
       margen_porcentual: a.ingresos_usd > 0 ? redondear((rent / a.ingresos_usd) * 100, 1) : null,
       // Para que se pueda auditar a simple vista: ¿tiene sentido el precio y el costo por unidad?
-      precio_unitario_promedio_pesos: redondear((a.ingresos_usd * tc) / a.unidades),
+      precio_unitario_promedio_usd: redondear(a.ingresos_usd / a.unidades),
       costo_unitario_promedio_usd: redondear(a.costos_usd / a.unidades),
       _rent: rent,
       _renglones: a.renglones,
@@ -117,7 +116,6 @@ function calcularRentabilidad({ filas, tipoCambio, top = 10, orden = "rentabilid
       ingresos_usd: redondear(totalIng),
       costos_usd: redondear(totalCostos),
       rentabilidad_usd: redondear(totalRent),
-      rentabilidad_pesos: redondear(totalRent * tc),
       margen_porcentual: totalIng > 0 ? redondear((totalRent / totalIng) * 100, 1) : null,
     },
     ...(advertencias.length ? { advertencias } : {}),
