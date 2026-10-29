@@ -641,6 +641,7 @@ const { liquidarDesdeBD, simularTurno } = require("./liquidacionDb");
 const { normalizarGrafico, graficoDesdeTabla } = require("./graficos");
 const { calcular } = require("./calculadora");
 const { demandaSemielaborados } = require("./demanda");
+const { rentabilidadProductos } = require("./rentabilidad");
 
 function fechaHoyArgentina() {
   const ahora = new Date();
@@ -691,6 +692,8 @@ HORAS TRABAJADAS Y LIQUIDACIONES
 - Reglas de liquidación de Conoflex (son las que mandan y ya las aplica la herramienta; usalas para explicar el porqué): hora diurna de 06:00 a 21:00; hora nocturna de 21:00 a 06:00, con un recargo base de 13,33% sobre la hora diurna; jornada normal de 9 horas desde el ingreso, de ahí en más son horas extra hasta que se retira; extras al 50% sobre la hora diurna o nocturna que corresponda (en días de semana, lo que pasa de las 9 hs; si el turno ingresa un sábado, hasta las 13:00 TODAS las horas son extra al 50%; un turno que ingresa de lunes a viernes tiene sus primeras 9 hs normales aunque pasen a sábado); sábados desde las 13:00, domingos completos y feriados: todas las horas son extra al 100% (dobles, diurnas o nocturnas). Conoflex no tiene tope de horas extra, ni diario ni mensual (acuerdo con los operarios): nunca lo marques como un problema ni lo menciones.
 - Los valores de hora salen de la escala salarial cargada en la base para la categoría de cada operario. De ahí no conocés ningún adicional más (antigüedad, presentismo, etc.): no los inventes ni los sumes; si preguntan, decí que no están cargados.
 - DEMANDA DE SEMIELABORADOS: para "demanda mensual", cuánto se necesita o cuánto stock cubre, usá SIEMPRE demanda_semielaborados (no la armes con SQL). Parte de las ventas (la tabla estado_pedidos: acá "pedidos" y "ventas" son lo mismo) de los últimos N meses (por defecto 3; usá los que pida el usuario), mira de qué semielaborados está compuesto cada producto terminado (su ingeniería activa) y suma el aporte de todos los productos en los que participa cada semielaborado. Si preguntan por uno, pasá 'semielaborado'; si preguntan "qué demanda un producto", pasá 'producto'. Mostrá siempre el período usado y, para cada semielaborado importante, en qué productos se usa y cuánto aporta cada uno. Avisá si el resultado trae productos vendidos sin ingeniería activa o modelos vendidos que no están cargados como producto, porque esa demanda no entra en el cálculo.
+- RENTABILIDAD: para rentabilidad, margen o ganancia por producto usá SIEMPRE la herramienta rentabilidad_productos; nunca la armes con consultar_sql ni de cabeza. La regla de Conoflex: en estado_pedidos cada renglón tiene punisiva (precio UNITARIO sin IVA, en PESOS) y cosusd (costo UNITARIO en DÓLARES). Como las monedas no se pueden comparar, el precio en pesos se pasa SIEMPRE a dólares con el tipo de cambio, y recién entonces se multiplica por la cantidad vendida de ese renglón (precio y costo); la rentabilidad es ingreso en dólares menos costo en dólares. La herramienta hace todo eso renglón por renglón y suma por producto. Si no te dicen el período (mes o rango), preguntalo antes de llamarla. Mostrá el período, el tipo de cambio usado (y de dónde sale), la rentabilidad en dólares y su equivalente en pesos, y el margen porcentual si suma. Avisá SIEMPRE si 'excluidos_por_datos_incompletos' trae renglones (precio o costo sin cargar): quedan fuera del cálculo y conviene corregirlos en la planilla. Si el usuario da un tipo de cambio, pasalo en 'tipo_cambio'.
+- PROHIBIDO INVENTAR: todo producto, cliente, cifra o puesto de un ranking o listado tiene que salir textualmente de un resultado de herramienta. Si piden un top 10 y hay menos productos con datos, listá solo los que hay y decí cuántos son ('cantidad_de_productos_con_datos'). Nunca completes ni deduzcas filas, no armes nombres por patrones (variantes de color o sufijos) y si un dato no está, decí que no lo tenés. Antes de responder un ranking, verificá que cada nombre que escribís está en el resultado.
 - Para escenarios hipotéticos ("¿cuánto cobraría si entra el sábado a las 7 y sale a las 22?") usá simular_turno. Para otras cuentas que no sean una consulta, usá calculadora.
 - Si faltan fichadas de salida o un operario no tiene categoría, la herramienta lo avisa: decíselo al usuario en una línea.
 - Tené presentes la Ley de Contrato de Trabajo y la reforma laboral de 2026 (Ley de Modernización Laboral, sancionada el 27/02/2026: banco de horas por acuerdo escrito individual y voluntario, art. 197 bis; los recargos del 50% y 100% se mantienen; algunos cambios siguen en discusión judicial) y respondé consultas legales generales con precisión, aclarando que conviene confirmar con el contador o un abogado laboralista lo que tenga consecuencias legales. No sos abogada ni contadora.
@@ -787,6 +790,25 @@ const HERRAMIENTAS = [
             semielaborado: { type: "STRING", description: "Nombre o código (o parte) de un semielaborado para ver solo ese." },
             producto: { type: "STRING", description: "Nombre o código (o parte) de un producto terminado: devuelve los semielaborados que necesita y la demanda por ese producto." },
             incluir_cancelados: { type: "BOOLEAN", description: "Contar también los pedidos cancelados. Por defecto no." },
+          },
+        },
+      },
+      {
+        name: "rentabilidad_productos",
+        description:
+          "Calcula la rentabilidad por producto con la regla de Conoflex: de cada renglón de estado_pedidos toma el precio unitario sin IVA (punisiva, en pesos) y lo pasa a dólares con el tipo de cambio, le resta el costo unitario en dólares (cosusd), y multiplica por la cantidad vendida de ese renglón; suma por producto. Devuelve ranking (mayor a menor), totales, margen y los renglones excluidos por no tener precio o costo. Requiere período.",
+        parameters: {
+          type: "OBJECT",
+          properties: {
+            mes: { type: "STRING", description: "Mes completo en formato AAAA-MM (ej: 2026-10)." },
+            desde: { type: "STRING", description: "Inicio del rango AAAA-MM-DD (inclusive). Usar junto con 'hasta' si no es un mes completo." },
+            hasta: { type: "STRING", description: "Fin del rango AAAA-MM-DD (inclusive)." },
+            top: { type: "INTEGER", description: "Cuántos productos devolver (1 a 100). Por defecto 10." },
+            modelo: { type: "STRING", description: "Filtrar por un modelo o parte del código (ej: 2702-8R)." },
+            orden: { type: "STRING", description: "rentabilidad (por defecto), margen_porcentual o unidades." },
+            ascendente: { type: "BOOLEAN", description: "true para los de MENOR valor (los menos rentables). Por defecto false." },
+            tipo_cambio: { type: "NUMBER", description: "Pesos por dólar a usar, solo si el usuario lo indica. Si no, se usa el dólar oficial de venta del momento." },
+            incluir_cancelados: { type: "BOOLEAN", description: "Contar también pedidos cancelados. Por defecto no." },
           },
         },
       },
@@ -994,6 +1016,29 @@ function crearConnie({ pool, ai, obtenerDolar }) {
         } catch (e) {
           console.error("[Connie demanda_semielaborados]", e.message);
           return { error: "No pude leer los datos para calcular la demanda." };
+        }
+      }
+      if (llamada.name === "rentabilidad_productos") {
+        try {
+          const a = llamada.args || {};
+          let tc = Number(a.tipo_cambio);
+          let fuente = "indicado por el usuario";
+          if (!(tc > 0)) {
+            const d = await cotizacionDolar();
+            tc = Number(d?.venta);
+            fuente = `dólar oficial (venta)${d?.fecha ? ` al ${d.fecha}` : ""}`;
+            if (!(tc > 0)) return { error: "No pude obtener el tipo de cambio para pasar los precios a dólares. Decile al usuario que lo indique o que intente de nuevo." };
+          }
+          const r = await rentabilidadProductos(pool, { ...a, tipoCambio: tc });
+          consultas.push({
+            proposito: `Rentabilidad por producto – ${r.periodo || "período"} (tipo de cambio ${tc})`,
+            sql: "estado_pedidos: (punisiva / tipo de cambio − cosusd) × cantidad, renglón por renglón, sumado por producto.",
+            error: r.error || undefined,
+          });
+          return r.error ? r : { ...r, tipo_de_cambio_fuente: fuente };
+        } catch (e) {
+          console.error("[Connie rentabilidad_productos]", e.message);
+          return { error: "No pude leer los datos para calcular la rentabilidad." };
         }
       }
       if (llamada.name === "calculadora") return calcular(llamada.args?.expresion);
