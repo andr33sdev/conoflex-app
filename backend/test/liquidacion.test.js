@@ -109,10 +109,22 @@ test("sin tope de horas extra: 16 hs un lunes se pagan todas", () => {
   assert.equal(horas(l, "extra50_diurna") + horas(l, "extra50_nocturna"), 7);
 });
 
-test("al minuto, sin redondeos", () => {
+test("redondeo: duración en bloques de media hora completos", () => {
   const l = turno("2026-10-05", "07:00", "2026-10-05", "16:20");
-  assert.equal(horas(l, "extra50_diurna"), 0.33);
-  assert.equal(l.porCategoria.extra50_diurna.hhmm, "0:20");
+  assert.equal(horas(l, "extra50_diurna"), 0);
+  const l2 = turno("2026-10-05", "07:00", "2026-10-05", "16:35");
+  assert.equal(l2.porCategoria.extra50_diurna.hhmm, "0:30");
+  const l3 = turno("2026-10-05", "07:00", "2026-10-05", "19:08");
+  assert.equal(l3.horasTotales, 12);
+});
+
+test("redondeo del ingreso: :45+ sube, :00-:10 baja, :11-:44 se respeta", () => {
+  assert.equal(turno("2026-10-05", "06:57", "2026-10-05", "15:57").horasTotales, 8.5);
+  assert.equal(turno("2026-10-05", "06:57", "2026-10-05", "16:00").horasTotales, 9);
+  assert.equal(turno("2026-10-05", "07:08", "2026-10-05", "16:00").horasTotales, 9);
+  assert.equal(turno("2026-10-05", "07:20", "2026-10-05", "16:20").horasTotales, 9);
+  assert.equal(turno("2026-10-05", "07:20", "2026-10-05", "16:10").horasTotales, 8.5);
+  assert.equal(turno("2026-10-05", "07:44", "2026-10-05", "16:44").horasTotales, 9);
 });
 
 test("desglose por tramos: horario, día, tipo, valor hora aplicado e importe", () => {

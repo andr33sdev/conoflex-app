@@ -28,6 +28,7 @@ import {
   Clock,
 } from "lucide-react";
 
+import { FACTORES, liquidarTurnoMinutos } from "./liquidacionTurno";
 const API_BASE_URL = import.meta.env?.VITE_API_URL || "";
 const getApiUrl = (path) =>
   `${API_BASE_URL}${path.startsWith("/") ? path : "/" + path}`;
@@ -366,96 +367,41 @@ export default function FicheroModule() {
   }, [valoresUOYEP, periodoEscalaActivo]);
 
   const calcularHorasDelTurno = useCallback(
-    (dEnt, dSal, esNoche, esSiguienteDia, fechaISO, nombreOp) => {
-      const diaSemanaEnt = dEnt.getDay();
-      const hInReal = dEnt.getHours();
-      const mInReal = dEnt.getMinutes();
-      const hOut = dSal.getHours();
-      const mOut = dSal.getMinutes();
-
+    (dEnt, dSal, _esNoche, _esSiguienteDia, fechaISO, nombreOp) => {
       const esFeriado = !!feriadosGlobales[fechaISO];
       const claveAjuste = `${nombreOp}_${fechaISO}`;
       const ajuste = ajustesDias[claveAjuste] || null;
 
-      let hInEfec = hInReal;
-      let mInEfec = mInReal;
+      // Mismo motor que usa Connie (ver liquidacionTurno.js).
+      const liq = liquidarTurnoMinutos({
+        entradaTs: dEnt.getTime(),
+        salidaTs: dSal.getTime(),
+        esFeriado: (f) => !!feriadosGlobales[f],
+        ajuste,
+      });
+      const hs = (cat) => (liq.min[cat] || 0) / 60;
 
-      if (ajuste && ajuste.horaInicio) {
-        const [pactH, pactM] = ajuste.horaInicio.split(":").map(Number);
-        hInEfec = pactH;
-        mInEfec = pactM;
-      } else {
-        if (mInReal >= 45) {
-          hInEfec = (hInReal + 1) % 24;
-          mInEfec = 0;
-        } else if (mInReal <= 10) {
-          mInEfec = 0;
-        }
-      }
-
-      let minutosIn = hInEfec * 60 + mInEfec;
-      let minutosOut = hOut * 60 + mOut;
-      if (esSiguienteDia || minutosOut < minutosIn) {
-        minutosOut += 24 * 60;
-      }
-
-      const duracionMinutos = Math.max(0, minutosOut - minutosIn);
-
-      const esSabadoDiurno = diaSemanaEnt === 6 && !esNoche;
-      const esTratamientoExtraTotal =
-        esSabadoDiurno || esFeriado || (ajuste && ajuste.todasExtra);
-
-      let hsNormales = 0;
-      let hsExtrasDiurnas = 0;
-      let hsExtrasNocturnas = 0;
-
-      if (esTratamientoExtraTotal) {
-        hsNormales = 0;
-        const totalHsExtras = Math.floor(duracionMinutos / 30) * 0.5;
-        if (esNoche) {
-          hsExtrasNocturnas = totalHsExtras;
-        } else {
-          hsExtrasDiurnas = totalHsExtras;
-        }
-      } else if (esNoche) {
-        const limiteNormalesMin =
-          ((ajuste ? ajuste.horasNormales : 9.0) || 9.0) * 60;
-        const minutosNormales = Math.min(duracionMinutos, limiteNormalesMin);
-        const minutosExtras = Math.max(0, duracionMinutos - limiteNormalesMin);
-
-        hsNormales = Math.floor(minutosNormales / 30) * 0.5;
-        const hsExtrasBase = Math.floor(minutosExtras / 30) * 0.5;
-
-        let hsExtrasLiquidadas = hsExtrasBase;
-        if (hsExtrasBase >= 3.0) {
-          const esViernesNoche = diaSemanaEnt === 5;
-          if (esViernesNoche) {
-            hsExtrasLiquidadas = hsExtrasBase * 1.5 * 2.0;
-          } else {
-            hsExtrasLiquidadas = hsExtrasBase * 1.5;
-          }
-        } else {
-          hsExtrasLiquidadas = hsExtrasBase;
-        }
-
-        hsExtrasNocturnas = hsExtrasLiquidadas;
-        hsExtrasDiurnas = 0;
-      } else {
-        const limiteNormalesMin =
-          ((ajuste ? ajuste.horasNormales : 9.0) || 9.0) * 60;
-        const minutosNormales = Math.min(duracionMinutos, limiteNormalesMin);
-        const minutosExtras = Math.max(0, duracionMinutos - limiteNormalesMin);
-
-        hsNormales = Math.floor(minutosNormales / 30) * 0.5;
-        hsExtrasDiurnas = Math.floor(minutosExtras / 30) * 0.5;
-        hsExtrasNocturnas = 0;
-      }
+      const horasNormales = hs("normal_diurna") + hs("normal_nocturna");
+      const horasExtras50Diurnas = hs("extra50_diurna");
+      const horasExtras50Nocturnas = hs("extra50_nocturna");
+      const horasExtras100Diurnas = hs("extra100_diurna");
+      const horasExtras100Nocturnas = hs("extra100_nocturna");
+      const horasExtrasDiurnas = horasExtras50Diurnas + horasExtras100Diurnas;
+      const horasExtrasNocturnas =
+        horasExtras50Nocturnas + horasExtras100Nocturnas;
 
       return {
-        horasNormales: hsNormales,
-        horasExtrasDiurnas: hsExtrasDiurnas,
-        horasExtrasNocturnas: hsExtrasNocturnas,
-        horasTotalesTurno: hsNormales + hsExtrasDiurnas + hsExtrasNocturnas,
+        horasNormales,
+        horasNormalesNocturnas: hs("normal_nocturna"),
+        horasExtras50Diurnas,
+        horasExtras50Nocturnas,
+        horasExtras100Diurnas,
+        horasExtras100Nocturnas,
+        horasExtrasDiurnas,
+        horasExtrasNocturnas,
+        horasTotalesTurno: liq.totalMin / 60,
+        ingresoComputado: new Date(liq.inicioTs).toTimeString().slice(0, 5),
+        egresoComputado: new Date(liq.finTs).toTimeString().slice(0, 5),
         esFeriado,
         tieneAjuste: !!ajuste,
       };
@@ -715,47 +661,51 @@ export default function FicheroModule() {
 
   const totalesMesOperario = useMemo(() => {
     let normales = 0;
-    let extrasDiurnas = 0;
-    let extrasNocturnas = 0;
+    let normalesNocturnas = 0;
+    let extras50 = 0; // diurnas + nocturnas, horas
+    let extras100 = 0;
+    let pesosExtras50 = 0;
+    let pesosExtras100 = 0;
     let cantidadDiasTildados = 0;
-
-    celdasMes.forEach((celda) => {
-      if (celda?.data) {
-        normales += celda.data.horasNormales || 0;
-        const clave = `${operarioSeleccionado}_${celda.fechaISO}`;
-        const estaTildado = !!diasTildadosExtras[clave];
-
-        if (estaTildado) {
-          const extD = celda.data.horasExtrasDiurnas || 0;
-          const extN = celda.data.horasExtrasNocturnas || 0;
-          if (extD > 0 || extN > 0) {
-            cantidadDiasTildados += 1;
-          }
-          extrasDiurnas += extD;
-          extrasNocturnas += extN;
-        }
-      }
-    });
 
     const codigoCat = asignaciones[operarioSeleccionado];
     const catObj = categoriasUOYEP.find((c) => c.codigo === codigoCat);
     const vNormal = mapaValoresPeriodoActivo[codigoCat] || 0;
-    const vExtra = vNormal * 1.5;
 
-    const totalPesosDiurnas = extrasDiurnas * vExtra;
-    const totalPesosNocturnas = extrasNocturnas * vExtra;
-    const totalPesosExtras = totalPesosDiurnas + totalPesosNocturnas;
+    celdasMes.forEach((celda) => {
+      if (celda?.data) {
+        normales += celda.data.horasNormales || 0;
+        normalesNocturnas += celda.data.horasNormalesNocturnas || 0;
+        const clave = `${operarioSeleccionado}_${celda.fechaISO}`;
+        if (diasTildadosExtras[clave]) {
+          const d = celda.data;
+          const e50d = d.horasExtras50Diurnas || 0;
+          const e50n = d.horasExtras50Nocturnas || 0;
+          const e100d = d.horasExtras100Diurnas || 0;
+          const e100n = d.horasExtras100Nocturnas || 0;
+          if (e50d + e50n + e100d + e100n > 0) cantidadDiasTildados += 1;
+          extras50 += e50d + e50n;
+          extras100 += e100d + e100n;
+          pesosExtras50 +=
+            vNormal * (e50d * FACTORES.extra50_diurna + e50n * FACTORES.extra50_nocturna);
+          pesosExtras100 +=
+            vNormal * (e100d * FACTORES.extra100_diurna + e100n * FACTORES.extra100_nocturna);
+        }
+      }
+    });
 
     return {
       normales,
-      extrasDiurnas,
-      extrasNocturnas,
-      totalExtras: extrasDiurnas + extrasNocturnas,
+      normalesNocturnas,
+      extras50,
+      extras100,
+      pesosExtras50,
+      pesosExtras100,
+      totalExtras: extras50 + extras100,
       cantidadDiasTildados,
       categoriaNombre: catObj ? catObj.nombre : "SIN CATEGORÍA",
       vNormal,
-      vExtra,
-      totalPesosMes: totalPesosExtras,
+      totalPesosMes: pesosExtras50 + pesosExtras100,
     };
   }, [
     celdasMes,
@@ -1167,44 +1117,38 @@ export default function FicheroModule() {
                       minimumFractionDigits: 2,
                     })}
                     /h
+                    {totalesMesOperario.normalesNocturnas > 0 &&
+                      ` · ${totalesMesOperario.normalesNocturnas.toFixed(1)} noct.`}
                   </span>
                 </div>
 
                 <div className="flex flex-col">
                   <span className="text-amber-400 uppercase tracking-widest font-bold flex items-center gap-1">
-                    <Sun size={11} /> Extras Diurnas (Tildadas)
+                    <Sun size={11} /> Extras al 50% (Tildadas)
                   </span>
                   <span className="text-amber-300 print:text-amber-700 font-black text-xs font-mono">
-                    {totalesMesOperario.extrasDiurnas % 1 === 0
-                      ? totalesMesOperario.extrasDiurnas
-                      : totalesMesOperario.extrasDiurnas.toFixed(1)}{" "}
-                    hs
+                    {totalesMesOperario.extras50 % 1 === 0 ? totalesMesOperario.extras50 : totalesMesOperario.extras50.toFixed(1)} hs
                   </span>
                   <span className="text-zinc-500 font-mono text-[9px]">
-                    $
-                    {totalesMesOperario.vExtra.toLocaleString("es-AR", {
+                    ${totalesMesOperario.pesosExtras50.toLocaleString("es-AR", {
                       minimumFractionDigits: 2,
-                    })}
-                    /h (+50%)
+                      maximumFractionDigits: 2,
+                    })} · diurna x1,5 · noct. x1,70
                   </span>
                 </div>
 
                 <div className="flex flex-col">
                   <span className="text-cyan-400 uppercase tracking-widest font-bold flex items-center gap-1">
-                    <Moon size={11} /> Extras Noct. (Tildadas)
+                    <Moon size={11} /> Extras al 100% (Tildadas)
                   </span>
                   <span className="text-cyan-300 print:text-cyan-700 font-black text-xs font-mono">
-                    {totalesMesOperario.extrasNocturnas % 1 === 0
-                      ? totalesMesOperario.extrasNocturnas
-                      : totalesMesOperario.extrasNocturnas.toFixed(1)}{" "}
-                    hs
+                    {totalesMesOperario.extras100 % 1 === 0 ? totalesMesOperario.extras100 : totalesMesOperario.extras100.toFixed(1)} hs
                   </span>
                   <span className="text-zinc-500 font-mono text-[9px]">
-                    L-J 1.5x / Vie 2x ($
-                    {totalesMesOperario.vExtra.toLocaleString("es-AR", {
+                    ${totalesMesOperario.pesosExtras100.toLocaleString("es-AR", {
                       minimumFractionDigits: 2,
-                    })}
-                    /h)
+                      maximumFractionDigits: 2,
+                    })} · diurna x2 · noct. x2,27
                   </span>
                 </div>
 

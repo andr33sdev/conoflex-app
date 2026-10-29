@@ -122,7 +122,7 @@ function ajustesDe(ctx, nombre) {
 }
 
 const NOTA_REGLAS =
-  "Reglas de Conoflex: hora diurna 06:00–21:00, nocturna 21:00–06:00 con +13,33%; jornada normal de 9 hs desde el ingreso, el resto es extra al 50% (sobre la hora diurna o nocturna que corresponda); sábados desde las 13:00, domingos y feriados todo es extra al 100%; sin tope de horas extra. Cada minuto se clasifica por su fecha y hora reales y cada turno se asigna al día en que ingresó. Las horas se calculan al minuto, sin redondeos.";
+  "Reglas de Conoflex: hora diurna 06:00–21:00, nocturna 21:00–06:00 con +13,33%; jornada normal de 9 hs desde el ingreso, el resto es extra al 50% (sobre la hora diurna o nocturna que corresponda); sábados desde las 13:00, domingos y feriados todo es extra al 100%; sin tope de horas extra. Cada minuto se clasifica por su fecha y hora reales y cada turno se asigna al día en que ingresó. Redondeo: ingreso de :45 a :10 va a la hora en punto (06:57 -> 07:00, 07:08 -> 07:00; de :11 a :44 se respeta) y la duración se cuenta en bloques de media hora completos (salida 19:08 con ingreso 07:00 = 12 hs).";
 
 async function liquidarDesdeBD(pool, { operario, mes, quincena, desde, hasta, fechas, detalle } = {}) {
   const rango = resolverFechas({ fechas, desde, hasta, mes, quincena });

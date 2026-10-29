@@ -12,6 +12,13 @@
 //    al 100% (doble, diurna o nocturna según corresponda).
 //  - No hay tope de horas extra, ni diario ni mensual.
 //
+// Redondeo (el mismo que usa la pantalla Fichero):
+//  - Ingreso: de :45 a :59 se toma como la hora en punto siguiente (06:57 -> 07:00);
+//    de :00 a :10 se toma como la hora en punto (07:08 -> 07:00); de :11 a :44 se
+//    respeta tal cual. Si el día tiene hora de inicio pactada, se usa esa.
+//  - Duración: se computa en bloques de media hora completos (12:08 -> 12:00;
+//    12:29 -> 12:00; 12:30 -> 12:30). Lo que sobra al final no se paga.
+//
 // Cada minuto trabajado se clasifica por su fecha y hora reales (un turno que
 // cruza la medianoche cambia de tipo de día al pasar las 00:00).
 
@@ -112,15 +119,31 @@ function clasificarMinuto(ts, esFeriado) {
  * Liquida UN turno minuto a minuto.
  * ajuste: { horaInicio:'HH:MM'|null, horasNormales:number|null, todasExtra:boolean } | null
  */
-function liquidarTurno({ entradaTs, salidaTs, esFeriado = () => false, ajuste = null, valorHora = 0 }) {
+/** Ingreso efectivo según la regla de redondeo (ts en ms). */
+function ingresoRedondeado(entradaTs) {
+  const d = new Date(entradaTs);
+  d.setSeconds(0, 0);
+  const mi = d.getMinutes();
+  if (mi >= 45) d.setHours(d.getHours() + 1, 0, 0, 0);
+  else if (mi <= 10) d.setMinutes(0, 0, 0);
+  return d.getTime();
+}
+
+function liquidarTurno({ entradaTs, salidaTs, esFeriado = () => false, ajuste = null, valorHora = 0, redondeo = true }) {
   let inicio = entradaTs;
   if (ajuste && ajuste.horaInicio) {
     const [ph, pm] = String(ajuste.horaInicio).split(":").map(Number);
     const d = new Date(entradaTs);
     d.setHours(ph, pm, 0, 0);
     inicio = d.getTime();
+  } else if (redondeo) {
+    inicio = ingresoRedondeado(entradaTs);
+  } else {
+    inicio = Math.floor(entradaTs / 60000) * 60000;
   }
-  const totalMin = Math.max(0, Math.floor((salidaTs - inicio) / 60000));
+  const salidaMin = Math.floor(salidaTs / 60000) * 60000;
+  let totalMin = Math.max(0, Math.floor((salidaMin - inicio) / 60000));
+  if (redondeo) totalMin = Math.floor(totalMin / 30) * 30;
   const limiteNormalMin = ((ajuste && ajuste.horasNormales) || REGLAS.jornadaNormalHoras) * 60;
   const todasExtra = !!(ajuste && ajuste.todasExtra);
 
@@ -190,6 +213,7 @@ function liquidarTurno({ entradaTs, salidaTs, esFeriado = () => false, ajuste = 
 
   return {
     inicioTs: inicio,
+    finTs: inicio + totalMin * 60000,
     minutosTotales: totalMin,
     horasTotales: redondear(totalMin / 60),
     porCategoria,
@@ -206,6 +230,7 @@ function notasDelDia({ feriado, ajuste }) {
   if (ajuste?.todasExtra) notas.push("ajuste del día: todas las horas son extra");
   if (ajuste?.horasNormales) notas.push(`ajuste del día: jornada normal de ${ajuste.horasNormales} hs`);
   if (ajuste?.horaInicio) notas.push(`ajuste del día: se cuenta desde las ${ajuste.horaInicio}`);
+  notas.push("horas redondeadas: ingreso :45–:10 a la hora en punto, y duración en bloques de media hora completos");
   return notas;
 }
 
@@ -248,6 +273,8 @@ function liquidarPeriodo({
     }
     const dia = {
       fecha: t.fecha, dia: diaNombre, ingreso: t.ingreso, egreso: t.egreso,
+      ingreso_computado: horaCorta(partes(new Date(liq.inicioTs))),
+      egreso_computado: horaCorta(partes(new Date(liq.finTs))),
       ...(t.egreso && partes(new Date(t.salidaTs)).d !== p.d ? { termina_al_dia_siguiente: true } : {}),
       ...(esFeriado(t.fecha) ? { feriado: true } : {}),
       horas_totales: liq.horasTotales,
@@ -286,5 +313,5 @@ function liquidarPeriodo({
 }
 
 module.exports = {
-  REGLAS, CATEGORIAS, DIAS, emparejarTurnos, liquidarTurno, liquidarPeriodo, redondear,
+  REGLAS, CATEGORIAS, DIAS, ingresoRedondeado, emparejarTurnos, liquidarTurno, liquidarPeriodo, redondear,
 };
