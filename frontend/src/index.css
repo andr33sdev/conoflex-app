@@ -68,6 +68,7 @@ select, textarea {
 
 /* Títulos de cada módulo: mismo peso industrial, sin cursiva ni tamaño de cartel */
 main h1[class*="uppercase"] { font-style: normal; font-size: clamp(1.6rem, 2.6vw, 2.25rem); letter-spacing: -0.02em; line-height: 1.05; }
+main h1.cf-h1-largo { font-size: clamp(1.1rem, 1.5vw, 1.45rem); }
 .tracking-widest { letter-spacing: 0.08em; }
 
 /* Respuesta al toque: se hunde apenas, sin rebote */

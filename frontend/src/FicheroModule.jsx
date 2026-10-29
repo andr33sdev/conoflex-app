@@ -879,9 +879,9 @@ export default function FicheroModule() {
       `}</style>
 
       {/* HEADER SUPERIOR */}
-      <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-4 shrink-0 print:hidden">
+      <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3 mb-3 md:mb-4 shrink-0 print:hidden">
         <div>
-          <h1 className="text-xl md:text-3xl font-black italic tracking-tighter uppercase text-white leading-none">
+          <h1 className="cf-h1-largo text-lg md:text-2xl font-black italic tracking-tighter uppercase text-white leading-none">
             CONTROL DE ASISTENCIA Y TARIFAS
           </h1>
           <p className="text-[#FF5A00] font-bold text-[10px] md:text-[11px] tracking-widest uppercase mt-1">
@@ -889,8 +889,8 @@ export default function FicheroModule() {
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="flex items-center gap-2 bg-[#121212] border border-zinc-800 px-3 py-1.5 rounded">
+        <div className="grid grid-cols-3 sm:flex sm:flex-wrap items-center gap-2">
+          <div className="col-span-3 flex items-center gap-2 bg-[#121212] border border-zinc-800 px-3 py-1.5 rounded">
             <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest hidden sm:inline">
               Escala Salarial:
             </span>
@@ -915,27 +915,30 @@ export default function FicheroModule() {
             onClick={sincronizarConWebUOYEP}
             disabled={sincronizandoWeb}
             title="Extrae la tabla actualizada desde uoyepweb.org.ar"
-            className="bg-[#18181b] hover:bg-[#27272a] border border-zinc-700 text-white font-bold uppercase tracking-widest text-[10px] px-3.5 py-2.5 rounded flex items-center justify-center gap-2 transition-colors cursor-pointer shadow-sm disabled:opacity-50"
+            className="bg-[#18181b] hover:bg-[#27272a] border border-zinc-700 text-white font-bold uppercase tracking-widest text-[10px] px-2 sm:px-3.5 py-2.5 rounded flex items-center justify-center gap-1.5 sm:gap-2 transition-colors cursor-pointer shadow-sm disabled:opacity-50"
           >
             <Globe
               size={14}
               className={
                 sincronizandoWeb
-                  ? "animate-spin text-[#FF5A00]"
-                  : "text-[#FF5A00]"
+                  ? "animate-spin text-[#FF5A00] shrink-0"
+                  : "text-[#FF5A00] shrink-0"
               }
             />
             <span>
-              {sincronizandoWeb ? "SINCRONIZANDO..." : "SINCRONIZAR CON WEB"}
+              {sincronizandoWeb ? "SINCRONIZANDO..." : "SINCRONIZAR"}
+              <span className="hidden 2xl:inline"> CON WEB</span>
             </span>
           </button>
 
           <button
             onClick={() => setModalCategoriasAbierto(true)}
-            className="bg-[#18181b] hover:bg-[#27272a] border border-zinc-700 text-white font-bold uppercase tracking-widest text-[10px] px-3.5 py-2.5 rounded flex items-center justify-center gap-2 transition-colors cursor-pointer shadow-sm"
+            className="bg-[#18181b] hover:bg-[#27272a] border border-zinc-700 text-white font-bold uppercase tracking-widest text-[10px] px-2 sm:px-3.5 py-2.5 rounded flex items-center justify-center gap-1.5 sm:gap-2 transition-colors cursor-pointer shadow-sm"
           >
-            <Tag size={14} className="text-[#FF5A00]" />
-            <span>ASIGNAR CATEGORÍAS</span>
+            <Tag size={14} className="text-[#FF5A00] shrink-0" />
+            <span>
+              <span className="hidden 2xl:inline">ASIGNAR </span>CATEGORÍAS
+            </span>
           </button>
 
           <button
@@ -945,9 +948,12 @@ export default function FicheroModule() {
               cargarConfiguracionDias();
             }}
             disabled={isSyncing}
-            className="bg-[#FFD700] hover:bg-white text-black font-bold uppercase tracking-widest text-[10px] px-4 py-2.5 rounded flex items-center justify-center gap-2 transition-colors disabled:opacity-50 cursor-pointer shadow-sm"
+            className="bg-[#FFD700] hover:bg-white text-black font-bold uppercase tracking-widest text-[10px] px-2 sm:px-4 py-2.5 rounded flex items-center justify-center gap-1.5 sm:gap-2 transition-colors disabled:opacity-50 cursor-pointer shadow-sm"
           >
-            <RefreshCw size={14} className={isSyncing ? "animate-spin" : ""} />
+            <RefreshCw
+              size={14}
+              className={`shrink-0 ${isSyncing ? "animate-spin" : ""}`}
+            />
             {isSyncing ? "ACTUALIZANDO..." : "ACTUALIZAR"}
           </button>
         </div>
