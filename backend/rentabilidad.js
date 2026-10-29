@@ -21,7 +21,7 @@ const num = (v) => {
 
 /**
  * Cálculo puro.
- *  filas: [{ modelo, cantidad, punisiva, cosusd }]  (un renglón de pedido cada una)
+ *  filas: [{ op, fecha, modelo, cantidad, punisiva, cosusd }]  (un renglón de pedido cada una)
  *  tipoCambio: pesos por dólar (> 0)
  */
 function calcularRentabilidad({ filas, tipoCambio, top = 10, orden = "rentabilidad", ascendente = false }) {
@@ -49,7 +49,8 @@ function calcularRentabilidad({ filas, tipoCambio, top = 10, orden = "rentabilid
     lineasValidas += 1;
     const ingreso = (precio / tc) * cant;
     const costoTotal = costo * cant;
-    const a = porModelo.get(modelo) || { modelo, unidades: 0, ingresos_usd: 0, costos_usd: 0 };
+    const a = porModelo.get(modelo) || { modelo, unidades: 0, ingresos_usd: 0, costos_usd: 0, renglones: [] };
+    a.renglones.push({ op: f.op ?? null, fecha: f.fecha instanceof Date ? f.fecha.toISOString().slice(0, 10) : f.fecha ? String(f.fecha).slice(0, 10) : null, cantidad: cant, precio_unitario_pesos: precio, costo_unitario_usd: costo, rentabilidad_usd: redondear(ingreso - costoTotal) });
     a.unidades += cant;
     a.ingresos_usd += ingreso;
     a.costos_usd += costoTotal;
@@ -70,6 +71,7 @@ function calcularRentabilidad({ filas, tipoCambio, top = 10, orden = "rentabilid
       precio_unitario_promedio_pesos: redondear((a.ingresos_usd * tc) / a.unidades),
       costo_unitario_promedio_usd: redondear(a.costos_usd / a.unidades),
       _rent: rent,
+      _renglones: a.renglones,
     };
   });
 
@@ -86,8 +88,10 @@ function calcularRentabilidad({ filas, tipoCambio, top = 10, orden = "rentabilid
   const totalCostos = lista.reduce((s, x) => s + x.costos_usd, 0);
   const n = Math.max(1, Math.min(100, Math.round(num(top)) || 10));
   const devueltos = lista.slice(0, n).map((x, i) => {
-    const { _rent, ...resto } = x;
-    return { puesto: i + 1, ...resto };
+    const { _rent, _renglones, ...resto } = x;
+    // Los 3 renglones que más pesan, tal cual están en la planilla, para poder auditar la cuenta
+    const ejemplos = [..._renglones].sort((p, q) => Math.abs(q.rentabilidad_usd) - Math.abs(p.rentabilidad_usd)).slice(0, 3);
+    return { puesto: i + 1, ...resto, renglones_que_mas_pesan: ejemplos };
   });
 
   // Un margen de 90% o más en la fábrica no es creíble: casi seguro hay datos mal cargados en la planilla
@@ -157,7 +161,7 @@ async function rentabilidadProductos(pool, { mes, desde, hasta, top, modelo, ord
     params.push(`%${String(modelo).trim().toUpperCase().replace(/[%_]/g, "")}%`);
   }
   const [filas] = await pool.query(
-    `SELECT modelo, cantidad, punisiva, cosusd
+    `SELECT op, fecha, modelo, cantidad, punisiva, cosusd
        FROM estado_pedidos
       WHERE fecha >= ? AND fecha <= ?
         ${incluir_cancelados ? "" : "AND (estado IS NULL OR UPPER(TRIM(estado)) NOT LIKE 'CANCELAD%')"}
