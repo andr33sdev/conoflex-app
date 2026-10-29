@@ -33,6 +33,9 @@ const REGLAS = {
   sabadoCorteHora: 13,
 };
 
+// Una SALIDA cierra el turno pendiente si llega dentro de este tiempo (hay turnos de 22 hs seguidas).
+const MAX_TURNO_MS = 30 * 3600000;
+const VENTANA_TOQUE_MS = 3 * 60 * 1000;
 const pad = (n) => String(n).padStart(2, "0");
 const redondear = (n, d = 2) => Math.round((Number(n) + Number.EPSILON) * 10 ** d) / 10 ** d;
 const DIAS = ["domingo", "lunes", "martes", "miércoles", "jueves", "viernes", "sábado"];
@@ -68,12 +71,23 @@ const hhmm = (min) => `${Math.floor(min / 60)}:${pad(Math.round(min % 60))}`;
  * Devuelve [{ fecha, ingreso, egreso, entradaTs, salidaTs|null }] por fecha de ingreso.
  * Es el mismo emparejamiento que usa el módulo Fichero: una ENTRADA que llega entre 1 y
  * 18 hs después de otra sin salida se toma como la salida (el reloj a veces rotula mal).
+ * Una SALIDA cierra el turno si llega hasta 30 hs después del ingreso (un turno puede durar 22 hs seguidas).
  */
 function emparejarTurnos(fichadas) {
-  const ordenadas = fichadas
+  const todas = fichadas
     .map((f) => ({ tipo: f.tipo, p: partes(f.fecha_hora) }))
     .filter((f) => f.p)
     .sort((a, b) => aFecha(a.p) - aFecha(b.p));
+
+  // Un mismo toque del reloj a veces queda como ENTRADA y como SALIDA (o repetido):
+  // dos marcas a menos de 3 minutos son la misma; se toma la primera.
+  const ordenadas = [];
+  const descartadas = [];
+  for (const f of todas) {
+    const ult = ordenadas[ordenadas.length - 1];
+    if (ult && aFecha(f.p) - aFecha(ult.p) < VENTANA_TOQUE_MS) descartadas.push({ fecha: fechaISO(f.p), hora: `${horaCorta(f.p)}:${pad(f.p.s)}`, tipo: f.tipo, conservada: `${horaCorta(ult.p)}:${pad(ult.p.s)} ${ult.tipo}` });
+    else ordenadas.push(f);
+  }
 
   const porFecha = new Map(); // fecha -> turno
   let pendiente = null;
@@ -96,10 +110,12 @@ function emparejarTurnos(fichadas) {
         pendiente = t;
       }
     } else if (f.tipo === "SALIDA") {
-      if (pendiente && ts - pendiente.entradaTs <= 18 * 3600000) cerrar(f.p, ts);
+      if (pendiente && ts - pendiente.entradaTs <= MAX_TURNO_MS) cerrar(f.p, ts);
     }
   }
-  return [...porFecha.values()].sort((a, b) => a.entradaTs - b.entradaTs);
+  const turnos = [...porFecha.values()].sort((a, b) => a.entradaTs - b.entradaTs);
+  turnos.toquesDobles = descartadas;
+  return turnos;
 }
 
 /** Clasifica un minuto: ¿zona de 100%? ¿nocturno? */
@@ -247,13 +263,17 @@ function liquidarPeriodo({
 }) {
   const esFeriado = (f) => (feriados instanceof Set ? feriados.has(f) : !!feriados[f]);
   const getAj = (f) => (ajustes instanceof Map ? ajustes.get(f) : ajustes[f]) || null;
-  const turnos = emparejarTurnos(fichadas).filter((t) => fechasIncluidas.has(t.fecha));
+  const emparejados = emparejarTurnos(fichadas);
+  const turnos = emparejados.filter((t) => fechasIncluidas.has(t.fecha));
 
   const totales = {};
   const dias = [];
   const avisos = [];
   let importeTotal = 0;
   let minTotal = 0;
+  for (const d of emparejados.toquesDobles || []) {
+    if (fechasIncluidas.has(d.fecha)) avisos.push(`${d.fecha}: el reloj registró dos marcas casi juntas (${d.conservada} y ${d.hora} ${d.tipo}); se tomó solo la primera, porque son el mismo toque.`);
+  }
 
   for (const t of turnos) {
     const p = partes(new Date(t.entradaTs));

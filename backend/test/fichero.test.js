@@ -18,10 +18,11 @@ test("exactamente 3 minutos después ya es otra marca", () => {
   assert.equal(nuevos.length, 2);
 });
 
-test("ENTRADA seguida de SALIDA inmediata NO es duplicada", () => {
+test("ENTRADA y SALIDA a segundos de distancia son el mismo toque: se conserva la primera", () => {
   const { nuevos, duplicados } = separarDuplicadas([f(1, "08:00:00", "ENTRADA"), f(2, "08:00:20", "SALIDA")]);
-  assert.equal(nuevos.length, 2);
-  assert.equal(duplicados.length, 0);
+  assert.equal(nuevos.length, 1);
+  assert.equal(duplicados.length, 1);
+  assert.equal(duplicados[0].rec_no, 2);
 });
 
 test("distintos empleados no se pisan", () => {

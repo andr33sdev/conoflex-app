@@ -237,3 +237,59 @@ test("calculadora: precedencia, porcentajes, decimales con coma y rechazo de có
   assert.ok(calcular("process.exit()").error);
   assert.ok(calcular("2 +").error);
 });
+
+test("doble toque del reloj (ENTRADA y SALIDA a segundos) no genera un turno de 0 hs: se toma la primera y se avisa", () => {
+  // viernes: entrada de la mañana, y a las 18:56 el reloj grabó el mismo toque como ENTRADA y como SALIDA
+  const fich = [
+    f("2026-10-23 06:55:00", "ENTRADA"),
+    f("2026-10-23 18:56:45", "ENTRADA"),
+    f("2026-10-23 18:56:51", "SALIDA"),
+  ];
+  const r = liquidarPeriodo({ fichadas: fich, fechasIncluidas: new Set(["2026-10-23"]), valorHoraDe: () => VH, detalle: "completo" });
+  assert.equal(r.turnos_liquidados, 1);
+  assert.equal(r.dias[0].egreso, "18:56");
+  assert.equal(r.horas_totales, 11.5); // 07:00 (redondeado) a 18:56 -> 11 h 56 -> 11,5
+  assert.ok(r.avisos.some((a) => /dos marcas casi juntas/.test(a)));
+});
+
+test("doble toque sin entrada de la mañana: queda sin salida (no 0 hs)", () => {
+  const fich = [f("2026-10-23 18:56:45", "ENTRADA"), f("2026-10-23 18:56:51", "SALIDA")];
+  const r = liquidarPeriodo({ fichadas: fich, fechasIncluidas: new Set(["2026-10-23"]), valorHoraDe: () => VH, detalle: "completo" });
+  assert.equal(r.dias[0].sin_salida, true);
+  assert.ok(r.avisos.some((a) => /no se registró la salida/.test(a)));
+});
+
+test("turno de 22 horas seguidas (entra 19:00, sale 17:00 del día siguiente): un solo turno", () => {
+  // lunes 5 19:00 -> martes 6 17:00
+  const fich = [f("2026-10-05 19:00:00", "ENTRADA"), f("2026-10-06 17:00:00", "SALIDA")];
+  const r = liquidarPeriodo({ fichadas: fich, fechasIncluidas: new Set(["2026-10-05"]), valorHoraDe: () => VH, detalle: "completo" });
+  assert.equal(r.turnos_liquidados, 1);
+  assert.equal(r.horas_totales, 22);
+  const c = r.por_categoria;
+  assert.equal(c.normal_diurna.horas, 2); // 19 a 21
+  assert.equal(c.normal_nocturna.horas, 7); // 21 a 04 (completa las 9 hs normales)
+  assert.equal(c.extra50_nocturna.horas, 2); // 04 a 06
+  assert.equal(c.extra50_diurna.horas, 11); // 06 a 17
+  assert.equal(r.horas_normales, 9);
+  assert.equal(r.horas_extra, 13);
+});
+
+test("turno que arranca el viernes de noche y sale el sábado: desde las 00:00 del sábado es extra al 50% y desde las 13:00 al 100%", () => {
+  const fich = [f("2026-10-23 19:00:00", "ENTRADA"), f("2026-10-24 17:00:00", "SALIDA")];
+  const r = liquidarPeriodo({ fichadas: fich, fechasIncluidas: new Set(["2026-10-23"]), valorHoraDe: () => VH, detalle: "completo" });
+  assert.equal(r.horas_totales, 22);
+  const c = r.por_categoria;
+  assert.equal(c.normal_diurna.horas, 2);
+  assert.equal(c.normal_nocturna.horas, 3);
+  assert.equal(c.extra50_nocturna.horas, 6);
+  assert.equal(c.extra50_diurna.horas, 7);
+  assert.equal(c.extra100_diurna.horas, 4);
+});
+
+test("una ENTRADA 24 hs después sigue siendo un turno nuevo (no cierra al anterior)", () => {
+  const fich = [f("2026-10-05 07:00:00", "ENTRADA"), f("2026-10-06 07:00:00", "ENTRADA"), f("2026-10-06 16:00:00", "SALIDA")];
+  const t = emparejarTurnos(fich);
+  assert.equal(t.length, 2);
+  assert.equal(t[0].salidaTs, null);
+  assert.equal(t[1].egreso, "16:00");
+});

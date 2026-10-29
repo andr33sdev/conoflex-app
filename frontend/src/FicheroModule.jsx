@@ -296,7 +296,7 @@ export default function FicheroModule() {
       const clave = `${f.empleado_id || f.nombre}`;
       const tPrevio = ultimaMarca.get(clave);
 
-      if (tPrevio && tActual - tPrevio < 60000) continue;
+      if (tPrevio && tActual - tPrevio < 180000) continue; // mismo toque (3 min), cualquier tipo
 
       ultimaMarca.set(clave, tActual);
       filtradas.push(f);
@@ -475,7 +475,7 @@ export default function FicheroModule() {
         } else if (f.tipo === "SALIDA") {
           if (
             entradaPendiente &&
-            timestamp - entradaPendiente.timestamp <= 18 * 60 * 60 * 1000
+            timestamp - entradaPendiente.timestamp <= 30 * 60 * 60 * 1000
           ) {
             const fechaEntrada = entradaPendiente.fechaISO;
             mapaDias[fechaEntrada].egreso = horaCorta;

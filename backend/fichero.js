@@ -1,8 +1,8 @@
 "use strict";
 // Antiduplicados de fichadas del reloj Dahua.
-// Regla: para un mismo empleado y un mismo tipo (ENTRADA/SALIDA), dos fichadas
-// a menos de VENTANA_SEG segundos son la misma marca: se conserva la primera.
-// Una ENTRADA seguida de una SALIDA (tipos distintos) nunca se considera duplicada.
+// Regla: para un mismo empleado, dos fichadas a menos de VENTANA_SEG segundos son
+// la misma marca, sea cual sea su tipo (el reloj a veces registra un mismo toque
+// como ENTRADA y como SALIDA): se conserva la primera.
 
 const VENTANA_SEG = Math.max(
   0,
@@ -14,7 +14,7 @@ const aMs = (v) => {
   const s = String(v).replace(" ", "T");
   return new Date(s).getTime();
 };
-const claveDe = (r) => `${r.empleado_id || r.nombre}|${r.tipo}`;
+const claveDe = (r) => `${r.empleado_id || r.nombre}`;
 
 /**
  * Separa `registros` en { nuevos, duplicados }.
