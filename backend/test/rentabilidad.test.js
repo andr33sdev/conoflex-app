@@ -18,7 +18,8 @@ test("pasa el importe total a dólares, multiplica solo el costo por la cantidad
   assert.equal(a.ingresos_usd, 80);
   assert.equal(a.costos_usd, 47.5);
   assert.equal(a.rentabilidad_usd, 32.5);
-  assert.equal(a.rentabilidad_pesos, 32500);
+  assert.equal(a.rentabilidad_pesos, undefined); // todo se informa en dólares
+  assert.equal(r.totales.rentabilidad_pesos, undefined);
   assert.equal(a.margen_porcentual, 40.6);
   const b = r.productos.find((p) => p.modelo === "B-2");
   assert.equal(b.rentabilidad_usd, -2);
@@ -93,7 +94,7 @@ test("rentabilidadProductos lee la tabla con el período y excluye cancelados", 
 test("muestra precio y costo unitario promedio y advierte márgenes de 90% o más", () => {
   const r = calcularRentabilidad({ filas, tipoCambio: 1000 });
   const a = r.productos.find((p) => p.modelo === "A-1");
-  assert.equal(a.precio_unitario_promedio_pesos, 5333.33); // (50 + 30) USD x 1000 / 15 u.
+  assert.equal(a.precio_unitario_promedio_usd, 5.33); // (50 + 30) USD / 15 u.
   assert.equal(a.costo_unitario_promedio_usd, 3.17);
   assert.equal(r.advertencias, undefined);
   // un importe desproporcionado frente al costo: margen irreal, debe avisar
@@ -109,6 +110,6 @@ test("caso real de producción: OP 41142, 377 u., importe total $ 162.009.223,40
   assert.equal(p.costos_usd, 38141.09); // 101,17 x 377
   assert.equal(p.rentabilidad_usd, 65710.98);
   assert.equal(p.margen_porcentual, 63.3);
-  assert.equal(p.precio_unitario_promedio_pesos, 429732.69); // lo que cuesta una unidad
+  assert.equal(p.precio_unitario_promedio_usd, 275.47); // lo que cuesta una unidad, en dólares
   assert.equal(r.advertencias, undefined); // 63% ya no es irreal
 });
