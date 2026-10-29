@@ -955,13 +955,13 @@ export default function FicheroModule() {
 
       {vista === "calendario" ? (
         <div
-          className={`flex-1 flex flex-col md:flex-row gap-4 min-h-0 ${
+          className={`flex-1 flex flex-col xl:flex-row gap-4 min-h-0 ${
             imprimiendoLote
               ? "print:hidden"
               : "print:block print:overflow-visible print:h-auto"
           }`}
         >
-          <div className="print:hidden flex md:hidden gap-2 shrink-0">
+          <div className="print:hidden flex xl:hidden gap-2 shrink-0">
             <button
               onClick={() => setVista("tabla")}
               className="flex-1 bg-[#121212] border border-zinc-800 text-zinc-300 py-2.5 rounded text-[10px] font-bold tracking-widest flex items-center justify-center gap-2 cursor-pointer uppercase"
@@ -978,16 +978,16 @@ export default function FicheroModule() {
           </div>
 
           <div
-            className={`print:hidden ${mostrarOperariosMobile ? "flex" : "hidden"} md:flex w-full md:w-64 flex-col gap-3 min-h-0 shrink-0`}
+            className={`print:hidden ${mostrarOperariosMobile ? "flex" : "hidden"} xl:flex w-full xl:w-64 flex-col gap-3 min-h-0 shrink-0`}
           >
             <button
               onClick={() => setVista("tabla")}
-              className="hidden md:flex w-full bg-[#121212] hover:bg-[#1a1a1a] border border-zinc-800 text-zinc-300 py-2.5 rounded text-[10px] font-bold tracking-widest items-center justify-center gap-2 transition-colors cursor-pointer shrink-0 uppercase"
+              className="hidden xl:flex w-full bg-[#121212] hover:bg-[#1a1a1a] border border-zinc-800 text-zinc-300 py-2.5 rounded text-[10px] font-bold tracking-widest items-center justify-center gap-2 transition-colors cursor-pointer shrink-0 uppercase"
             >
               <TableIcon size={14} /> VOLVER A TABLA
             </button>
 
-            <div className="flex-1 bg-[#0A0A0A] rounded-lg p-3 flex flex-col min-h-[150px] md:min-h-0 overflow-hidden border border-zinc-850">
+            <div className="flex-1 bg-[#0A0A0A] rounded-lg p-3 flex flex-col min-h-[150px] xl:min-h-0 overflow-hidden border border-zinc-850">
               <span className="text-zinc-500 font-bold text-[10px] tracking-wider uppercase mb-2 block shrink-0">
                 Operarios
               </span>
@@ -1004,7 +1004,7 @@ export default function FicheroModule() {
                       key={op.nombre}
                       onClick={() => {
                         setOperarioSeleccionado(op.nombre);
-                        if (window.innerWidth < 768)
+                        if (window.innerWidth < 1280)
                           setMostrarOperariosMobile(false);
                       }}
                       className={`w-full text-left py-2 px-2.5 rounded flex items-center justify-between transition-colors cursor-pointer ${
@@ -1252,7 +1252,7 @@ export default function FicheroModule() {
             </div>
 
             {/* VISTA CELULAR: una fila por día (el calendario de 7 columnas no entra) */}
-            <div className="md:hidden print:hidden flex-1 min-h-0 overflow-y-auto custom-scrollbar space-y-1.5 pb-2">
+            <div className="xl:hidden print:hidden flex-1 min-h-0 overflow-y-auto custom-scrollbar space-y-1.5 pb-2">
               {celdasMes
                 .filter((c) => c && (c.data?.ingreso || c.data?.egreso || c.data?.esFeriado || c.fechaISO < hoyISO))
                 .filter((c) => {
@@ -1327,7 +1327,7 @@ export default function FicheroModule() {
                 })}
             </div>
 
-            <div className="hidden md:contents print:contents">
+            <div className="hidden xl:contents print:contents">
             <div className="grid grid-cols-7 gap-1 md:gap-2 pb-2 shrink-0">
               {["LU", "MA", "MI", "JU", "VI", "SÁ", "DO"].map((dia) => (
                 <div
@@ -1340,12 +1340,12 @@ export default function FicheroModule() {
             </div>
 
             <div
-              className="flex-1 min-h-0 grid grid-cols-7 gap-1 md:gap-2 print:gap-2 overflow-y-auto custom-scrollbar md:overflow-hidden print:overflow-visible print:h-auto"
+              className="flex-1 min-h-0 grid grid-cols-7 gap-1 md:gap-2 print:gap-2 overflow-y-auto custom-scrollbar print:overflow-visible print:h-auto"
               style={{
                 gridTemplateRows:
-                  window.innerWidth < 768
+                  window.innerWidth < 1280
                     ? "auto"
-                    : `repeat(${cantidadFilas}, minmax(0, 1fr))`,
+                    : `repeat(${cantidadFilas}, minmax(92px, 1fr))`,
               }}
             >
               {celdasMes.map((celda, idx) => {
@@ -1353,7 +1353,7 @@ export default function FicheroModule() {
                   return (
                     <div
                       key={`empty-${idx}`}
-                      className="rounded border border-transparent min-h-[60px] md:min-h-0 print:min-h-[88px]"
+                      className="rounded border border-transparent min-h-[60px] md:min-h-[84px] print:min-h-[88px]"
                     />
                   );
                 }
@@ -1396,7 +1396,7 @@ export default function FicheroModule() {
                             ? "Sin fichada registrada (Día laboral pasado)"
                             : "Clic para configurar este día"
                       }
-                      className={`rounded border transition-colors flex flex-col justify-between p-1.5 md:p-2 cursor-pointer min-h-[60px] md:min-h-0 print:min-h-[88px] ${
+                      className={`rounded border transition-colors flex flex-col justify-between p-1.5 md:p-2 cursor-pointer min-h-[60px] md:min-h-[84px] print:min-h-[88px] ${
                         esFeriado
                           ? "border-purple-600/60 bg-purple-950/20 hover:border-purple-500"
                           : esAusenteSemana
@@ -1432,7 +1432,7 @@ export default function FicheroModule() {
                     key={celda.fechaISO}
                     onClick={() => abrirConfiguracionDia(celda)}
                     title="Clic para configurar día (hora pactada, feriado, normales)"
-                    className={`rounded border transition-colors p-1 md:p-2 print:p-2.5 flex flex-col justify-between min-h-[60px] md:min-h-0 print:min-h-[88px] overflow-hidden shadow-sm cursor-pointer ${
+                    className={`rounded border transition-colors p-1 md:p-2 print:p-2.5 flex flex-col justify-between min-h-[60px] md:min-h-[84px] print:min-h-[88px] overflow-hidden shadow-sm cursor-pointer ${
                       esFeriado
                         ? "border-purple-500 bg-purple-950/25"
                         : estaTildado

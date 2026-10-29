@@ -113,6 +113,18 @@ button { transition-property: background-color, border-color, color, opacity, tr
 .animate-pixel-bounce { animation: pixel-bounce 1.6s infinite ease-in-out; }
 .animate-scanline { animation: scanline 2.5s linear infinite; }
 
+/* Celular acostado y pantallas bajas: menos marco, más contenido */
+@media (max-height: 500px) {
+  .cf-topbar { height: 46px !important; }
+  .cf-bottomnav { display: none !important; }
+}
+html, body { max-width: 100%; }
+
+/* Tablas: nunca se aprietan hasta ilegibles; si no entran, la tabla se desliza de costado */
+main table { min-width: 560px; }
+main [class*="overflow-x-auto"], main [class*="overflow-auto"] { -webkit-overflow-scrolling: touch; }
+img, video, canvas { max-width: 100%; }
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
   .cf-calzada, .cf-ruta, .cf-punto { animation: none; }

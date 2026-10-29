@@ -61,7 +61,7 @@ function NavItem({ item, activo, colapsado, onClick }) {
         />
       )}
       {activo && (
-        <Carril className="absolute left-[-9px] top-2 bottom-2 hidden md:block" />
+        <Carril className="absolute left-[-9px] top-2 bottom-2 hidden lg:block" />
       )}
       <Icon
         size={18}
@@ -161,11 +161,23 @@ export default function Layout({
   const [paleta, setPaleta] = useState(false);
   const [colapsado, setColapsado] = useState(() => {
     try {
-      return localStorage.getItem("cf_sidebar_colapsado") === "1";
+      const g = localStorage.getItem("cf_sidebar_colapsado");
+      if (g === "1" || g === "0") return g === "1";
     } catch {
-      return false;
+      /* sin almacenamiento */
     }
+    // Sin preferencia guardada: en pantallas medianas (notebook chica, tablet) arranca achicado
+    return window.innerWidth < 1440;
   });
+  const alternarMenu = () =>
+    setColapsado((c) => {
+      try {
+        localStorage.setItem("cf_sidebar_colapsado", c ? "0" : "1");
+      } catch {
+        /* ok */
+      }
+      return !c;
+    });
 
   const items = useMemo(() => itemsPermitidos(usuarioActual), [usuarioActual]);
   const actual = itemPorId(activeModule);
@@ -176,14 +188,6 @@ export default function Layout({
     anotarReciente(activeModule);
     return leerRecientes();
   }, [activeModule]);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem("cf_sidebar_colapsado", colapsado ? "1" : "0");
-    } catch {
-      /* ok */
-    }
-  }, [colapsado]);
 
   useEffect(() => {
     const onKey = (e) => {
@@ -217,7 +221,7 @@ export default function Layout({
     <div className="h-dvh w-full flex bg-[#0a0a0c] text-zinc-100 font-sans antialiased overflow-hidden selection:bg-[#FF5A00]/30 selection:text-white print:h-auto print:block print:bg-white print:overflow-visible">
       {/* ESCRITORIO: menú fijo */}
       <aside
-        className={`hidden md:flex flex-col shrink-0 bg-[#0e0e11] border-r border-white/[0.06] transition-[width] duration-300 ease-out print:hidden ${colapsado ? "w-[76px]" : "w-[268px]"}`}
+        className={`hidden lg:flex flex-col shrink-0 bg-[#0e0e11] border-r border-white/[0.06] transition-[width] duration-300 ease-out print:hidden ${colapsado ? "w-[76px]" : "w-[268px]"}`}
       >
         <div
           className={`flex items-center h-16 shrink-0 ${colapsado ? "justify-center" : "px-5 gap-3"}`}
@@ -245,7 +249,7 @@ export default function Layout({
           onElegir={ir}
         />
         <button
-          onClick={() => setColapsado((c) => !c)}
+          onClick={alternarMenu}
           className={`mx-3 mb-2 flex items-center gap-3 h-9 rounded-xl text-xs text-zinc-500 hover:text-white hover:bg-white/[0.04] transition-colors ${colapsado ? "justify-center" : "px-3"}`}
           aria-label={colapsado ? "Expandir menú" : "Achicar menú"}
         >
@@ -266,7 +270,7 @@ export default function Layout({
 
       {/* MÓVIL: cajón con todos los módulos */}
       <div
-        className={`md:hidden fixed inset-0 z-[100] transition-opacity duration-200 print:hidden ${drawer ? "opacity-100 visible bg-black/70 backdrop-blur-sm" : "opacity-0 invisible"}`}
+        className={`lg:hidden fixed inset-0 z-[100] transition-opacity duration-200 print:hidden ${drawer ? "opacity-100 visible bg-black/70 backdrop-blur-sm" : "opacity-0 invisible"}`}
         onClick={() => setDrawer(false)}
       >
         <div
@@ -302,22 +306,22 @@ export default function Layout({
 
       <div className="flex-1 min-w-0 flex flex-col print:block">
         {/* BARRA SUPERIOR */}
-        <header className="h-14 md:h-16 shrink-0 flex items-center gap-3 px-3 md:px-6 pt-[env(safe-area-inset-top)] box-content border-b border-white/[0.06] bg-[#0e0e11]/90 backdrop-blur z-30 print:hidden">
+        <header className="cf-topbar h-14 md:h-16 shrink-0 flex items-center gap-3 px-3 md:px-6 pt-[env(safe-area-inset-top)] box-content border-b border-white/[0.06] bg-[#0e0e11]/90 backdrop-blur z-30 print:hidden">
           <button
             onClick={() => setDrawer(true)}
             aria-label="Abrir menú"
-            className="md:hidden p-2 -ml-1 rounded-lg text-zinc-300 hover:bg-white/5"
+            className="lg:hidden p-2 -ml-1 rounded-lg text-zinc-300 hover:bg-white/5"
           >
             <Menu size={22} />
           </button>
           <img
             src={logo}
             alt=""
-            className="md:hidden w-8 h-8 rounded-full shrink-0"
+            className="lg:hidden w-8 h-8 rounded-full shrink-0"
           />
           <div className="min-w-0 flex-1">
             {grupoActual && (
-              <p className="hidden md:block text-xs text-zinc-500 leading-none mb-1">
+              <p className="hidden lg:block text-xs text-zinc-500 leading-none mb-1">
                 {grupoActual.label}
               </p>
             )}
@@ -372,7 +376,7 @@ export default function Layout({
 
         {/* BARRA INFERIOR (celular) */}
         <nav
-          className="md:hidden shrink-0 grid grid-cols-5 border-t border-white/[0.08] bg-[#0e0e11] pb-[env(safe-area-inset-bottom)] z-30 print:hidden"
+          className="cf-bottomnav lg:hidden shrink-0 grid grid-cols-5 border-t border-white/[0.08] bg-[#0e0e11] pb-[env(safe-area-inset-bottom)] z-30 print:hidden"
           aria-label="Accesos rápidos"
         >
           {[INICIO, ...atajos].map((it) => {
