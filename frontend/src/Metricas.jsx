@@ -241,7 +241,7 @@ export default function Metricas() {
     {
       rol: "assistant",
       texto:
-        "¡Hola! Soy Connie. Tengo la base de Conoflex conectada en tiempo real: puedo analizar ventas, stock y producción, armar gráficos y liquidar horas normales y extras según el convenio UOYEP y la Ley de Contrato de Trabajo. ¿Qué querés ver hoy?",
+        "¡Hola! Soy Connie, la asistente de Conoflex. ¿En qué te puedo ayudar hoy?",
     },
   ]);
   const [inputChat, setInputChat] = useState("");
@@ -1102,25 +1102,6 @@ export default function Metricas() {
             </div>
 
             {/* BARRA DE ENTRADA CHAT: SIN FORZAR MAYÚSCULAS */}
-            {mensajes.length <= 1 && !enviandoChat && (
-              <div className="px-3 sm:px-4 pt-3 bg-[#050505] border-t border-zinc-800 flex gap-2 overflow-x-auto">
-                {[
-                  "Dame las ventas de la semana",
-                  "Gráfico de ventas por mes de este año",
-                  "Liquidame las horas de octubre de todo el plantel",
-                  "¿Qué insumos están por quedarse sin stock?",
-                  "¿Cuánto es una hora extra al 100% de la categoría más alta?",
-                ].map((sug) => (
-                  <button
-                    key={sug}
-                    onClick={() => enviarMensajeChat(sug)}
-                    className="shrink-0 text-xs text-zinc-300 hover:text-black hover:bg-[#FF5A00] border border-zinc-700 hover:border-[#FF5A00] rounded-full px-3.5 py-2 transition-colors cursor-pointer whitespace-nowrap"
-                  >
-                    {sug}
-                  </button>
-                ))}
-              </div>
-            )}
             <div className="p-3 sm:p-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] bg-[#050505] border-t border-zinc-800 flex items-center gap-2 sm:gap-3">
               <input
                 type="text"
