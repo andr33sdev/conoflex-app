@@ -1,33 +1,152 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { motion } from "framer-motion";
 import {
-  Boxes,
-  Layers,
-  Sparkles,
-  Cpu,
-  BarChart3,
-  CalendarDays,
-  ClipboardCheck,
-  Activity,
-  Bot,
   RefreshCw,
   Menu,
   X,
-  ClipboardList,
-  ShieldCheck,
   LogOut,
-  UserCircle,
-  Truck,
-  Building2,
-  ListChecks,
-  Fingerprint,
-  Wrench,
-  Smartphone,
-  ScanFace,
-  ShoppingCart,
-  MessageSquareText,
+  Search,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Ellipsis,
 } from "lucide-react";
 
 import logo from "./assets/logo.svg";
+import CommandPalette from "./CommandPalette";
+import {
+  GRUPOS,
+  INICIO,
+  itemsPermitidos,
+  itemPorId,
+  anotarReciente,
+  leerRecientes,
+} from "./menu";
+
+const iniciales = (n = "") =>
+  n
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((p) => p[0]?.toUpperCase())
+    .join("") || "U";
+
+/* Marca de carril: el detalle propio de Conoflex. Una línea de calzada discontinua amarilla. */
+const Carril = ({ className = "" }) => (
+  <span
+    aria-hidden
+    className={`block w-[3px] rounded-full ${className}`}
+    style={{
+      backgroundImage:
+        "repeating-linear-gradient(to bottom,#FFD60A 0 6px,transparent 6px 10px)",
+    }}
+  />
+);
+
+function NavItem({ item, activo, colapsado, onClick }) {
+  const Icon = item.icon;
+  return (
+    <button
+      onClick={onClick}
+      title={colapsado ? item.label : undefined}
+      aria-current={activo ? "page" : undefined}
+      className={`relative w-full flex items-center gap-3 rounded-xl text-[13.5px] font-medium transition-colors ${
+        colapsado ? "justify-center h-11" : "px-3 h-10"
+      } ${activo ? "text-white" : "text-zinc-400 hover:text-white hover:bg-white/[0.04]"}`}
+    >
+      {activo && (
+        <motion.span
+          layoutId="nav-activo"
+          className="absolute inset-0 rounded-xl bg-[#FF5A00]/[0.13] ring-1 ring-inset ring-[#FF5A00]/25"
+          transition={{ type: "spring", stiffness: 500, damping: 40 }}
+        />
+      )}
+      {activo && (
+        <Carril className="absolute left-[-9px] top-2 bottom-2 hidden md:block" />
+      )}
+      <Icon
+        size={18}
+        className={`relative shrink-0 ${activo ? "text-[#FF5A00]" : ""}`}
+      />
+      {!colapsado && <span className="relative truncate">{item.label}</span>}
+      {!colapsado && item.highlight && !activo && (
+        <span
+          className="relative ml-auto w-1.5 h-1.5 rounded-full bg-[#FFD60A]"
+          aria-hidden
+        />
+      )}
+    </button>
+  );
+}
+
+function MenuCompleto({ items, activeModule, colapsado, onElegir }) {
+  return (
+    <nav
+      className="flex-1 overflow-y-auto custom-scrollbar px-3 pb-4 space-y-5"
+      aria-label="Módulos"
+    >
+      <NavItem
+        item={INICIO}
+        activo={activeModule === "inicio"}
+        colapsado={colapsado}
+        onClick={() => onElegir("inicio")}
+      />
+      {GRUPOS.map((g) => {
+        const lista = items.filter((i) => i.grupo === g.id);
+        if (!lista.length) return null;
+        return (
+          <div key={g.id} className="space-y-0.5">
+            {!colapsado ? (
+              <p className="px-3 pb-1.5 text-xs font-semibold text-zinc-500">
+                {g.label}
+              </p>
+            ) : (
+              <div className="mx-3 mb-2 border-t border-white/[0.06]" />
+            )}
+            {lista.map((it) => (
+              <NavItem
+                key={it.id}
+                item={it}
+                activo={activeModule === it.id}
+                colapsado={colapsado}
+                onClick={() => onElegir(it.id)}
+              />
+            ))}
+          </div>
+        );
+      })}
+    </nav>
+  );
+}
+
+function Usuario({ usuario, onLogout, colapsado }) {
+  return (
+    <div
+      className={`p-3 border-t border-white/[0.06] ${colapsado ? "flex flex-col items-center gap-2" : "flex items-center gap-3"}`}
+    >
+      <div className="w-9 h-9 rounded-full bg-gradient-to-br from-[#FF5A00] to-[#c23f00] grid place-items-center text-[13px] font-bold text-black shrink-0">
+        {iniciales(usuario.nombre || usuario.email)}
+      </div>
+      {!colapsado && (
+        <div className="min-w-0 flex-1">
+          <p className="text-[13px] font-semibold text-white truncate">
+            {usuario.nombre || usuario.email || "Usuario"}
+          </p>
+          <p className="text-xs text-zinc-500 truncate capitalize">
+            {(usuario.rol || "").toLowerCase()}
+          </p>
+        </div>
+      )}
+      <button
+        onClick={onLogout}
+        title="Cerrar sesión"
+        aria-label="Cerrar sesión"
+        className="p-2 rounded-lg text-zinc-500 hover:text-rose-400 hover:bg-rose-500/10 transition-colors"
+      >
+        <LogOut size={17} />
+      </button>
+    </div>
+  );
+}
 
 export default function Layout({
   children,
@@ -38,271 +157,259 @@ export default function Layout({
   usuarioActual = { nombre: "Usuario", rol: "ADMIN", permisos: ["*"] },
   onLogout = () => {},
 }) {
-  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-
-  const ALL_MENU_ITEMS = [
-    { id: "materias-primas", label: "Materias Primas", icon: Boxes },
-    { id: "proveedores", label: "Proveedores", icon: Building2 },
-    {
-      id: "solicitudes-compra",
-      label: "Solicitudes de Compra",
-      icon: ShoppingCart,
-    },
-    { id: "semielaborados", label: "Semielaborados", icon: Layers },
-    { id: "reflectivas", label: "Reflectivas & Pegado", icon: Sparkles },
-    { id: "ingenieria", label: "Ingeniería & BOM", icon: Cpu },
-    {
-      id: "metricas",
-      label: "Métricas & KPI",
-      icon: BarChart3,
-      highlight: true,
-    },
-    {
-      id: "connie",
-      label: "Connie IA",
-      icon: MessageSquareText,
-      highlight: true,
-    },
-    {
-      id: "simulador-carga",
-      label: "Simulador 3D Carga",
-      icon: Truck,
-    },
-    {
-      id: "lab-ensamblaje",
-      label: "Laboratorio 3D",
-      icon: Wrench,
-    },
-    {
-      id: "lab-ar",
-      label: "AR (Manual WebXR)",
-      icon: ScanFace,
-    },
-    {
-      id: "visor-ar",
-      label: "Visor AR (Nativo)",
-      icon: Smartphone,
-      highlight: true,
-    },
-    { id: "planificacion", label: "Planificación OT", icon: CalendarDays },
-    { id: "carga-produccion", label: "Carga Producción", icon: ClipboardCheck },
-    { id: "comercial", label: "IA Comercial", icon: Bot },
-    { id: "pedidos", label: "Pedidos", icon: ListChecks },
-    { id: "despachar-pedidos", label: "Despachar Pedidos", icon: Truck },
-    {
-      id: "solicitudes-internas",
-      label: "Solicitudes Internas",
-      icon: ClipboardList,
-    },
-    { id: "planta-online", label: "Planta On-Line", icon: Activity },
-    {
-      id: "control-asistencia",
-      label: "Control Asistencia",
-      icon: Fingerprint,
-    },
-    {
-      id: "admin-usuarios",
-      label: "Panel Administrador",
-      icon: ShieldCheck,
-      adminOnly: true,
-    },
-  ];
-
-  const rolUpper = (usuarioActual?.rol || "").toUpperCase();
-  const permisos = usuarioActual?.permisos || [];
-
-  const menuItems = ALL_MENU_ITEMS.filter((item) => {
-    if (rolUpper === "ADMIN") return true;
-    if (item.adminOnly) return false;
-
-    // EXCEPCIÓN: Mostrar siempre los módulos 3D y AR a todos los usuarios
-    if (
-      item.id === "visor-ar" ||
-      item.id === "lab-ar" ||
-      item.id === "lab-ensamblaje" ||
-      item.id === "simulador-carga"
-    ) {
-      return true;
+  const [drawer, setDrawer] = useState(false);
+  const [paleta, setPaleta] = useState(false);
+  const [colapsado, setColapsado] = useState(() => {
+    try {
+      return localStorage.getItem("cf_sidebar_colapsado") === "1";
+    } catch {
+      return false;
     }
-
-    return permisos.includes(item.id) || permisos.includes("*");
   });
 
-  const handleSelectModule = (id) => {
+  const items = useMemo(() => itemsPermitidos(usuarioActual), [usuarioActual]);
+  const actual = itemPorId(activeModule);
+  const grupoActual = GRUPOS.find((g) => g.id === actual?.grupo);
+
+  // Anota el módulo actual (idempotente) y lee la lista para la barra inferior del celular
+  const recientes = useMemo(() => {
+    anotarReciente(activeModule);
+    return leerRecientes();
+  }, [activeModule]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("cf_sidebar_colapsado", colapsado ? "1" : "0");
+    } catch {
+      /* ok */
+    }
+  }, [colapsado]);
+
+  useEffect(() => {
+    const onKey = (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setPaleta((p) => !p);
+      }
+    };
+    const abrir = () => setPaleta(true);
+    window.addEventListener("keydown", onKey);
+    window.addEventListener("cf:buscar", abrir);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("cf:buscar", abrir);
+    };
+  }, []);
+
+  const ir = (id) => {
     setActiveModule(id);
-    setIsSidebarOpen(false);
+    setDrawer(false);
   };
 
+  // Barra inferior del celular: Inicio + los 3 módulos más recientes + Menú
+  const atajos = useMemo(() => {
+    const ids = recientes.filter((id) => items.some((i) => i.id === id));
+    const relleno = items.map((i) => i.id).filter((id) => !ids.includes(id));
+    return [...ids, ...relleno].slice(0, 3).map(itemPorId);
+  }, [recientes, items]);
+
   return (
-    <div className="h-dvh w-full bg-[#020202] flex items-center justify-center p-0 md:p-3 lg:p-4 overflow-hidden font-sans text-zinc-100 antialiased selection:bg-[#FF5A00]/30 selection:text-white relative">
-      <style>{`
-        .bg-dots-orange {
-          background-image: radial-gradient(rgba(255, 90, 0, 0.2) 1px, transparent 1px);
-          background-size: 24px 26px;
-        }
-        @keyframes dotsDrift {
-          0% { background-position: 0 0; }
-          50% { background-position: 12px 13px; }
-          100% { background-position: 0 0; }
-        }
-        .animate-dots-drift {
-          animation: dotsDrift 20s ease-in-out infinite;
-        }
-      `}</style>
-
-      <div className="absolute inset-0 pointer-events-none z-0 overflow-hidden">
-        <div className="absolute inset-0 bg-dots-orange animate-dots-drift opacity-60" />
-      </div>
-
-      <div
-        className={`fixed inset-0 z-[100] transition-all duration-300 ${
-          isSidebarOpen
-            ? "opacity-100 visible bg-black/80 backdrop-blur-sm"
-            : "opacity-0 invisible bg-transparent"
-        }`}
-        onClick={() => setIsSidebarOpen(false)}
+    <div className="h-dvh w-full flex bg-[#0a0a0c] text-zinc-100 font-sans antialiased overflow-hidden selection:bg-[#FF5A00]/30 selection:text-white print:h-auto print:block print:bg-white print:overflow-visible">
+      {/* ESCRITORIO: menú fijo */}
+      <aside
+        className={`hidden md:flex flex-col shrink-0 bg-[#0e0e11] border-r border-white/[0.06] transition-[width] duration-300 ease-out print:hidden ${colapsado ? "w-[76px]" : "w-[268px]"}`}
       >
         <div
-          className={`absolute top-0 left-0 h-full w-72 max-w-[85vw] bg-[#050505] p-5 flex flex-col justify-between border-r border-zinc-800 shadow-[20px_0_50px_rgba(0,0,0,0.8)] transition-transform duration-300 ease-out ${
-            isSidebarOpen ? "translate-x-0" : "-translate-x-full"
-          }`}
+          className={`flex items-center h-16 shrink-0 ${colapsado ? "justify-center" : "px-5 gap-3"}`}
+        >
+          <img
+            src={logo}
+            alt="Conoflex"
+            className="w-9 h-9 rounded-full shrink-0"
+          />
+          {!colapsado && (
+            <div className="min-w-0">
+              <p className="font-extrabold italic text-[17px] tracking-tight leading-none text-white">
+                Conoflex
+              </p>
+              <p className="text-xs text-zinc-500 mt-1 leading-none">
+                Gestión de producción
+              </p>
+            </div>
+          )}
+        </div>
+        <MenuCompleto
+          items={items}
+          activeModule={activeModule}
+          colapsado={colapsado}
+          onElegir={ir}
+        />
+        <button
+          onClick={() => setColapsado((c) => !c)}
+          className={`mx-3 mb-2 flex items-center gap-3 h-9 rounded-xl text-xs text-zinc-500 hover:text-white hover:bg-white/[0.04] transition-colors ${colapsado ? "justify-center" : "px-3"}`}
+          aria-label={colapsado ? "Expandir menú" : "Achicar menú"}
+        >
+          {colapsado ? (
+            <PanelLeftOpen size={17} />
+          ) : (
+            <>
+              <PanelLeftClose size={17} /> Achicar menú
+            </>
+          )}
+        </button>
+        <Usuario
+          usuario={usuarioActual}
+          onLogout={onLogout}
+          colapsado={colapsado}
+        />
+      </aside>
+
+      {/* MÓVIL: cajón con todos los módulos */}
+      <div
+        className={`md:hidden fixed inset-0 z-[100] transition-opacity duration-200 print:hidden ${drawer ? "opacity-100 visible bg-black/70 backdrop-blur-sm" : "opacity-0 invisible"}`}
+        onClick={() => setDrawer(false)}
+      >
+        <div
+          className={`absolute left-0 top-0 h-full w-[86vw] max-w-[320px] bg-[#0e0e11] border-r border-white/10 flex flex-col pt-[env(safe-area-inset-top)] transition-transform duration-300 ease-out ${drawer ? "translate-x-0" : "-translate-x-full"}`}
           onClick={(e) => e.stopPropagation()}
         >
-          <button
-            onClick={() => setIsSidebarOpen(false)}
-            className="absolute top-4 right-4 p-2 text-zinc-500 hover:text-[#FF5A00] transition-colors bg-black rounded-lg border border-zinc-800"
-          >
-            <X size={20} />
-          </button>
-
-          <div className="space-y-6 pt-2">
-            <div className="flex items-center gap-3 px-2 py-3 border-b border-zinc-800/60 pr-8">
-              <div className="w-10 h-10 sm:w-10 sm:h-10 rounded-full shrink-0 overflow-hidden">
-                <img
-                  src={logo}
-                  alt="Logo"
-                  className="w-full h-full object-cover"
-                />
-              </div>
-              <div className="min-w-0">
-                <h1 className="font-extrabold italic text-base tracking-tighter text-white uppercase truncate">
-                  CONOFLEX APP
-                </h1>
-                <p className="text-[9px] text-[#FF5A00] font-bold tracking-widest flex items-center gap-1.5 mt-0.5 uppercase truncate">
-                  <span className="w-1.5 h-1.5 rounded-full bg-[#FF5A00] shadow-[0_0_8px_#FF5A00] shrink-0" />
-                  GESTIÓN INDUSTRIAL
-                </p>
-              </div>
-            </div>
-
-            <nav className="space-y-1">
-              <span className="px-2 text-[10px] uppercase text-zinc-600 font-bold tracking-widest block mb-2">
-                Módulos del Sistema
-              </span>
-              <div className="space-y-1 max-h-[65vh] overflow-y-auto custom-scrollbar pr-2">
-                {menuItems.map((item) => {
-                  const Icon = item.icon;
-                  const isActive = activeModule === item.id;
-                  return (
-                    <button
-                      key={item.id}
-                      onClick={() => handleSelectModule(item.id)}
-                      className={`w-full flex items-center gap-3 px-3 py-3 text-xs font-bold uppercase tracking-wider transition-all duration-300 border-b-2 rounded-t-sm ${
-                        isActive
-                          ? "text-[#FF5A00] border-[#FF5A00] bg-[#FF5A00]/10"
-                          : "text-zinc-500 hover:text-white border-transparent hover:bg-zinc-900/50"
-                      }`}
-                    >
-                      <Icon
-                        size={18}
-                        className={
-                          isActive ? "text-[#FF5A00]" : "text-zinc-500"
-                        }
-                      />
-                      <span className="truncate">{item.label}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            </nav>
-          </div>
-
-          <div className="pt-4 border-t border-zinc-800/60 space-y-3 shrink-0">
-            <div className="bg-black p-3.5 rounded-xl border border-zinc-800/60 flex items-center gap-3 shadow-inner">
-              <UserCircle size={28} className="text-zinc-500 shrink-0" />
-              <div className="flex-1 min-w-0">
-                <p className="text-xs font-bold text-white truncate">
-                  {usuarioActual.nombre || usuarioActual.email || "Usuario"}
-                </p>
-                <p className="text-[10px] font-black text-[#FF5A00] uppercase tracking-widest truncate">
-                  {usuarioActual.rol}
-                </p>
-              </div>
-            </div>
-
+          <div className="flex items-center h-16 px-5 gap-3 shrink-0">
+            <img src={logo} alt="" className="w-9 h-9 rounded-full" />
+            <p className="font-extrabold italic text-[17px] tracking-tight text-white flex-1">
+              Conoflex
+            </p>
             <button
-              onClick={onLogout}
-              className="w-full bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-400 text-[10px] font-bold py-3 rounded-xl flex items-center justify-center gap-2 transition-all active:scale-95 uppercase tracking-wider"
+              onClick={() => setDrawer(false)}
+              aria-label="Cerrar menú"
+              className="p-2 rounded-lg text-zinc-400 hover:bg-white/5"
             >
-              <LogOut size={14} />
-              <span>Cerrar Sesión</span>
+              <X size={20} />
             </button>
           </div>
+          <MenuCompleto
+            items={items}
+            activeModule={activeModule}
+            colapsado={false}
+            onElegir={ir}
+          />
+          <Usuario
+            usuario={usuarioActual}
+            onLogout={onLogout}
+            colapsado={false}
+          />
         </div>
       </div>
 
-      <div className="w-full max-w-[1600px] h-full md:max-h-[98vh] flex flex-col rounded-none md:rounded-2xl border-0 md:border md:border-zinc-800/90 bg-[#030303] shadow-[0_0_60px_rgba(0,0,0,0.95)] overflow-hidden relative z-10 print:border-none print:shadow-none print:bg-white print:h-auto print:max-h-none">
+      <div className="flex-1 min-w-0 flex flex-col print:block">
         {/* BARRA SUPERIOR */}
-        <div className="flex items-center justify-between p-3 sm:p-4 pt-[max(0.75rem,env(safe-area-inset-top))] sm:pt-4 border-b border-zinc-800/50 print:border-gray-300 bg-[#050505] print:bg-white shrink-0 z-30">
-          <div className="flex items-center gap-3 sm:gap-4 min-w-0">
-            <button
-              onClick={() => setIsSidebarOpen(true)}
-              className="print:hidden p-2 sm:p-2.5 text-zinc-400 hover:text-[#FFD700] hover:border-[#FFD700] bg-black border border-zinc-800 rounded-lg shrink-0 transition-colors cursor-pointer"
+        <header className="h-14 md:h-16 shrink-0 flex items-center gap-3 px-3 md:px-6 pt-[env(safe-area-inset-top)] box-content border-b border-white/[0.06] bg-[#0e0e11]/90 backdrop-blur z-30 print:hidden">
+          <button
+            onClick={() => setDrawer(true)}
+            aria-label="Abrir menú"
+            className="md:hidden p-2 -ml-1 rounded-lg text-zinc-300 hover:bg-white/5"
+          >
+            <Menu size={22} />
+          </button>
+          <img
+            src={logo}
+            alt=""
+            className="md:hidden w-8 h-8 rounded-full shrink-0"
+          />
+          <div className="min-w-0 flex-1">
+            {grupoActual && (
+              <p className="hidden md:block text-xs text-zinc-500 leading-none mb-1">
+                {grupoActual.label}
+              </p>
+            )}
+            <p
+              className="text-[15px] md:text-lg font-bold text-white truncate leading-tight"
+              style={{ fontStretch: "110%" }}
             >
-              <Menu size={22} />
-            </button>
-
-            <div className="print:hidden w-10 h-10 sm:w-10 sm:h-10 rounded-full shrink-0 overflow-hidden">
-              <img
-                src={logo}
-                alt="Logo"
-                className="w-full h-full object-cover"
-              />
-            </div>
-
-            <div className="print:hidden flex flex-col min-w-0 justify-center">
-              <span className="text-white print:text-black font-extrabold italic text-base sm:text-xl uppercase tracking-tighter truncate leading-none">
-                CONOFLEX APP
-              </span>
-              <span className="text-[9px] sm:text-[10px] text-[#FF5A00] tracking-widest font-bold uppercase truncate mt-0.5 sm:mt-1">
-                GESTIÓN DE PRODUCCIÓN
-              </span>
-            </div>
+              {actual?.label || "Conoflex"}
+            </p>
           </div>
 
           {activeModule === "semielaborados" && (
             <button
               onClick={onReloadSheets}
               disabled={isReloading}
-              className="print:hidden bg-[#FFD700] hover:bg-white text-black px-4 py-2 rounded-lg shrink-0 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 font-bold text-[10px] sm:text-xs uppercase tracking-wider"
+              className="flex items-center gap-2 px-3 md:px-4 h-9 rounded-xl bg-[#FFD60A] text-black text-[13px] font-bold hover:brightness-110 disabled:opacity-50 transition"
             >
               <RefreshCw
-                size={14}
+                size={15}
                 className={isReloading ? "animate-spin" : ""}
               />
               <span className="hidden sm:inline">
-                {isReloading ? "Sincronizando..." : "Sincronizar Sheets"}
+                {isReloading ? "Sincronizando…" : "Sincronizar Sheets"}
               </span>
             </button>
           )}
-        </div>
 
-        <main className="flex-1 overflow-y-auto overflow-x-hidden p-0 min-h-0 relative bg-black print:bg-white print:overflow-visible pb-[env(safe-area-inset-bottom)]">
-          <div className="h-full transition-all duration-300 ease-out">
+          <button
+            onClick={() => setPaleta(true)}
+            className="flex items-center gap-2 h-9 px-2.5 md:px-3 rounded-xl border border-white/10 bg-white/[0.03] text-zinc-400 hover:text-white hover:border-white/20 transition-colors"
+            aria-label="Buscar módulo"
+          >
+            <Search size={16} />
+            <span className="hidden md:inline text-[13px]">Buscar módulo</span>
+            <kbd className="hidden lg:inline text-[11px] text-zinc-500 border border-white/10 rounded px-1.5">
+              Ctrl K
+            </kbd>
+          </button>
+        </header>
+
+        <main className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden relative bg-[#0a0a0c] print:bg-white print:overflow-visible">
+          <motion.div
+            key={activeModule}
+            className="h-full"
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.22, ease: [0.2, 0.8, 0.2, 1] }}
+          >
             {children}
-          </div>
+          </motion.div>
         </main>
+
+        {/* BARRA INFERIOR (celular) */}
+        <nav
+          className="md:hidden shrink-0 grid grid-cols-5 border-t border-white/[0.08] bg-[#0e0e11] pb-[env(safe-area-inset-bottom)] z-30 print:hidden"
+          aria-label="Accesos rápidos"
+        >
+          {[INICIO, ...atajos].map((it) => {
+            const Icon = it.icon;
+            const activo = activeModule === it.id;
+            return (
+              <button
+                key={it.id}
+                onClick={() => ir(it.id)}
+                className={`relative flex flex-col items-center justify-center gap-1 py-2 min-h-[56px] ${activo ? "text-white" : "text-zinc-500"}`}
+              >
+                {activo && (
+                  <span className="absolute top-0 h-[3px] w-8 rounded-b-full bg-[#FF5A00]" />
+                )}
+                <Icon size={20} className={activo ? "text-[#FF5A00]" : ""} />
+                <span className="text-[10.5px] font-medium max-w-full px-1 truncate">
+                  {it.corto || it.label}
+                </span>
+              </button>
+            );
+          })}
+          <button
+            onClick={() => setDrawer(true)}
+            className="flex flex-col items-center justify-center gap-1 py-2 min-h-[56px] text-zinc-500"
+          >
+            <Ellipsis size={20} />
+            <span className="text-[10.5px] font-medium">Más</span>
+          </button>
+        </nav>
       </div>
+
+      <CommandPalette
+        abierto={paleta}
+        onCerrar={() => setPaleta(false)}
+        items={items}
+        onElegir={ir}
+      />
     </div>
   );
 }
