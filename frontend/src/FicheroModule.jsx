@@ -1229,6 +1229,83 @@ export default function FicheroModule() {
               </div>
             </div>
 
+            {/* VISTA CELULAR: una fila por día (el calendario de 7 columnas no entra) */}
+            <div className="md:hidden print:hidden flex-1 min-h-0 overflow-y-auto custom-scrollbar space-y-1.5 pb-2">
+              {celdasMes
+                .filter((c) => c && (c.data?.ingreso || c.data?.egreso || c.data?.esFeriado || c.fechaISO < hoyISO))
+                .filter((c) => {
+                  const [a, m, d] = c.fechaISO.split("-").map(Number);
+                  const dow = new Date(a, m - 1, d).getDay();
+                  return c.data?.ingreso || c.data?.egreso || c.data?.esFeriado || (dow >= 1 && dow <= 5);
+                })
+                .map((c) => {
+                  const [a, m, d] = c.fechaISO.split("-").map(Number);
+                  const fecha = new Date(a, m - 1, d);
+                  const diaTxt = ["DOM", "LUN", "MAR", "MIÉ", "JUE", "VIE", "SÁB"][fecha.getDay()];
+                  const dd = c.data || {};
+                  const tiene = !!(dd.ingreso || dd.egreso);
+                  const hsExt = (dd.horasExtrasDiurnas || 0) + (dd.horasExtrasNocturnas || 0);
+                  const tildado = !!diasTildadosExtras[`${operarioSeleccionado}_${c.fechaISO}`];
+                  const fmt = (n) => (n % 1 === 0 ? n : n.toFixed(1));
+                  return (
+                    <div
+                      key={c.fechaISO}
+                      onClick={() => abrirConfiguracionDia(c)}
+                      className={`flex items-center gap-3 rounded-lg border px-3 py-2.5 cursor-pointer active:scale-[0.99] transition ${
+                        dd.esFeriado
+                          ? "bg-purple-950/30 border-purple-800/50"
+                          : tiene
+                            ? "bg-[#0A0A0A] border-zinc-800"
+                            : "bg-rose-950/20 border-rose-900/40"
+                      }`}
+                    >
+                      <div className="w-11 shrink-0 text-center">
+                        <div className="text-lg font-black text-white leading-none">{c.numero}</div>
+                        <div className="text-[10px] font-bold text-zinc-500 tracking-wider mt-0.5">{diaTxt}</div>
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        {tiene ? (
+                          <div className="flex items-center gap-2 font-mono text-sm">
+                            <span className="text-emerald-400">{dd.ingreso || "--:--"}</span>
+                            <span className="text-zinc-600">→</span>
+                            <span className="text-rose-400">{dd.egreso || "--:--"}</span>
+                            {dd.esSiguienteDia && (
+                              <span className="text-[10px] bg-cyan-600 text-white px-1.5 py-0.5 rounded font-sans font-bold">+1 D</span>
+                            )}
+                            {dd.esNoche ? <Moon size={13} className="text-cyan-400 shrink-0" /> : <Sun size={13} className="text-amber-400 shrink-0" />}
+                          </div>
+                        ) : (
+                          <div className="text-xs font-semibold text-rose-400">
+                            {dd.esFeriado ? "Feriado" : "Sin fichada"}
+                          </div>
+                        )}
+                        <div className="flex flex-wrap gap-1.5 mt-1">
+                          {dd.esFeriado && <span className="text-[10px] bg-purple-900/70 text-purple-300 border border-purple-700/60 px-1.5 py-0.5 rounded font-black uppercase">Feriado</span>}
+                          {dd.tieneAjuste && !dd.esFeriado && <span className="text-[10px] bg-blue-900/50 text-blue-300 border border-blue-700/40 px-1.5 py-0.5 rounded font-bold">AJUSTE</span>}
+                          {tiene && <span className="text-[11px] text-zinc-400">{fmt(dd.horasNormales || 0)} hs normales</span>}
+                        </div>
+                      </div>
+                      {hsExt > 0 && (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); alternarTildeDia(c.fechaISO); }}
+                          aria-pressed={tildado}
+                          className={`shrink-0 min-h-[40px] px-3 rounded-lg text-xs font-black font-mono border transition ${
+                            tildado
+                              ? dd.esNoche
+                                ? "bg-cyan-500/25 text-cyan-300 border-cyan-500/40"
+                                : "bg-amber-500/25 text-amber-300 border-amber-500/40"
+                              : "bg-zinc-900 text-zinc-500 border-zinc-700 line-through"
+                          }`}
+                        >
+                          +{fmt(hsExt)}h ext
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+            </div>
+
+            <div className="hidden md:contents print:contents">
             <div className="grid grid-cols-7 gap-1 md:gap-2 pb-2 shrink-0">
               {["LU", "MA", "MI", "JU", "VI", "SÁ", "DO"].map((dia) => (
                 <div
@@ -1438,6 +1515,7 @@ export default function FicheroModule() {
                 );
               })}
             </div>
+            </div>
           </div>
         </div>
       ) : (
@@ -1512,8 +1590,8 @@ export default function FicheroModule() {
             ref={tableContainerRef}
             className="flex-1 min-h-0 border border-zinc-800/80 rounded bg-[#0A0A0A] flex flex-col overflow-hidden relative"
           >
-            <div className="w-full h-full overflow-hidden">
-              <table className="w-full text-left border-collapse">
+            <div className="w-full h-full overflow-auto">
+              <table className="w-full min-w-[720px] text-left border-collapse">
                 <thead className="bg-[#050505] border-b border-zinc-800 sticky top-0 z-10 select-none">
                   <tr>
                     <th

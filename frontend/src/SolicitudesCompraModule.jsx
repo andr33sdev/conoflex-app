@@ -585,8 +585,8 @@ export default function SolicitudesCompraModule() {
         ref={tableContainerRef}
         className="print-hidden flex-1 min-h-0 border border-zinc-800/80 rounded bg-[#0A0A0A] flex flex-col overflow-hidden relative"
       >
-        <div className="w-full h-full overflow-hidden">
-          <table className="w-full text-left border-collapse">
+        <div className="w-full h-full overflow-auto">
+          <table className="w-full min-w-[860px] text-left border-collapse">
             <thead className="bg-[#050505] border-b border-zinc-800 sticky top-0 z-10">
               <tr>
                 <th
@@ -1098,8 +1098,8 @@ export default function SolicitudesCompraModule() {
                 </div>
 
                 <div className="flex-1 overflow-y-auto p-4 custom-scrollbar bg-[#070709]">
-                  <div className="border border-zinc-800/90 rounded-lg overflow-hidden bg-[#0D0D10]">
-                    <table className="w-full text-left border-collapse text-xs">
+                  <div className="border border-zinc-800/90 rounded-lg overflow-x-auto bg-[#0D0D10]">
+                    <table className="w-full min-w-[560px] text-left border-collapse text-xs">
                       <thead className="bg-[#121216] border-b border-zinc-800 text-[9px] uppercase tracking-wider text-zinc-400 sticky top-0 z-10">
                         <tr>
                           <th className="py-2.5 px-3 w-10 text-center">#</th>

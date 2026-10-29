@@ -859,8 +859,8 @@ export default function ProduccionPlanta() {
               </p>
             </div>
 
-            <div className="flex-1 bg-[#0e1422] border border-slate-800/80 rounded-xl overflow-hidden shadow-2xl flex flex-col">
-              <table className="w-full text-left text-xs border-collapse">
+            <div className="flex-1 bg-[#0e1422] border border-slate-800/80 rounded-xl overflow-x-auto shadow-2xl flex flex-col">
+              <table className="w-full min-w-[640px] text-left text-xs border-collapse">
                 <thead className="bg-[#090d16] text-slate-400 font-mono text-[10px] uppercase border-b border-slate-800">
                   <tr>
                     <th className="p-3 w-40">Máquina</th>
@@ -1154,9 +1154,9 @@ export default function ProduccionPlanta() {
                   )}
                 </div>
 
-                <div className="bg-[#070a12] border border-slate-800 rounded-xl overflow-hidden mt-2">
+                <div className="bg-[#070a12] border border-slate-800 rounded-xl overflow-x-auto mt-2">
                   {draftConfig.productos.length > 0 ? (
-                    <table className="w-full text-left">
+                    <table className="w-full min-w-[420px] text-left">
                       <thead className="bg-[#090d16] font-mono text-[9px] text-slate-500 uppercase border-b border-slate-800">
                         <tr>
                           <th className="p-2 w-24">Código</th>

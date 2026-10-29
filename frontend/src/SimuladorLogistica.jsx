@@ -1144,7 +1144,7 @@ export default function SimuladorLogistica() {
             </div>
           </div>
 
-          <div className="bg-[#050505]/95 border border-zinc-800 backdrop-blur-md p-1.5 rounded-xl shadow-2xl flex items-center gap-1.5 pointer-events-auto">
+          <div className="bg-[#050505]/95 border border-zinc-800 backdrop-blur-md p-1.5 rounded-xl shadow-2xl flex items-center gap-1.5 pointer-events-auto max-w-full overflow-x-auto">
             <button
               onClick={() => {
                 setTransformMode("translate");
@@ -1405,8 +1405,8 @@ export default function SimuladorLogistica() {
                 MANIFIESTO DEL CAMIÓN
               </h3>
             </div>
-            <div className="max-h-80 overflow-y-auto custom-scrollbar border border-zinc-800 rounded-xl bg-black">
-              <table className="w-full text-left text-xs">
+            <div className="max-h-80 overflow-auto custom-scrollbar border border-zinc-800 rounded-xl bg-black">
+              <table className="w-full min-w-[480px] text-left text-xs">
                 <thead className="bg-[#101010] text-[9px] font-bold text-zinc-400 uppercase tracking-widest border-b border-zinc-800">
                   <tr>
                     <th className="p-3">Artículo</th>

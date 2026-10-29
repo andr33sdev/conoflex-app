@@ -401,13 +401,13 @@ export default function Ingenieria() {
           </div>
 
           {/* TABS DE MÓDULO */}
-          <div className="flex items-center gap-0 w-full sm:w-auto border border-zinc-800 bg-[#050505]">
+          <div className="flex items-center gap-0 w-full sm:w-auto border border-zinc-800 bg-[#050505] overflow-x-auto">
             <button
               onClick={() => {
                 setActiveTab("SE");
                 setCurrentPage(1);
               }}
-              className={`px-5 py-2.5 text-xs font-bold transition-all cursor-pointer whitespace-nowrap uppercase tracking-widest border-r border-zinc-800 ${
+              className={`px-5 py-2.5 text-xs font-bold transition-all cursor-pointer whitespace-nowrap shrink-0 uppercase tracking-widest border-r border-zinc-800 ${
                 activeTab === "SE"
                   ? "bg-[#FF5A00] text-black"
                   : "text-zinc-500 hover:text-white hover:bg-zinc-900"
@@ -421,7 +421,7 @@ export default function Ingenieria() {
                 setActiveTab("PT");
                 setCurrentPage(1);
               }}
-              className={`px-5 py-2.5 text-xs font-bold transition-all cursor-pointer whitespace-nowrap uppercase tracking-widest ${
+              className={`px-5 py-2.5 text-xs font-bold transition-all cursor-pointer whitespace-nowrap shrink-0 uppercase tracking-widest ${
                 activeTab === "PT"
                   ? "bg-[#FF5A00] text-black"
                   : "text-zinc-500 hover:text-white hover:bg-zinc-900"
