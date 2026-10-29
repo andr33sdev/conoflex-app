@@ -237,3 +237,24 @@ test("calculadora: precedencia, porcentajes, decimales con coma y rechazo de có
   assert.ok(calcular("process.exit()").error);
   assert.ok(calcular("2 +").error);
 });
+
+test("doble toque del reloj (ENTRADA y SALIDA a segundos) no genera un turno de 0 hs: se toma la primera y se avisa", () => {
+  // viernes: entrada de la mañana, y a las 18:56 el reloj grabó el mismo toque como ENTRADA y como SALIDA
+  const fich = [
+    f("2026-10-23 06:55:00", "ENTRADA"),
+    f("2026-10-23 18:56:45", "ENTRADA"),
+    f("2026-10-23 18:56:51", "SALIDA"),
+  ];
+  const r = liquidarPeriodo({ fichadas: fich, fechasIncluidas: new Set(["2026-10-23"]), valorHoraDe: () => VH, detalle: "completo" });
+  assert.equal(r.turnos_liquidados, 1);
+  assert.equal(r.dias[0].egreso, "18:56");
+  assert.equal(r.horas_totales, 11.5); // 07:00 (redondeado) a 18:56 -> 11 h 56 -> 11,5
+  assert.ok(r.avisos.some((a) => /dos marcas casi juntas/.test(a)));
+});
+
+test("doble toque sin entrada de la mañana: queda sin salida (no 0 hs)", () => {
+  const fich = [f("2026-10-23 18:56:45", "ENTRADA"), f("2026-10-23 18:56:51", "SALIDA")];
+  const r = liquidarPeriodo({ fichadas: fich, fechasIncluidas: new Set(["2026-10-23"]), valorHoraDe: () => VH, detalle: "completo" });
+  assert.equal(r.dias[0].sin_salida, true);
+  assert.ok(r.avisos.some((a) => /no se registró la salida/.test(a)));
+});
