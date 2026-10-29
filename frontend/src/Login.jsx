@@ -57,7 +57,7 @@ export default function Login({ onLogin }) {
   };
 
   return (
-    <div className="min-h-screen bg-black flex items-center justify-center p-4 md:p-8 font-sans selection:bg-[#FF5A00]/40 selection:text-white relative overflow-hidden select-none">
+    <div className="min-h-dvh bg-black flex items-center justify-center p-4 md:p-8 font-sans selection:bg-[#FF5A00]/40 selection:text-white relative overflow-hidden select-none">
       {/* 1. ILUMINACIÓN Y RETÍCULA INDUSTRIAL DE FONDO */}
       <div className="absolute inset-0 bg-[radial-gradient(#27272a_1px,transparent_1px)] [background-size:28px_28px] opacity-40 pointer-events-none" />
       <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[650px] h-[650px] bg-[#FF5A00]/15 rounded-full blur-[160px] pointer-events-none animate-pulse" />

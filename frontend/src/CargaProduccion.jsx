@@ -311,10 +311,10 @@ export default function CargaProduccion() {
       </div>
 
       {/* 2. BARRA DE PESTAÑAS (CARGA / PENDIENTES / HISTORIAL) */}
-      <div className="flex items-center gap-2 bg-[#24173e] p-1.5 border-2 border-[#432874] rounded-xs font-pixel text-xs shrink-0 shadow-[2px_2px_0px_#000]">
+      <div className="flex items-center gap-2 bg-[#24173e] p-1.5 border-2 border-[#432874] rounded-xs font-pixel text-xs shrink-0 shadow-[2px_2px_0px_#000] overflow-x-auto">
         <button
           onClick={() => setActiveTab("FORMULARIO")}
-          className={`flex-1 sm:flex-none px-4 py-1.5 font-bold rounded-2xs flex items-center justify-center gap-1.5 transition-all ${
+          className={`flex-1 sm:flex-none whitespace-nowrap px-4 py-1.5 font-bold rounded-2xs flex items-center justify-center gap-1.5 transition-all ${
             activeTab === "FORMULARIO"
               ? "bg-[#ffbe00] text-[#2c1a4d]"
               : "text-[#a594c9] hover:text-white"
@@ -325,7 +325,7 @@ export default function CargaProduccion() {
 
         <button
           onClick={() => setActiveTab("PENDIENTES")}
-          className={`flex-1 sm:flex-none px-4 py-1.5 font-bold rounded-2xs flex items-center justify-center gap-1.5 relative transition-all ${
+          className={`flex-1 sm:flex-none whitespace-nowrap px-4 py-1.5 font-bold rounded-2xs flex items-center justify-center gap-1.5 relative transition-all ${
             activeTab === "PENDIENTES"
               ? "bg-[#ffbe00] text-[#2c1a4d]"
               : "text-[#a594c9] hover:text-white"
@@ -341,7 +341,7 @@ export default function CargaProduccion() {
 
         <button
           onClick={() => setActiveTab("HISTORIAL")}
-          className={`flex-1 sm:flex-none px-4 py-1.5 font-bold rounded-2xs flex items-center justify-center gap-1.5 transition-all ${
+          className={`flex-1 sm:flex-none whitespace-nowrap px-4 py-1.5 font-bold rounded-2xs flex items-center justify-center gap-1.5 transition-all ${
             activeTab === "HISTORIAL"
               ? "bg-[#ffbe00] text-[#2c1a4d]"
               : "text-[#a594c9] hover:text-white"

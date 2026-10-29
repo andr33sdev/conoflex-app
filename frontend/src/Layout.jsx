@@ -127,7 +127,7 @@ export default function Layout({
   };
 
   return (
-    <div className="h-screen w-full bg-[#020202] flex items-center justify-center p-0 md:p-3 lg:p-4 overflow-hidden font-sans text-zinc-100 antialiased selection:bg-[#FF5A00]/30 selection:text-white relative">
+    <div className="h-dvh w-full bg-[#020202] flex items-center justify-center p-0 md:p-3 lg:p-4 overflow-hidden font-sans text-zinc-100 antialiased selection:bg-[#FF5A00]/30 selection:text-white relative">
       <style>{`
         .bg-dots-orange {
           background-image: radial-gradient(rgba(255, 90, 0, 0.2) 1px, transparent 1px);
@@ -246,7 +246,7 @@ export default function Layout({
 
       <div className="w-full max-w-[1600px] h-full md:max-h-[98vh] flex flex-col rounded-none md:rounded-2xl border-0 md:border md:border-zinc-800/90 bg-[#030303] shadow-[0_0_60px_rgba(0,0,0,0.95)] overflow-hidden relative z-10 print:border-none print:shadow-none print:bg-white print:h-auto print:max-h-none">
         {/* BARRA SUPERIOR */}
-        <div className="flex items-center justify-between p-3 sm:p-4 border-b border-zinc-800/50 print:border-gray-300 bg-[#050505] print:bg-white shrink-0 z-30">
+        <div className="flex items-center justify-between p-3 sm:p-4 pt-[max(0.75rem,env(safe-area-inset-top))] sm:pt-4 border-b border-zinc-800/50 print:border-gray-300 bg-[#050505] print:bg-white shrink-0 z-30">
           <div className="flex items-center gap-3 sm:gap-4 min-w-0">
             <button
               onClick={() => setIsSidebarOpen(true)}
@@ -290,7 +290,7 @@ export default function Layout({
           )}
         </div>
 
-        <main className="flex-1 overflow-y-auto overflow-x-hidden p-0 min-h-0 relative bg-black print:bg-white print:overflow-visible">
+        <main className="flex-1 overflow-y-auto overflow-x-hidden p-0 min-h-0 relative bg-black print:bg-white print:overflow-visible pb-[env(safe-area-inset-bottom)]">
           <div className="h-full transition-all duration-300 ease-out">
             {children}
           </div>

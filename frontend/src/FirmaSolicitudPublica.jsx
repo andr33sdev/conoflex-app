@@ -127,7 +127,7 @@ export default function FirmaSolicitudPublica({
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#050505] text-white flex items-center justify-center font-sans">
+      <div className="min-h-dvh bg-[#050505] text-white flex items-center justify-center font-sans">
         <p className="text-xs uppercase font-bold tracking-widest text-zinc-500">
           Cargando solicitud...
         </p>
@@ -137,7 +137,7 @@ export default function FirmaSolicitudPublica({
 
   if (!solicitud) {
     return (
-      <div className="min-h-screen bg-[#050505] text-white flex items-center justify-center font-sans p-4">
+      <div className="min-h-dvh bg-[#050505] text-white flex items-center justify-center font-sans p-4">
         <p className="text-rose-400 text-xs font-bold uppercase">
           Solicitud no encontrada o enlace inválido.
         </p>
@@ -150,7 +150,7 @@ export default function FirmaSolicitudPublica({
     : !!solicitud.firma_jefe;
 
   return (
-    <div className="min-h-screen bg-[#060608] text-zinc-100 font-sans p-4 sm:p-6 flex flex-col items-center justify-center select-none">
+    <div className="min-h-dvh bg-[#060608] text-zinc-100 font-sans p-4 sm:p-6 flex flex-col items-center justify-center select-none">
       <div className="w-full max-w-xl bg-[#0F0F12] border border-zinc-800 rounded-2xl shadow-2xl overflow-hidden flex flex-col">
         {/* CABECERA */}
         <div className="p-4 sm:p-5 border-b border-zinc-800 bg-[#141418] flex items-center justify-between">

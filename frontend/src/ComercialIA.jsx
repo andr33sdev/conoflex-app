@@ -856,14 +856,14 @@ export default function ComercialIA() {
               </div>
             </div>
 
-            <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar border border-zinc-800/80 rounded-xl bg-[#030303]">
+            <div className="flex-1 min-h-0 overflow-auto custom-scrollbar border border-zinc-800/80 rounded-xl bg-[#030303]">
               {productosFiltrados.length === 0 ? (
                 <div className="h-64 flex flex-col items-center justify-center text-zinc-600   text-xs gap-2">
                   <Box size={28} className="text-zinc-800" />
                   <span>No se encontraron productos coincidentes.</span>
                 </div>
               ) : vistaModo === "tabla" ? (
-                <table className="w-full text-left text-xs border-collapse">
+                <table className="w-full min-w-[640px] text-left text-xs border-collapse">
                   <thead className="bg-[#080808] text-zinc-500   text-[10px] uppercase border-b border-zinc-800 sticky top-0 z-10 tracking-wider">
                     <tr>
                       <th className="p-3 w-28 text-center">FOTOS</th>

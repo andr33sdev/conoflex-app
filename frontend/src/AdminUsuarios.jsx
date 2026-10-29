@@ -360,8 +360,8 @@ export default function AdminUsuarios() {
             </button>
           </div>
 
-          <div className="border border-slate-800/80 rounded-xl overflow-hidden bg-slate-950/40">
-            <table className="w-full text-left border-collapse">
+          <div className="border border-slate-800/80 rounded-xl overflow-x-auto bg-slate-950/40">
+            <table className="w-full min-w-[640px] text-left border-collapse">
               <thead>
                 <tr className="border-b border-slate-800/80 bg-slate-900/60 text-[11px] font-bold text-slate-400 uppercase tracking-wider">
                   <th className="py-3 px-4">Nombre / ID</th>

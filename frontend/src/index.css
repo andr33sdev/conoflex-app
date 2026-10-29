@@ -61,3 +61,21 @@ body {
 .animate-scanline {
   animation: scanline 2.5s linear infinite;
 }
+
+/* ---------------- Celular ---------------- */
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+body { -webkit-tap-highlight-color: transparent; overscroll-behavior-y: none; }
+button, a, select, summary, [role="button"] { touch-action: manipulation; }
+
+@media (max-width: 767px) {
+  /* iOS hace zoom al enfocar campos con letra menor a 16px */
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]),
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+  /* Textos de 7 a 9 px no se leen en el celular: mínimo 10 px */
+  .text-\[7px\], .text-\[8px\], .text-\[9px\] { font-size: 10px !important; }
+  /* Scrollbars finas en pantallas táctiles */
+  ::-webkit-scrollbar { width: 4px; height: 4px; }
+}
