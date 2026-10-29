@@ -53,12 +53,11 @@ test("noche de lunes 22 a martes 06: 8 hs normales nocturnas (+13,33%)", () => {
   assert.equal(l.importe, 90664);
 });
 
-test("viernes 21 a sábado 09: el sábado hasta las 13 es todo extra al 50%, aunque no se hayan cumplido 9 hs", () => {
+test("viernes 21 a sábado 09: las primeras 9 hs son normales aunque crucen al sábado; después extra al 50%", () => {
   const l = turno("2026-10-09", "21:00", "2026-10-10", "09:00");
-  assert.equal(horas(l, "normal_nocturna"), 3); // viernes 21 a 24
-  assert.equal(horas(l, "extra50_nocturna"), 6); // sábado 00 a 06
+  assert.equal(horas(l, "normal_nocturna"), 9); // viernes 21 a sábado 06
   assert.equal(horas(l, "extra50_diurna"), 3); // sábado 06 a 09
-  assert.equal(l.importe, 33999 + 101997 + 45000);
+  assert.equal(l.importe, 101997 + 45000);
 });
 
 test("sábado 07 a 17: hasta las 13 extra al 50%; desde las 13, extra al 100% (no hay horas normales)", () => {
@@ -274,16 +273,16 @@ test("turno de 22 horas seguidas (entra 19:00, sale 17:00 del día siguiente): u
   assert.equal(r.horas_extra, 13);
 });
 
-test("turno que arranca el viernes de noche y sale el sábado: desde las 00:00 del sábado es extra al 50% y desde las 13:00 al 100%", () => {
+test("turno que arranca el viernes 19:00 y sale el sábado 17:00: 9 normales, extra 50% hasta las 13:00 y 100% desde las 13:00", () => {
   const fich = [f("2026-10-23 19:00:00", "ENTRADA"), f("2026-10-24 17:00:00", "SALIDA")];
   const r = liquidarPeriodo({ fichadas: fich, fechasIncluidas: new Set(["2026-10-23"]), valorHoraDe: () => VH, detalle: "completo" });
   assert.equal(r.horas_totales, 22);
   const c = r.por_categoria;
-  assert.equal(c.normal_diurna.horas, 2);
-  assert.equal(c.normal_nocturna.horas, 3);
-  assert.equal(c.extra50_nocturna.horas, 6);
-  assert.equal(c.extra50_diurna.horas, 7);
-  assert.equal(c.extra100_diurna.horas, 4);
+  assert.equal(c.normal_diurna.horas, 2); // viernes 19 a 21
+  assert.equal(c.normal_nocturna.horas, 7); // viernes 21 a sábado 04 (completa las 9 hs normales)
+  assert.equal(c.extra50_nocturna.horas, 2); // sábado 04 a 06
+  assert.equal(c.extra50_diurna.horas, 7); // sábado 06 a 13
+  assert.equal(c.extra100_diurna.horas, 4); // sábado 13 a 17
 });
 
 test("una ENTRADA 24 hs después sigue siendo un turno nuevo (no cierra al anterior)", () => {

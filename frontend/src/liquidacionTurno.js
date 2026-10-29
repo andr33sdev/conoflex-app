@@ -4,7 +4,8 @@
 //
 //  - Hora diurna 06:00–21:00; nocturna 21:00–06:00 con +13,33%.
 //  - Jornada normal: 9 hs desde el ingreso; el resto es extra al 50%.
-//  - Sábados hasta las 13:00: todo extra al 50%.
+//  - Turno que ingresa un sábado: hasta las 13:00 todo extra al 50%. Un turno que ingresa
+//    de lunes a viernes mantiene sus primeras 9 hs normales aunque pasen al sábado.
 //  - Sábados desde las 13:00, domingos y feriados: todo extra al 100%.
 //  - Sin tope de horas extra.
 //  - Redondeo: ingreso :45–:59 -> hora siguiente, :00–:10 -> en punto, :11–:44 tal cual;
@@ -62,6 +63,7 @@ export function liquidarTurnoMinutos({ entradaTs, salidaTs, esFeriado = () => fa
   const limiteNormalMin =
     ((ajuste && ajuste.horasNormales) || REGLAS.jornadaNormalHoras) * 60;
   const todasExtra = !!(ajuste && ajuste.todasExtra);
+  const entradaSabado = new Date(entradaTs).getDay() === 6;
 
   const min = {};
   for (let m = 0; m < totalMin; m++) {
@@ -75,7 +77,7 @@ export function liquidarTurnoMinutos({ entradaTs, salidaTs, esFeriado = () => fa
     const noche = hora >= REGLAS.nocturnoDesde || hora < REGLAS.nocturnoHasta;
     let cat;
     if (doble) cat = noche ? "extra100_nocturna" : "extra100_diurna";
-    else if (dow === 6 || todasExtra || m >= limiteNormalMin)
+    else if ((dow === 6 && entradaSabado) || todasExtra || m >= limiteNormalMin)
       cat = noche ? "extra50_nocturna" : "extra50_diurna";
     else cat = noche ? "normal_nocturna" : "normal_diurna";
     min[cat] = (min[cat] || 0) + 1;
