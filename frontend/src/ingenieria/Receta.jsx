@@ -32,6 +32,7 @@ export default function Receta({ r, onActivar, onEditar, onEliminar, ocupado }) 
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <h3 className="text-lg font-extrabold text-white leading-tight break-words">{r.nombre_version}</h3>
+            {r.proceso && <span className="inline-flex items-center rounded-full border border-[#FFD60A]/35 bg-[#FFD60A]/10 px-2.5 py-1 text-[11px] font-extrabold uppercase tracking-wide text-[#FFD60A]">{{ INYECCION: "Inyección", ROTOMOLDEO: "Rotomoldeo", EXTRUSION: "Extrusión" }[r.proceso] || r.proceso}</span>}
             {r.es_activa && (
               <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-400/40 bg-emerald-500/15 px-2.5 py-1 text-[11px] font-extrabold uppercase tracking-wide text-emerald-300">
                 <CheckCircle2 size={13} /> Activa en planta

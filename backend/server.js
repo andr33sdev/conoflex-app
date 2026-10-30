@@ -15,6 +15,7 @@ const { separarDuplicadas, asegurarTablaDuplicadas } = require("./fichero");
 const { asegurarTablasProduccion, registrarRutasProduccion } = require("./produccionRutas");
 const { asegurarTablaReflectivas, registrarRutasReflectivas } = require("./reflectivasRutas");
 const { asegurarTablasIngenieria, registrarRutasIngenieria } = require("./ingenieriasRutas");
+const { asegurarTablasNotificaciones, crearNotificacion, registrarRutasNotificaciones } = require("./notificaciones");
 const { asegurarTablaMovimientos, moverStock, historialMateriaPrima } = require("./stockMovimientos");
 const { asegurarComprasStock, buscarMateriaPrima, aplicarRecepcion, norm } = require("./comprasStock");
 const { asegurarColumnaPagoMensual } = require("./escala");
@@ -190,6 +191,7 @@ app.use(requireAuth);
 registrarRutasProduccion(app, db, requirePermiso);
 registrarRutasReflectivas(app, db, requirePermiso, requireAdmin);
 registrarRutasIngenieria(app, db, requirePermiso, requireAdmin);
+registrarRutasNotificaciones(app, db);
 
 // Multer Config
 const uploadTemp = multer({ dest: UPLOADS_DIR });
@@ -801,6 +803,7 @@ async function initDB() {
     await asegurarTablasProduccion(db);
     await asegurarTablaReflectivas(db);
     await asegurarTablasIngenieria(db);
+    await asegurarTablasNotificaciones(db);
     await asegurarTablaMovimientos(db);
     await asegurarComprasStock(db);
 
@@ -4002,6 +4005,23 @@ app.post("/api/solicitudes-internas", async (req, res) => {
       est,
       fecha,
     ]);
+
+    // Aviso en la campanita de producción y admin (no del depósito, que es quien las genera).
+    const urgTexto = { BAJA: "baja", MEDIA: "media", ALTA: "alta", URGENTE: "urgente" }[String(urg).toUpperCase()] || String(urg).toLowerCase();
+    let quien = "Depósito";
+    try {
+      quien = await nombreDeUsuario(req);
+    } catch {
+      /* sin nombre: se avisa igual */
+    }
+    await crearNotificacion(db, {
+      tipo: "SOLICITUD_INTERNA",
+      titulo: `Nueva solicitud interna: ${nombre || codigo}`,
+      texto: `${cantidad} ${Number(cantidad) === 1 ? "unidad" : "unidades"} · urgencia ${urgTexto}${motivoFinal ? ` · ${motivoFinal}` : ""} · pedida por ${quien}`,
+      ruta: "/solicitudes-internas",
+      roles: ["ADMIN", "PRODUCCION"],
+      creada_por_id: req.user?.id || null,
+    });
 
     return res.json({ success: true, id: solId });
   } catch (error) {

@@ -14,6 +14,7 @@ async function agregarColumna(db, tabla, columna, definicion) {
 
 async function asegurarTablasIngenieria(db) {
   await agregarColumna(db, "ingenierias", "peso_pieza_kg", "DOUBLE NULL");
+  await agregarColumna(db, "ingenierias", "proceso", "VARCHAR(20) NULL");
   await agregarColumna(db, "ingenierias", "creado_por", "VARCHAR(255) NULL");
   await agregarColumna(db, "ingenierias", "actualizado_por", "VARCHAR(255) NULL");
   await agregarColumna(db, "ingenieria_detalles", "cantidad_tachada", "DOUBLE NULL");
@@ -55,6 +56,10 @@ async function asegurarTablasIngenieria(db) {
     )`);
 }
 
+// Cómo se fabrica un semielaborado. Solo el rotomoldeo lleva ciclos; solo la inyección se define por tachada.
+const PROCESOS = { INYECCION: "Inyección", ROTOMOLDEO: "Rotomoldeo", EXTRUSION: "Extrusión" };
+const procesoValido = (p) => (Object.prototype.hasOwnProperty.call(PROCESOS, String(p || "").toUpperCase()) ? String(p).toUpperCase() : null);
+
 const ACCIONES = {
   CREADA: "Creó la receta",
   MODIFICADA: "Modificó la receta",
@@ -90,6 +95,7 @@ async function fotoIngenieria(conn, id) {
     nombre_version: ing.nombre_version,
     es_activa: !!ing.es_activa,
     peso_pieza_kg: ing.peso_pieza_kg == null ? null : Number(ing.peso_pieza_kg),
+    proceso: ing.proceso || null,
     semielaborado_id: ing.semielaborado_id,
     producto_terminado_id: ing.producto_terminado_id,
     ingredientes: det.map((d) => ({
@@ -109,6 +115,7 @@ function resumenCambios(antes, despues) {
   if (!antes) return "Receta nueva.";
   const out = [];
   if (antes.nombre_version !== despues.nombre_version) out.push(`Nombre: "${antes.nombre_version}" → "${despues.nombre_version}"`);
+  if ((antes.proceso || null) !== (despues.proceso || null)) out.push(`Se hace en: ${PROCESOS[antes.proceso] || "sin definir"} → ${PROCESOS[despues.proceso] || "sin definir"}`);
   if ((antes.peso_pieza_kg || 0) !== (despues.peso_pieza_kg || 0)) out.push(`Peso de la pieza: ${antes.peso_pieza_kg ?? "—"} → ${despues.peso_pieza_kg ?? "—"} kg`);
   const clave = (i) => `${i.tipo}${i.id}`;
   const valor = (i) => (i.cantidad_tachada != null ? i.cantidad_tachada : i.cantidad);
@@ -141,7 +148,7 @@ function formulaDeFoto(foto) {
  * Valida el cuerpo de una receta y devuelve las filas a guardar.
  * Con fórmula por tachada (peso de la pieza + kg por tachada en las materias primas), la cantidad por pieza se calcula sola.
  */
-function prepararReceta(body) {
+function prepararReceta(body, { esSE = false } = {}) {
   const nombre = String(body.nombre_version || "").trim().replace(/\s+/g, " ");
   if (!nombre) return { error: "Poné un nombre para la receta." };
   if (nombre.length > 255) return { error: "El nombre es demasiado largo." };
@@ -149,7 +156,16 @@ function prepararReceta(body) {
   const mp = lista.filter((i) => i.materia_prima_id);
   const se = lista.filter((i) => !i.materia_prima_id && i.semielaborado_id);
   if (lista.length !== mp.length + se.length) return { error: "Hay una línea sin material." };
-  const conTachada = mp.some((i) => i.cantidad_tachada != null && i.cantidad_tachada !== "");
+  // Un semielaborado se hace en una máquina: de eso depende si lleva ciclos y si la receta es por tachada.
+  let proceso = null;
+  if (esSE) {
+    proceso = procesoValido(body.proceso);
+    if (!proceso) return { error: "Elegí en qué máquina se hace: Inyección, Rotomoldeo o Extrusión." };
+  }
+  const tieneTachada = mp.some((i) => i.cantidad_tachada != null && i.cantidad_tachada !== "");
+  if (proceso === "INYECCION" && mp.length && !mp.every((i) => i.cantidad_tachada != null && i.cantidad_tachada !== "")) return { error: "La inyección se define por tachada: poné los kg de cada material por tachada." };
+  // Fuera de la inyección la receta es por pieza: si llegara una tachada, se ignora.
+  const conTachada = proceso ? proceso === "INYECCION" && tieneTachada : tieneTachada;
   const filas = [];
   let peso = null;
   if (conTachada) {
@@ -178,7 +194,7 @@ function prepararReceta(body) {
     if (!(c > 0)) return { error: "Todas las cantidades tienen que ser mayores a cero." };
     filas.push({ materia_prima_id: null, semielaborado_id: i.semielaborado_id, cantidad: c, cantidad_tachada: null, unidad_medida: i.unidad_medida || "Unidades" });
   }
-  return { nombre, peso, filas };
+  return { nombre, peso, filas, proceso };
 }
 
 /** Compara lo usado en una carga con la receta activa del producto y, si difiere, deja un aviso para el admin. */
@@ -321,9 +337,13 @@ function registrarRutasIngenieria(app, db, requirePermiso, requireAdmin) {
       const nombre = String(req.body?.nombre_version || "").trim().replace(/\s+/g, " ") || `Usada en ${al.lote || "producción"}`;
       const [actual] = await conn.query("SELECT id FROM ingenierias WHERE semielaborado_id = ? AND es_activa = 1 ORDER BY id DESC LIMIT 1", [al.semielaborado_id]);
       const antes = actual.length ? await fotoIngenieria(conn, actual[0].id) : null;
+      const proceso = antes?.proceso || null;
+      // Fuera de la inyección la fórmula es por pieza: los kg usados quedan tal cual y el peso es su suma.
+      const porPieza = !!proceso && proceso !== "INYECCION";
+      const pesoNuevo = porPieza ? F.redondear(v.lineas.reduce((a, l) => a + l.kg_tachada, 0), 6) : peso;
       await conn.query("UPDATE ingenierias SET es_activa = 0 WHERE semielaborado_id = ?", [al.semielaborado_id]);
-      const [ins] = await conn.query("INSERT INTO ingenierias (semielaborado_id, nombre_version, es_activa, peso_pieza_kg, creado_por, actualizado_por, updated_at) VALUES (?,?,1,?,?,?,NOW())", [al.semielaborado_id, nombre.slice(0, 255), peso, usuario, usuario]);
-      const filas = F.cantidadesPorPieza(v.lineas, peso).map((c) => ({ materia_prima_id: c.mp_id, semielaborado_id: null, cantidad: c.kg_pieza, cantidad_tachada: c.kg_tachada, unidad_medida: "Kg" }));
+      const [ins] = await conn.query("INSERT INTO ingenierias (semielaborado_id, nombre_version, es_activa, peso_pieza_kg, proceso, creado_por, actualizado_por, updated_at) VALUES (?,?,1,?,?,?,?,NOW())", [al.semielaborado_id, nombre.slice(0, 255), pesoNuevo, proceso, usuario, usuario]);
+      const filas = (porPieza ? v.lineas.map((l) => ({ mp_id: l.mp_id, kg_pieza: l.kg_tachada, kg_tachada: null })) : F.cantidadesPorPieza(v.lineas, peso)).map((c) => ({ materia_prima_id: c.mp_id, semielaborado_id: null, cantidad: c.kg_pieza, cantidad_tachada: c.kg_tachada, unidad_medida: "Kg" }));
       const falta = await existenItems(conn, filas);
       if (falta) return { error: falta };
       await guardarFilas(conn, ins.insertId, filas);
@@ -348,7 +368,7 @@ function registrarRutasIngenieria(app, db, requirePermiso, requireAdmin) {
       const esSE = req.query.parent_type !== "PT";
       const campo = esSE ? "semielaborado_id" : "producto_terminado_id";
       const [rows] = await db.query(
-        `SELECT i.${campo} AS parent_id, i.id AS ingenieria_id, i.nombre_version, i.peso_pieza_kg, i.actualizado_por, i.updated_at,
+        `SELECT i.${campo} AS parent_id, i.id AS ingenieria_id, i.nombre_version, i.peso_pieza_kg, i.proceso, i.actualizado_por, i.updated_at,
                 (SELECT COUNT(*) FROM ingenieria_detalles d WHERE d.ingenieria_id = i.id) AS n_items,
                 (SELECT COUNT(*) FROM ingenieria_detalles d WHERE d.ingenieria_id = i.id AND d.cantidad_tachada IS NOT NULL) AS n_tachada
            FROM ingenierias i WHERE i.${campo} IS NOT NULL AND i.es_activa = 1`,
@@ -359,7 +379,7 @@ function registrarRutasIngenieria(app, db, requirePermiso, requireAdmin) {
       for (const r of rows) if (!porPadre.has(r.parent_id)) porPadre.set(r.parent_id, r);
       const out = {};
       for (const [id, r] of porPadre) {
-        out[id] = { ingenieria_id: r.ingenieria_id, version: r.nombre_version, peso_pieza_kg: r.peso_pieza_kg == null ? null : Number(r.peso_pieza_kg), items: Number(r.n_items), con_formula: Number(r.n_tachada) > 0, actualizado_por: r.actualizado_por, actualizado_at: r.updated_at, alertas: 0 };
+        out[id] = { ingenieria_id: r.ingenieria_id, version: r.nombre_version, peso_pieza_kg: r.peso_pieza_kg == null ? null : Number(r.peso_pieza_kg), proceso: r.proceso || null, items: Number(r.n_items), con_formula: Number(r.n_tachada) > 0, actualizado_por: r.actualizado_por, actualizado_at: r.updated_at, alertas: 0 };
       }
       for (const a of alertas) {
         out[a.parent_id] = { ...(out[a.parent_id] || { ingenieria_id: null, version: null }), alertas: Number(a.n) };
@@ -391,7 +411,7 @@ function registrarRutasIngenieria(app, db, requirePermiso, requireAdmin) {
       if (!["SE", "PT"].includes(parent_type) || !Number.isInteger(Number(parent_id))) return { error: "Faltan datos del producto." };
       const [padre] = await conn.query(isSE ? "SELECT id FROM semielaborados WHERE id = ?" : "SELECT id FROM productos_terminados WHERE id = ?", [parent_id]);
       if (!padre.length) return { error: "Ese producto ya no existe.", status: 404 };
-      const p = prepararReceta(req.body);
+      const p = prepararReceta(req.body, { esSE: isSE });
       if (p.error) return { error: p.error };
       const falta = await existenItems(conn, p.filas);
       if (falta) return { error: falta };
@@ -399,8 +419,8 @@ function registrarRutasIngenieria(app, db, requirePermiso, requireAdmin) {
       const campoFK = isSE ? "semielaborado_id" : "producto_terminado_id";
       if (req.body.es_activa) await conn.query(`UPDATE ingenierias SET es_activa = 0 WHERE ${campoFK} = ?`, [parent_id]);
       const [info] = await conn.query(
-        "INSERT INTO ingenierias (semielaborado_id, producto_terminado_id, nombre_version, es_activa, peso_pieza_kg, creado_por, actualizado_por, updated_at) VALUES (?,?,?,?,?,?,?,NOW())",
-        [isSE ? parent_id : null, !isSE ? parent_id : null, p.nombre, req.body.es_activa ? 1 : 0, p.peso, usuario, usuario],
+        "INSERT INTO ingenierias (semielaborado_id, producto_terminado_id, nombre_version, es_activa, peso_pieza_kg, proceso, creado_por, actualizado_por, updated_at) VALUES (?,?,?,?,?,?,?,?,NOW())",
+        [isSE ? parent_id : null, !isSE ? parent_id : null, p.nombre, req.body.es_activa ? 1 : 0, p.peso, p.proceso, usuario, usuario],
       );
       await guardarFilas(conn, info.insertId, p.filas);
       const despues = await fotoIngenieria(conn, info.insertId);
@@ -413,7 +433,7 @@ function registrarRutasIngenieria(app, db, requirePermiso, requireAdmin) {
     transaccion(res, async (conn) => {
       const antes = await fotoIngenieria(conn, req.params.id);
       if (!antes) return { error: "No encontré esa receta.", status: 404 };
-      const p = prepararReceta(req.body);
+      const p = prepararReceta(req.body, { esSE: !!antes.semielaborado_id });
       if (p.error) return { error: p.error };
       const falta = await existenItems(conn, p.filas);
       if (falta) return { error: falta };
@@ -421,7 +441,7 @@ function registrarRutasIngenieria(app, db, requirePermiso, requireAdmin) {
       const campoFK = antes.semielaborado_id ? "semielaborado_id" : "producto_terminado_id";
       const padre = antes.semielaborado_id || antes.producto_terminado_id;
       if (req.body.es_activa) await conn.query(`UPDATE ingenierias SET es_activa = 0 WHERE ${campoFK} = ?`, [padre]);
-      await conn.query("UPDATE ingenierias SET nombre_version = ?, es_activa = ?, peso_pieza_kg = ?, actualizado_por = ?, updated_at = NOW() WHERE id = ?", [p.nombre, req.body.es_activa ? 1 : 0, p.peso, usuario, req.params.id]);
+      await conn.query("UPDATE ingenierias SET nombre_version = ?, es_activa = ?, peso_pieza_kg = ?, proceso = ?, actualizado_por = ?, updated_at = NOW() WHERE id = ?", [p.nombre, req.body.es_activa ? 1 : 0, p.peso, p.proceso, usuario, req.params.id]);
       await guardarFilas(conn, req.params.id, p.filas);
       const despues = await fotoIngenieria(conn, req.params.id);
       await historial(conn, { id: Number(req.params.id) }, "MODIFICADA", usuario, { antes, despues });
@@ -469,4 +489,4 @@ function registrarRutasIngenieria(app, db, requirePermiso, requireAdmin) {
   });
 }
 
-module.exports = { asegurarTablasIngenieria, registrarRutasIngenieria, registrarAlertaDeCarga, fotoIngenieria, formulaDeFoto, prepararReceta, resumenCambios };
+module.exports = { PROCESOS, procesoValido, asegurarTablasIngenieria, registrarRutasIngenieria, registrarAlertaDeCarga, fotoIngenieria, formulaDeFoto, prepararReceta, resumenCambios };

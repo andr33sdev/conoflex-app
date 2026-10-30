@@ -9,13 +9,20 @@ import { COLORES, aNum, conPct, kgLindo, nf, norm } from "./formato";
 const campo = "w-full min-h-[48px] rounded-2xl bg-[#17171c] border border-white/[0.1] px-4 text-base text-white placeholder:text-zinc-600 focus:outline-none focus:border-[#FF5A00]/70";
 const MAX_RESULTADOS = 8;
 
-function Cuerpo({ parent, receta, cantidadRecetas, materias, semis, onCerrar, onGuardado, toast }) {
+const PROCESOS = [
+  { id: "INYECCION", nombre: "Inyección", nota: "Receta por tachada" },
+  { id: "ROTOMOLDEO", nombre: "Rotomoldeo", nota: "Lleva ciclos" },
+  { id: "EXTRUSION", nombre: "Extrusión", nota: "Receta por pieza" },
+];
+
+function Cuerpo({ parent, receta, cantidadRecetas, materias, semis, procesoSugerido, onCerrar, onGuardado, toast }) {
   const esSE = parent.type === "SE";
   const ings = receta?.ingredientes || [];
-  const convertida = esSE && ings.some((i) => i.item_type === "MP" && i.cantidad_tachada == null);
-  const pesoInicial = receta?.peso_pieza_kg != null ? Number(receta.peso_pieza_kg) : convertida ? Math.round(ings.filter((i) => i.item_type === "MP").reduce((a, i) => a + Number(i.cantidad), 0) * 1e4) / 1e4 : "";
+  const sinTachada = esSE && ings.some((i) => i.item_type === "MP" && i.cantidad_tachada == null);
+  const pesoInicial = receta?.peso_pieza_kg != null ? Number(receta.peso_pieza_kg) : sinTachada ? Math.round(ings.filter((i) => i.item_type === "MP").reduce((a, i) => a + Number(i.cantidad), 0) * 1e4) / 1e4 : "";
 
   const [nombre, setNombre] = useState(receta?.nombre_version || `Receta v${cantidadRecetas + 1}`);
+  const [proceso, setProceso] = useState(esSE ? receta?.proceso || procesoSugerido || "" : "");
   const [activa, setActiva] = useState(receta ? !!receta.es_activa : cantidadRecetas === 0);
   const [peso, setPeso] = useState(pesoInicial === "" ? "" : String(pesoInicial));
   const [filas, setFilas] = useState(() =>
@@ -34,19 +41,24 @@ function Cuerpo({ parent, receta, cantidadRecetas, materias, semis, onCerrar, on
   const [intento, setIntento] = useState(false);
   const [guardando, setGuardando] = useState(false);
 
-  const enTachada = (f) => esSE && f.tipo === "MP";
+  // En el semielaborado los materiales van en kg (o g); solo la inyección los define por tachada.
+  const enKg = (f) => esSE && f.tipo === "MP";
+  const enTachada = (f) => enKg(f) && proceso === "INYECCION";
+  const convertida = proceso === "INYECCION" && sinTachada;
   const kgDe = (f) => aNum(f.valor) / (f.unidad === "g" ? 1000 : 1);
   const tachada = filas.filter(enTachada);
   const lineas = tachada.map((f) => ({ mp_id: f.id, nombre: f.nombre, codigo: f.codigo, kg_tachada: kgDe(f) || 0 }));
   const total = lineas.reduce((a, l) => a + l.kg_tachada, 0);
+  const kgPorPieza = filas.filter(enKg).reduce((a, f) => a + (kgDe(f) || 0), 0);
   const pesoNum = aNum(peso);
   const pct = conPct(lineas);
 
   const errores = {};
   if (!nombre.trim()) errores.nombre = "Poné un nombre para la receta.";
+  if (esSE && !proceso) errores.proceso = "Elegí en qué máquina se hace.";
   if (!filas.length) errores.filas = "Agregá al menos un material.";
   if (tachada.length && !(pesoNum > 0)) errores.peso = "Poné cuánto pesa la pieza para calcular lo de cada material.";
-  const filaMala = filas.find((f) => !(enTachada(f) ? kgDe(f) : aNum(f.valor)) > 0);
+  const filaMala = filas.find((f) => !(enKg(f) ? kgDe(f) : aNum(f.valor)) > 0);
   if (filaMala) errores.filas = `Poné una cantidad mayor a cero en ${filaMala.nombre}.`;
 
   const resultados = useMemo(() => {
@@ -71,12 +83,15 @@ function Cuerpo({ parent, receta, cantidadRecetas, materias, semis, onCerrar, on
       parent_type: parent.type,
       nombre_version: nombre.trim(),
       es_activa: activa,
-      peso_pieza_kg: tachada.length ? pesoNum : undefined,
+      proceso: esSE ? proceso : undefined,
+      peso_pieza_kg: tachada.length ? pesoNum : esSE && kgPorPieza > 0 ? Math.round(kgPorPieza * 1e6) / 1e6 : undefined,
       ingredientes: filas.map((f) =>
         f.tipo === "MP"
           ? enTachada(f)
             ? { materia_prima_id: f.id, cantidad_tachada: kgDe(f), unidad_medida: "Kg" }
-            : { materia_prima_id: f.id, cantidad: aNum(f.valor), unidad_medida: f.unidad_medida || "Kg" }
+            : enKg(f)
+              ? { materia_prima_id: f.id, cantidad: kgDe(f), unidad_medida: "Kg" }
+              : { materia_prima_id: f.id, cantidad: aNum(f.valor), unidad_medida: f.unidad_medida || "Kg" }
           : { semielaborado_id: f.id, cantidad: aNum(f.valor), unidad_medida: f.unidad_medida || "Unidades" },
       ),
     };
@@ -115,6 +130,21 @@ function Cuerpo({ parent, receta, cantidadRecetas, materias, semis, onCerrar, on
 
         {esSE && (
           <section>
+            <span className="block text-[12px] font-extrabold uppercase tracking-[0.1em] text-zinc-400 mb-2">¿En qué máquina se hace?</span>
+            <div className="grid grid-cols-3 gap-2.5" role="radiogroup" aria-label="Proceso de fabricación">
+              {PROCESOS.map((x) => (
+                <button key={x.id} type="button" role="radio" aria-checked={proceso === x.id} onClick={() => setProceso(x.id)} className={`min-h-[68px] rounded-2xl border px-2 py-2.5 text-center cursor-pointer transition-colors ${proceso === x.id ? "border-[#FF5A00] bg-[#FF5A00]/15 text-white" : "border-white/[0.1] bg-white/[0.04] text-zinc-400 hover:text-white"} ${intento && errores.proceso ? "border-rose-500/70" : ""}`}>
+                  <span className="block text-[15px] font-extrabold leading-tight">{x.nombre}</span>
+                  <span className="block text-[11px] font-semibold mt-0.5 opacity-70">{x.nota}</span>
+                </button>
+              ))}
+            </div>
+            {intento && errores.proceso && <p className="mt-1.5 text-sm font-semibold text-rose-300">{errores.proceso}</p>}
+          </section>
+        )}
+
+        {esSE && proceso === "INYECCION" && (
+          <section>
             <label className="block max-w-xs">
               <span className="block text-[12px] font-extrabold uppercase tracking-[0.1em] text-zinc-400 mb-2">Peso de la pieza</span>
               <div className="relative">
@@ -129,9 +159,10 @@ function Cuerpo({ parent, receta, cantidadRecetas, materias, semis, onCerrar, on
         <section>
           <div className="flex items-end justify-between gap-3 mb-3">
             <div>
-              <h3 className="text-base font-extrabold text-white">{esSE ? "Fórmula por tachada" : "Materiales por unidad"}</h3>
-              <p className="text-xs text-zinc-500 mt-0.5">{esSE ? "Cuánto lleva cada material en una tachada. El sistema saca los porcentajes y lo que lleva cada pieza." : "Cantidad de cada material por cada unidad producida."}</p>
+              <h3 className="text-base font-extrabold text-white">{proceso === "INYECCION" ? "Fórmula por tachada" : esSE ? "Materiales por pieza" : "Materiales por unidad"}</h3>
+              <p className="text-xs text-zinc-500 mt-0.5">{proceso === "INYECCION" ? "Cuánto lleva cada material en una tachada. El sistema saca los porcentajes y lo que lleva cada pieza." : esSE ? "Cuánto lleva cada pieza de cada material." : "Cantidad de cada material por cada unidad producida."}</p>
             </div>
+            {esSE && proceso !== "INYECCION" && kgPorPieza > 0 && <span className="text-sm font-bold text-zinc-300 shrink-0">Pieza: <b className="text-white">{nf(kgPorPieza, 3)} kg</b></span>}
             {tachada.length > 0 && <span className="text-sm font-bold text-zinc-300 shrink-0">Tachada: <b className="text-white">{nf(total, 3)} kg</b></span>}
           </div>
 
@@ -158,7 +189,7 @@ function Cuerpo({ parent, receta, cantidadRecetas, materias, semis, onCerrar, on
                       <div className="mt-2.5 flex flex-wrap items-center gap-3">
                         <div className="flex items-stretch rounded-xl border border-white/[0.1] bg-[#17171c] overflow-hidden focus-within:border-[#FF5A00]/70">
                           <input value={f.valor} onChange={(e) => cambiar(idx, { valor: e.target.value.replace(/[^\d.,]/g, "") })} inputMode="decimal" aria-label={`Cantidad de ${f.nombre}`} placeholder="0" className="w-28 min-h-[46px] bg-transparent px-3 text-lg font-extrabold text-white text-right tabular-nums focus:outline-none" />
-                          {enTachada(f) ? (
+                          {enKg(f) ? (
                             <select value={f.unidad} onChange={(e) => cambiar(idx, { unidad: e.target.value })} aria-label="Unidad" className="bg-white/[0.05] border-l border-white/[0.08] px-2 text-sm font-bold text-zinc-200 focus:outline-none cursor-pointer">
                               <option value="kg">kg</option>
                               <option value="g">g</option>
@@ -223,10 +254,10 @@ function Cuerpo({ parent, receta, cantidadRecetas, materias, semis, onCerrar, on
   );
 }
 
-export default function EditorReceta({ abierto, clave, parent, receta, cantidadRecetas, materias, semis, onCerrar, onGuardado, toast }) {
+export default function EditorReceta({ abierto, clave, parent, receta, cantidadRecetas, materias, semis, procesoSugerido, onCerrar, onGuardado, toast }) {
   return (
     <Drawer abierto={abierto} onCerrar={onCerrar} ancho="sm:w-[640px] lg:w-[720px]" titulo={receta ? "Editar receta" : "Nueva receta"} subtitulo={parent ? `${parent.codigo} · ${parent.nombre}` : ""}>
-      {parent && <Cuerpo key={clave} parent={parent} receta={receta} cantidadRecetas={cantidadRecetas} materias={materias} semis={semis} onCerrar={onCerrar} onGuardado={onGuardado} toast={toast} />}
+      {parent && <Cuerpo key={clave} parent={parent} receta={receta} cantidadRecetas={cantidadRecetas} materias={materias} semis={semis} procesoSugerido={procesoSugerido} onCerrar={onCerrar} onGuardado={onGuardado} toast={toast} />}
     </Drawer>
   );
 }
