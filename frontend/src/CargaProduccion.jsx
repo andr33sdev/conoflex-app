@@ -10,11 +10,11 @@ import {
   Clock,
   Factory,
   Loader2,
+  MessageSquareText,
   Maximize2,
   Minimize2,
   Moon,
   PencilLine,
-  RefreshCw,
   Send,
   Sun,
   User,
@@ -30,6 +30,7 @@ import {
   turnoDeAhora,
   turnoLabel,
 } from "./produccion/util";
+import { Drawer } from "./produccion/ui";
 import FormularioCarga from "./tablet/FormularioCarga";
 
 const suave = [0.2, 0.8, 0.2, 1];
@@ -112,59 +113,24 @@ function Tarjeta({ a, i, onCargar }) {
         <Estado a={a} />
       </div>
 
-      <div className="mt-5">
-        <p className="text-2xl font-bold text-white leading-snug">
-          {a.modelo_nombre}
+      <div className="mt-4">
+        <p className="text-2xl font-bold text-white leading-snug">{a.modelo_nombre}</p>
+        <p className="mt-1 text-sm text-zinc-500">
+          Lote <span className="font-mono text-zinc-300">{a.lote}</span>
+          {a.receta.length > 0 && <> · Material {a.receta.map((r) => r.codigo).join(" + ")}</>}
         </p>
-        <p className="mt-1 text-sm text-zinc-500">{a.modelo_codigo}</p>
       </div>
 
-      <div className="mt-5 grid grid-cols-2 sm:grid-cols-3 gap-3">
-        <div className="rounded-2xl bg-white/[0.04] px-4 py-3">
-          <p className="text-[11px] font-extrabold uppercase tracking-[0.08em] text-zinc-500">
-            Cantidad
-          </p>
-          <p className="text-3xl font-extrabold text-[#FFD60A] tabular-nums leading-tight">
-            {num(a.cantidad)}
-          </p>
+      <div className="mt-5 flex items-end justify-between gap-4">
+        <div>
+          <p className="text-[11px] font-extrabold uppercase tracking-[0.08em] text-zinc-500">A producir</p>
+          <p className="text-6xl font-extrabold text-[#FFD60A] tabular-nums leading-none mt-1">{num(a.cantidad)}</p>
         </div>
-        <div className="rounded-2xl bg-white/[0.04] px-4 py-3">
-          <p className="text-[11px] font-extrabold uppercase tracking-[0.08em] text-zinc-500">
-            Lote
-          </p>
-          <p className="text-xl font-extrabold text-white font-mono leading-tight mt-1.5">
-            {a.lote}
-          </p>
-        </div>
-        <div className="rounded-2xl bg-white/[0.04] px-4 py-3 min-w-0 col-span-2 sm:col-span-1">
-          <p className="text-[11px] font-extrabold uppercase tracking-[0.08em] text-zinc-500">
-            Operario
-          </p>
-          <p className="text-xl font-extrabold text-white leading-tight mt-1.5 truncate inline-flex items-center gap-1.5 max-w-full">
-            <User size={16} className="text-zinc-500 shrink-0" />
-            <span className="truncate">{a.operario || "—"}</span>
-          </p>
-        </div>
+        <p className="text-lg font-bold text-zinc-300 inline-flex items-center gap-2 min-w-0 pb-1">
+          <User size={18} className="text-zinc-500 shrink-0" />
+          <span className="truncate">{a.operario || "—"}</span>
+        </p>
       </div>
-
-      {a.receta.length > 0 && (
-        <div className="mt-4">
-          <p className="text-[11px] font-extrabold uppercase tracking-[0.08em] text-zinc-500 mb-2">
-            Receta{a.receta_version ? ` · ${a.receta_version}` : ""}
-          </p>
-          <div className="flex flex-wrap gap-2">
-            {a.receta.map((r) => (
-              <span
-                key={r.codigo}
-                className="rounded-xl bg-white/[0.05] border border-white/[0.07] px-3 py-1.5 text-sm text-zinc-300"
-              >
-                <b className="text-white">{r.codigo}</b>{" "}
-                <span className="text-zinc-500">· {r.nombre}</span>
-              </span>
-            ))}
-          </div>
-        </div>
-      )}
 
       {a.rechazo && (
         <div className="mt-4 rounded-2xl bg-rose-500/10 border border-rose-500/30 px-4 py-3 text-base text-rose-100">
@@ -214,6 +180,87 @@ function Tarjeta({ a, i, onCargar }) {
         )}
       </div>
     </motion.article>
+  );
+}
+
+function ComentarioTurno({ t, fecha, operarios, onGuardado, toast }) {
+  const [abierto, setAbierto] = useState(false);
+  const [texto, setTexto] = useState("");
+  const [quien, setQuien] = useState("");
+  const [ocupado, setOcupado] = useState(false);
+  const nombres = [...new Set([...t.asignaciones.map((a) => a.operario), ...operarios].filter(Boolean))];
+
+  const abrir = () => {
+    setTexto(t.comentario || "");
+    setQuien(t.comentario_por || t.asignaciones[0]?.operario || "");
+    setAbierto(true);
+  };
+  const guardar = async () => {
+    setOcupado(true);
+    try {
+      await api("/api/prod/turnos/comentario", {
+        method: "PUT",
+        body: { fecha, turno: t.turno, comentario: texto, operario: quien },
+      });
+      toast("Comentario guardado");
+      setAbierto(false);
+      onGuardado();
+    } catch (e) {
+      toast(e.message, "error");
+    } finally {
+      setOcupado(false);
+    }
+  };
+
+  return (
+    <>
+      <div className="mt-5 rounded-3xl border border-white/[0.09] bg-[#111114] p-5 flex flex-wrap items-center gap-4">
+        <MessageSquareText size={28} className="text-sky-300 shrink-0" />
+        <div className="flex-1 min-w-[200px]">
+          <p className="text-lg font-extrabold text-white">Comentario del turno</p>
+          {t.comentario ? (
+            <p className="mt-1 text-base text-zinc-300 whitespace-pre-wrap">
+              “{t.comentario}”{t.comentario_por ? <span className="text-zinc-500"> — {t.comentario_por}</span> : null}
+            </p>
+          ) : (
+            <p className="text-base text-zinc-500">¿Pasó algo en el turno? Dejá una nota para el jefe de producción.</p>
+          )}
+        </div>
+        <button
+          onClick={abrir}
+          className="min-h-[60px] px-6 rounded-2xl bg-white/[0.07] border border-white/[0.12] text-lg font-bold text-white hover:bg-white/[0.12] active:scale-[0.99] transition-all cursor-pointer"
+        >
+          {t.comentario ? "Editar" : "Dejar un comentario"}
+        </button>
+      </div>
+
+      <Drawer abierto={abierto} onCerrar={() => setAbierto(false)} titulo="Comentario del turno" subtitulo={`Turno ${turnoLabel(t.turno).toLowerCase()} · ${diaMes(fecha)}`}>
+        <div className="flex flex-col gap-5">
+          <textarea
+            value={texto}
+            onChange={(e) => setTexto(e.target.value)}
+            autoFocus
+            rows={6}
+            maxLength={2000}
+            placeholder="Ej: se cortó la luz una hora, el molde pierde material…"
+            className="w-full rounded-2xl bg-[#17171c] border border-white/[0.1] px-4 py-3 text-xl text-white placeholder:text-zinc-700 focus:outline-none focus:border-[#FF5A00] resize-none"
+          />
+          <div>
+            <span className="block text-[13px] font-extrabold uppercase tracking-[0.08em] text-zinc-400 mb-2">Firma</span>
+            <div className="flex flex-wrap gap-2">
+              {nombres.map((o) => (
+                <button key={o} type="button" onClick={() => setQuien(o)} className={`min-h-[52px] px-5 rounded-2xl text-base font-bold border transition-colors cursor-pointer ${quien === o ? "bg-[#FF5A00] text-black border-[#FF5A00]" : "bg-[#17171c] text-zinc-200 border-white/[0.1] hover:border-white/30"}`}>
+                  {o}
+                </button>
+              ))}
+            </div>
+          </div>
+          <button onClick={guardar} disabled={ocupado || (!texto.trim() && !t.comentario)} className="w-full min-h-[68px] rounded-2xl bg-[#FFD60A] text-black text-xl font-extrabold hover:bg-white active:scale-[0.99] transition-all disabled:opacity-50 cursor-pointer">
+            {texto.trim() ? "Guardar comentario" : "Borrar comentario"}
+          </button>
+        </div>
+      </Drawer>
+    </>
   );
 }
 
@@ -332,12 +379,9 @@ export default function CargaProduccion() {
               <Factory size={28} />
             </span>
             <div>
-              <h1 className="cf-h1-largo text-3xl font-extrabold text-white leading-none">
-                Producción de planta
+              <h1 className="cf-h1-largo text-3xl font-extrabold text-white leading-none py-2">
+                Producción
               </h1>
-              <p className="text-base text-zinc-400 mt-1">
-                Lo que hay que producir y la carga al terminar el turno
-              </p>
             </div>
           </div>
 
@@ -371,13 +415,6 @@ export default function CargaProduccion() {
 
           <div className="flex items-center gap-3">
             <Reloj />
-            <button
-              onClick={recargar}
-              aria-label="Actualizar"
-              className="w-12 h-12 grid place-items-center rounded-xl bg-white/[0.05] border border-white/[0.08] text-zinc-300 hover:bg-white/[0.1] cursor-pointer"
-            >
-              <RefreshCw size={20} />
-            </button>
             <button
               onClick={alternarPantalla}
               aria-label={
@@ -525,6 +562,13 @@ export default function CargaProduccion() {
                       <Tarjeta key={a.id} a={a} i={i} onCargar={setCargando} />
                     ))}
                   </div>
+                  <ComentarioTurno
+                    t={t}
+                    fecha={fecha}
+                    operarios={operarios}
+                    onGuardado={recargar}
+                    toast={toast}
+                  />
                 </>
               )}
             </motion.div>
@@ -533,7 +577,6 @@ export default function CargaProduccion() {
 
         <FormularioCarga
           asignacion={cargando}
-          fecha={fecha}
           operarios={operarios}
           onCerrar={() => setCargando(null)}
           onGuardado={recargar}

@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import { motion } from "framer-motion";
-import { Moon, Sun } from "lucide-react";
+import { MessageSquareText, Moon, Sun } from "lucide-react";
 import { Chip } from "../produccion/ui";
 import { diaCorto, diaMes, hoyISO, num } from "../produccion/util";
 import { estadoTurno } from "./reglas";
@@ -37,12 +37,22 @@ function Celda({ fecha, turno, info, asigs, onAbrir, pasado }) {
         <ul className="flex flex-col gap-1 min-w-0">
           {asigs.slice(0, 3).map((a) => (
             <li key={a.id} className="text-xs leading-tight min-w-0">
-              <span className="font-bold text-white tabular-nums">{num(a.cantidad)}</span>{" "}
+              {a.real ? (
+                <span className="tabular-nums">
+                  <span className={`font-bold ${a.real.buenas >= a.cantidad ? "text-emerald-300" : "text-[#FFD60A]"}`}>{num(a.real.buenas)}</span>
+                  <span className="text-zinc-500"> de {num(a.cantidad)}</span>
+                </span>
+              ) : (
+                <span className="font-bold text-white tabular-nums">{num(a.cantidad)}</span>
+              )}{" "}
               <span className="text-zinc-300 truncate">{a.semielaborado_nombre}</span>
               <span className="block text-[11px] text-zinc-500 truncate">{a.maquina || "sin máquina"}{a.operario ? ` · ${a.operario}` : ""}</span>
             </li>
           ))}
           {asigs.length > 3 && <li className="text-[11px] font-bold text-zinc-500">+{asigs.length - 3} más</li>}
+          {info?.comentario && (
+            <li className="inline-flex items-center gap-1 text-[11px] font-semibold text-sky-300"><MessageSquareText size={12} /> Comentario del turno</li>
+          )}
         </ul>
       ) : (
         <p className="text-xs text-zinc-600 group-hover:text-zinc-400 transition-colors">{vacioPasado ? "Sin plan cargado" : "Tocá para armar el turno"}</p>
