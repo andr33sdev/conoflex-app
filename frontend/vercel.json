@@ -11,6 +11,10 @@
     {
       "source": "/imagenes/:path*",
       "destination": "http://66.97.34.163:3001/imagenes/:path*"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
     }
   ]
 }
