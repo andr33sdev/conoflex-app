@@ -12,7 +12,12 @@ export function problemasDeTurno(asigs) {
 }
 
 export function estadoTurno(info, asigs) {
-  if (info?.lanzado) return { tono: "verde", texto: "Lanzado" };
+  if (info?.lanzado) {
+    const hechas = asigs.filter((a) => a.real).length;
+    if (asigs.length && hechas === asigs.length) return { tono: "verde", texto: "Cargado" };
+    if (hechas > 0) return { tono: "amarillo", texto: `Cargado ${hechas}/${asigs.length}` };
+    return { tono: "azul", texto: "En tablet" };
+  }
   if (info?.sin_produccion) return { tono: "gris", texto: "Sin producción" };
   if (!asigs.length) return { tono: "gris", texto: "Libre" };
   return problemasDeTurno(asigs).length ? { tono: "amarillo", texto: "Faltan datos" } : { tono: "naranja", texto: "Listo para lanzar" };

@@ -42,8 +42,16 @@ async function asegurarTablasProduccion(db) {
       motivo VARCHAR(255),
       lanzado TINYINT DEFAULT 0,
       lanzado_at DATETIME NULL,
+      comentario TEXT NULL,
+      comentario_por VARCHAR(255) NULL,
+      comentario_at DATETIME NULL,
       PRIMARY KEY (fecha, turno)
     )`);
+  // Instalaciones que ya crearon la tabla sin el comentario del turno.
+  const [colC] = await db.query("SELECT COUNT(*) AS n FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'prod_turnos' AND column_name = 'comentario'");
+  if (!Number(colC[0].n)) {
+    await db.query("ALTER TABLE prod_turnos ADD COLUMN comentario TEXT NULL, ADD COLUMN comentario_por VARCHAR(255) NULL, ADD COLUMN comentario_at DATETIME NULL");
+  }
   await db.query(`
     CREATE TABLE IF NOT EXISTS prod_asignaciones (
       id INT AUTO_INCREMENT PRIMARY KEY,
@@ -200,7 +208,7 @@ function registrarRutasProduccion(app, db, requirePermiso) {
       [lunes],
     );
     const [turnos] = await db.query(
-      `SELECT ${FECHA("fecha")} AS fecha, turno, sin_produccion, motivo, lanzado FROM prod_turnos WHERE fecha BETWEEN ? AND ?`,
+      `SELECT ${FECHA("fecha")} AS fecha, turno, sin_produccion, motivo, lanzado, comentario, comentario_por FROM prod_turnos WHERE fecha BETWEEN ? AND ?`,
       [lunes, fin],
     );
     const [asig] = await db.query(
@@ -215,12 +223,22 @@ function registrarRutasProduccion(app, db, requirePermiso) {
       [lunes, fin],
     );
     const [[{ pend }]] = await db.query("SELECT COUNT(*) AS pend FROM prod_cargas WHERE estado = 'PENDIENTE'");
+    // Lo realmente producido por cada asignación (la carga vigente: pendiente o aprobada).
+    const ids = asig.map((a) => a.id);
+    const realPorAsig = new Map();
+    if (ids.length) {
+      const [cs] = await db.query(
+        "SELECT asignacion_id, estado, operario, total_producido, fallas FROM prod_cargas WHERE asignacion_id IN (?) AND estado <> 'RECHAZADA' ORDER BY id",
+        [ids],
+      );
+      for (const c of cs) realPorAsig.set(c.asignacion_id, { estado: c.estado, operario: c.operario, total: Number(c.total_producido), fallas: Number(c.fallas), buenas: Number(c.total_producido) - Number(c.fallas) });
+    }
     return {
       semana: lunes,
       dias: Array.from({ length: 7 }, (_, i) => P.sumarDias(lunes, i)),
       items: items.map((i) => ({ ...i, asignado: Number(i.asignado), producido: Number(i.producido), por_aprobar: Number(i.por_aprobar) })),
       turnos: turnos.map((t) => ({ ...t, sin_produccion: !!t.sin_produccion, lanzado: !!t.lanzado })),
-      asignaciones: asig.map((a) => ({ ...a, receta_confirmada: !!a.receta_confirmada })),
+      asignaciones: asig.map((a) => ({ ...a, receta_confirmada: !!a.receta_confirmada, real: realPorAsig.get(a.id) || null })),
       choques: P.detectarChoques(asig),
       cargas_pendientes: Number(pend),
     };
@@ -466,7 +484,7 @@ function registrarRutasProduccion(app, db, requirePermiso) {
   // ---------------------------------------------------------------- tablet de planta
   app.get("/api/prod/tablet", TABLET, seguro(async (req, res) => {
     const fecha = esISO(req.query.fecha) ? req.query.fecha : hoyISO();
-    const [turnos] = await db.query(`SELECT turno, sin_produccion, motivo, lanzado FROM prod_turnos WHERE fecha = ?`, [fecha]);
+    const [turnos] = await db.query(`SELECT turno, sin_produccion, motivo, lanzado, comentario, comentario_por FROM prod_turnos WHERE fecha = ?`, [fecha]);
     const [asig] = await db.query(
       `SELECT a.id, a.turno, a.cantidad, a.operario, a.ingenieria_id, ing.nombre_version AS receta_version,
               i.lote, i.semielaborado_codigo AS modelo_codigo, i.semielaborado_nombre AS modelo_nombre, m.nombre AS maquina
@@ -505,6 +523,8 @@ function registrarRutasProduccion(app, db, requirePermiso) {
           sin_produccion: !!t?.sin_produccion,
           motivo: t?.motivo || null,
           lanzado: !!t?.lanzado,
+          comentario: t?.comentario || null,
+          comentario_por: t?.comentario_por || null,
           asignaciones: asig
             .filter((a) => a.turno === tn)
             .map((a) => {
@@ -516,6 +536,18 @@ function registrarRutasProduccion(app, db, requirePermiso) {
         };
       }),
     });
+  }));
+
+  // Comentario libre del operario sobre su turno (queda guardado junto al turno).
+  app.put("/api/prod/turnos/comentario", TABLET, seguro(async (req, res) => {
+    const { fecha, turno } = req.body;
+    if (!esISO(fecha) || !turnoOk(turno)) return res.status(400).json({ error: "Fecha o turno inválido." });
+    const [t] = await db.query("SELECT lanzado FROM prod_turnos WHERE fecha = ? AND turno = ?", [fecha, turno]);
+    if (!t.length || !t[0].lanzado) return res.status(409).json({ error: "Ese turno no está lanzado." });
+    const comentario = String(req.body.comentario || "").trim().slice(0, 2000) || null;
+    const por = String(req.body.operario || "").trim().slice(0, 255) || null;
+    await db.query("UPDATE prod_turnos SET comentario = ?, comentario_por = ?, comentario_at = NOW() WHERE fecha = ? AND turno = ?", [comentario, comentario ? por : null, fecha, turno]);
+    res.json({ ok: true });
   }));
 
   async function datosParaCarga(asignacion_id) {
