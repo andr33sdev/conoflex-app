@@ -1,3 +1,4 @@
+import HistorialMateriaPrima from "./inventario/HistorialMateriaPrima";
 import { useState, useEffect, useMemo, useRef } from "react";
 import {
   Search,
@@ -22,7 +23,6 @@ import {
   Building2,
   AlertTriangle,
   History,
-  Calendar,
 } from "lucide-react";
 
 export default function Inventory() {
@@ -74,10 +74,6 @@ export default function Inventory() {
 
   // MODAL AUDITORÍA (HISTORIAL)
   const [auditModalOpen, setAuditModalOpen] = useState(false);
-  const [auditData, setAuditData] = useState([]);
-  const [auditDateFrom, setAuditDateFrom] = useState("");
-  const [auditDateTo, setAuditDateTo] = useState("");
-  const [loadingAudit, setLoadingAudit] = useState(false);
 
   useEffect(() => {
     const handleClickOutside = (event) => {
@@ -125,27 +121,6 @@ export default function Inventory() {
       console.error("Error al cargar datos:", err);
     } finally {
       setLoading(false);
-    }
-  };
-
-  const fetchAuditoria = async (id, desde = "", hasta = "") => {
-    setLoadingAudit(true);
-    try {
-      let url = `/api/materias-primas/${id}/auditoria`;
-      if (desde && hasta) {
-        url += `?desde=${desde}&hasta=${hasta}`;
-      }
-      const res = await fetch(url);
-      if (res.ok) {
-        setAuditData(await res.json());
-      } else {
-        setAuditData([]);
-      }
-    } catch (err) {
-      console.error(err);
-      setAuditData([]);
-    } finally {
-      setLoadingAudit(false);
     }
   };
 
@@ -337,12 +312,6 @@ export default function Inventory() {
       }
     } catch (err) {
       alert("Error al conectar con el servidor.");
-    }
-  };
-
-  const handleApplyAuditFilter = () => {
-    if (detailItem) {
-      fetchAuditoria(detailItem.id, auditDateFrom, auditDateTo);
     }
   };
 
@@ -893,137 +862,18 @@ export default function Inventory() {
 
               <button
                 onClick={() => {
-                  setAuditDateFrom("");
-                  setAuditDateTo("");
-                  fetchAuditoria(detailItem.id);
                   setAuditModalOpen(true);
                 }}
                 className="w-full py-4 bg-zinc-900 border border-zinc-800 hover:border-zinc-600 hover:text-white hover:bg-zinc-800 text-zinc-400 font-bold uppercase tracking-widest text-[10px] transition-all flex items-center justify-center gap-2 cursor-pointer"
               >
-                <History size={16} /> VER AUDITORÍA
+                <History size={16} /> HISTORIAL
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* MODAL AUDITORÍA (HISTORIAL DE MOVIMIENTOS) */}
-      {auditModalOpen && detailItem && (
-        <div className="fixed inset-0 bg-black/90 backdrop-blur-sm z-[110] flex items-center justify-center p-4">
-          <div className="bg-[#050505] border border-zinc-800 w-full max-w-2xl h-[85vh] p-6 shadow-2xl space-y-4 relative flex flex-col">
-            <button
-              onClick={() => setAuditModalOpen(false)}
-              className="absolute top-4 right-4 text-zinc-500 hover:text-white cursor-pointer"
-            >
-              <X size={20} />
-            </button>
-
-            <div className="border-b border-zinc-800/80 pb-3 shrink-0">
-              <span className="text-[10px]   font-bold text-[#FF5A00] bg-[#FF5A00]/10 px-2 py-0.5 border border-[#FF5A00]/20 tracking-widest uppercase">
-                HISTORIAL DE MOVIMIENTOS
-              </span>
-              <h3 className="font-extrabold italic text-xl text-white mt-2 uppercase tracking-tighter">
-                {detailItem.codigo}
-              </h3>
-            </div>
-
-            {/* BARRA DE FILTROS DE FECHA */}
-            <div className="flex items-center gap-3 shrink-0   text-xs">
-              <div className="flex items-center gap-2 bg-black border border-zinc-800 px-3 py-2 flex-1">
-                <Calendar size={14} className="text-zinc-500" />
-                <input
-                  type="date"
-                  value={auditDateFrom}
-                  onChange={(e) => setAuditDateFrom(e.target.value)}
-                  className="bg-transparent text-zinc-300 outline-none w-full uppercase"
-                  style={{ colorScheme: "dark" }}
-                />
-              </div>
-              <span className="text-zinc-600 font-bold">AL</span>
-              <div className="flex items-center gap-2 bg-black border border-zinc-800 px-3 py-2 flex-1">
-                <Calendar size={14} className="text-zinc-500" />
-                <input
-                  type="date"
-                  value={auditDateTo}
-                  onChange={(e) => setAuditDateTo(e.target.value)}
-                  className="bg-transparent text-zinc-300 outline-none w-full uppercase"
-                  style={{ colorScheme: "dark" }}
-                />
-              </div>
-              <button
-                onClick={handleApplyAuditFilter}
-                className="bg-[#FF5A00] text-black font-bold px-4 py-2 hover:bg-white transition-colors cursor-pointer"
-              >
-                FILTRAR
-              </button>
-            </div>
-
-            {/* TABLA DE AUDITORÍA */}
-            <div className="flex-1 overflow-hidden flex flex-col border border-zinc-800 bg-[#030303]">
-              <div className="grid grid-cols-[140px_1fr_100px_100px_100px] h-10 bg-[#080808] border-b border-zinc-800 items-center text-zinc-500   text-[9px] font-bold uppercase tracking-widest shrink-0 px-4">
-                <div>FECHA / HORA</div>
-                <div>USUARIO</div>
-                <div className="text-center">TIPO</div>
-                <div className="text-right">CANTIDAD</div>
-                <div className="text-right">STOCK FINAL</div>
-              </div>
-
-              <div className="flex-1 overflow-y-auto custom-scrollbar flex flex-col bg-black">
-                {loadingAudit ? (
-                  <div className="py-12 flex justify-center text-[#FF5A00] my-auto">
-                    <RefreshCw className="animate-spin" size={24} />
-                  </div>
-                ) : auditData.length === 0 ? (
-                  <div className="py-12 text-center text-zinc-600 font-bold uppercase tracking-widest text-xs my-auto">
-                    No hay movimientos registrados.
-                  </div>
-                ) : (
-                  auditData.map((mov) => (
-                    <div
-                      key={mov.id}
-                      className="grid grid-cols-[140px_1fr_100px_100px_100px] items-center p-4 border-b border-zinc-900/80 last:border-b-0 text-xs hover:bg-[#0a0a0a] transition-colors"
-                    >
-                      <div className="  text-zinc-400">
-                        {new Date(mov.fecha).toLocaleString("es-AR", {
-                          dateStyle: "short",
-                          timeStyle: "short",
-                        })}
-                      </div>
-                      <div className="font-bold text-white truncate pr-2">
-                        {mov.usuario}
-                      </div>
-                      <div className="flex justify-center   font-bold tracking-widest text-[9px]">
-                        <span
-                          className={`px-2 py-0.5 border ${
-                            mov.tipo_movimiento === "INGRESO"
-                              ? "text-emerald-400 border-emerald-500/30 bg-emerald-500/10"
-                              : mov.tipo_movimiento === "EGRESO"
-                                ? "text-rose-400 border-rose-500/30 bg-rose-500/10"
-                                : "text-zinc-400 border-zinc-700 bg-zinc-900"
-                          }`}
-                        >
-                          {mov.tipo_movimiento}
-                        </span>
-                      </div>
-                      <div
-                        className={`  font-bold text-right ${mov.cantidad > 0 ? "text-emerald-400" : "text-rose-400"}`}
-                      >
-                        {mov.cantidad > 0 ? "+" : ""}
-                        {parseFloat(mov.cantidad).toLocaleString(undefined, {
-                          maximumFractionDigits: 2,
-                        })}
-                      </div>
-                      <div className="  font-bold text-zinc-200 text-right">
-                        {parseFloat(mov.stock_resultante).toLocaleString()}
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      <HistorialMateriaPrima item={detailItem} abierto={auditModalOpen && !!detailItem} onCerrar={() => setAuditModalOpen(false)} />
 
       {/* MODAL VINCULADOS A RECETAS */}
       {usageModalOpen && detailItem && (
