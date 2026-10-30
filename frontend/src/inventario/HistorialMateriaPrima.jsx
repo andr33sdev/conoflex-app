@@ -4,21 +4,23 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Drawer } from "../produccion/ui";
 import { api } from "../produccion/util";
 import { fechaHora, nf } from "../ingenieria/formato";
+import DemandaMateriaPrima from "./DemandaMateriaPrima";
 
 const TIPOS = {
   CONSUMO_PRODUCCION: { texto: "Producción", icono: Factory, color: "text-rose-300", fondo: "bg-rose-500/10 border-rose-500/25" },
   INGRESO_COMPRA: { texto: "Compra", icono: PackagePlus, color: "text-emerald-300", fondo: "bg-emerald-500/10 border-emerald-500/25" },
   AJUSTE_COMPRA: { texto: "Corrección de compra", icono: Undo2, color: "text-amber-300", fondo: "bg-amber-500/10 border-amber-500/25" },
-  AJUSTE_MANUAL: { texto: "Ajuste manual", icono: SlidersHorizontal, color: "text-sky-300", fondo: "bg-sky-500/10 border-sky-500/25" },
+  AJUSTE_MANUAL: { texto: "Edición directa", icono: SlidersHorizontal, color: "text-sky-300", fondo: "bg-sky-500/10 border-sky-500/25" },
 };
 const FILTROS = [
   { id: "", texto: "Todo" },
   { id: "CONSUMO_PRODUCCION", texto: "Producción" },
   { id: "INGRESO_COMPRA", texto: "Compras" },
-  { id: "AJUSTE_MANUAL", texto: "Ajustes" },
+  { id: "AJUSTE_MANUAL", texto: "Ediciones directas" },
 ];
 
 const kg = (n, u) => `${nf(Math.abs(n), 3)} ${u}`;
+const conSigno = (n, u) => `${nf(n, 3)} ${u}`;
 
 function Dato({ k, v }) {
   if (v === null || v === undefined || v === "") return null;
@@ -60,9 +62,11 @@ function Detalle({ m, u }) {
     );
   }
   return (
-    <div className="grid grid-cols-2 gap-x-4 gap-y-3">
-      <Dato k="Motivo" v={m.referencia_texto} />
-      <Dato k="Hecho por" v={m.usuario} />
+    <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-3">
+      <Dato k="Stock anterior" v={d.stock_anterior != null ? conSigno(d.stock_anterior, u) : null} />
+      <Dato k="Stock nuevo" v={d.stock_nuevo != null ? conSigno(d.stock_nuevo, u) : conSigno(m.stock_resultante, u)} />
+      <Dato k="Editado por" v={m.usuario} />
+      <Dato k="Motivo" v={d.motivo || (d.stock_anterior == null ? m.referencia_texto : null)} />
     </div>
   );
 }
@@ -101,10 +105,11 @@ function Fila({ m, u }) {
 }
 
 /** Historial detallado de una materia prima: en qué se gastó y qué compras la repusieron. */
-export default function HistorialMateriaPrima({ item, abierto, onCerrar }) {
+export default function HistorialMateriaPrima({ item, abierto, onCerrar, vistaInicial = "historial" }) {
   const [desde, setDesde] = useState("");
   const [hasta, setHasta] = useState("");
   const [tipo, setTipo] = useState("");
+  const [vista, setVista] = useState(vistaInicial);
   const [datos, setDatos] = useState(null);
   const [error, setError] = useState("");
   const id = item?.id;
@@ -134,7 +139,17 @@ export default function HistorialMateriaPrima({ item, abierto, onCerrar }) {
   }, [movs]);
 
   return (
-    <Drawer abierto={abierto} onCerrar={onCerrar} titulo={item?.nombre || item?.codigo || "Materia prima"} subtitulo={`${item?.codigo || ""} · Historial de movimientos`} ancho="sm:w-[600px] lg:w-[680px]">
+    <Drawer abierto={abierto} onCerrar={onCerrar} titulo={item?.nombre || item?.codigo || "Materia prima"} subtitulo={`${item?.codigo || ""} · ${vista === "demanda" ? "Demanda y reposición" : "Historial de movimientos"}`} ancho="sm:w-[600px] lg:w-[680px]">
+      <div className="flex gap-1 p-1 rounded-2xl bg-white/[0.04] border border-white/[0.07] mb-4" role="tablist" aria-label="Vista">
+        {[["historial", "Historial"], ["demanda", "Demanda"]].map(([id2, t]) => (
+          <button key={id2} role="tab" aria-selected={vista === id2} onClick={() => setVista(id2)} className={`flex-1 min-h-[40px] rounded-xl text-sm font-bold cursor-pointer transition-colors ${vista === id2 ? "bg-[#FF5A00] text-white" : "text-zinc-400 hover:text-white"}`}>{t}</button>
+        ))}
+      </div>
+
+      {vista === "demanda" ? (
+        <DemandaMateriaPrima item={item} abierto={abierto} />
+      ) : (
+      <>
       <div className="grid grid-cols-3 gap-2.5 mb-4">
         <div className="rounded-2xl border border-white/[0.07] bg-white/[0.03] p-3">
           <div className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">Stock actual</div>
@@ -177,6 +192,8 @@ export default function HistorialMateriaPrima({ item, abierto, onCerrar }) {
         </div>
       ) : (
         <div className="space-y-2">{movs.map((m) => <Fila key={m.id} m={m} u={u} />)}</div>
+      )}
+      </>
       )}
     </Drawer>
   );

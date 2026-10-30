@@ -640,7 +640,7 @@ function crearEjecutor(pool, obtenerEsquema) {
 const { liquidarDesdeBD, simularTurno } = require("./liquidacionDb");
 const { normalizarGrafico, graficoDesdeTabla } = require("./graficos");
 const { calcular } = require("./calculadora");
-const { demandaSemielaborados } = require("./demanda");
+const { demandaSemielaborados, demandaMateriasPrimas } = require("./demanda");
 const { rentabilidadProductos } = require("./rentabilidad");
 
 function fechaHoyArgentina() {
@@ -691,6 +691,7 @@ HORAS TRABAJADAS Y LIQUIDACIONES
 - Si no hay operario, la herramienta devuelve el resumen de todo el plantel; si piden el detalle de uno, volvé a llamarla con ese operario.
 - Reglas de liquidación de Conoflex (son las que mandan y ya las aplica la herramienta; usalas para explicar el porqué): hora diurna de 06:00 a 21:00; hora nocturna de 21:00 a 06:00, con un recargo base de 13,33% sobre la hora diurna; jornada normal de 9 horas desde el ingreso, de ahí en más son horas extra hasta que se retira; extras al 50% sobre la hora diurna o nocturna que corresponda (en días de semana, lo que pasa de las 9 hs; si el turno ingresa un sábado, hasta las 13:00 TODAS las horas son extra al 50%; un turno que ingresa de lunes a viernes tiene sus primeras 9 hs normales aunque pasen a sábado); sábados desde las 13:00, domingos completos y feriados: todas las horas son extra al 100% (dobles, diurnas o nocturnas). Conoflex no tiene tope de horas extra, ni diario ni mensual (acuerdo con los operarios): nunca lo marques como un problema ni lo menciones.
 - Los valores de hora salen de la escala salarial cargada en la base para la categoría de cada operario. De ahí no conocés ningún adicional más (antigüedad, presentismo, etc.): no los inventes ni los sumes; si preguntan, decí que no están cargados.
+- DEMANDA DE MATERIAS PRIMAS (ej. MT_EVA, polietileno): usá demanda_materias_primas (por defecto 6 meses) y comparala con el stock actual (días de stock, cuánto reponer). Un stock negativo es un faltante. Avisá si trae productos sin ingeniería activa o semielaborados sin receta, porque esa demanda no entra.
 - DEMANDA DE SEMIELABORADOS: para "demanda mensual", cuánto se necesita o cuánto stock cubre, usá SIEMPRE demanda_semielaborados (no la armes con SQL). Parte de las ventas (la tabla estado_pedidos: acá "pedidos" y "ventas" son lo mismo) de los últimos N meses (por defecto 3; usá los que pida el usuario), mira de qué semielaborados está compuesto cada producto terminado (su ingeniería activa) y suma el aporte de todos los productos en los que participa cada semielaborado. Si preguntan por uno, pasá 'semielaborado'; si preguntan "qué demanda un producto", pasá 'producto'. Mostrá siempre el período usado y, para cada semielaborado importante, en qué productos se usa y cuánto aporta cada uno. Avisá si el resultado trae productos vendidos sin ingeniería activa o modelos vendidos que no están cargados como producto, porque esa demanda no entra en el cálculo.
 - RENTABILIDAD: para rentabilidad, margen o ganancia por producto usá SIEMPRE la herramienta rentabilidad_productos; nunca la armes con consultar_sql ni de cabeza. La regla de Conoflex: en estado_pedidos cada renglón tiene punisiva (IMPORTE TOTAL sin IVA del renglón, en PESOS: ya es precio por cantidad, confirmado con datos reales; el precio de una unidad es punisiva dividido la cantidad) y cosusd (costo UNITARIO en DÓLARES). Las monedas no se pueden comparar: el importe en pesos se pasa SIEMPRE a dólares con el tipo de cambio, el costo unitario se multiplica por la cantidad del renglón, y la rentabilidad es ingreso en dólares menos costo en dólares. Nunca multipliques punisiva por la cantidad. La herramienta hace todo eso renglón por renglón y suma por producto. Si no te dicen el período (mes o rango), preguntalo antes de llamarla. Mostrá el período, el tipo de cambio usado (y de dónde sale), la rentabilidad, el margen porcentual y, para cada producto, el precio unitario promedio y el costo unitario promedio con los que salió la cuenta. TODOS los importes de rentabilidad (lo vendido, el costo, la rentabilidad, precios y costos unitarios) se muestran SIEMPRE en dólares (USD), nunca en pesos; el único dato en pesos es el tipo de cambio que se usó para convertir. Mostrá también los 'renglones_que_mas_pesan' de los primeros productos (OP, cantidad, precio unitario y costo unitario) para que se pueda auditar. Si el resultado trae 'advertencias' (márgenes de 90% o más, que no son creíbles), decilo al principio y no presentes el ranking como confiable. Avisá SIEMPRE si 'excluidos_por_datos_incompletos' trae renglones (precio o costo sin cargar): quedan fuera del cálculo y conviene corregirlos en la planilla. Si el usuario da un tipo de cambio, pasalo en 'tipo_cambio'.
 - PROHIBIDO INVENTAR: todo producto, cliente, cifra o puesto de un ranking o listado tiene que salir textualmente de un resultado de herramienta. Si piden un top 10 y hay menos productos con datos, listá solo los que hay y decí cuántos son ('cantidad_de_productos_con_datos'). Nunca completes ni deduzcas filas, no armes nombres por patrones (variantes de color o sufijos) y si un dato no está, decí que no lo tenés. Antes de responder un ranking, verificá que cada nombre que escribís está en el resultado.
@@ -790,6 +791,18 @@ const HERRAMIENTAS = [
             semielaborado: { type: "STRING", description: "Nombre o código (o parte) de un semielaborado para ver solo ese." },
             producto: { type: "STRING", description: "Nombre o código (o parte) de un producto terminado: devuelve los semielaborados que necesita y la demanda por ese producto." },
             incluir_cancelados: { type: "BOOLEAN", description: "Contar también los pedidos cancelados. Por defecto no." },
+          },
+        },
+      },
+      {
+        name: "demanda_materias_primas",
+        description:
+          "Calcula la demanda mensual de MATERIAS PRIMAS (ej. MT_EVA) comparada con el stock actual: toma las ventas (estado_pedidos) de los últimos N meses, abre cada producto por su ingeniería activa (materiales directos y semielaborados, con los kg por pieza de cada receta) y suma. Devuelve demanda mensual, consumo real registrado, stock, días de stock y cuánto reponer para un mes. Por defecto 6 meses.",
+        parameters: {
+          type: "OBJECT",
+          properties: {
+            meses: { type: "INTEGER", description: "Cantidad de meses hacia atrás desde hoy (1 a 36). Por defecto 6." },
+            materia_prima: { type: "STRING", description: "Nombre o código (o parte) de la materia prima, ej. MT_EVA. Si se omite, trae todas las que tienen demanda o stock negativo." },
           },
         },
       },
@@ -1015,6 +1028,20 @@ function crearConnie({ pool, ai, obtenerDolar }) {
           return r;
         } catch (e) {
           console.error("[Connie demanda_semielaborados]", e.message);
+          return { error: "No pude leer los datos para calcular la demanda." };
+        }
+      }
+      if (llamada.name === "demanda_materias_primas") {
+        try {
+          const r = await demandaMateriasPrimas(pool, llamada.args || {});
+          consultas.push({
+            proposito: `Demanda mensual de materias primas – ${r.periodo || "período"}`,
+            sql: "Ventas de estado_pedidos por modelo x ingeniería activa (producto → semielaborado → materia prima) contra materias_primas.stock_actual.",
+            error: r.error || undefined,
+          });
+          return r;
+        } catch (e) {
+          console.error("[Connie demanda_materias_primas]", e.message);
           return { error: "No pude leer los datos para calcular la demanda." };
         }
       }

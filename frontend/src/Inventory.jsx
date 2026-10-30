@@ -26,6 +26,16 @@ import {
 } from "lucide-react";
 
 export default function Inventory() {
+  // Solo un administrador puede cambiar el stock a mano (el servidor también lo exige).
+  const esAdmin = (() => {
+    try {
+      return String(JSON.parse(localStorage.getItem("usuario_conoflex") || "{}").rol || "").toUpperCase() === "ADMIN";
+    } catch {
+      return false;
+    }
+  })();
+  const [motivoStock, setMotivoStock] = useState("");
+  const [vistaMP, setVistaMP] = useState("historial");
   const [items, setItems] = useState([]);
   const [recipesList, setRecipesList] = useState([]);
   const [proveedoresDB, setProveedoresDB] = useState([]);
@@ -297,6 +307,7 @@ export default function Inventory() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           stock: valStock,
+          motivo: motivoStock,
           stock_minimo: valMinimo,
           unidad_medida: newUnidadValue,
           planta: newPlantaValue,
@@ -306,9 +317,11 @@ export default function Inventory() {
 
       if (res.ok) {
         setEditingItem(null);
+        setMotivoStock("");
         fetchItems();
       } else {
-        alert("Error al guardar los cambios.");
+        const d = await res.json().catch(() => ({}));
+        alert(d.error || "Error al guardar los cambios.");
       }
     } catch (err) {
       alert("Error al conectar con el servidor.");
@@ -574,7 +587,7 @@ export default function Inventory() {
                           onClick={(e) => {
                             e.stopPropagation();
                             setEditingItem(item);
-                            setNewStockValue(item.stock_actual);
+                            setNewStockValue(item.stock_actual); setMotivoStock("");
                             setNewStockMinimo(item.stock_minimo || 0);
                             setNewUnidadValue(item.unidad_medida || "KILOS");
                             setNewPlantaValue(item.planta || "Argentina");
@@ -705,7 +718,7 @@ export default function Inventory() {
                     onClick={(e) => {
                       e.stopPropagation();
                       setEditingItem(item);
-                      setNewStockValue(item.stock_actual);
+                      setNewStockValue(item.stock_actual); setMotivoStock("");
                       setNewStockMinimo(item.stock_minimo || 0);
                       setNewUnidadValue(item.unidad_medida || "KILOS");
                       setNewPlantaValue(item.planta || "Argentina");
@@ -862,6 +875,17 @@ export default function Inventory() {
 
               <button
                 onClick={() => {
+                  setVistaMP("demanda");
+                  setAuditModalOpen(true);
+                }}
+                className="col-span-2 order-first w-full py-4 bg-zinc-900 border border-zinc-800 hover:border-[#FF5A00]/60 hover:text-white hover:bg-zinc-800 text-zinc-400 font-bold uppercase tracking-widest text-[10px] transition-all flex items-center justify-center gap-2 cursor-pointer"
+              >
+                <TrendingUp size={16} /> DEMANDA
+              </button>
+
+              <button
+                onClick={() => {
+                  setVistaMP("historial");
                   setAuditModalOpen(true);
                 }}
                 className="w-full py-4 bg-zinc-900 border border-zinc-800 hover:border-zinc-600 hover:text-white hover:bg-zinc-800 text-zinc-400 font-bold uppercase tracking-widest text-[10px] transition-all flex items-center justify-center gap-2 cursor-pointer"
@@ -873,7 +897,7 @@ export default function Inventory() {
         </div>
       )}
 
-      <HistorialMateriaPrima item={detailItem} abierto={auditModalOpen && !!detailItem} onCerrar={() => setAuditModalOpen(false)} />
+      <HistorialMateriaPrima key={`${detailItem?.id}-${vistaMP}`} vistaInicial={vistaMP} item={detailItem} abierto={auditModalOpen && !!detailItem} onCerrar={() => setAuditModalOpen(false)} />
 
       {/* MODAL VINCULADOS A RECETAS */}
       {usageModalOpen && detailItem && (
@@ -993,8 +1017,10 @@ export default function Inventory() {
                     step="0.01"
                     value={newStockValue}
                     onChange={(e) => setNewStockValue(e.target.value)}
-                    className="w-full bg-black border border-zinc-800 p-3 text-white font-bold text-right focus:outline-none focus:border-[#FF5A00] text-sm"
-                    autoFocus
+                    disabled={!esAdmin}
+                    title={esAdmin ? "" : "Solo un administrador puede modificar el stock"}
+                    className="w-full bg-black border border-zinc-800 p-3 text-white font-bold text-right focus:outline-none focus:border-[#FF5A00] text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                    autoFocus={esAdmin}
                   />
                 </div>
 
@@ -1012,6 +1038,26 @@ export default function Inventory() {
                   />
                 </div>
               </div>
+
+              {esAdmin && parseFloat(newStockValue) !== Number(editingItem.stock_actual) && (
+                <div className="space-y-1.5">
+                  <label className="text-zinc-500 block text-[10px] font-bold uppercase tracking-widest">
+                    MOTIVO DEL AJUSTE (OPCIONAL):
+                  </label>
+                  <input
+                    type="text"
+                    value={motivoStock}
+                    onChange={(e) => setMotivoStock(e.target.value)}
+                    maxLength={300}
+                    placeholder="Ej: recuento físico"
+                    className="w-full bg-black border border-zinc-800 p-3 text-white text-xs focus:outline-none focus:border-[#FF5A00]"
+                  />
+                  <p className="text-[10px] text-zinc-600">Queda en el historial como edición directa, con tu nombre.</p>
+                </div>
+              )}
+              {!esAdmin && (
+                <p className="text-[10px] text-zinc-600">El stock solo lo modifica un administrador.</p>
+              )}
 
               {/* CAMPO UNIDAD DE MEDIDA */}
               <div className="space-y-1.5 relative">

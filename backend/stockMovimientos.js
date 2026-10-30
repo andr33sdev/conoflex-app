@@ -7,7 +7,7 @@ const TIPOS = {
   CONSUMO_PRODUCCION: "Consumo en producción",
   INGRESO_COMPRA: "Ingreso por compra",
   AJUSTE_COMPRA: "Corrección de una compra",
-  AJUSTE_MANUAL: "Ajuste manual",
+  AJUSTE_MANUAL: "Edición directa de stock",
 };
 
 async function asegurarTablaMovimientos(db) {

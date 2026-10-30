@@ -11,6 +11,7 @@ const path = require("path");
 const jwt = require("jsonwebtoken");
 const crypto = require("crypto");
 const { crearConnie } = require("./connie");
+const { demandaMateriasPrimas } = require("./demanda");
 const { separarDuplicadas, asegurarTablaDuplicadas } = require("./fichero");
 const { asegurarTablasProduccion, registrarRutasProduccion } = require("./produccionRutas");
 const { asegurarTablaReflectivas, registrarRutasReflectivas } = require("./reflectivasRutas");
@@ -2265,6 +2266,23 @@ app.get("/api/materias-primas", async (req, res) => {
   }
 });
 
+// Demanda de materias primas (ventas de N meses abiertas por receta) contra el stock actual.
+app.get("/api/materias-primas/demanda", async (req, res) => {
+  try {
+    const r = await demandaMateriasPrimas(db, {
+      meses: req.query.meses,
+      materia_prima: req.query.q,
+      materia_prima_id: req.query.id,
+      solo_con_demanda: req.query.todas === "1" ? false : undefined,
+    });
+    if (r.error) return res.status(404).json({ error: r.error });
+    res.json(r);
+  } catch (error) {
+    console.error("Error calculando demanda de materias primas:", error);
+    res.status(500).json({ error: "No se pudo calcular la demanda." });
+  }
+});
+
 // 2. NUEVO ENDPOINT: OBTENER AUDITORÍA POR RANGO DE FECHAS
 app.get("/api/materias-primas/:id/auditoria", async (req, res) => {
   const { id } = req.params;
@@ -2605,52 +2623,58 @@ app.get("/api/proveedores/:id/materias-primas", async (req, res) => {
   }
 });
 
-// 1. ENDPOINT DE GUARDADO ACTUALIZADO (Con historial y stock_minimo)
+// Edición de una materia prima. Cambiar el STOCK a mano es solo para administradores y queda en el
+// historial como "edición directa" (stock anterior, nuevo, quién y por qué).
 app.put("/api/materias-primas/:id/stock", async (req, res) => {
   const { id } = req.params;
-  const { stock, unidad_medida, planta, proveedor_id, stock_minimo, usuario } =
-    req.body;
-
+  const { stock, unidad_medida, planta, proveedor_id, stock_minimo, motivo } = req.body;
+  const conn = await db.getConnection();
   try {
-    // a. Obtener stock anterior para calcular la diferencia
-    const [oldData] = await db.query(
-      "SELECT stock_actual FROM materias_primas WHERE id = ?",
-      [id],
-    );
-    const stockAnterior =
-      oldData.length > 0 ? parseFloat(oldData[0].stock_actual) : 0;
-    const nuevoStock = parseFloat(stock);
-    const diferencia = nuevoStock - stockAnterior;
+    const [[usuario]] = await conn.query("SELECT nombre, email, rol FROM usuarios WHERE id = ?", [req.user?.id]);
+    const esAdmin = String(usuario?.rol || "").toUpperCase() === "ADMIN";
 
-    // b. Actualizar la materia prima
-    await db.query(
-      `UPDATE materias_primas 
-       SET stock_actual = ?, unidad_medida = ?, planta = ?, proveedor_id = ?, stock_minimo = ? 
-       WHERE id = ?`,
-      [
-        nuevoStock,
-        unidad_medida,
-        planta,
-        proveedor_id || null,
-        stock_minimo || 0,
-        id,
-      ],
-    );
-
-    // c. Registrar en el historial si hubo un cambio real en el stock
-    if (diferencia !== 0) {
-      const tipo = diferencia > 0 ? "INGRESO" : "EGRESO";
-      await db.query(
-        `INSERT INTO movimientos_stock (materia_prima_id, usuario, tipo_movimiento, cantidad, stock_resultante) 
-         VALUES (?, ?, ?, ?, ?)`,
-        [id, usuario || "Admin", tipo, diferencia, nuevoStock],
-      );
+    await conn.beginTransaction();
+    const [actual] = await conn.query("SELECT stock_actual FROM materias_primas WHERE id = ? FOR UPDATE", [id]);
+    if (!actual.length) {
+      await conn.rollback();
+      return res.status(404).json({ error: "No encontré esa materia prima." });
+    }
+    const stockAnterior = Number(actual[0].stock_actual) || 0;
+    const quiereCambiarStock = stock !== undefined && stock !== null && stock !== "";
+    const nuevoStock = quiereCambiarStock ? Number(String(stock).replace(",", ".")) : stockAnterior;
+    if (!Number.isFinite(nuevoStock)) {
+      await conn.rollback();
+      return res.status(400).json({ error: "El stock tiene que ser un número." });
+    }
+    const cambiaStock = Math.abs(nuevoStock - stockAnterior) > 1e-9;
+    if (cambiaStock && !esAdmin) {
+      await conn.rollback();
+      return res.status(403).json({ error: "Solo un administrador puede modificar el stock de una materia prima." });
     }
 
-    res.json({ success: true });
+    await conn.query(
+      "UPDATE materias_primas SET unidad_medida = ?, planta = ?, proveedor_id = ?, stock_minimo = ? WHERE id = ?",
+      [unidad_medida, planta, proveedor_id || null, stock_minimo || 0, id],
+    );
+    let r = { stock_resultante: stockAnterior };
+    if (cambiaStock) {
+      r = await moverStock(conn, {
+        mp_id: Number(id),
+        delta: nuevoStock - stockAnterior,
+        tipo: "AJUSTE_MANUAL",
+        usuario: usuario?.nombre || usuario?.email || "Admin",
+        referencia_texto: "Edición directa",
+        detalle: { stock_anterior: stockAnterior, stock_nuevo: nuevoStock, motivo: String(motivo || "").trim().slice(0, 300) || null },
+      });
+    }
+    await conn.commit();
+    res.json({ success: true, stock_actual: r.stock_resultante });
   } catch (error) {
+    await conn.rollback().catch(() => {});
     console.error("Error actualizando materia prima:", error);
     res.status(500).json({ error: "Error al actualizar la materia prima" });
+  } finally {
+    conn.release();
   }
 });
 

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { Check, Minus, Pencil, Plus, RotateCcw, Search, Undo2 } from "lucide-react";
+import { Check, Minus, Pencil, Plus, RotateCcw, Search, X } from "lucide-react";
 import { api } from "../produccion/util";
 import { aNum, lineasIniciales } from "./formula";
 
@@ -11,7 +11,7 @@ const pasoDe = (kg, porTachada) => (porTachada ? (kg >= 10 ? 1 : kg >= 1 ? 0.5 :
 
 /**
  * ¿Usaron la receta definida? Si sí, un toque y listo. Si no, se ajustan los kg de cada material,
- * se tilda el que no se usó o se suma otro, viendo siempre cuánto cambió respecto de la receta.
+ * se quita el que no se usó o se suma otro. No muestra comparaciones ni sugerencias: solo los números que usaron.
  */
 export default function FormulaUsada({ lineas, setLineas, original, version, porTachada = true, onTotal }) {
   const base = useMemo(() => lineasIniciales(original), [original]);
@@ -32,11 +32,6 @@ export default function FormulaUsada({ lineas, setLineas, original, version, por
     if (onTotal) onTotal(redondear(nuevas.reduce((a, l) => a + (aNum(l.kg) || 0), 0)));
   };
   const total = lineas.reduce((a, l) => a + (aNum(l.kg) || 0), 0);
-  const kgBase = (id) => {
-    const b = base.find((x) => x.mp_id === id);
-    return b ? aNum(b.kg) : null;
-  };
-  const quitados = base.filter((b) => !lineas.some((l) => l.mp_id === b.mp_id));
 
   const elegirIgual = () => {
     setOtra(false);
@@ -75,28 +70,19 @@ export default function FormulaUsada({ lineas, setLineas, original, version, por
               <li key={l.mp_id} className="flex items-center gap-3 px-1 text-base">
                 <span className="flex-1 min-w-0 truncate text-zinc-200 font-semibold">{l.nombre || l.codigo}</span>
                 <span className="font-bold text-white tabular-nums">{fmt(kg, 3)} kg</span>
-                <span className="w-14 text-right text-sm font-bold text-[#ff9a63] tabular-nums">{fmt(base.reduce((a, x) => a + (aNum(x.kg) || 0), 0) ? (kg / base.reduce((a, x) => a + (aNum(x.kg) || 0), 0)) * 100 : 0, 1)}%</span>
               </li>
             );
           })}
         </ul>
       ) : (
         <div className="mt-4">
-          <p className="text-base text-zinc-400 leading-snug">Poné cuántos kg usaron de cada material por {unidad}. El jefe de producción va a ver qué cambió.</p>
+          <p className="text-base text-zinc-400 leading-snug">Kg de cada material por {unidad}:</p>
           <ul className="mt-3 flex flex-col gap-2.5">
             {lineas.map((l) => {
               const kg = aNum(l.kg) || 0;
-              const b = kgBase(l.mp_id);
-              const dif = b == null ? null : redondear(kg - b);
-              const pct = total > 0 ? (kg / total) * 100 : 0;
               return (
-                <li key={l.mp_id} className={`rounded-2xl border px-3.5 py-3 ${b == null ? "border-[#FFD60A]/40 bg-[#FFD60A]/[0.05]" : dif ? "border-[#FFD60A]/25 bg-white/[0.02]" : "border-white/[0.07] bg-[#17171c]"}`}>
-                  <div className="flex items-center gap-2">
-                    <p className="flex-1 min-w-0 text-base font-bold text-white truncate">{l.nombre || l.codigo}</p>
-                    {b == null && <span className="text-xs font-extrabold text-[#FFD60A] uppercase">Nuevo</span>}
-                    {b != null && dif !== 0 && <span className={`text-xs font-extrabold tabular-nums ${dif > 0 ? "text-emerald-300" : "text-rose-300"}`}>{dif > 0 ? "+" : "−"}{fmt(Math.abs(dif), 3)} kg</span>}
-                    <span className="text-xs font-bold text-[#ff9a63] tabular-nums w-12 text-right">{fmt(pct, 1)}%</span>
-                  </div>
+                <li key={l.mp_id} className="rounded-2xl border border-white/[0.07] bg-[#17171c] px-3.5 py-3">
+                  <p className="text-base font-bold text-white truncate">{l.nombre || l.codigo}</p>
                   <div className="mt-2 flex items-stretch gap-2">
                     <button type="button" onClick={() => sumar(l, -pasoDe(kg, porTachada))} aria-label={`Restar a ${l.nombre || l.codigo}`} className="w-14 min-h-[52px] rounded-xl bg-white/[0.07] text-zinc-200 grid place-items-center active:bg-white/[0.15] cursor-pointer"><Minus size={22} /></button>
                     <div className="flex-1 min-w-0 flex items-center justify-center rounded-xl bg-[#0f0f12] border border-white/[0.12] focus-within:border-[#FF5A00]">
@@ -104,19 +90,11 @@ export default function FormulaUsada({ lineas, setLineas, original, version, por
                       <span className="pr-3 text-sm font-bold text-zinc-500">kg</span>
                     </div>
                     <button type="button" onClick={() => sumar(l, pasoDe(kg, porTachada))} aria-label={`Sumar a ${l.nombre || l.codigo}`} className="w-14 min-h-[52px] rounded-xl bg-white/[0.07] text-[#FFD60A] grid place-items-center active:bg-white/[0.15] cursor-pointer"><Plus size={22} /></button>
-                    <button type="button" onClick={() => poner(lineas.filter((x) => x.mp_id !== l.mp_id))} className="px-3 min-h-[52px] rounded-xl text-sm font-bold text-rose-300 bg-rose-500/10 hover:bg-rose-500/20 cursor-pointer">No se usó</button>
+                    <button type="button" onClick={() => poner(lineas.filter((x) => x.mp_id !== l.mp_id))} aria-label={`Quitar ${l.nombre || l.codigo}`} className="w-12 min-h-[52px] rounded-xl text-rose-300 bg-rose-500/10 hover:bg-rose-500/20 grid place-items-center cursor-pointer"><X size={20} /></button>
                   </div>
-                  {b != null && dif !== 0 && <p className="mt-1.5 text-xs text-zinc-500">La receta lleva {fmt(b, 3)} kg</p>}
                 </li>
               );
             })}
-            {quitados.map((q) => (
-              <li key={q.mp_id} className="rounded-2xl border border-dashed border-white/[0.12] px-3.5 py-3 flex items-center gap-3">
-                <p className="flex-1 min-w-0 text-base font-semibold text-zinc-500 line-through truncate">{q.nombre || q.codigo}</p>
-                <span className="text-xs font-bold text-zinc-500">No se usó</span>
-                <button type="button" onClick={() => poner([...lineas, { ...q }])} className="min-h-[44px] px-3.5 rounded-xl bg-white/[0.07] text-sm font-bold text-zinc-200 inline-flex items-center gap-1.5 cursor-pointer"><Undo2 size={15} /> Volver a poner</button>
-              </li>
-            ))}
           </ul>
 
           <div className="mt-3 flex items-center justify-between gap-3 text-base">
@@ -125,7 +103,7 @@ export default function FormulaUsada({ lineas, setLineas, original, version, por
           </div>
 
           <button type="button" onClick={() => setAbrirAgregar((v) => !v)} className="mt-2 w-full min-h-[56px] rounded-2xl border border-dashed border-white/[0.2] text-base font-bold text-zinc-200 hover:bg-white/[0.05] inline-flex items-center justify-center gap-2 cursor-pointer">
-            <Plus size={18} /> {abrirAgregar ? "Cerrar" : "Usaron otro material"}
+            <Plus size={18} /> {abrirAgregar ? "Cerrar" : "Agregar un material"}
           </button>
           <AnimatePresence initial={false}>
             {abrirAgregar && (
