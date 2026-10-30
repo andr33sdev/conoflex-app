@@ -144,10 +144,6 @@ function Tarjeta({ a, i, onCargar }) {
       {c && (
         <div className="mt-4 rounded-2xl bg-white/[0.04] px-4 py-3 flex flex-wrap gap-x-6 gap-y-1 text-base text-zinc-300">
           <span>
-            <b className="text-white tabular-nums">{num(c.total_producido)}</b>{" "}
-            producidas
-          </span>
-          <span>
             <b className="text-emerald-300 tabular-nums">{num(buenas)}</b>{" "}
             buenas
           </span>
@@ -223,7 +219,7 @@ function ComentarioTurno({ t, fecha, operarios, onGuardado, toast }) {
               “{t.comentario}”{t.comentario_por ? <span className="text-zinc-500"> — {t.comentario_por}</span> : null}
             </p>
           ) : (
-            <p className="text-base text-zinc-500">¿Pasó algo en el turno? Dejá una nota para el jefe de producción.</p>
+            <p className="text-base text-zinc-500">¿Pasó algo en el turno? Dejá una nota.</p>
           )}
         </div>
         <button
@@ -536,27 +532,35 @@ export default function CargaProduccion() {
                 />
               ) : (
                 <>
-                  {t.asignaciones.every((a) => a.carga) && (
-                    <motion.div
-                      initial={{ opacity: 0, y: -8 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      className="mb-4 flex items-center gap-4 rounded-2xl border border-emerald-500/25 bg-emerald-500/10 px-5 py-4"
-                    >
-                      <CheckCircle2
-                        size={32}
-                        className="text-emerald-300 shrink-0"
-                      />
-                      <div>
+                  {t.asignaciones.every((a) => a.carga) &&
+                    (t.asignaciones.every((a) => a.carga.estado === "APROBADA") ? (
+                      <motion.div
+                        initial={{ opacity: 0, y: -8 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className="mb-4 flex items-center gap-4 rounded-2xl border border-emerald-500/25 bg-emerald-500/10 px-5 py-4"
+                      >
+                        <CheckCircle2 size={32} className="text-emerald-300 shrink-0" />
                         <p className="text-xl font-extrabold text-white leading-tight">
-                          ¡Todo cargado!
+                          Turno aprobado
                         </p>
-                        <p className="text-base text-emerald-100/70">
-                          Si algo está mal, podés corregirlo hasta que lo
-                          aprueben.
-                        </p>
-                      </div>
-                    </motion.div>
-                  )}
+                      </motion.div>
+                    ) : (
+                      <motion.div
+                        initial={{ opacity: 0, y: -8 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className="mb-4 flex items-center gap-4 rounded-2xl border border-emerald-500/25 bg-emerald-500/10 px-5 py-4"
+                      >
+                        <CheckCircle2 size={32} className="text-emerald-300 shrink-0" />
+                        <div>
+                          <p className="text-xl font-extrabold text-white leading-tight">
+                            ¡Todo cargado!
+                          </p>
+                          <p className="text-base text-emerald-100/70">
+                            Si algo está mal, podés corregir lo que todavía no se aprobó.
+                          </p>
+                        </div>
+                      </motion.div>
+                    ))}
                   <div className="grid gap-5 lg:grid-cols-2 2xl:grid-cols-3">
                     {t.asignaciones.map((a, i) => (
                       <Tarjeta key={a.id} a={a} i={i} onCargar={setCargando} />
