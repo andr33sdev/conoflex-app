@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { AlertTriangle, BadgeCheck, ChevronDown, FlaskConical, Lock, Moon, PackagePlus, Rocket, Sun, Trash2, Undo2 } from "lucide-react";
-import { Boton, Chip, Drawer, Etiqueta } from "../produccion/ui";
+import { AlertTriangle, BadgeCheck, ChevronDown, FlaskConical, Lock, MessageSquareText, Moon, PackagePlus, Rocket, Sun, Trash2, Undo2 } from "lucide-react";
+import { Barra, Boton, Chip, Drawer, Etiqueta } from "../produccion/ui";
 import { campo } from "../produccion/estilos";
 import { api, nombreDia, diaMes, num, turnoLabel } from "../produccion/util";
 import { estadoTurno, problemasDeTurno } from "./reglas";
@@ -199,6 +199,23 @@ function Asignacion({ a, maquinas, operarios, bloqueado, choque, onCambio, toast
       </div>
       {activas.length === 0 && <p className="mt-2 text-xs text-zinc-500">Todavía no hay máquinas cargadas: agregalas desde el botón “Máquinas”.</p>}
 
+      {a.real ? (
+        <div className="mt-4 rounded-2xl border border-emerald-500/25 bg-emerald-500/[0.06] p-4">
+          <div className="flex items-center gap-2 mb-2">
+            <p className="text-xs font-extrabold uppercase tracking-[0.1em] text-emerald-300">Lo que se hizo</p>
+            <Chip tono={a.real.estado === "APROBADA" ? "verde" : "amarillo"}>{a.real.estado === "APROBADA" ? "Aprobada" : "Por aprobar"}</Chip>
+          </div>
+          <p className="tabular-nums">
+            <span className="text-3xl font-extrabold text-white">{num(a.real.buenas)}</span>
+            <span className="text-base text-zinc-400"> buenas de {num(a.cantidad)} pedidas</span>
+          </p>
+          <div className="mt-2"><Barra total={a.cantidad} hecho={a.real.buenas} /></div>
+          <p className="mt-2 text-xs text-zinc-400">Total {num(a.real.total)} · fallas {num(a.real.fallas)} · cargó {a.real.operario}</p>
+        </div>
+      ) : bloqueado ? (
+        <p className="mt-4 text-sm text-zinc-500">Todavía no se cargó lo producido.</p>
+      ) : null}
+
       <div className="mt-4">
         <Receta a={a} bloqueado={bloqueado} onCambio={onCambio} toast={toast} />
       </div>
@@ -309,6 +326,13 @@ export default function PanelTurno({ turnoAbierto, plan, maquinas, operarios, on
               </div>
             )}
           </div>
+
+          {info?.comentario && (
+            <div className="rounded-2xl border border-sky-500/30 bg-sky-500/[0.07] p-4">
+              <p className="text-xs font-extrabold uppercase tracking-[0.1em] text-sky-300 flex items-center gap-2"><MessageSquareText size={14} /> Comentario del turno{info.comentario_por ? ` · ${info.comentario_por}` : ""}</p>
+              <p className="mt-1.5 text-base text-white whitespace-pre-wrap">{info.comentario}</p>
+            </div>
+          )}
 
           {!sin && (
             <>
