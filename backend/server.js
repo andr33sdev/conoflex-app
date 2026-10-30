@@ -14,6 +14,9 @@ const { crearConnie } = require("./connie");
 const { separarDuplicadas, asegurarTablaDuplicadas } = require("./fichero");
 const { asegurarTablasProduccion, registrarRutasProduccion } = require("./produccionRutas");
 const { asegurarTablaReflectivas, registrarRutasReflectivas } = require("./reflectivasRutas");
+const { asegurarTablasIngenieria, registrarRutasIngenieria } = require("./ingenieriasRutas");
+const { asegurarTablaMovimientos, moverStock, historialMateriaPrima } = require("./stockMovimientos");
+const { asegurarComprasStock, buscarMateriaPrima, aplicarRecepcion, norm } = require("./comprasStock");
 const { asegurarColumnaPagoMensual } = require("./escala");
 const { migrarPermisoConnie } = require("./permisos");
 require("dotenv").config();
@@ -186,6 +189,7 @@ app.use(requireAuth);
 // Plan de producción semanal, turnos y carga desde la tablet de planta.
 registrarRutasProduccion(app, db, requirePermiso);
 registrarRutasReflectivas(app, db, requirePermiso, requireAdmin);
+registrarRutasIngenieria(app, db, requirePermiso, requireAdmin);
 
 // Multer Config
 const uploadTemp = multer({ dest: UPLOADS_DIR });
@@ -796,6 +800,9 @@ async function initDB() {
 
     await asegurarTablasProduccion(db);
     await asegurarTablaReflectivas(db);
+    await asegurarTablasIngenieria(db);
+    await asegurarTablaMovimientos(db);
+    await asegurarComprasStock(db);
 
     console.log("✅ Estructura MySQL inicializada correctamente.");
   } catch (err) {
@@ -2278,6 +2285,20 @@ app.get("/api/materias-primas/:id/auditoria", async (req, res) => {
   }
 });
 
+// Historial detallado: en qué se gastó cada kilo y qué compras lo repusieron (más los ajustes manuales).
+app.get("/api/materias-primas/:id/historial", async (req, res) => {
+  try {
+    const { desde, hasta, tipo } = req.query;
+    const [[mp]] = await db.query("SELECT id, codigo, nombre, unidad_medida, stock_actual FROM materias_primas WHERE id = ?", [req.params.id]);
+    if (!mp) return res.status(404).json({ error: "No encontré esa materia prima." });
+    const movimientos = await historialMateriaPrima(db, mp.id, { desde, hasta, tipo });
+    res.json({ materia_prima: mp, movimientos });
+  } catch (error) {
+    console.error("Error obteniendo historial de materia prima:", error);
+    res.status(500).json({ error: "Error al obtener el historial." });
+  }
+});
+
 app.post("/api/materias-primas/previsualizar-sheets", async (req, res) => {
   const MATERIAS_PRIMAS_CSV_URL =
     "https://docs.google.com/spreadsheets/d/e/2PACX-1vTt66qDCe0E3GUbp7BLqGj4IHYK8nrXF1gvfmf45vY2kkP3-gL3fpPcxjltnFBX8EP7kBzEhnIvHw0L/pub?output=csv";
@@ -3109,7 +3130,7 @@ app.get("/api/ingenierias/semielaborado/:id", async (req, res) => {
     const result = [];
     for (const ing of ingenierias) {
       const [ingredientes] = await db.query(
-        `SELECT d.id, d.ingenieria_id, d.materia_prima_id, d.semielaborado_id, d.cantidad, d.unidad_medida, 
+        `SELECT d.id, d.ingenieria_id, d.materia_prima_id, d.semielaborado_id, d.cantidad, d.cantidad_tachada, d.unidad_medida, 
                 COALESCE(mp.codigo, se.codigo) as item_codigo, 
                 COALESCE(mp.nombre, se.nombre) as item_nombre, 
                 CASE WHEN d.materia_prima_id IS NOT NULL THEN 'MP' ELSE 'SE' END as item_type 
@@ -3138,7 +3159,7 @@ app.get("/api/ingenierias/producto-terminado/:id", async (req, res) => {
     const result = [];
     for (const ing of ingenierias) {
       const [ingredientes] = await db.query(
-        `SELECT d.id, d.ingenieria_id, d.materia_prima_id, d.semielaborado_id, d.cantidad, d.unidad_medida, 
+        `SELECT d.id, d.ingenieria_id, d.materia_prima_id, d.semielaborado_id, d.cantidad, d.cantidad_tachada, d.unidad_medida, 
                 COALESCE(mp.codigo, se.codigo) as item_codigo, 
                 COALESCE(mp.nombre, se.nombre) as item_nombre, 
                 CASE WHEN d.materia_prima_id IS NOT NULL THEN 'MP' ELSE 'SE' END as item_type 
@@ -3191,151 +3212,6 @@ app.get("/api/ingenierias/recetas-activas-bulk", async (req, res) => {
     }
 
     res.json(Object.values(recipesMap));
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-app.post("/api/ingenierias", async (req, res) => {
-  const { parent_id, parent_type, nombre_version, es_activa, ingredientes } =
-    req.body;
-  const isSE = parent_type === "SE";
-  const conn = await db.getConnection();
-
-  try {
-    await conn.beginTransaction();
-
-    if (es_activa) {
-      const campoFK = isSE ? "semielaborado_id" : "producto_terminado_id";
-      await conn.query(
-        `UPDATE ingenierias SET es_activa = 0 WHERE ${campoFK} = ?`,
-        [parent_id],
-      );
-    }
-
-    const [info] = await conn.query(
-      `INSERT INTO ingenierias (semielaborado_id, producto_terminado_id, nombre_version, es_activa, updated_at) VALUES (?, ?, ?, ?, NOW())`,
-      [
-        isSE ? parent_id : null,
-        !isSE ? parent_id : null,
-        nombre_version,
-        es_activa ? 1 : 0,
-      ],
-    );
-
-    const newId = info.insertId;
-
-    if (ingredientes && Array.isArray(ingredientes)) {
-      for (let ing of ingredientes) {
-        await conn.query(
-          `INSERT INTO ingenieria_detalles (ingenieria_id, materia_prima_id, semielaborado_id, cantidad, unidad_medida) VALUES (?, ?, ?, ?, ?)`,
-          [
-            newId,
-            ing.materia_prima_id || null,
-            ing.semielaborado_id || null,
-            ing.cantidad,
-            ing.unidad_medida || "Unidades",
-          ],
-        );
-      }
-    }
-
-    await conn.commit();
-    res.json({ success: true, id: newId });
-  } catch (error) {
-    await conn.rollback();
-    res.status(500).json({ error: error.message });
-  } finally {
-    conn.release();
-  }
-});
-
-app.put("/api/ingenierias/:id", async (req, res) => {
-  const { id } = req.params;
-  const { parent_id, parent_type, nombre_version, es_activa, ingredientes } =
-    req.body;
-  const isSE = parent_type === "SE";
-  const conn = await db.getConnection();
-
-  try {
-    await conn.beginTransaction();
-
-    if (es_activa) {
-      const campoFK = isSE ? "semielaborado_id" : "producto_terminado_id";
-      await conn.query(
-        `UPDATE ingenierias SET es_activa = 0 WHERE ${campoFK} = ?`,
-        [parent_id],
-      );
-    }
-
-    await conn.query(
-      `UPDATE ingenierias SET nombre_version = ?, es_activa = ?, updated_at = NOW() WHERE id = ?`,
-      [nombre_version, es_activa ? 1 : 0, id],
-    );
-
-    await conn.query(
-      `DELETE FROM ingenieria_detalles WHERE ingenieria_id = ?`,
-      [id],
-    );
-
-    if (ingredientes && Array.isArray(ingredientes)) {
-      for (let ing of ingredientes) {
-        await conn.query(
-          `INSERT INTO ingenieria_detalles (ingenieria_id, materia_prima_id, semielaborado_id, cantidad, unidad_medida) VALUES (?, ?, ?, ?, ?)`,
-          [
-            id,
-            ing.materia_prima_id || null,
-            ing.semielaborado_id || null,
-            ing.cantidad,
-            ing.unidad_medida || "Unidades",
-          ],
-        );
-      }
-    }
-
-    await conn.commit();
-    res.json({ success: true });
-  } catch (error) {
-    await conn.rollback();
-    res.status(500).json({ error: error.message });
-  } finally {
-    conn.release();
-  }
-});
-
-app.put("/api/ingenierias/:id/activar", async (req, res) => {
-  const { id } = req.params;
-  const { parent_id, parent_type } = req.body;
-  const conn = await db.getConnection();
-
-  try {
-    await conn.beginTransaction();
-    const campoFK =
-      parent_type === "SE" ? "semielaborado_id" : "producto_terminado_id";
-
-    await conn.query(
-      `UPDATE ingenierias SET es_activa = 0 WHERE ${campoFK} = ?`,
-      [parent_id],
-    );
-    await conn.query(
-      `UPDATE ingenierias SET es_activa = 1, updated_at = NOW() WHERE id = ?`,
-      [id],
-    );
-
-    await conn.commit();
-    res.json({ success: true });
-  } catch (error) {
-    await conn.rollback();
-    res.status(500).json({ error: error.message });
-  } finally {
-    conn.release();
-  }
-});
-
-app.delete("/api/ingenierias/:id", async (req, res) => {
-  try {
-    await db.query(`DELETE FROM ingenierias WHERE id = ?`, [req.params.id]);
-    res.json({ success: true });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -3650,10 +3526,16 @@ app.put("/api/metricas/produccion/aprobar/:id", async (req, res) => {
         const descuentoKg =
           Number(carga.cant_buenos) * Number(det.cantidad || 0);
 
-        await conn.query(
-          `UPDATE materias_primas SET stock_actual = stock_actual - ? WHERE id = ?`,
-          [descuentoKg, det.materia_prima_id],
-        );
+        await moverStock(conn, {
+          mp_id: det.materia_prima_id,
+          delta: -descuentoKg,
+          tipo: "CONSUMO_PRODUCCION",
+          usuario: supervisor_nombre || "Supervisor",
+          referencia_tipo: "CARGA_ANTERIOR",
+          referencia_id: carga.id,
+          referencia_texto: `${carga.codigo_ot || "Sin OT"} · ${carga.articulo || carga.semielaborado_codigo || ""}`.trim(),
+          detalle: { lote: carga.codigo_ot, fecha: carga.fecha, modelo_codigo: carga.semielaborado_codigo, modelo_nombre: carga.articulo, buenas: carga.cant_buenos, fallas: carga.cant_fallas, operario: carga.operario_nombre },
+        });
 
         await conn.query(
           `
@@ -5357,31 +5239,45 @@ app.get("/api/compras/solicitudes", async (req, res) => {
   }
 });
 
+const nombreDeUsuario = async (req) => {
+  const [r] = await db.query("SELECT nombre FROM usuarios WHERE id = ?", [req.user?.id]);
+  return r[0]?.nombre || "Usuario";
+};
+
 // CREAR NUEVA SOLICITUD
 app.post("/api/compras/solicitudes", async (req, res) => {
   const { fecha, items } = req.body;
+  if (!Array.isArray(items) || !items.length) return res.status(400).json({ error: "Agregá al menos un ítem." });
+  const conn = await db.getConnection();
   try {
-    const [result] = await db.query(
+    await conn.beginTransaction();
+    const [result] = await conn.query(
       "INSERT INTO solicitudes_compra (fecha, estado) VALUES (?, 'ABIERTA')",
       [fecha],
     );
     const solicitudId = result.insertId;
 
     for (let item of items) {
-      await db.query(
-        "INSERT INTO solicitudes_compra_items (solicitud_id, articulo, proveedor, cantidad_solicitada, prioridad) VALUES (?, ?, ?, ?, ?)",
+      const mp = await buscarMateriaPrima(conn, item);
+      await conn.query(
+        "INSERT INTO solicitudes_compra_items (solicitud_id, articulo, proveedor, cantidad_solicitada, prioridad, materia_prima_id) VALUES (?, ?, ?, ?, ?, ?)",
         [
           solicitudId,
           item.articulo,
           item.proveedor,
           item.cantidad_solicitada,
           item.prioridad,
+          mp?.id || null,
         ],
       );
     }
+    await conn.commit();
     res.json({ success: true, insertId: solicitudId });
   } catch (error) {
+    await conn.rollback().catch(() => {});
     res.status(500).json({ error: error.message });
+  } finally {
+    conn.release();
   }
 });
 
@@ -5389,35 +5285,58 @@ app.post("/api/compras/solicitudes", async (req, res) => {
 app.put("/api/compras/solicitudes/:id", async (req, res) => {
   const { id } = req.params;
   const { fecha, items } = req.body;
+  if (!Array.isArray(items) || !items.length) return res.status(400).json({ error: "Agregá al menos un ítem." });
+  const conn = await db.getConnection();
 
   try {
-    await db.query("UPDATE solicitudes_compra SET fecha = ? WHERE id = ?", [
+    await conn.beginTransaction();
+    const usuario = await nombreDeUsuario(req);
+    const [viejos] = await conn.query("SELECT * FROM solicitudes_compra_items WHERE solicitud_id = ?", [id]);
+    await conn.query("UPDATE solicitudes_compra SET fecha = ? WHERE id = ?", [
       fecha,
       id,
     ]);
     // Reemplazamos los ítems para hacer la edición más sencilla
-    await db.query(
+    await conn.query(
       "DELETE FROM solicitudes_compra_items WHERE solicitud_id = ?",
       [id],
     );
 
+    const usados = new Set();
+    const resumen = [];
     for (let item of items) {
-      await db.query(
-        "INSERT INTO solicitudes_compra_items (solicitud_id, articulo, proveedor, cantidad_solicitada, cantidad_recibida, prioridad, numero_oc) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      const mp = await buscarMateriaPrima(conn, item);
+      const recibida = parseFloat(item.cantidad_recibida) || 0;
+      const [ins] = await conn.query(
+        "INSERT INTO solicitudes_compra_items (solicitud_id, articulo, proveedor, cantidad_solicitada, cantidad_recibida, prioridad, numero_oc, materia_prima_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
         [
           id,
           item.articulo,
           item.proveedor,
           item.cantidad_solicitada,
-          item.cantidad_recibida || 0,
+          recibida,
           item.prioridad,
           item.numero_oc,
+          mp?.id || null,
         ],
       );
+      // Lo recibido de más (o de menos) respecto de lo que ya estaba cargado ajusta el stock.
+      let previo = item.id ? viejos.find((v) => v.id === Number(item.id) && !usados.has(v.id)) : null;
+      if (!previo) previo = viejos.find((v) => !usados.has(v.id) && norm(v.articulo) === norm(item.articulo));
+      if (previo) usados.add(previo.id);
+      const delta = recibida - (previo ? parseFloat(previo.cantidad_recibida) || 0 : 0);
+      if (delta) {
+        const r = await aplicarRecepcion(conn, { item: { ...item, id: ins.insertId, materia_prima_id: mp?.id }, delta, usuario, solicitud_id: Number(id) });
+        resumen.push({ articulo: item.articulo, ...r });
+      }
     }
-    res.json({ success: true });
+    await conn.commit();
+    res.json({ success: true, stock: resumen });
   } catch (error) {
+    await conn.rollback().catch(() => {});
     res.status(500).json({ error: error.message });
+  } finally {
+    conn.release();
   }
 });
 
@@ -5425,33 +5344,49 @@ app.put("/api/compras/solicitudes/:id", async (req, res) => {
 app.put("/api/compras/items/:itemId", async (req, res) => {
   const { itemId } = req.params;
   const { cantidad_recibida, numero_oc } = req.body;
+  const conn = await db.getConnection();
 
   try {
+    await conn.beginTransaction();
+    const [[item]] = await conn.query("SELECT * FROM solicitudes_compra_items WHERE id = ? FOR UPDATE", [itemId]);
+    if (!item) {
+      await conn.rollback();
+      return res.status(404).json({ error: "No encontré ese ítem." });
+    }
+    const delta = cantidad_recibida !== undefined ? parseFloat(cantidad_recibida) : 0;
+    if (cantidad_recibida !== undefined && !Number.isFinite(delta)) {
+      await conn.rollback();
+      return res.status(400).json({ error: "La cantidad recibida no es válida." });
+    }
+
     let query = "UPDATE solicitudes_compra_items SET ";
     let params = [];
 
     if (cantidad_recibida !== undefined) {
       query += "cantidad_recibida = cantidad_recibida + ?, ";
-      params.push(parseFloat(cantidad_recibida));
+      params.push(delta);
     }
     if (numero_oc !== undefined) {
       query += "numero_oc = ?, ";
       params.push(numero_oc);
     }
 
-    query = query.slice(0, -2) + " WHERE id = ?";
-    params.push(itemId);
+    if (params.length) {
+      query = query.slice(0, -2) + " WHERE id = ?";
+      params.push(itemId);
+      await conn.query(query, params);
+    }
 
-    await db.query(query, params);
+    // La mercadería que entra suma al stock de su materia prima y queda en su historial.
+    let stock = { vinculada: false };
+    if (delta) {
+      stock = await aplicarRecepcion(conn, { item: { ...item, numero_oc: numero_oc !== undefined ? numero_oc : item.numero_oc }, delta, usuario: await nombreDeUsuario(req), solicitud_id: item.solicitud_id });
+    }
 
     // Revisar si la solicitud ya está completa para cambiar el estado automáticamente
-    const [item] = await db.query(
-      "SELECT solicitud_id FROM solicitudes_compra_items WHERE id = ?",
-      [itemId],
-    );
-    const [all_items] = await db.query(
+    const [all_items] = await conn.query(
       "SELECT cantidad_solicitada, cantidad_recibida FROM solicitudes_compra_items WHERE solicitud_id = ?",
-      [item[0].solicitud_id],
+      [item.solicitud_id],
     );
 
     const estaCompleta = all_items.every(
@@ -5460,15 +5395,19 @@ app.put("/api/compras/items/:itemId", async (req, res) => {
     );
 
     if (estaCompleta) {
-      await db.query(
+      await conn.query(
         "UPDATE solicitudes_compra SET estado = 'COMPLETADA' WHERE id = ?",
-        [item[0].solicitud_id],
+        [item.solicitud_id],
       );
     }
 
-    res.json({ success: true });
+    await conn.commit();
+    res.json({ success: true, stock });
   } catch (error) {
+    await conn.rollback().catch(() => {});
     res.status(500).json({ error: error.message });
+  } finally {
+    conn.release();
   }
 });
 
