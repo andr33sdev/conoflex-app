@@ -216,7 +216,7 @@ function App() {
         )}
 
       {hasAccess("reflectivas") && activeModule === "reflectivas" && (
-        <Reflectivas key={reloadKey} />
+        <Reflectivas key={reloadKey} usuarioActual={usuarioActual} />
       )}
 
       {/* ========================================================

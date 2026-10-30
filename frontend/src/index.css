@@ -165,3 +165,7 @@ button, a, select, summary, [role="button"] { touch-action: manipulation; }
   /* Scrollbars finas en pantallas táctiles */
   ::-webkit-scrollbar { width: 4px; height: 4px; }
 }
+
+/* Barra de filtros que se desliza sin mostrar la barra de desplazamiento */
+.no-scrollbar { scrollbar-width: none; }
+.no-scrollbar::-webkit-scrollbar { display: none; }
