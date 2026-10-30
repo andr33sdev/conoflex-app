@@ -37,10 +37,15 @@ function Celda({ fecha, turno, info, asigs, onAbrir, pasado }) {
         <ul className="flex flex-col gap-1 min-w-0">
           {asigs.slice(0, 3).map((a) => (
             <li key={a.id} className="text-xs leading-tight min-w-0">
-              {a.real ? (
+              {a.real?.estado === "APROBADA" ? (
                 <span className="tabular-nums">
                   <span className={`font-bold ${a.real.buenas >= a.cantidad ? "text-emerald-300" : "text-[#FFD60A]"}`}>{num(a.real.buenas)}</span>
                   <span className="text-zinc-500"> de {num(a.cantidad)}</span>
+                </span>
+              ) : a.real ? (
+                <span className="tabular-nums">
+                  <span className="font-bold text-sky-300">{num(a.real.buenas)}</span>
+                  <span className="text-zinc-500"> de {num(a.cantidad)} · por aprobar</span>
                 </span>
               ) : (
                 <span className="font-bold text-white tabular-nums">{num(a.cantidad)}</span>

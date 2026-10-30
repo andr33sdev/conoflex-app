@@ -24,6 +24,22 @@ import LaboratorioAR from "./LaboratorioAR";
 import VisorAR from "./VisorAR";
 import SolicitudesCompraModule from "./SolicitudesCompraModule";
 import FirmaSolicitudPublica from "./FirmaSolicitudPublica";
+import { itemPorId } from "./menu";
+
+// Cada módulo tiene su propia ruta: /<id-del-módulo> (el inicio es "/").
+// Se usa la History API directamente, así que no cambia nada de cómo se renderiza la app.
+const rutaDe = (id) => (id === "inicio" ? "/" : `/${id}`);
+
+function moduloDesdeUrl() {
+  const path = window.location.pathname.replace(/\/+$/, "") || "/";
+  const params = new URLSearchParams(window.location.search);
+  // Retorno del login de Google (Comercial) y enlaces viejos de planificación.
+  if (params.get("status") === "conectado" || params.get("module") === "comercial") return "comercial";
+  if (path.startsWith("/plan/") || params.has("ot")) return "planificacion";
+  const id = path.slice(1).split("/")[0];
+  if (id && itemPorId(id)) return id;
+  return "inicio";
+}
 
 function App() {
   const [usuarioActual, setUsuarioActual] = useState(() => {
@@ -38,61 +54,36 @@ function App() {
     return null;
   });
 
-  const [activeModule, setActiveModule] = useState(() => {
-    const path = window.location.pathname;
-    const params = new URLSearchParams(window.location.search);
+  const [activeModule, setActiveModule] = useState(moduloDesdeUrl);
 
-    if (
-      params.get("status") === "conectado" ||
-      params.get("module") === "comercial"
-    ) {
-      return "comercial";
+  // Cambia de módulo y actualiza la dirección (con "reemplazar" no suma un paso al historial).
+  const irA = (id, reemplazar = false) => {
+    const destino = rutaDe(id);
+    if (window.location.pathname !== destino || window.location.search) {
+      window.history[reemplazar ? "replaceState" : "pushState"]({}, document.title, destino);
     }
-    if (path.startsWith("/plan/") || params.has("ot")) {
-      return "planificacion";
-    }
-    if (path.startsWith("/carga-produccion")) {
-      return "carga-produccion";
-    }
-    return "inicio";
-  });
+    setActiveModule(id);
+  };
 
   // Si abren desde el link de WhatsApp (ej: /?firmar_sc=258&rol=gerente)
   const params = new URLSearchParams(window.location.search);
   const firmarScId = params.get("firmar_sc");
   const firmarRol = params.get("rol") || "gerente";
 
-  if (firmarScId) {
-    return (
-      <FirmaSolicitudPublica
-        id={firmarScId}
-        rol={firmarRol}
-        onVolver={() => (window.location.href = "/")}
-      />
-    );
-  }
-
+  // Botones atrás/adelante del navegador.
   useEffect(() => {
-    const checkUrl = () => {
-      const path = window.location.pathname;
-      const params = new URLSearchParams(window.location.search);
-
-      if (
-        params.get("status") === "conectado" ||
-        params.get("module") === "comercial"
-      ) {
-        setActiveModule("comercial");
-      } else if (path.startsWith("/plan/") || params.has("ot")) {
-        setActiveModule("planificacion");
-      } else if (path.startsWith("/carga-produccion")) {
-        setActiveModule("carga-produccion");
-      }
-    };
-
-    checkUrl();
-    window.addEventListener("popstate", checkUrl);
-    return () => window.removeEventListener("popstate", checkUrl);
+    const alCambiarUrl = () => setActiveModule(moduloDesdeUrl());
+    window.addEventListener("popstate", alCambiarUrl);
+    return () => window.removeEventListener("popstate", alCambiarUrl);
   }, []);
+
+  // Si se entró por una dirección vieja o sin ruta (ej: "/?module=comercial"), la deja en la ruta del módulo.
+  useEffect(() => {
+    const destino = rutaDe(activeModule);
+    if (window.location.pathname !== destino && !window.location.pathname.startsWith("/plan/")) {
+      window.history.replaceState({}, document.title, destino + window.location.search);
+    }
+  }, [activeModule]);
 
   useEffect(() => {
     if (usuarioActual && usuarioActual.rol?.toUpperCase() !== "ADMIN") {
@@ -111,7 +102,7 @@ function App() {
         usuarioActual.permisos?.includes(activeModule) ||
         usuarioActual.permisos?.includes("*");
       if (!tienePermiso) {
-        setActiveModule(usuarioActual.permisos?.[0] || "materias-primas");
+        irA(usuarioActual.permisos?.[0] || "materias-primas", true);
       }
     }
   }, [usuarioActual, activeModule]);
@@ -151,7 +142,18 @@ function App() {
     localStorage.removeItem("token");
     sessionStorage.clear();
     window.history.replaceState({}, document.title, "/");
+    setActiveModule("inicio");
   };
+
+  if (firmarScId) {
+    return (
+      <FirmaSolicitudPublica
+        id={firmarScId}
+        rol={firmarRol}
+        onVolver={() => (window.location.href = "/")}
+      />
+    );
+  }
 
   if (!usuarioActual) {
     return <Login onLogin={handleLoginSuccess} />;
@@ -168,7 +170,7 @@ function App() {
   return (
     <Layout
       activeModule={activeModule}
-      setActiveModule={setActiveModule}
+      setActiveModule={irA}
       onOpenUploadModal={() => setIsUploadModalOpen(true)}
       onReloadSheets={handleReloadSheets}
       isReloading={isReloading}
@@ -176,7 +178,7 @@ function App() {
       onLogout={handleLogout}
     >
       {activeModule === "inicio" && (
-        <Home usuarioActual={usuarioActual} onIr={setActiveModule} />
+        <Home usuarioActual={usuarioActual} onIr={irA} />
       )}
 
       {usuarioActual.rol?.toUpperCase() === "ADMIN" &&

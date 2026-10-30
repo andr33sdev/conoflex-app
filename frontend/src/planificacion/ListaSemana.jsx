@@ -84,12 +84,15 @@ function Renglon({ item, onCambio, toast }) {
       ) : (
         <div className="mt-3">
           <div className="flex items-end justify-between mb-1.5">
-            <span className="text-2xl font-extrabold text-white tabular-nums">{num(item.cantidad_semana)}<span className="text-xs font-semibold text-zinc-500 ml-1">u. en la semana</span></span>
+            <span className="text-2xl font-extrabold tabular-nums text-white">
+              <span className={item.producido > 0 ? "text-emerald-300" : "text-zinc-500"}>{num(item.producido)}</span>
+              <span className="text-base font-semibold text-zinc-500"> de {num(item.cantidad_semana)}</span>
+              <span className="text-xs font-semibold text-zinc-500 ml-1">aprobadas / pedidas</span>
+            </span>
           </div>
           <Barra total={item.cantidad_semana} hecho={item.producido} asignado={item.asignado} />
           <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-zinc-500">
             <span><b className="text-zinc-300 tabular-nums">{num(item.asignado)}</b> en turnos</span>
-            <span><b className="text-emerald-300 tabular-nums">{num(item.producido)}</b> producidas</span>
             {item.por_aprobar > 0 && <span><b className="text-[#FFD60A] tabular-nums">{num(item.por_aprobar)}</b> por aprobar</span>}
             {!de_mas && restante > 0 && <span>faltan asignar <b className="text-zinc-300 tabular-nums">{num(restante)}</b></span>}
           </div>
