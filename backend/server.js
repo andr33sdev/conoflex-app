@@ -5343,7 +5343,7 @@ app.put("/api/compras/solicitudes/:id", async (req, res) => {
 // INGRESAR MERCADERÍA Y/O ASIGNAR O.C. A UN ÍTEM
 app.put("/api/compras/items/:itemId", async (req, res) => {
   const { itemId } = req.params;
-  const { cantidad_recibida, numero_oc } = req.body;
+  const { cantidad_recibida, numero_oc, materia_prima_id } = req.body;
   const conn = await db.getConnection();
 
   try {
@@ -5369,6 +5369,19 @@ app.put("/api/compras/items/:itemId", async (req, res) => {
     if (numero_oc !== undefined) {
       query += "numero_oc = ?, ";
       params.push(numero_oc);
+    }
+    // Vincular (o desvincular) el renglón con una materia prima: solo afecta a los ingresos que vengan después.
+    if (materia_prima_id !== undefined) {
+      if (materia_prima_id !== null) {
+        const [[mpOk]] = await conn.query("SELECT id FROM materias_primas WHERE id = ?", [materia_prima_id]);
+        if (!mpOk) {
+          await conn.rollback();
+          return res.status(400).json({ error: "Esa materia prima no existe." });
+        }
+      }
+      query += "materia_prima_id = ?, ";
+      params.push(materia_prima_id);
+      item.materia_prima_id = materia_prima_id;
     }
 
     if (params.length) {
