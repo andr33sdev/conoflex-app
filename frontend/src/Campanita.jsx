@@ -1,14 +1,20 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { Bell, BellRing, ChevronRight, CircleCheckBig, X } from "lucide-react";
+import { Bell, BellRing, CheckCheck, ChevronRight, CircleCheckBig, PackageSearch, X } from "lucide-react";
 import { api } from "./produccion/util";
 import { fechaCorta, hace } from "./ingenieria/formato";
 
 const CADA_MS = 45000;
 
-/** Campanita del admin: avisa cuando se produjo con una fórmula distinta a la definida en Ingenierías. */
+/**
+ * Campanita de admin y producción.
+ * - Admin: además, avisa cuando se produjo con una fórmula distinta a la definida en Ingenierías.
+ * - Admin y producción: avisa cuando el depósito genera una solicitud interna.
+ */
 export default function Campanita({ usuarioActual }) {
-  const admin = String(usuarioActual?.rol || "").toUpperCase() === "ADMIN";
+  const rol = String(usuarioActual?.rol || "").trim().toUpperCase();
+  const admin = rol === "ADMIN";
+  const puede = admin || rol === "PRODUCCION";
   const [n, setN] = useState(0);
   const [abierta, setAbierta] = useState(false);
   const [lista, setLista] = useState(null);
@@ -19,17 +25,18 @@ export default function Campanita({ usuarioActual }) {
 
   const contar = useCallback(async () => {
     try {
-      const r = await api("/api/ingenierias/alertas/contador");
-      if (r.abiertas > previo.current) setSacudir((k) => k + 1);
-      previo.current = r.abiertas;
-      setN(r.abiertas);
+      const [a, nt] = await Promise.all([admin ? api("/api/ingenierias/alertas/contador") : { abiertas: 0 }, api("/api/notificaciones/contador")]);
+      const total = a.abiertas + nt.sin_leer;
+      if (total > previo.current) setSacudir((k) => k + 1);
+      previo.current = total;
+      setN(total);
     } catch {
       /* sin conexión: se reintenta en el próximo ciclo */
     }
-  }, []);
+  }, [admin]);
 
   useEffect(() => {
-    if (!admin) return undefined;
+    if (!puede) return undefined;
     Promise.resolve().then(contar);
     const t = setInterval(contar, CADA_MS);
     const alVolver = () => document.visibilityState === "visible" && contar();
@@ -40,18 +47,23 @@ export default function Campanita({ usuarioActual }) {
       document.removeEventListener("visibilitychange", alVolver);
       window.removeEventListener("cf:alertas", contar);
     };
-  }, [admin, contar]);
+  }, [puede, contar]);
 
   useEffect(() => {
     if (!abierta) return undefined;
     let vivo = true;
-    api("/api/ingenierias/alertas")
-      .then((l) => {
+    Promise.all([admin ? api("/api/ingenierias/alertas") : [], api("/api/notificaciones")])
+      .then(([al, nt]) => {
         if (!vivo) return;
-        setLista(l);
+        const items = [
+          ...al.map((a) => ({ clave: `a${a.id}`, tipo: "ALERTA", fecha: a.created_at, a })),
+          ...nt.map((x) => ({ clave: `n${x.id}`, tipo: "NOTIF", fecha: x.created_at, sin_leer: x.sin_leer, x })),
+        ].sort((p, q) => new Date(q.fecha) - new Date(p.fecha));
+        setLista(items);
         setError("");
-        previo.current = l.length;
-        setN(l.length);
+        const total = al.length + nt.filter((x) => x.sin_leer).length;
+        previo.current = total;
+        setN(total);
       })
       .catch((e) => vivo && setError(e.message));
     const afuera = (e) => caja.current && !caja.current.contains(e.target) && setAbierta(false);
@@ -63,15 +75,37 @@ export default function Campanita({ usuarioActual }) {
       document.removeEventListener("mousedown", afuera);
       document.removeEventListener("keydown", esc);
     };
-  }, [abierta]);
+  }, [abierta, admin]);
 
-  if (!admin) return null;
+  if (!puede) return null;
 
-  const ir = (a) => {
+  const navegar = (ruta) => {
     setAbierta(false);
-    window.history.pushState({}, document.title, `/ingenieria?alerta=${a.id}`);
+    window.history.pushState({}, document.title, ruta);
     window.dispatchEvent(new PopStateEvent("popstate"));
   };
+  const ir = (a) => navegar(`/ingenieria?alerta=${a.id}`);
+  const abrirNotif = async (x) => {
+    if (x.sin_leer) {
+      try {
+        await api(`/api/notificaciones/${x.id}/leer`, { method: "PUT" });
+      } catch {
+        /* si no se pudo marcar, igual se navega */
+      }
+      contar();
+    }
+    if (x.ruta) navegar(x.ruta);
+  };
+  const leerTodas = async () => {
+    try {
+      await api("/api/notificaciones/leer-todas", { method: "PUT" });
+      setLista((l) => (l ? l.map((i) => (i.tipo === "NOTIF" ? { ...i, sin_leer: false } : i)) : l));
+      contar();
+    } catch {
+      /* se reintenta al tocar de nuevo */
+    }
+  };
+  const haySinLeer = !!lista?.some((i) => i.tipo === "NOTIF" && i.sin_leer);
 
   return (
     <div className="relative" ref={caja}>
@@ -87,6 +121,7 @@ export default function Campanita({ usuarioActual }) {
           <motion.div initial={{ opacity: 0, y: -8, scale: 0.98 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: -6 }} transition={{ duration: 0.18 }} role="dialog" aria-label="Notificaciones" className="fixed sm:absolute left-3 right-3 sm:left-auto sm:right-0 top-[calc(3.5rem+env(safe-area-inset-top)+0.5rem)] sm:top-full sm:mt-2 sm:w-[400px] z-[90] rounded-3xl border border-white/[0.1] bg-[#111114] shadow-[0_24px_70px_rgba(0,0,0,0.65)] overflow-hidden">
             <div className="flex items-center gap-2 px-4 py-3 border-b border-white/[0.07]">
               <p className="flex-1 text-[15px] font-extrabold text-white">Notificaciones</p>
+              {haySinLeer && <button onClick={leerTodas} className="min-h-[36px] px-3 rounded-lg text-xs font-bold text-zinc-300 hover:text-white hover:bg-white/[0.06] inline-flex items-center gap-1.5 cursor-pointer"><CheckCheck size={14} /> Marcar leídas</button>}
               <button onClick={() => setAbierta(false)} aria-label="Cerrar" className="w-9 h-9 grid place-items-center rounded-lg text-zinc-500 hover:text-white cursor-pointer"><X size={17} /></button>
             </div>
             <div className="max-h-[min(60vh,440px)] overflow-y-auto custom-scrollbar">
@@ -98,14 +133,31 @@ export default function Campanita({ usuarioActual }) {
                 <div className="px-6 py-10 text-center">
                   <span className="mx-auto w-14 h-14 rounded-full bg-emerald-500/10 border border-emerald-400/20 grid place-items-center text-emerald-300"><CircleCheckBig size={24} /></span>
                   <p className="mt-3 text-base font-extrabold text-white">Todo en orden</p>
-                  <p className="mt-1 text-sm text-zinc-500">Lo producido coincide con las recetas definidas.</p>
+                  <p className="mt-1 text-sm text-zinc-500">No hay avisos nuevos.</p>
                 </div>
               ) : (
                 <ul className="p-2 flex flex-col gap-1.5">
-                  {lista.map((a) => {
+                  {lista.map((it) => {
+                    if (it.tipo === "NOTIF") {
+                      const x = it.x;
+                      return (
+                        <li key={it.clave}>
+                          <button onClick={() => abrirNotif(x)} className={`w-full text-left flex items-center gap-3 rounded-2xl px-3 py-3 hover:bg-white/[0.06] transition-colors cursor-pointer ${x.sin_leer ? "bg-white/[0.04]" : "opacity-70"}`}>
+                            <span className="shrink-0 w-10 h-10 rounded-xl bg-[#FF5A00]/12 border border-[#FF5A00]/25 grid place-items-center text-[#ff9a63]"><PackageSearch size={17} /></span>
+                            <span className="min-w-0 flex-1">
+                              <span className="block text-sm font-extrabold text-white leading-snug">{x.titulo}</span>
+                              {x.texto && <span className="block text-xs text-zinc-400 mt-0.5 leading-snug">{x.texto}</span>}
+                              <span className="block text-xs text-zinc-500 mt-0.5">{hace(x.created_at)}</span>
+                            </span>
+                            {x.sin_leer ? <span className="shrink-0 w-2.5 h-2.5 rounded-full bg-[#FF5A00]" aria-label="Sin leer" /> : <ChevronRight size={16} className="text-zinc-600 shrink-0" />}
+                          </button>
+                        </li>
+                      );
+                    }
+                    const a = it.a;
                     const dif = a.diferencias?.diferencias?.length || 0;
                     return (
-                      <li key={a.id}>
+                      <li key={it.clave}>
                         <button onClick={() => ir(a)} className="w-full text-left flex items-center gap-3 rounded-2xl px-3 py-3 hover:bg-white/[0.06] transition-colors cursor-pointer">
                           <span className="shrink-0 w-10 h-10 rounded-xl bg-[#FFD60A]/12 border border-[#FFD60A]/25 grid place-items-center text-[#FFD60A]"><BellRing size={17} /></span>
                           <span className="min-w-0 flex-1">

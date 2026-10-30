@@ -23,6 +23,7 @@ const ORDENES = [
   { id: "recetas", label: "Más recetas" },
   { id: "reciente", label: "Modificadas hace poco" },
 ];
+const PROCESOS = { INYECCION: "Inyección", ROTOMOLDEO: "Rotomoldeo", EXTRUSION: "Extrusión" };
 const natural = (a, b) => String(a).localeCompare(String(b), "es", { numeric: true, sensitivity: "base" });
 
 const Dato = ({ icono: Icono, t, v, tono = "text-white", className = "" }) => (
@@ -38,6 +39,7 @@ function Estado({ r }) {
     <div className="min-w-0">
       <p className="text-sm font-bold text-white truncate">{r.version}</p>
       <p className="text-xs text-zinc-500 truncate">
+        {r.proceso && <span className="text-[#FFD60A] font-bold">{PROCESOS[r.proceso]} · </span>}
         {r.con_formula ? <span className="text-emerald-300 font-bold">Fórmula</span> : <span>Por pieza</span>}
         {r.peso_pieza_kg ? <> · pieza {kgLindo(r.peso_pieza_kg)}</> : null}
       </p>
@@ -334,6 +336,7 @@ export default function Ingenieria({ usuarioActual }) {
         cantidadRecetas={editor.cantidad ?? 0}
         materias={materias}
         semis={listas.SE || []}
+        procesoSugerido={parent?.type === "SE" ? resumen.SE?.[parent.id]?.proceso : undefined}
         onCerrar={() => setEditorAbierto(false)}
         onGuardado={(nueva, nombre) => {
           setEditorAbierto(false);

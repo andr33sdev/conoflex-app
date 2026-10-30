@@ -240,6 +240,10 @@ export const ALL_MENU_ITEMS = [
   },
 ];
 
+// Roles que no ven el conjunto Laboratorio 3D y AR (el resto de los roles sí, como siempre).
+const ROLES_SIN_LABORATORIO = ["OPERARIO"];
+export const veLaboratorio = (usuario) => !ROLES_SIN_LABORATORIO.includes(String(usuario?.rol || "").trim().toUpperCase());
+
 /** Módulos que ve el usuario (misma regla que antes). */
 export function itemsPermitidos(usuario) {
   const rol = (usuario?.rol || "").toUpperCase();
@@ -247,7 +251,7 @@ export function itemsPermitidos(usuario) {
   return ALL_MENU_ITEMS.filter((it) => {
     if (rol === "ADMIN") return true;
     if (it.adminOnly) return false;
-    if (it.libre) return true;
+    if (it.libre) return it.grupo !== "laboratorio" || veLaboratorio(usuario);
     return permisos.includes(it.id) || permisos.includes("*");
   });
 }

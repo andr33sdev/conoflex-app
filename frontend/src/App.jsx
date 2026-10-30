@@ -24,7 +24,7 @@ import LaboratorioAR from "./LaboratorioAR";
 import VisorAR from "./VisorAR";
 import SolicitudesCompraModule from "./SolicitudesCompraModule";
 import FirmaSolicitudPublica from "./FirmaSolicitudPublica";
-import { itemPorId } from "./menu";
+import { itemPorId, veLaboratorio } from "./menu";
 
 // Cada módulo tiene su propia ruta: /<id-del-módulo> (el inicio es "/").
 // Se usa la History API directamente, así que no cambia nada de cómo se renderiza la app.
@@ -88,13 +88,8 @@ function App() {
   useEffect(() => {
     if (usuarioActual && usuarioActual.rol?.toUpperCase() !== "ADMIN") {
       // EXCEPCIÓN: Permitir siempre el acceso a los módulos experimentales 3D/AR
-      if (
-        activeModule === "inicio" ||
-        activeModule === "visor-ar" ||
-        activeModule === "lab-ar" ||
-        activeModule === "lab-ensamblaje" ||
-        activeModule === "simulador-carga"
-      ) {
+      const esLab = ["visor-ar", "lab-ar", "lab-ensamblaje", "simulador-carga"].includes(activeModule);
+      if (activeModule === "inicio" || (esLab && veLaboratorio(usuarioActual))) {
         return;
       }
 
@@ -222,10 +217,14 @@ function App() {
       {/* ========================================================
           MÓDULOS LIBERADOS PARA PRUEBAS (SIN hasAccess) 
           ======================================================== */}
-      {activeModule === "simulador-carga" && <SimuladorLogistica />}
-      {activeModule === "lab-ensamblaje" && <LaboratorioEnsamblaje />}
-      {activeModule === "lab-ar" && <LaboratorioAR />}
-      {activeModule === "visor-ar" && <VisorAR />}
+      {veLaboratorio(usuarioActual) && (
+        <>
+          {activeModule === "simulador-carga" && <SimuladorLogistica />}
+          {activeModule === "lab-ensamblaje" && <LaboratorioEnsamblaje />}
+          {activeModule === "lab-ar" && <LaboratorioAR />}
+          {activeModule === "visor-ar" && <VisorAR />}
+        </>
+      )}
       {/* ======================================================== */}
 
       {hasAccess("metricas") && activeModule === "metricas" && (

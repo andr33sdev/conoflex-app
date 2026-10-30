@@ -41,3 +41,26 @@ test("fórmula de una receta anterior: los kg por pieza sirven de tachada", () =
   assert.equal(f.peso, 1.5);
   assert.equal(f.con_tachada, false);
 });
+
+test("semielaborado: hay que elegir en qué máquina se hace", () => {
+  assert.match(prepararReceta(base, { esSE: true }).error, /máquina/);
+  assert.match(prepararReceta({ ...base, proceso: "OTRA" }, { esSE: true }).error, /máquina/);
+  assert.equal(prepararReceta({ ...base, proceso: "inyeccion" }, { esSE: true }).proceso, "INYECCION");
+});
+
+test("inyección: la receta es por tachada y la tachada es obligatoria", () => {
+  const ok = prepararReceta({ ...base, proceso: "INYECCION" }, { esSE: true });
+  assert.equal(ok.filas[2].cantidad_tachada, 0.2);
+  const mal = prepararReceta({ nombre_version: "x", proceso: "INYECCION", peso_pieza_kg: 1, ingredientes: [{ materia_prima_id: 1, cantidad: 1 }] }, { esSE: true });
+  assert.match(mal.error, /tachada/);
+});
+
+test("rotomoldeo y extrusión: receta por pieza, la tachada se ignora", () => {
+  const r = prepararReceta({ nombre_version: "x", proceso: "ROTOMOLDEO", ingredientes: [{ materia_prima_id: 1, cantidad: 1.2 }, { materia_prima_id: 2, cantidad: 0.3, cantidad_tachada: 5 }] }, { esSE: true });
+  assert.equal(r.proceso, "ROTOMOLDEO");
+  assert.deepEqual(r.filas.map((f) => [f.cantidad, f.cantidad_tachada]), [[1.2, null], [0.3, null]]);
+});
+
+test("producto terminado: no lleva proceso", () => {
+  assert.equal(prepararReceta({ nombre_version: "x", ingredientes: [{ semielaborado_id: 3, cantidad: 1 }] }).proceso, null);
+});

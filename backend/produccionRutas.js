@@ -10,6 +10,8 @@ const { registrarAlertaDeCarga, fotoIngenieria, formulaDeFoto } = require("./ing
 const FECHA = (col) => `DATE_FORMAT(${col}, '%Y-%m-%d')`;
 const esISO = (v) => !!P.parseISO(v);
 const esRoto = (categoria) => /ROTO/i.test(String(categoria || ""));
+// Lo que dice la receta (en qué se hace el semielaborado) manda; si no lo dice, se mira la categoría de la máquina.
+const llevaCiclos = (proceso, categoria) => (proceso ? proceso === "ROTOMOLDEO" : esRoto(categoria));
 const parseJSON = (t) => {
   if (t == null) return null;
   try {
@@ -516,7 +518,7 @@ function registrarRutasProduccion(app, db, requirePermiso) {
     const fecha = esISO(req.query.fecha) ? req.query.fecha : hoyISO();
     const [turnos] = await db.query(`SELECT turno, sin_produccion, motivo, lanzado, comentario, comentario_por FROM prod_turnos WHERE fecha = ?`, [fecha]);
     const [asig] = await db.query(
-      `SELECT a.id, a.turno, a.cantidad, a.operario, a.ingenieria_id, ing.nombre_version AS receta_version,
+      `SELECT a.id, a.turno, a.cantidad, a.operario, a.ingenieria_id, ing.nombre_version AS receta_version, ing.proceso AS receta_proceso,
               i.lote, i.semielaborado_codigo AS modelo_codigo, i.semielaborado_nombre AS modelo_nombre, m.nombre AS maquina, m.categoria AS maquina_categoria
          FROM prod_asignaciones a
          JOIN prod_plan_items i ON i.id = a.item_id
@@ -566,7 +568,7 @@ function registrarRutasProduccion(app, db, requirePermiso) {
               const propias = cargas.filter((c) => c.asignacion_id === a.id);
               const vigente = propias.find((c) => c.estado !== "RECHAZADA") || null;
               const rechazada = !vigente ? propias.find((c) => c.estado === "RECHAZADA") || null : null;
-              return { ...a, es_roto: esRoto(a.maquina_categoria), receta: recetas[a.ingenieria_id] || [], formula: formulas[a.ingenieria_id] || null, carga: vigente ? { ...vigente, formula_usada: parseJSON(vigente.formula_usada) } : null, rechazo: rechazada ? rechazada.motivo_rechazo || "La carga fue rechazada. Volvé a cargarla." : null };
+              return { ...a, es_roto: llevaCiclos(a.receta_proceso, a.maquina_categoria), proceso: a.receta_proceso || null, receta: recetas[a.ingenieria_id] || [], formula: formulas[a.ingenieria_id] || null, carga: vigente ? { ...vigente, formula_usada: parseJSON(vigente.formula_usada) } : null, rechazo: rechazada ? rechazada.motivo_rechazo || "La carga fue rechazada. Volvé a cargarla." : null };
             }),
         };
       }),
@@ -594,9 +596,10 @@ function registrarRutasProduccion(app, db, requirePermiso) {
   async function datosParaCarga(asignacion_id) {
     const [r] = await db.query(
       `SELECT a.id, a.item_id, a.turno, ${FECHA("a.fecha")} AS fecha, a.ingenieria_id, i.lote, i.semielaborado_codigo, i.semielaborado_nombre,
-              m.nombre AS maquina, m.categoria AS maquina_categoria, t.lanzado
+              m.nombre AS maquina, m.categoria AS maquina_categoria, t.lanzado, ing.proceso AS receta_proceso
          FROM prod_asignaciones a
          JOIN prod_plan_items i ON i.id = a.item_id
+         LEFT JOIN ingenierias ing ON ing.id = a.ingenieria_id
          LEFT JOIN prod_maquinas m ON m.id = a.maquina_id
          LEFT JOIN prod_turnos t ON t.fecha = a.fecha AND t.turno = a.turno
         WHERE a.id = ?`,
@@ -617,7 +620,7 @@ function registrarRutasProduccion(app, db, requirePermiso) {
     if (ya.length) return res.status(409).json({ error: "Esta producción ya fue cargada." });
     const x = v.valores;
     // Los ciclos son solo de rotomoldeo: en las demás máquinas no se registran.
-    if (!esRoto(a.maquina_categoria)) x.ciclos = 0;
+    if (!llevaCiclos(a.receta_proceso, a.maquina_categoria)) x.ciclos = 0;
     const fu = await prepararFormulaUsada(req.body, x.kg_por_producto);
     if (fu.error) return res.status(400).json({ error: fu.error });
     const [r] = await db.query(
@@ -631,7 +634,7 @@ function registrarRutasProduccion(app, db, requirePermiso) {
   }));
 
   app.put("/api/prod/cargas/:id", TABLET, seguro(async (req, res) => {
-    const [c] = await db.query("SELECT id, estado, maquina_categoria FROM prod_cargas WHERE id = ?", [req.params.id]);
+    const [c] = await db.query("SELECT c.id, c.estado, c.maquina_categoria, ing.proceso AS receta_proceso FROM prod_cargas c LEFT JOIN ingenierias ing ON ing.id = c.ingenieria_id WHERE c.id = ?", [req.params.id]);
     if (!c.length) return res.status(404).json({ error: "Carga no encontrada." });
     if (c[0].estado !== "PENDIENTE") return res.status(409).json({ error: "Esta carga ya fue revisada y no se puede modificar." });
     const v = P.validarCarga(req.body);
@@ -639,7 +642,7 @@ function registrarRutasProduccion(app, db, requirePermiso) {
     const x = v.valores;
     const operario = String(req.body.operario || "").trim().slice(0, 255);
     if (!operario) return res.status(400).json({ error: "Indicá quién cargó la producción." });
-    if (!esRoto(c[0].maquina_categoria)) x.ciclos = 0;
+    if (!llevaCiclos(c[0].receta_proceso, c[0].maquina_categoria)) x.ciclos = 0;
     const fu = await prepararFormulaUsada(req.body, x.kg_por_producto);
     if (fu.error) return res.status(400).json({ error: fu.error });
     await db.query(

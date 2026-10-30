@@ -163,7 +163,7 @@ function Cuerpo({ a, operarios, onCerrar, onGuardado, toast }) {
           </AnimatePresence>
         </div>
 
-        {conFormula && <FormulaUsada lineas={lineas} setLineas={setLineas} original={a.formula?.lineas} />}
+        {conFormula && <FormulaUsada lineas={lineas} setLineas={setLineas} original={a.formula?.lineas} version={a.receta_version} porTachada={a.formula ? a.formula.con_tachada : true} onTotal={a.formula && !a.formula.con_tachada ? (t) => set("kg")(String(t).replace(".", ",")) : undefined} />}
 
         <div className="flex flex-wrap items-center gap-3 text-base">
           <span className="text-zinc-500">Carga:</span>
