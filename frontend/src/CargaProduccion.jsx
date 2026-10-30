@@ -1,708 +1,545 @@
-import { useState, useEffect, useMemo } from "react";
+// Carga de producción: pantalla de la tablet de planta. Muestra lo que se produce hoy (máquina, modelo, lote,
+// cantidad, operario, receta) y permite cargar lo producido al terminar el turno con un botón.
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { AnimatePresence, motion } from "framer-motion";
 import {
-  Flame,
-  CheckCircle2,
-  Clock,
   AlertTriangle,
-  Scale,
-  UserCheck,
+  CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
+  Clock,
+  Factory,
+  Loader2,
+  Maximize2,
+  Minimize2,
+  Moon,
+  PencilLine,
+  RefreshCw,
+  Send,
+  Sun,
   User,
-  ShieldCheck,
-  Search,
-  Package,
-  Layers,
-  Zap,
-  Check,
-  X,
-  ArrowRight,
-  Filter,
 } from "lucide-react";
+import { useToast } from "./produccion/useToast";
+import {
+  api,
+  diaMes,
+  hoyISO,
+  nombreDia,
+  num,
+  sumarDias,
+  turnoDeAhora,
+  turnoLabel,
+} from "./produccion/util";
+import FormularioCarga from "./tablet/FormularioCarga";
+
+const suave = [0.2, 0.8, 0.2, 1];
+
+function fechaInicial() {
+  const h = new Date();
+  return h.getHours() < 6 ? sumarDias(hoyISO(), -1) : hoyISO();
+}
+
+function Reloj() {
+  const [ahora, setAhora] = useState(() => new Date());
+  useEffect(() => {
+    const t = setInterval(() => setAhora(new Date()), 15000);
+    return () => clearInterval(t);
+  }, []);
+  return (
+    <span className="inline-flex items-center gap-2 text-lg font-bold text-zinc-300 tabular-nums">
+      <Clock size={18} className="text-zinc-500" />
+      {ahora.toLocaleTimeString("es-AR", {
+        hour: "2-digit",
+        minute: "2-digit",
+      })}
+    </span>
+  );
+}
+
+function Estado({ a }) {
+  if (a.carga?.estado === "APROBADA")
+    return (
+      <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 px-3 py-1 text-sm font-bold text-emerald-300">
+        <CheckCircle2 size={16} /> Aprobada
+      </span>
+    );
+  if (a.carga?.estado === "PENDIENTE")
+    return (
+      <span className="inline-flex items-center gap-1.5 rounded-full bg-[#FFD60A]/15 border border-[#FFD60A]/30 px-3 py-1 text-sm font-bold text-[#FFD60A]">
+        <Clock size={16} /> Enviada · esperando aprobación
+      </span>
+    );
+  if (a.rechazo)
+    return (
+      <span className="inline-flex items-center gap-1.5 rounded-full bg-rose-500/15 border border-rose-500/30 px-3 py-1 text-sm font-bold text-rose-300">
+        <AlertTriangle size={16} /> Hay que corregirla
+      </span>
+    );
+  return (
+    <span className="inline-flex items-center gap-1.5 rounded-full bg-[#FF5A00]/15 border border-[#FF5A00]/30 px-3 py-1 text-sm font-bold text-[#ff8a4d]">
+      <span className="w-2 h-2 rounded-full bg-[#FF5A00] animate-pulse" /> Para
+      producir
+    </span>
+  );
+}
+
+function Tarjeta({ a, i, onCargar }) {
+  const c = a.carga;
+  const lista = c?.estado === "APROBADA";
+  const buenas = c ? c.total_producido - c.fallas : 0;
+  return (
+    <motion.article
+      layout
+      initial={{ opacity: 0, y: 24 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{
+        duration: 0.4,
+        ease: suave,
+        delay: Math.min(i * 0.07, 0.4),
+      }}
+      className={`relative overflow-hidden rounded-3xl border p-6 flex flex-col ${a.rechazo ? "border-rose-500/40 bg-[#1a1012]" : lista ? "border-emerald-500/25 bg-[#0e1612]" : "border-white/[0.09] bg-[#111114]"}`}
+    >
+      <div className="absolute inset-x-0 top-0 h-1.5 bg-[repeating-linear-gradient(135deg,#FFD60A_0_14px,transparent_14px_28px)] opacity-60" />
+      <div className="flex flex-col-reverse items-start sm:flex-row sm:justify-between gap-3">
+        <div className="min-w-0 max-w-full">
+          <p className="text-[12px] font-extrabold uppercase tracking-[0.12em] text-zinc-500">
+            Máquina
+          </p>
+          <h3 className="text-4xl font-extrabold text-white leading-none mt-1 truncate">
+            {a.maquina || "Sin asignar"}
+          </h3>
+        </div>
+        <Estado a={a} />
+      </div>
+
+      <div className="mt-5">
+        <p className="text-2xl font-bold text-white leading-snug">
+          {a.modelo_nombre}
+        </p>
+        <p className="mt-1 text-sm text-zinc-500">{a.modelo_codigo}</p>
+      </div>
+
+      <div className="mt-5 grid grid-cols-2 sm:grid-cols-3 gap-3">
+        <div className="rounded-2xl bg-white/[0.04] px-4 py-3">
+          <p className="text-[11px] font-extrabold uppercase tracking-[0.08em] text-zinc-500">
+            Cantidad
+          </p>
+          <p className="text-3xl font-extrabold text-[#FFD60A] tabular-nums leading-tight">
+            {num(a.cantidad)}
+          </p>
+        </div>
+        <div className="rounded-2xl bg-white/[0.04] px-4 py-3">
+          <p className="text-[11px] font-extrabold uppercase tracking-[0.08em] text-zinc-500">
+            Lote
+          </p>
+          <p className="text-xl font-extrabold text-white font-mono leading-tight mt-1.5">
+            {a.lote}
+          </p>
+        </div>
+        <div className="rounded-2xl bg-white/[0.04] px-4 py-3 min-w-0 col-span-2 sm:col-span-1">
+          <p className="text-[11px] font-extrabold uppercase tracking-[0.08em] text-zinc-500">
+            Operario
+          </p>
+          <p className="text-xl font-extrabold text-white leading-tight mt-1.5 truncate inline-flex items-center gap-1.5 max-w-full">
+            <User size={16} className="text-zinc-500 shrink-0" />
+            <span className="truncate">{a.operario || "—"}</span>
+          </p>
+        </div>
+      </div>
+
+      {a.receta.length > 0 && (
+        <div className="mt-4">
+          <p className="text-[11px] font-extrabold uppercase tracking-[0.08em] text-zinc-500 mb-2">
+            Receta{a.receta_version ? ` · ${a.receta_version}` : ""}
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {a.receta.map((r) => (
+              <span
+                key={r.codigo}
+                className="rounded-xl bg-white/[0.05] border border-white/[0.07] px-3 py-1.5 text-sm text-zinc-300"
+              >
+                <b className="text-white">{r.codigo}</b>{" "}
+                <span className="text-zinc-500">· {r.nombre}</span>
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {a.rechazo && (
+        <div className="mt-4 rounded-2xl bg-rose-500/10 border border-rose-500/30 px-4 py-3 text-base text-rose-100">
+          <b className="block text-rose-300 text-sm uppercase tracking-wide mb-0.5">
+            Motivo del rechazo
+          </b>
+          {a.rechazo}
+        </div>
+      )}
+
+      {c && (
+        <div className="mt-4 rounded-2xl bg-white/[0.04] px-4 py-3 flex flex-wrap gap-x-6 gap-y-1 text-base text-zinc-300">
+          <span>
+            <b className="text-white tabular-nums">{num(c.total_producido)}</b>{" "}
+            producidas
+          </span>
+          <span>
+            <b className="text-emerald-300 tabular-nums">{num(buenas)}</b>{" "}
+            buenas
+          </span>
+          <span>
+            <b className="text-rose-300 tabular-nums">{num(c.fallas)}</b> fallas
+          </span>
+        </div>
+      )}
+
+      <div className="mt-auto pt-6">
+        {lista ? (
+          <p className="text-center text-base font-semibold text-emerald-300/80 py-4">
+            Ya está cargada y aprobada. ¡Gracias!
+          </p>
+        ) : c ? (
+          <button
+            onClick={() => onCargar(a)}
+            className="w-full min-h-[64px] rounded-2xl border border-white/[0.14] bg-white/[0.05] text-lg font-bold text-white inline-flex items-center justify-center gap-3 hover:bg-white/[0.1] active:scale-[0.99] transition-all cursor-pointer"
+          >
+            <PencilLine size={22} /> Corregir lo que cargué
+          </button>
+        ) : (
+          <button
+            onClick={() => onCargar(a)}
+            className="w-full min-h-[76px] rounded-2xl bg-[#FF5A00] text-black text-2xl font-extrabold inline-flex items-center justify-center gap-3 hover:bg-[#ff7122] active:scale-[0.99] transition-all cursor-pointer shadow-[0_12px_36px_rgba(255,90,0,0.28)]"
+          >
+            <Send size={26} />{" "}
+            {a.rechazo ? "Volver a cargar" : "Cargar producción"}
+          </button>
+        )}
+      </div>
+    </motion.article>
+  );
+}
+
+function Aviso({ icono: Icono, titulo, texto, tono = "gris" }) {
+  const t =
+    tono === "ok"
+      ? "text-emerald-300 bg-emerald-500/10 border-emerald-500/25"
+      : "text-zinc-400 bg-white/[0.04] border-white/[0.08]";
+  return (
+    <motion.div
+      initial={{ opacity: 0, scale: 0.97 }}
+      animate={{ opacity: 1, scale: 1 }}
+      transition={{ duration: 0.35, ease: suave }}
+      className="rounded-3xl border border-dashed border-white/[0.12] bg-white/[0.02] px-6 py-16 text-center"
+    >
+      <span
+        className={`mx-auto w-20 h-20 rounded-full grid place-items-center border ${t}`}
+      >
+        <Icono size={36} />
+      </span>
+      <p className="mt-5 text-3xl font-extrabold text-white">{titulo}</p>
+      <p className="mt-2 text-lg text-zinc-400 max-w-lg mx-auto">{texto}</p>
+    </motion.div>
+  );
+}
 
 export default function CargaProduccion() {
-  const [ordenes, setOrdenes] = useState([]);
-  const [semielaboradosDB, setSemielaboradosDB] = useState([]);
-  const [materiasPrimasDB, setMateriasPrimasDB] = useState([]);
-  const [recipesMap, setRecipesMap] = useState({});
-  const [cargasPendientes, setCargasPendientes] = useState([]);
-  const [cargasAprobadas, setCargasAprobadas] = useState([]);
-  const [loading, setLoading] = useState(true);
-
-  // ROL SIMULADO (OPERARIO / SUPERVISOR)
-  const [userRole, setUserRole] = useState("OPERARIO"); // OPERARIO | SUPERVISOR
-  const [activeTab, setActiveTab] = useState("FORMULARIO"); // FORMULARIO | PENDIENTES | HISTORIAL
-
-  // FORMULARIO DE CARGA
-  const [form, setForm] = useState({
-    codigo_ot: "",
-    semielaborado_codigo: "",
-    articulo: "",
-    cant_buenos: 100,
-    cant_fallas: 0,
-    fecha: new Date().toISOString().split("T")[0],
-    operario_nombre: "Juan Pérez",
-    observaciones: "",
-  });
-
-  // CARGAR DATOS
-  const fetchData = async () => {
-    setLoading(true);
-    try {
-      const [resOT, resSE, resMP, resCargas] = await Promise.all([
-        fetch("/api/ordenes-trabajo"),
-        fetch("/api/semielaborados"),
-        fetch("/api/materias-primas"),
-        fetch("/api/metricas/produccion/cargas"),
-      ]);
-
-      if (resOT.ok) setOrdenes(await resOT.json());
-      if (resMP.ok) setMateriasPrimasDB(await resMP.json());
-
-      if (resCargas.ok) {
-        const todasCargas = await resCargas.json();
-        setCargasPendientes(
-          todasCargas.filter((c) => c.estado_aprobacion === "PENDIENTE"),
-        );
-        setCargasAprobadas(
-          todasCargas.filter((c) => c.estado_aprobacion === "APROBADO"),
-        );
-      }
-
-      if (resSE.ok) {
-        const semielaborados = await resSE.json();
-        setSemielaboradosDB(semielaborados);
-
-        const recipeMapObj = {};
-        await Promise.all(
-          semielaborados.map(async (se) => {
-            try {
-              const resRecipe = await fetch(
-                `/api/ingenierias/semielaborado/${se.id}`,
-              );
-              if (resRecipe.ok) {
-                const recipes = await resRecipe.json();
-                const active =
-                  recipes.find((r) => r.es_activa === 1) || recipes[0];
-                if (active && active.ingredientes) {
-                  recipeMapObj[se.codigo] = active.ingredientes;
-                }
-              }
-            } catch (e) {
-              console.error("Error receta", e);
-            }
-          }),
-        );
-        setRecipesMap(recipeMapObj);
-      }
-    } catch (err) {
-      console.error("Error cargando datos:", err);
-    } finally {
-      setLoading(false);
-    }
-  };
+  const [fecha, setFecha] = useState(fechaInicial);
+  const [turno, setTurno] = useState(() => turnoDeAhora());
+  const [dato, setDato] = useState(null);
+  const [error, setError] = useState("");
+  const [version, setVersion] = useState(0);
+  const [operarios, setOperarios] = useState([]);
+  const [cargando, setCargando] = useState(null);
+  const [pantallaCompleta, setPantallaCompleta] = useState(false);
+  const { mostrar: toast, nodo: toastNodo } = useToast();
+  const clave = `${fecha}|${version}`;
+  const abierto = useRef(false);
+  useEffect(() => {
+    abierto.current = !!cargando;
+  }, [cargando]);
 
   useEffect(() => {
-    fetchData();
+    let vivo = true;
+    api("/api/prod/operarios")
+      .then((d) => vivo && setOperarios(d))
+      .catch(() => {});
+    return () => {
+      vivo = false;
+    };
   }, []);
 
-  // PLANES ABIERTOS ÚNICOS
-  const openPlans = useMemo(() => {
-    const map = {};
-    ordenes
-      .filter((o) => o.estado !== "FINALIZADO")
-      .forEach((o) => {
-        if (!map[o.codigo_ot]) {
-          map[o.codigo_ot] = {
-            codigo_ot: o.codigo_ot,
-            destino: o.destino || "Stock General",
-            items: [],
-          };
-        }
-        map[o.codigo_ot].items.push(o);
-      });
-    return Object.values(map);
-  }, [ordenes]);
+  useEffect(() => {
+    let vivo = true;
+    api(`/api/prod/tablet?fecha=${fecha}`)
+      .then((d) => vivo && (setDato({ ...d, clave }), setError("")))
+      .catch((e) => vivo && setError(e.message));
+    return () => {
+      vivo = false;
+    };
+  }, [fecha, version, clave]);
 
-  // SEMIELABORADOS PERTENECIENTES AL PLAN SELECCIONADO
-  const currentPlanSEs = useMemo(() => {
-    if (!form.codigo_ot) return [];
-    const plan = openPlans.find((p) => p.codigo_ot === form.codigo_ot);
-    if (!plan) return [];
+  // La tablet queda prendida todo el día: se actualiza sola cuando no se está cargando nada.
+  useEffect(() => {
+    const t = setInterval(() => {
+      if (!abierto.current && !document.hidden) setVersion((v) => v + 1);
+    }, 30000);
+    return () => clearInterval(t);
+  }, []);
 
-    const uniqueMap = {};
-    plan.items.forEach((item) => {
-      if (!uniqueMap[item.semielaborado_codigo]) {
-        uniqueMap[item.semielaborado_codigo] = {
-          semielaborado_codigo: item.semielaborado_codigo,
-          articulo: item.articulo,
-        };
-      }
-    });
-    return Object.values(uniqueMap);
-  }, [openPlans, form.codigo_ot]);
+  useEffect(() => {
+    const h = () => setPantallaCompleta(!!document.fullscreenElement);
+    document.addEventListener("fullscreenchange", h);
+    return () => document.removeEventListener("fullscreenchange", h);
+  }, []);
 
-  // CÁLCULO DE DESCUENTO DE MATERIA PRIMA EN TIEMPO REAL SEGÚN LA RECETA
-  const projectedMPDeduction = useMemo(() => {
-    if (!form.semielaborado_codigo || form.cant_buenos <= 0) return [];
-    const ingredients = recipesMap[form.semielaborado_codigo] || [];
-
-    return ingredients.map((ing) => {
-      const cantConsumir = Number(form.cant_buenos) * Number(ing.cantidad || 0);
-      const mpDb = materiasPrimasDB.find(
-        (m) => m.codigo === ing.item_codigo || m.id === ing.materia_prima_id,
-      );
-      const stockActual = mpDb ? Number(mpDb.stock_actual) || 0 : 0;
-
-      return {
-        materia_prima_id: ing.materia_prima_id,
-        item_codigo: ing.item_codigo,
-        item_nombre: ing.item_nombre || mpDb?.nombre || ing.item_codigo,
-        unidad: ing.unidad_medida || "Kg",
-        cantConsumir,
-        stockActual,
-        stockSuficiente: stockActual >= cantConsumir,
-      };
-    });
-  }, [
-    form.semielaborado_codigo,
-    form.cant_buenos,
-    recipesMap,
-    materiasPrimasDB,
-  ]);
-
-  // SUBMIT CARGA PENDIENTE
-  const handleSubmitCarga = async (e) => {
-    e.preventDefault();
-    if (
-      !form.codigo_ot ||
-      !form.semielaborado_codigo ||
-      form.cant_buenos <= 0
-    ) {
-      return alert("Completá la OT, el Producto y una cantidad mayor a 0.");
-    }
-
-    try {
-      const res = await fetch(
-        "/api/metricas/produccion/cargar-pendiente",
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            ...form,
-            cant_buenos: Number(form.cant_buenos),
-            cant_fallas: Number(form.cant_fallas || 0),
-            estado_aprobacion: "PENDIENTE",
-          }),
-        },
-      );
-
-      if (res.ok) {
-        alert(
-          "✅ Carga enviada correctamente. Queda en estado PENDIENTE DE APROBACIÓN.",
+  const alternarPantalla = () => {
+    if (document.fullscreenElement) document.exitFullscreen?.();
+    else
+      document.documentElement
+        .requestFullscreen?.()
+        .catch(() =>
+          toast("Este navegador no permite pantalla completa.", "error"),
         );
-        setForm({
-          ...form,
-          semielaborado_codigo: "",
-          articulo: "",
-          cant_buenos: 100,
-          cant_fallas: 0,
-          observaciones: "",
-        });
-        fetchData();
-        if (userRole === "SUPERVISOR") setActiveTab("PENDIENTES");
-      }
-    } catch (err) {
-      alert("Error enviando reporte de producción.");
-    }
   };
 
-  // APROBAR CARGA DE PRODUCCIÓN (APLICA DESCUENTO DE STOCK EN BD)
-  const handleAprobarCarga = async (carga) => {
-    if (
-      !confirm(
-        `¿Aprobar carga de ${carga.cant_buenos}u de [${carga.semielaborado_codigo}] y descontar Materias Primas del stock?`,
-      )
-    )
-      return;
+  const recargar = useCallback(() => setVersion((v) => v + 1), []);
+  const t = useMemo(
+    () => dato?.turnos.find((x) => x.turno === turno),
+    [dato, turno],
+  );
+  const hoy = hoyISO();
+  const etiquetaDia =
+    fecha === hoy
+      ? "Hoy"
+      : fecha === sumarDias(hoy, -1)
+        ? "Ayer"
+        : fecha === sumarDias(hoy, 1)
+          ? "Mañana"
+          : nombreDia(fecha);
+  const cargandoDato = !error && (!dato || dato.clave !== clave) && !dato;
 
-    try {
-      const res = await fetch(
-        `/api/metricas/produccion/aprobar/${carga.id}`,
-        {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            supervisor_nombre: "Supervisor Planta",
-          }),
-        },
-      );
-
-      if (res.ok) {
-        alert(
-          "🎉 Carga aprobada. Se actualizaron las OTs y se descontaron las materias primas del stock.",
-        );
-        fetchData();
-      } else {
-        const err = await res.json();
-        alert(err.error || "Error al aprobar carga.");
-      }
-    } catch (err) {
-      alert("Error procesando la aprobación.");
-    }
-  };
-
-  // RECHAZAR CARGA
-  const handleRechazarCarga = async (id) => {
-    if (!confirm("¿Rechazar esta carga de producción?")) return;
-    try {
-      const res = await fetch(
-        `/api/metricas/produccion/rechazar/${id}`,
-        {
-          method: "DELETE",
-        },
-      );
-      if (res.ok) fetchData();
-    } catch (err) {
-      alert("Error al rechazar.");
-    }
+  const resumen = (tn) => {
+    const x = dato?.turnos.find((y) => y.turno === tn);
+    if (!x || !x.lanzado || x.sin_produccion) return null;
+    const pend = x.asignaciones.filter((a) => !a.carga).length;
+    return pend;
   };
 
   return (
-    <div className="h-full flex flex-col font-mono text-[#e1d7f5] select-none space-y-2 sm:space-y-3 min-h-0 bg-[#1a0f2e] p-1.5 sm:p-3 overflow-hidden">
-      {/* 1. HEADER Y SELECTOR DE ROL */}
-      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between pb-2 border-b-2 border-[#432874] gap-2 shrink-0">
-        <div>
-          <h2 className="font-pixel text-sm sm:text-base text-[#ffbe00] font-bold flex items-center gap-2 tracking-wide drop-shadow-[1px_1px_0px_#000]">
-            <Flame
-              size={18}
-              className="text-[#ffbe00] shrink-0 animate-pulse"
-            />{" "}
-            MÓDULO DE CARGA & APROBACIÓN DE PRODUCCIÓN
-          </h2>
-          <p className="text-[10px] sm:text-xs text-[#a594c9] font-mono">
-            Reporte diario operario con validación de supervisor y descuento
-            automático MRP.
-          </p>
-        </div>
-
-        {/* SELECTOR SIMULADO DE ROL OPERARIO / SUPERVISOR */}
-        <div className="flex items-center gap-1.5 font-pixel text-xs bg-[#24173e] p-1.5 border-2 border-[#432874] rounded-xs shadow-[2px_2px_0px_#000] shrink-0">
-          <span className="text-[10px] text-[#a594c9]">ROL:</span>
-          <button
-            onClick={() => setUserRole("OPERARIO")}
-            className={`px-2.5 py-1 text-[10px] font-bold border rounded-2xs flex items-center gap-1 transition-all ${
-              userRole === "OPERARIO"
-                ? "bg-[#38bdf8] border-[#0284c7] text-[#2c1a4d]"
-                : "bg-[#160c2b] border-[#432874] text-[#a594c9]"
-            }`}
-          >
-            <User size={12} /> OPERARIO
-          </button>
-          <button
-            onClick={() => setUserRole("SUPERVISOR")}
-            className={`px-2.5 py-1 text-[10px] font-bold border rounded-2xs flex items-center gap-1 transition-all ${
-              userRole === "SUPERVISOR"
-                ? "bg-[#ffbe00] border-[#b38600] text-[#2c1a4d]"
-                : "bg-[#160c2b] border-[#432874] text-[#a594c9]"
-            }`}
-          >
-            <ShieldCheck size={12} /> SUPERVISOR
-          </button>
-        </div>
-      </div>
-
-      {/* 2. BARRA DE PESTAÑAS (CARGA / PENDIENTES / HISTORIAL) */}
-      <div className="flex items-center gap-2 bg-[#24173e] p-1.5 border-2 border-[#432874] rounded-xs font-pixel text-xs shrink-0 shadow-[2px_2px_0px_#000] overflow-x-auto">
-        <button
-          onClick={() => setActiveTab("FORMULARIO")}
-          className={`flex-1 sm:flex-none whitespace-nowrap px-4 py-1.5 font-bold rounded-2xs flex items-center justify-center gap-1.5 transition-all ${
-            activeTab === "FORMULARIO"
-              ? "bg-[#ffbe00] text-[#2c1a4d]"
-              : "text-[#a594c9] hover:text-white"
-          }`}
-        >
-          <Flame size={14} /> CARGAR PRODUCCIÓN
-        </button>
-
-        <button
-          onClick={() => setActiveTab("PENDIENTES")}
-          className={`flex-1 sm:flex-none whitespace-nowrap px-4 py-1.5 font-bold rounded-2xs flex items-center justify-center gap-1.5 relative transition-all ${
-            activeTab === "PENDIENTES"
-              ? "bg-[#ffbe00] text-[#2c1a4d]"
-              : "text-[#a594c9] hover:text-white"
-          }`}
-        >
-          <Clock size={14} /> REVISAR PENDIENTES
-          {cargasPendientes.length > 0 && (
-            <span className="bg-[#f87171] text-white px-1.5 py-0.2 text-[9px] rounded-full font-bold animate-bounce ml-1">
-              {cargasPendientes.length}
+    <div className="h-full overflow-y-auto custom-scrollbar">
+      <div className="max-w-[1680px] mx-auto px-4 sm:px-6 lg:px-8 py-5 sm:py-6 pb-28 lg:pb-10 flex flex-col gap-5">
+        <header className="flex flex-wrap items-center gap-x-6 gap-y-3">
+          <div className="flex items-center gap-3 mr-auto">
+            <span className="w-14 h-14 rounded-2xl bg-[#FF5A00] grid place-items-center text-black shadow-[0_8px_24px_rgba(255,90,0,0.3)]">
+              <Factory size={28} />
             </span>
-          )}
-        </button>
+            <div>
+              <h1 className="cf-h1-largo text-3xl font-extrabold text-white leading-none">
+                Producción de planta
+              </h1>
+              <p className="text-base text-zinc-400 mt-1">
+                Lo que hay que producir y la carga al terminar el turno
+              </p>
+            </div>
+          </div>
 
-        <button
-          onClick={() => setActiveTab("HISTORIAL")}
-          className={`flex-1 sm:flex-none whitespace-nowrap px-4 py-1.5 font-bold rounded-2xs flex items-center justify-center gap-1.5 transition-all ${
-            activeTab === "HISTORIAL"
-              ? "bg-[#ffbe00] text-[#2c1a4d]"
-              : "text-[#a594c9] hover:text-white"
-          }`}
-        >
-          <CheckCircle2 size={14} /> REGISTROS APROBADOS
-        </button>
-      </div>
+          <div className="flex items-center gap-1 rounded-2xl bg-white/[0.05] border border-white/[0.08] p-1">
+            <button
+              onClick={() => setFecha((f) => sumarDias(f, -1))}
+              aria-label="Día anterior"
+              className="w-12 h-12 grid place-items-center rounded-xl text-zinc-300 hover:bg-white/[0.08] cursor-pointer"
+            >
+              <ChevronLeft size={24} />
+            </button>
+            <button
+              onClick={() => setFecha(fechaInicial())}
+              className="min-w-[150px] px-3 text-center cursor-pointer rounded-xl hover:bg-white/[0.05] h-12"
+            >
+              <span className="block text-[11px] font-extrabold uppercase tracking-[0.1em] text-[#FFD60A] leading-none">
+                {etiquetaDia}
+              </span>
+              <span className="block text-lg font-extrabold text-white leading-tight">
+                {nombreDia(fecha)} {diaMes(fecha)}
+              </span>
+            </button>
+            <button
+              onClick={() => setFecha((f) => sumarDias(f, 1))}
+              aria-label="Día siguiente"
+              className="w-12 h-12 grid place-items-center rounded-xl text-zinc-300 hover:bg-white/[0.08] cursor-pointer"
+            >
+              <ChevronRight size={24} />
+            </button>
+          </div>
 
-      {/* 3. CONTENIDO PRINCIPAL ADAPTATIVO */}
-      <div className="flex-1 bg-[#24173e] border-2 border-[#432874] p-2.5 sm:p-4 flex flex-col min-h-0 shadow-[4px_4px_0px_#000] relative rounded-xs overflow-y-auto">
-        {/* PESTAÑA 1: FORMULARIO DE CARGA OPERARIO */}
-        {activeTab === "FORMULARIO" && (
-          <div className="max-w-3xl mx-auto w-full space-y-4 font-pixel animate-in fade-in duration-200">
-            <form onSubmit={handleSubmitCarga} className="space-y-4">
-              {/* BLOQUE 1: SELECCIÓN DE PLAN Y PRODUCTO */}
-              <div className="bg-[#160c2b] border-2 border-[#432874] p-3 sm:p-4 space-y-3 rounded-xs shadow-[2px_2px_0px_#000]">
-                <span className="text-[10px] text-[#ffbe00] bg-[#ffbe00]/10 px-2 py-0.5 border border-[#ffbe00]/30 font-bold block w-max rounded-2xs">
-                  PASO 1: SELECCIÓN DE PLAN Y SEMIELABORADO
-                </span>
+          <div className="flex items-center gap-3">
+            <Reloj />
+            <button
+              onClick={recargar}
+              aria-label="Actualizar"
+              className="w-12 h-12 grid place-items-center rounded-xl bg-white/[0.05] border border-white/[0.08] text-zinc-300 hover:bg-white/[0.1] cursor-pointer"
+            >
+              <RefreshCw size={20} />
+            </button>
+            <button
+              onClick={alternarPantalla}
+              aria-label={
+                pantallaCompleta
+                  ? "Salir de pantalla completa"
+                  : "Pantalla completa"
+              }
+              className="w-12 h-12 grid place-items-center rounded-xl bg-white/[0.05] border border-white/[0.08] text-zinc-300 hover:bg-white/[0.1] cursor-pointer"
+            >
+              {pantallaCompleta ? (
+                <Minimize2 size={20} />
+              ) : (
+                <Maximize2 size={20} />
+              )}
+            </button>
+          </div>
+        </header>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-[#a594c9] text-xs block mb-1 font-bold">
-                      ELEGIR PLAN ABIERTO:
-                    </label>
-                    <select
-                      value={form.codigo_ot}
-                      onChange={(e) =>
-                        setForm({
-                          ...form,
-                          codigo_ot: e.target.value,
-                          semielaborado_codigo: "",
-                          articulo: "",
-                        })
-                      }
-                      className="w-full bg-[#24173e] border-2 border-[#432874] text-white p-2 text-xs font-mono font-bold focus:outline-none focus:border-[#ffbe00] rounded-xs"
-                      required
-                    >
-                      <option value="">-- SELECCIONAR PLAN --</option>
-                      {openPlans.map((p) => (
-                        <option key={p.codigo_ot} value={p.codigo_ot}>
-                          [{p.codigo_ot}] - {p.destino} ({p.items.length} ítems)
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="text-[#a594c9] text-xs block mb-1 font-bold">
-                      PRODUCTO DEL PLAN:
-                    </label>
-                    <select
-                      value={form.semielaborado_codigo}
-                      onChange={(e) => {
-                        const selectedSE = currentPlanSEs.find(
-                          (s) => s.semielaborado_codigo === e.target.value,
-                        );
-                        setForm({
-                          ...form,
-                          semielaborado_codigo: e.target.value,
-                          articulo: selectedSE ? selectedSE.articulo : "",
-                        });
-                      }}
-                      disabled={!form.codigo_ot}
-                      className="w-full bg-[#24173e] border-2 border-[#432874] text-white p-2 text-xs font-mono font-bold focus:outline-none focus:border-[#ffbe00] rounded-xs disabled:opacity-30"
-                      required
-                    >
-                      <option value="">-- SELECCIONAR PRODUCTO --</option>
-                      {currentPlanSEs.map((s) => (
-                        <option
-                          key={s.semielaborado_codigo}
-                          value={s.semielaborado_codigo}
-                        >
-                          [{s.semielaborado_codigo}] {s.articulo}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-              </div>
-
-              {/* BLOQUE 2: CANTIDADES Y DATOS DE FABRICACIÓN */}
-              <div className="bg-[#160c2b] border-2 border-[#432874] p-3 sm:p-4 space-y-3 rounded-xs shadow-[2px_2px_0px_#000]">
-                <span className="text-[10px] text-[#38bdf8] bg-[#38bdf8]/10 px-2 py-0.5 border border-[#38bdf8]/30 font-bold block w-max rounded-2xs">
-                  PASO 2: CANTIDADES PRODUCIDAS & FECHA
-                </span>
-
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  <div>
-                    <label className="text-[#24cc8f] text-xs block mb-1 font-bold">
-                      PIEZAS BUENAS (+):
-                    </label>
-                    <input
-                      type="number"
-                      value={form.cant_buenos}
-                      onChange={(e) =>
-                        setForm({
-                          ...form,
-                          cant_buenos: Math.max(
-                            0,
-                            parseInt(e.target.value) || 0,
-                          ),
-                        })
-                      }
-                      className="w-full bg-[#24173e] border-2 border-[#24cc8f] text-[#24cc8f] font-bold p-2 text-sm text-right focus:outline-none rounded-xs font-mono"
-                      required
-                    />
-                  </div>
-
-                  <div>
-                    <label className="text-[#f87171] text-xs block mb-1 font-bold">
-                      PIEZAS FALLADAS / SCRAP:
-                    </label>
-                    <input
-                      type="number"
-                      value={form.cant_fallas}
-                      onChange={(e) =>
-                        setForm({
-                          ...form,
-                          cant_fallas: Math.max(
-                            0,
-                            parseInt(e.target.value) || 0,
-                          ),
-                        })
-                      }
-                      className="w-full bg-[#24173e] border-2 border-[#f87171] text-[#f87171] font-bold p-2 text-sm text-right focus:outline-none rounded-xs font-mono"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="text-[#a594c9] text-xs block mb-1 font-bold">
-                      FECHA PRODUCCIÓN:
-                    </label>
-                    <input
-                      type="date"
-                      value={form.fecha}
-                      onChange={(e) =>
-                        setForm({ ...form, fecha: e.target.value })
-                      }
-                      className="w-full bg-[#24173e] border-2 border-[#432874] text-white p-2 text-xs focus:outline-none focus:border-[#ffbe00] rounded-xs font-mono"
-                      required
-                    />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
-                  <div>
-                    <label className="text-[#a594c9] text-xs block mb-1 font-bold">
-                      OPERARIO EN TURNO:
-                    </label>
-                    <input
-                      type="text"
-                      value={form.operario_nombre}
-                      onChange={(e) =>
-                        setForm({ ...form, operario_nombre: e.target.value })
-                      }
-                      className="w-full bg-[#24173e] border border-[#432874] text-white p-2 text-xs focus:outline-none focus:border-[#ffbe00] rounded-xs font-mono"
-                      required
-                    />
-                  </div>
-
-                  <div>
-                    <label className="text-[#a594c9] text-xs block mb-1 font-bold">
-                      OBSERVACIONES / NOTAS:
-                    </label>
-                    <input
-                      type="text"
-                      placeholder="Ej: Cambio de pigmento a las 14:00"
-                      value={form.observaciones}
-                      onChange={(e) =>
-                        setForm({ ...form, observaciones: e.target.value })
-                      }
-                      className="w-full bg-[#24173e] border border-[#432874] text-white p-2 text-xs focus:outline-none focus:border-[#ffbe00] rounded-xs font-mono"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* BLOQUE 3: PREVISUALIZACIÓN DESCUENTO DE MATERIAS PRIMAS (MRP AUTOMÁTICO) */}
-              {projectedMPDeduction.length > 0 && (
-                <div className="bg-[#160c2b] border-2 border-[#38bdf8] p-3 rounded-xs space-y-2 shadow-[2px_2px_0px_#000]">
-                  <span className="text-[10px] text-[#38bdf8] font-bold flex items-center gap-1 border-b border-[#432874] pb-1">
-                    <Scale size={13} /> DESCUENTO ESTIMADO DE MATERIAS PRIMAS AL
-                    APROBAR
+        <div role="tablist" className="grid grid-cols-2 gap-3">
+          {[
+            ["DIA", Sun],
+            ["NOCHE", Moon],
+          ].map(([id, Icono]) => {
+            const pend = resumen(id);
+            const activo = turno === id;
+            return (
+              <button
+                key={id}
+                role="tab"
+                aria-selected={activo}
+                onClick={() => setTurno(id)}
+                className={`relative min-h-[76px] rounded-2xl border px-3 sm:px-5 flex items-center gap-4 text-left transition-colors cursor-pointer ${activo ? "bg-[#FF5A00] border-[#FF5A00] text-black" : "bg-[#111114] border-white/[0.09] text-zinc-300 hover:border-white/25"}`}
+              >
+                <Icono size={30} />
+                <span className="flex-1">
+                  <span className="block text-lg sm:text-2xl font-extrabold leading-none">
+                    Turno {turnoLabel(id).toLowerCase()}
                   </span>
+                  <span
+                    className={`block mt-1 text-sm font-semibold ${activo ? "text-black/70" : "text-zinc-500"}`}
+                  >
+                    {pend == null
+                      ? dato?.turnos.find((y) => y.turno === id)?.sin_produccion
+                        ? "Sin producción"
+                        : "Sin lanzar"
+                      : pend === 0
+                        ? "Todo cargado"
+                        : `${pend} para cargar`}
+                  </span>
+                </span>
+                {pend > 0 && (
+                  <span
+                    className={`min-w-9 h-9 px-2 rounded-full grid place-items-center text-lg font-extrabold ${activo ? "bg-black text-[#FFD60A]" : "bg-[#FF5A00] text-black"}`}
+                  >
+                    {pend}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px] font-mono">
-                    {projectedMPDeduction.map((ing, idx) => (
-                      <div
-                        key={idx}
-                        className="bg-[#24173e] p-2 border border-[#432874] flex justify-between items-center rounded-2xs"
-                      >
-                        <span className="text-white font-bold truncate">
-                          [{ing.item_codigo}] {ing.item_nombre}
-                        </span>
-                        <strong className="text-[#ffbe00] shrink-0 font-bold ml-2">
-                          -{ing.cantConsumir.toFixed(2)} {ing.unidad}
-                        </strong>
+        {error ? (
+          <div className="rounded-3xl border border-rose-500/30 bg-rose-500/10 p-6 text-lg text-rose-100 flex items-start gap-3">
+            <AlertTriangle className="shrink-0 mt-1" />{" "}
+            <div>
+              <b>No se pudo cargar la producción.</b>
+              <p className="text-base mt-1">{error}</p>
+              <button
+                onClick={recargar}
+                className="mt-3 min-h-[48px] px-5 rounded-xl bg-white/10 font-bold cursor-pointer"
+              >
+                Reintentar
+              </button>
+            </div>
+          </div>
+        ) : cargandoDato ? (
+          <div className="flex items-center justify-center gap-3 py-24 text-zinc-500 text-lg">
+            <Loader2 className="animate-spin" /> Cargando…
+          </div>
+        ) : (
+          <AnimatePresence mode="wait" initial={false}>
+            <motion.div
+              key={`${fecha}-${turno}`}
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.25, ease: suave }}
+            >
+              {!t || !t.lanzado ? (
+                t?.sin_produccion ? (
+                  <Aviso
+                    icono={turno === "NOCHE" ? Moon : Sun}
+                    titulo={`Sin producción en el turno ${turnoLabel(turno).toLowerCase()}`}
+                    texto={
+                      t.motivo || "Este turno no tiene producción programada."
+                    }
+                  />
+                ) : (
+                  <Aviso
+                    icono={Clock}
+                    titulo="Todavía no hay producción para este turno"
+                    texto="El jefe de producción la publica desde Planificación. Esta pantalla se actualiza sola."
+                  />
+                )
+              ) : t.sin_produccion ? (
+                <Aviso
+                  icono={Moon}
+                  titulo={`Sin producción en el turno ${turnoLabel(turno).toLowerCase()}`}
+                  texto={
+                    t.motivo || "Este turno no tiene producción programada."
+                  }
+                />
+              ) : t.asignaciones.length === 0 ? (
+                <Aviso
+                  icono={Clock}
+                  titulo="Este turno no tiene asignaciones"
+                  texto="Consultá con el jefe de producción."
+                />
+              ) : (
+                <>
+                  {t.asignaciones.every((a) => a.carga) && (
+                    <motion.div
+                      initial={{ opacity: 0, y: -8 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className="mb-4 flex items-center gap-4 rounded-2xl border border-emerald-500/25 bg-emerald-500/10 px-5 py-4"
+                    >
+                      <CheckCircle2
+                        size={32}
+                        className="text-emerald-300 shrink-0"
+                      />
+                      <div>
+                        <p className="text-xl font-extrabold text-white leading-tight">
+                          ¡Todo cargado!
+                        </p>
+                        <p className="text-base text-emerald-100/70">
+                          Si algo está mal, podés corregirlo hasta que lo
+                          aprueben.
+                        </p>
                       </div>
+                    </motion.div>
+                  )}
+                  <div className="grid gap-5 lg:grid-cols-2 2xl:grid-cols-3">
+                    {t.asignaciones.map((a, i) => (
+                      <Tarjeta key={a.id} a={a} i={i} onCargar={setCargando} />
                     ))}
                   </div>
-                </div>
+                </>
               )}
-
-              {/* BOTÓN ENVIAR CARGA */}
-              <button
-                type="submit"
-                className="w-full py-3 bg-[#ffbe00] text-[#2c1a4d] font-bold text-sm hover:bg-[#ffe066] transition-all shadow-[3px_3px_0px_#000] active:translate-y-0.5 rounded-xs flex items-center justify-center gap-2"
-              >
-                <Flame size={16} /> REGISTRAR PRODUCCIÓN (PENDIENTE DE
-                APROBACIÓN)
-              </button>
-            </form>
-          </div>
+            </motion.div>
+          </AnimatePresence>
         )}
 
-        {/* PESTAÑA 2: CARGAS PENDIENTES DE REVISIÓN Y APROBACIÓN (SUPERVISOR) */}
-        {activeTab === "PENDIENTES" && (
-          <div className="space-y-3 font-pixel animate-in fade-in duration-200">
-            <div className="flex justify-between items-center border-b border-[#432874] pb-2">
-              <span className="text-xs text-[#a594c9]">
-                Registros enviados por operarios pendientes de validación (
-                {cargasPendientes.length}):
-              </span>
-            </div>
-
-            {cargasPendientes.length === 0 ? (
-              <div className="py-16 text-center text-[#6e588a] text-xs">
-                No hay cargas de producción pendientes de revisión.
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                {cargasPendientes.map((carga) => (
-                  <div
-                    key={carga.id}
-                    className="bg-[#160c2b] border-2 border-[#ffbe00] p-3.5 space-y-2.5 rounded-xs shadow-[3px_3px_0px_#000] relative"
-                  >
-                    <div className="flex justify-between items-start border-b border-[#432874] pb-1.5">
-                      <div>
-                        <strong className="text-[#ffbe00] text-sm font-bold">
-                          [{carga.codigo_ot}]
-                        </strong>
-                        <span className="text-white font-bold block text-xs mt-0.5">
-                          [{carga.semielaborado_codigo}] {carga.articulo}
-                        </span>
-                      </div>
-                      <span className="bg-[#ffbe00]/20 border border-[#ffbe00]/50 text-[#ffbe00] text-[9px] px-2 py-0.5 font-bold rounded-2xs">
-                        ⏳ PENDIENTE
-                      </span>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-2 text-xs font-mono bg-[#24173e] p-2 border border-[#432874] rounded-2xs">
-                      <div>
-                        <span className="text-[#a594c9] text-[10px] block">
-                          CANT. BUENAS:
-                        </span>
-                        <strong className="text-[#24cc8f] text-sm">
-                          +{carga.cant_buenos} u.
-                        </strong>
-                      </div>
-                      <div>
-                        <span className="text-[#a594c9] text-[10px] block">
-                          FALLAS / SCRAP:
-                        </span>
-                        <strong className="text-[#f87171] text-sm">
-                          {carga.cant_fallas} u.
-                        </strong>
-                      </div>
-                    </div>
-
-                    <div className="text-[10px] text-[#a594c9] space-y-0.5 font-mono">
-                      <div>
-                        Operario:{" "}
-                        <strong className="text-white">
-                          {carga.operario_nombre || "Operario Planta"}
-                        </strong>
-                      </div>
-                      <div>
-                        Fecha Carga:{" "}
-                        <strong className="text-white">{carga.fecha}</strong>
-                      </div>
-                      {carga.observaciones && (
-                        <div>
-                          Notas:{" "}
-                          <span className="text-white italic">
-                            "{carga.observaciones}"
-                          </span>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* BOTONES DE APROBACIÓN SUPERVISOR */}
-                    <div className="flex items-center gap-2 pt-2 border-t border-[#432874]">
-                      <button
-                        onClick={() => handleRechazarCarga(carga.id)}
-                        className="flex-1 py-1.5 bg-[#2c1a4d] border border-[#f87171]/50 text-[#f87171] font-bold text-xs hover:bg-[#f87171] hover:text-white transition-colors rounded-2xs"
-                      >
-                        RECHAZAR
-                      </button>
-                      <button
-                        onClick={() => handleAprobarCarga(carga)}
-                        className="flex-2 py-1.5 bg-[#24cc8f] text-[#2c1a4d] font-bold text-xs hover:bg-[#52e0a8] transition-colors shadow-[2px_2px_0px_#000] rounded-2xs flex items-center justify-center gap-1"
-                      >
-                        <CheckCircle2 size={14} /> APROBAR Y DESCONTAR STOCK
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* PESTAÑA 3: HISTORIAL DE REGISTROS APROBADOS */}
-        {activeTab === "HISTORIAL" && (
-          <div className="space-y-3 font-pixel animate-in fade-in duration-200">
-            <div className="border-b border-[#432874] pb-2 text-xs text-[#a594c9]">
-              Cargas confirmadas con impacto aplicado en stock de Materias
-              Primas ({cargasAprobadas.length}):
-            </div>
-
-            {cargasAprobadas.length === 0 ? (
-              <div className="py-16 text-center text-[#6e588a] text-xs">
-                Aún no hay registros aprobados.
-              </div>
-            ) : (
-              <div className="space-y-2 border-2 border-[#432874] bg-[#160c2b] rounded-xs p-2">
-                {cargasAprobadas.map((carga) => (
-                  <div
-                    key={carga.id}
-                    className="bg-[#24173e] p-2.5 border border-[#432874] flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-2 font-mono text-xs rounded-2xs"
-                  >
-                    <div>
-                      <div className="flex items-center gap-2 font-pixel">
-                        <strong className="text-[#ffbe00]">
-                          [{carga.codigo_ot}]
-                        </strong>
-                        <span className="text-white font-bold">
-                          [{carga.semielaborado_codigo}] {carga.articulo}
-                        </span>
-                      </div>
-                      <div className="text-[10px] text-[#a594c9] mt-0.5">
-                        Fecha: {carga.fecha} | Operario: {carga.operario_nombre}
-                      </div>
-                    </div>
-
-                    <div className="flex items-center justify-between sm:justify-end gap-3 shrink-0 font-pixel">
-                      <span className="text-[#24cc8f] font-bold text-sm">
-                        +{carga.cant_buenos} u.
-                      </span>
-                      <span className="bg-[#24cc8f]/20 border border-[#24cc8f]/50 text-[#24cc8f] text-[9px] px-2 py-0.5 rounded-2xs font-bold flex items-center gap-1">
-                        <CheckCircle2 size={10} /> APROBADO
-                      </span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
+        <FormularioCarga
+          asignacion={cargando}
+          fecha={fecha}
+          operarios={operarios}
+          onCerrar={() => setCargando(null)}
+          onGuardado={recargar}
+          toast={toast}
+        />
+        {toastNodo}
       </div>
     </div>
   );
