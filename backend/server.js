@@ -12,6 +12,7 @@ const jwt = require("jsonwebtoken");
 const crypto = require("crypto");
 const { crearConnie } = require("./connie");
 const { separarDuplicadas, asegurarTablaDuplicadas } = require("./fichero");
+const { asegurarTablasProduccion, registrarRutasProduccion } = require("./produccionRutas");
 const { asegurarColumnaPagoMensual } = require("./escala");
 const { migrarPermisoConnie } = require("./permisos");
 require("dotenv").config();
@@ -180,6 +181,9 @@ function requirePermiso(moduloId) {
 }
 
 app.use(requireAuth);
+
+// Plan de producción semanal, turnos y carga desde la tablet de planta.
+registrarRutasProduccion(app, db, requirePermiso);
 
 // Multer Config
 const uploadTemp = multer({ dest: UPLOADS_DIR });
@@ -787,6 +791,8 @@ async function initDB() {
         ["General", 5, 15, 1],
       );
     }
+
+    await asegurarTablasProduccion(db);
 
     console.log("✅ Estructura MySQL inicializada correctamente.");
   } catch (err) {
