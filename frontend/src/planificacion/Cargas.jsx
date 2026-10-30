@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { CheckCircle2, ClipboardCheck, Loader2, XCircle } from "lucide-react";
+import { CheckCircle2, ClipboardCheck, Loader2, Trash2, XCircle } from "lucide-react";
 import { Boton, Chip, Etiqueta, Modal, Vacio } from "../produccion/ui";
 import { campo } from "../produccion/estilos";
 import { api, diaMes, num, turnoLabel } from "../produccion/util";
@@ -19,6 +19,23 @@ function Tarjeta({ c, pendiente, onResuelto, toast }) {
   const [motivo, setMotivo] = useState("");
   const [ocupado, setOcupado] = useState(false);
   const buenas = c.total_producido - c.fallas;
+
+  const [eliminando, setEliminando] = useState(false);
+  const eliminar = async (sacarDeTablet) => {
+    setOcupado(true);
+    try {
+      await api(`/api/prod/cargas/${c.id}${sacarDeTablet ? "?sacar_de_tablet=1" : ""}`, { method: "DELETE" });
+      toast(
+        c.estado === "APROBADA"
+          ? sacarDeTablet ? "Producción eliminada y sacada de la tablet. La materia prima volvió al stock." : "Producción eliminada. La materia prima volvió al stock y la tablet puede volver a cargarla."
+          : sacarDeTablet ? "Carga eliminada y sacada de la tablet." : "Carga eliminada.",
+      );
+      onResuelto();
+    } catch (e) {
+      toast(e.message, "error");
+      setOcupado(false);
+    }
+  };
 
   const resolver = async (accion, body) => {
     setOcupado(true);
@@ -56,8 +73,31 @@ function Tarjeta({ c, pendiente, onResuelto, toast }) {
       {c.observaciones && <p className="mt-3 text-sm text-zinc-300 bg-white/[0.04] rounded-xl px-3 py-2">“{c.observaciones}”</p>}
       {c.estado === "RECHAZADA" && c.motivo_rechazo && <p className="mt-3 text-sm text-rose-200">Motivo: {c.motivo_rechazo}</p>}
 
-      {pendiente && (
-        <div className="mt-4">
+      <div className="mt-4">
+        <AnimatePresence initial={false} mode="wait">
+          {eliminando ? (
+            <motion.div key="e" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="rounded-xl border border-rose-500/30 bg-rose-500/[0.07] p-3.5">
+              <p className="text-sm text-rose-100 leading-snug">
+                {c.estado === "APROBADA"
+                  ? "Se saca de métricas y la materia prima que se descontó vuelve al stock (queda en su historial). ¿Qué hacemos con la tablet?"
+                  : "Se elimina esta carga. ¿Qué hacemos con la tablet?"}
+              </p>
+              <div className="mt-3 flex flex-col sm:flex-row gap-2">
+                <Boton variante="peligro" onClick={() => eliminar(false)} disabled={ocupado} icono={Trash2}>Eliminar y dejar que la carguen de nuevo</Boton>
+                <Boton variante="peligro" onClick={() => eliminar(true)} disabled={ocupado} icono={Trash2}>Eliminar y sacar de la tablet</Boton>
+                <Boton variante="fantasma" onClick={() => setEliminando(false)} disabled={ocupado}>No</Boton>
+              </div>
+            </motion.div>
+          ) : (
+            <motion.div key="b" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+              {!pendiente && <button type="button" onClick={() => setEliminando(true)} className="inline-flex items-center gap-1.5 min-h-[38px] px-3 rounded-lg text-sm font-bold text-zinc-500 hover:text-rose-300 hover:bg-rose-500/10 cursor-pointer"><Trash2 size={15} /> Eliminar{c.estado === "APROBADA" ? " producción" : ""}</button>}
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+
+      {pendiente && !eliminando && (
+        <div className="mt-2">
           <AnimatePresence initial={false} mode="wait">
             {rechazando ? (
               <motion.div key="r" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex flex-col gap-3">
@@ -74,6 +114,7 @@ function Tarjeta({ c, pendiente, onResuelto, toast }) {
               <motion.div key="a" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex gap-2">
                 <Boton variante="primario" icono={CheckCircle2} onClick={() => resolver("aprobar")} disabled={ocupado}>Aprobar</Boton>
                 <Boton variante="fantasma" onClick={() => setRechazando(true)}>Rechazar…</Boton>
+                <Boton variante="fantasma" icono={Trash2} onClick={() => setEliminando(true)} aria-label="Eliminar carga" className="ml-auto" />
               </motion.div>
             )}
           </AnimatePresence>

@@ -259,7 +259,7 @@ async function demandaMateriasPrimas(pool, { meses, materia_prima, materia_prima
   let consumo = new Map();
   try {
     const [c] = await pool.query(
-      "SELECT materia_prima_id, SUM(-cantidad) AS total FROM mp_movimientos WHERE tipo = 'CONSUMO_PRODUCCION' AND DATE(fecha) >= ? AND DATE(fecha) <= ? GROUP BY materia_prima_id",
+      "SELECT materia_prima_id, SUM(-cantidad) AS total FROM mp_movimientos WHERE tipo IN ('CONSUMO_PRODUCCION', 'REVERSA_PRODUCCION') AND DATE(fecha) >= ? AND DATE(fecha) <= ? GROUP BY materia_prima_id",
       [fechaISO(desde), fechaISO(hasta)],
     );
     consumo = new Map(c.map((r) => [r.materia_prima_id, Number(r.total) || 0]));
