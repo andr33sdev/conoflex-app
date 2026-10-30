@@ -9,6 +9,7 @@ import DemandaMateriaPrima from "./DemandaMateriaPrima";
 const TIPOS = {
   CONSUMO_PRODUCCION: { texto: "Producción", icono: Factory, color: "text-rose-300", fondo: "bg-rose-500/10 border-rose-500/25" },
   INGRESO_COMPRA: { texto: "Compra", icono: PackagePlus, color: "text-emerald-300", fondo: "bg-emerald-500/10 border-emerald-500/25" },
+  REVERSA_PRODUCCION: { texto: "Producción eliminada", icono: Undo2, color: "text-amber-300", fondo: "bg-amber-500/10 border-amber-500/25" },
   AJUSTE_COMPRA: { texto: "Corrección de compra", icono: Undo2, color: "text-amber-300", fondo: "bg-amber-500/10 border-amber-500/25" },
   AJUSTE_MANUAL: { texto: "Edición directa", icono: SlidersHorizontal, color: "text-sky-300", fondo: "bg-sky-500/10 border-sky-500/25" },
 };
@@ -46,6 +47,18 @@ function Detalle({ m, u }) {
         <Dato k="En piezas buenas" v={d.kg_buenas != null ? kg(d.kg_buenas, u) : null} />
         <Dato k="En fallas" v={d.kg_fallas != null ? kg(d.kg_fallas, u) : null} />
         <Dato k="Aprobado por" v={m.usuario} />
+      </div>
+    );
+  }
+  if (m.tipo === "REVERSA_PRODUCCION") {
+    return (
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-3">
+        <Dato k="Lote" v={d.lote || m.referencia_texto} />
+        <Dato k="Turno" v={d.turno} />
+        <Dato k="Máquina" v={d.maquina} />
+        <Dato k="Operario" v={d.operario} />
+        <Dato k="Piezas" v={d.total != null ? `${nf(d.total, 0)} (${nf(d.fallas, 0)} fallas)` : null} />
+        <Dato k="Eliminada por" v={m.usuario} />
       </div>
     );
   }

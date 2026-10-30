@@ -5,6 +5,7 @@
 
 const TIPOS = {
   CONSUMO_PRODUCCION: "Consumo en producción",
+  REVERSA_PRODUCCION: "Producción eliminada",
   INGRESO_COMPRA: "Ingreso por compra",
   AJUSTE_COMPRA: "Corrección de una compra",
   AJUSTE_MANUAL: "Edición directa de stock",

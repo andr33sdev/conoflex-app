@@ -741,6 +741,64 @@ function registrarRutasProduccion(app, db, requirePermiso) {
     if (!r.affectedRows) return res.status(409).json({ error: "La carga no existe o ya fue revisada." });
     res.json({ ok: true });
   }));
+
+  // Elimina una carga. Si estaba aprobada, deshace todo lo que hizo al aprobarse: sale de métricas,
+  // se devuelve la materia prima al stock (queda en su historial) y se cierra su alerta de receta.
+  // Con sacar_de_tablet también se borra la producción asignada, así deja de aparecer en la tablet.
+  app.delete("/api/prod/cargas/:id", PLAN, seguro(async (req, res) => {
+    const sacar = req.query.sacar_de_tablet === "1" || req.body?.sacar_de_tablet === true;
+    const nombre = await quien(req);
+    const conn = await db.getConnection();
+    try {
+      await conn.beginTransaction();
+      const [cs] = await conn.query(`SELECT *, ${FECHA("fecha")} AS fecha_iso FROM prod_cargas WHERE id = ? FOR UPDATE`, [req.params.id]);
+      const c = cs[0];
+      if (!c) { await conn.rollback(); return res.status(404).json({ error: "Esa carga no existe (puede que ya la hayan eliminado)." }); }
+
+      const devueltos = [];
+      if (c.estado === "APROBADA") {
+        const [movs] = await conn.query(
+          "SELECT materia_prima_id, cantidad FROM mp_movimientos WHERE referencia_tipo = 'CARGA' AND referencia_id = ? AND tipo = 'CONSUMO_PRODUCCION'",
+          [c.id],
+        );
+        for (const m of movs) {
+          const r = await moverStock(conn, {
+            mp_id: m.materia_prima_id,
+            delta: -Number(m.cantidad),
+            tipo: "REVERSA_PRODUCCION",
+            usuario: nombre,
+            referencia_tipo: "CARGA",
+            referencia_id: c.id,
+            referencia_texto: `${c.lote || "Sin lote"} · ${c.modelo_nombre || c.modelo_codigo || ""}`.trim(),
+            detalle: { lote: c.lote, fecha: c.fecha_iso, turno: c.turno, maquina: c.maquina, modelo_nombre: c.modelo_nombre, operario: c.operario, total: c.total_producido, fallas: c.fallas },
+          });
+          if (r) devueltos.push({ materia_prima_id: m.materia_prima_id, cantidad: -Number(m.cantidad) });
+        }
+        if (c.registro_id) await conn.query("DELETE FROM registro_produccion WHERE id = ?", [c.registro_id]); // sus materiales se borran en cascada
+        await conn.query("DELETE FROM ingenieria_alertas WHERE carga_id = ? AND estado = 'ABIERTA'", [c.id]);
+      }
+      await conn.query("DELETE FROM prod_cargas WHERE id = ?", [c.id]);
+
+      let sacada = false;
+      if (sacar && c.asignacion_id) {
+        const [[a]] = await conn.query(`SELECT id, ${FECHA("fecha")} AS fecha_iso, turno FROM prod_asignaciones WHERE id = ?`, [c.asignacion_id]);
+        if (a) {
+          await conn.query("DELETE FROM prod_asignaciones WHERE id = ?", [a.id]);
+          const [[{ quedan }]] = await conn.query("SELECT COUNT(*) AS quedan FROM prod_asignaciones WHERE fecha = ? AND turno = ?", [a.fecha_iso, a.turno]);
+          if (!Number(quedan)) await conn.query("UPDATE prod_turnos SET lanzado = 0, lanzado_at = NULL WHERE fecha = ? AND turno = ?", [a.fecha_iso, a.turno]);
+          sacada = true;
+        }
+      }
+      await conn.commit();
+      res.json({ ok: true, estado_anterior: c.estado, materiales_devueltos: devueltos.length, sacada_de_tablet: sacada });
+    } catch (e) {
+      await conn.rollback();
+      console.error("[produccion] eliminar carga:", e);
+      res.status(500).json({ error: "No se pudo eliminar la carga." });
+    } finally {
+      conn.release();
+    }
+  }));
 }
 
 module.exports = { asegurarTablasProduccion, registrarRutasProduccion };

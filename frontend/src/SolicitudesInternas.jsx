@@ -1,1597 +1,348 @@
-import { useState, useEffect, useMemo, useRef } from "react";
-import {
-  History,
-  X,
-  Search,
-  Ban,
-  RefreshCw,
-  ChevronRight,
-  ChevronLeft,
-  AlertTriangle,
-  ChevronDown,
-  Filter,
-  LayoutGrid,
-  Table as TableIcon,
-  Plus,
-  CheckCircle2,
-  Edit2,
-} from "lucide-react";
+// Solicitudes internas: depósito pide semielaborados a producción; producción los atiende y los deja
+// disponibles; depósito los retira. En celular se usa con tarjetas grandes y hojas que suben desde abajo.
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { AnimatePresence } from "framer-motion";
+import { AlertTriangle, Archive, CheckCircle2, Inbox, LayoutGrid, Loader2, Plus, Rows3, Search, X } from "lucide-react";
+import { useToast } from "./produccion/useToast";
+import { archivada, getApiUrl, getNowLocal, horasDesde, motivoDe, solId } from "./solicitudes/util";
+import { inputCls } from "./solicitudes/Piezas";
+import TarjetaSolicitud from "./solicitudes/TarjetaSolicitud";
+import TablaSolicitudes from "./solicitudes/TablaSolicitudes";
+import { AuditoriaSolicitud, EditarSolicitud, NuevaSolicitud, OpcionesSolicitud, RetirarSolicitud } from "./solicitudes/Hojas";
 
-const API_BASE_URL = import.meta.env?.VITE_API_URL || "";
+const LIMITE_ACTIVAS = 10;
+const POR_PAGINA = 24;
+const JSON_HEADERS = { "Content-Type": "application/json" };
 
-const getApiUrl = (path) => {
-  const cleanPath = path.startsWith("/") ? path : "/" + path;
-  return `${API_BASE_URL}${cleanPath}`;
-};
-
-const getNowLocal = () => {
-  const d = new Date();
-  const year = d.getFullYear();
-  const month = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  const hours = String(d.getHours()).padStart(2, "0");
-  const minutes = String(d.getMinutes()).padStart(2, "0");
-  const seconds = String(d.getSeconds()).padStart(2, "0");
-  return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
-};
-
-// HELPER DE FECHA EN HORARIO ARGENTINA (DD/MM/AAAA)
-const formatFechaArg = (fechaRaw) => {
-  if (!fechaRaw || fechaRaw === "--") return "--";
-  try {
-    const d = new Date(fechaRaw);
-    if (isNaN(d.getTime())) {
-      const parts = String(fechaRaw).split(" ")[0].split("T")[0].split("-");
-      return parts.length === 3
-        ? `${parts[2]}/${parts[1]}/${parts[0]}`
-        : fechaRaw;
-    }
-    return new Intl.DateTimeFormat("es-AR", {
-      day: "2-digit",
-      month: "2-digit",
-      year: "numeric",
-      timeZone: "America/Argentina/Buenos_Aires",
-    }).format(d);
-  } catch {
-    return String(fechaRaw);
-  }
-};
-
-// HELPER DE HORA EN HORARIO ARGENTINA (HH:mm)
-const formatHoraArg = (fechaRaw) => {
-  if (!fechaRaw || fechaRaw === "--") return "";
-  try {
-    const d = new Date(fechaRaw);
-    if (isNaN(d.getTime())) {
-      return String(fechaRaw).slice(11, 16);
-    }
-    return new Intl.DateTimeFormat("es-AR", {
-      hour: "2-digit",
-      minute: "2-digit",
-      hour12: false,
-      timeZone: "America/Argentina/Buenos_Aires",
-    }).format(d);
-  } catch {
-    return "";
-  }
+const FILTROS = [
+  { id: "TODOS", texto: "Activas" },
+  { id: "SOLICITADO", texto: "Solicitadas" },
+  { id: "ATENDIDO", texto: "Atendidas" },
+  { id: "DISPONIBLE", texto: "Disponibles" },
+  { id: "AUDITORIA", texto: "Archivadas", icono: Archive },
+];
+const VACIO = {
+  TODOS: ["No hay solicitudes activas", "Cuando se pida algo nuevo, aparece acá."],
+  SOLICITADO: ["Nada esperando a producción", "Todo lo pedido ya fue atendido."],
+  ATENDIDO: ["Nada en preparación", "Producción no tiene pedidos atendidos sin terminar."],
+  DISPONIBLE: ["Nada para retirar", "No hay productos disponibles en depósito."],
+  AUDITORIA: ["Sin solicitudes archivadas", "Las entregadas y canceladas quedan acá."],
 };
 
 export default function SolicitudesInternas({ usuarioActual }) {
-  const rolUpper = (usuarioActual?.rol || "ADMIN").toUpperCase();
-  const isAdmin = rolUpper === "ADMIN";
-  const isDeposito = rolUpper === "DEPOSITO" || isAdmin;
-  const isProduccion = rolUpper === "PRODUCCION" || isAdmin;
+  const rol = (usuarioActual?.rol || "ADMIN").toUpperCase();
+  const isAdmin = rol === "ADMIN";
+  const isDeposito = rol === "DEPOSITO" || isAdmin;
+  const isProduccion = rol === "PRODUCCION" || isAdmin;
+  const permisos = useMemo(() => ({ isAdmin, isDeposito, isProduccion }), [isAdmin, isDeposito, isProduccion]);
+  const { mostrar: toast, nodo: toastNodo } = useToast();
 
   const [solicitudes, setSolicitudes] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [filtroEstado, setFiltroEstado] = useState("TODOS");
+  const [cargando, setCargando] = useState(true);
+  const [errorCarga, setErrorCarga] = useState("");
+  const [semielaborados, setSemielaborados] = useState([]);
+  const [filtro, setFiltro] = useState("TODOS");
   const [busqueda, setBusqueda] = useState("");
+  const [vista, setVista] = useState(() => {
+    try { return localStorage.getItem("solicitudes_vista") === "TARJETAS" ? "TARJETAS" : "TABLA"; } catch { return "TABLA"; }
+  });
+  const [visibles, setVisibles] = useState(POR_PAGINA);
+  const [ocupado, setOcupado] = useState(false);
+  const [ahora, setAhora] = useState(() => Date.now());
 
-  // MODO DE VISTA: "TARJETAS" | "TABLA"
-  const [vistaMode, setVistaMode] = useState("TABLA");
+  const [nuevaAbierta, setNuevaAbierta] = useState(false);
+  const [menu, setMenu] = useState(null);
+  const [editar, setEditar] = useState(null);
+  const [retirar, setRetirar] = useState(null);
+  const [auditoria, setAuditoria] = useState(null);
 
-  // ESTADOS DE MENÚS Y DROPDOWNS
-  const [isFiltroMenuOpen, setIsFiltroMenuOpen] = useState(false);
-  const [activeActionMenuId, setActiveActionMenuId] = useState(null);
+  const cambiarVista = (v) => {
+    setVista(v);
+    try { localStorage.setItem("solicitudes_vista", v); } catch { /* sin almacenamiento */ }
+  };
 
-  // AUTO-AJUSTE DINÁMICO DE FILAS PARA TABLA
-  const tableContainerRef = useRef(null);
-  const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage, setItemsPerPage] = useState(10);
-
-  const [semielaboradosDB, setSemielaboradosDB] = useState([]);
-
-  // MODALES
-  const [modalNuevoOpen, setModalNuevoOpen] = useState(false);
-  const [modalEditarOpen, setModalEditarOpen] = useState(null);
-  const [modalRetiroOpen, setModalRetiroOpen] = useState(null);
-  const [modalHistorialOpen, setModalHistorialOpen] = useState(null);
-
-  // FORMULARIO CREACIÓN
-  const [semiSeleccionado, setSemiSeleccionado] = useState(null);
-  const [cantidadPedir, setCantidadPedir] = useState("");
-  const [urgenciaPedir, setUrgenciaPedir] = useState("MEDIA");
-  const [motivoUso, setMotivoUso] = useState("");
-  const [errorDuplicado, setErrorDuplicado] = useState(null);
-  const [searchSemiText, setSearchSemiText] = useState("");
-
-  // FORMULARIO EDICIÓN
-  const [editCantidad, setEditCantidad] = useState("");
-  const [editUrgencia, setEditUrgencia] = useState("MEDIA");
-  const [editMotivo, setEditMotivo] = useState("");
-
-  const [cantidadRetiroManual, setCantidadRetiroManual] = useState("");
-
-  // CERRAR MENÚS AL CLIQUEAR AFUERA
-  useEffect(() => {
-    const handleClickOutside = () => setActiveActionMenuId(null);
-    document.addEventListener("click", handleClickOutside);
-    return () => document.removeEventListener("click", handleClickOutside);
-  }, []);
-
-  // CÁLCULO DINÁMICO DE FILAS EN TABLA
-  useEffect(() => {
-    if (vistaMode !== "TABLA") {
-      setItemsPerPage(12);
-      return;
-    }
-
-    const updatePageSize = () => {
-      if (!tableContainerRef.current) return;
-      const containerHeight = tableContainerRef.current.clientHeight;
-      const headerHeight = 48;
-      const rowHeight = 48;
-      const availableHeight = containerHeight - headerHeight;
-      const calculatedCount = Math.floor(availableHeight / rowHeight);
-
-      if (calculatedCount > 0) {
-        setItemsPerPage(calculatedCount);
-      }
-    };
-
-    updatePageSize();
-    const observer = new ResizeObserver(updatePageSize);
-    if (tableContainerRef.current) observer.observe(tableContainerRef.current);
-    return () => observer.disconnect();
-  }, [vistaMode]);
-
-  const fetchSolicitudes = async () => {
+  // Pide la lista y devuelve { datos } o { error } sin tocar el estado (así se puede usar desde un efecto).
+  const pedir = useCallback(async () => {
     try {
       const res = await fetch(getApiUrl("/api/solicitudes-internas"));
-      if (res.ok) setSolicitudes((await res.json()) || []);
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setLoading(false);
+      if (!res.ok) throw new Error("No se pudieron cargar las solicitudes.");
+      return { datos: (await res.json()) || [] };
+    } catch (e) {
+      return { error: e.message || "No se pudieron cargar las solicitudes." };
     }
-  };
-
-  const fetchSemielaborados = async () => {
-    try {
-      const res = await fetch(getApiUrl("/api/semielaborados"));
-      if (res.ok) {
-        const data = await res.json();
-        setSemielaboradosDB(
-          data.semielaborados || data.productos || data || [],
-        );
-      }
-    } catch (err) {
-      console.error(err);
-    }
-  };
-
-  useEffect(() => {
-    fetchSolicitudes();
-    fetchSemielaborados();
   }, []);
+  const aplicar = useCallback((r) => {
+    if (r.datos) {
+      setSolicitudes(r.datos);
+      setErrorCarga("");
+    } else {
+      setErrorCarga(r.error);
+    }
+    setCargando(false);
+    setAhora(Date.now());
+  }, []);
+  const cargar = useCallback(async () => aplicar(await pedir()), [pedir, aplicar]);
 
   useEffect(() => {
-    setCurrentPage(1);
-  }, [filtroEstado, busqueda, vistaMode]);
+    let vivo = true;
+    pedir().then((r) => vivo && aplicar(r));
+    fetch(getApiUrl("/api/semielaborados"))
+      .then((r) => (r.ok ? r.json() : []))
+      .then((d) => vivo && setSemielaborados(d.semielaborados || d.productos || (Array.isArray(d) ? d : [])))
+      .catch(() => {});
+    return () => {
+      vivo = false;
+    };
+  }, [pedir, aplicar]);
 
-  // ID FORMATEADO "SOL-" + ID DE BASE DE DATOS
-  const getSolId = (s) => {
-    if (!s) return "";
-    const rawId = String(s.id);
-    return rawId.startsWith("SOL-") ? rawId : `SOL-${rawId}`;
-  };
+  // Se refresca solo cada minuto (cambian las horas transcurridas y llegan pedidos nuevos).
+  useEffect(() => {
+    const t = setInterval(() => !document.hidden && cargar(), 60000);
+    return () => clearInterval(t);
+  }, [cargar]);
 
-  // OBTENER MOTIVO DESDE CUALQUIER FORMATO DE ATRIBUTO DE LA BD
-  const getMotivo = (s) => {
-    return s?.motivoUso || s?.motivo_uso || s?.motivo || "--";
-  };
+  const activas = useMemo(() => solicitudes.filter((s) => !archivada(s)), [solicitudes]);
+  const limiteAlcanzado = activas.length >= LIMITE_ACTIVAS;
+  const demoradas = useMemo(() => solicitudes.filter((s) => s.estado === "DISPONIBLE" && (horasDesde(s.disponibleAt, ahora) ?? 0) >= 8), [solicitudes, ahora]);
+  const bloqueado = demoradas.length > 0;
 
-  const solicitudesDemoradas8hs = useMemo(() => {
-    const ahora = new Date().getTime();
+  const conteo = useMemo(() => ({
+    TODOS: activas.length,
+    SOLICITADO: solicitudes.filter((s) => s.estado === "SOLICITADO").length,
+    ATENDIDO: solicitudes.filter((s) => s.estado === "ATENDIDO").length,
+    DISPONIBLE: solicitudes.filter((s) => s.estado === "DISPONIBLE").length,
+    AUDITORIA: solicitudes.filter(archivada).length,
+  }), [solicitudes, activas]);
+
+  const filtradas = useMemo(() => {
+    const q = busqueda.trim().toLowerCase();
     return solicitudes.filter((s) => {
-      if (s.estado === "DISPONIBLE" && s.disponibleAt) {
-        const dTime = new Date(s.disponibleAt.replace(" ", "T")).getTime();
-        if (isNaN(dTime)) return false;
-        return (ahora - dTime) / (1000 * 60 * 60) >= 8;
-      }
-      return false;
+      if (q && !`${solId(s)} ${s.semielaboradoNombre} ${s.semielaboradoCodigo} ${motivoDe(s)}`.toLowerCase().includes(q)) return false;
+      if (filtro === "TODOS") return !archivada(s);
+      if (filtro === "AUDITORIA") return archivada(s);
+      return s.estado === filtro;
     });
-  }, [solicitudes]);
+  }, [solicitudes, busqueda, filtro]);
 
-  const bloqueadoPor8hs = solicitudesDemoradas8hs.length > 0;
+  // Al cambiar de filtro o búsqueda se vuelve a la primera tanda.
+  const [claveFiltro, setClaveFiltro] = useState("");
+  const claveActual = `${filtro}|${busqueda}`;
+  if (claveActual !== claveFiltro) {
+    setClaveFiltro(claveActual);
+    setVisibles(POR_PAGINA);
+  }
+  const mostradas = filtradas.slice(0, visibles);
 
-  const semielaboradosFiltrados =
-    searchSemiText.length >= 2
-      ? semielaboradosDB
-          .filter(
-            (s) =>
-              (s.nombre &&
-                s.nombre
-                  .toLowerCase()
-                  .includes(searchSemiText.toLowerCase())) ||
-              (s.codigo &&
-                s.codigo.toLowerCase().includes(searchSemiText.toLowerCase())),
-          )
-          .slice(0, 10)
-      : [];
-
-  const solicitudesActivas = solicitudes.filter(
-    (s) => s.estado !== "ENTREGADO" && s.estado !== "CANCELADO",
-  );
-  const limiteAlcanzado = solicitudesActivas.length >= 10;
-
-  // CONTEO DE SOLICITUDES POR ESTADO PARA LAS BADGES EN LOS FILTROS
-  const counts = useMemo(() => {
-    return {
-      SOLICITADO: solicitudes.filter((s) => s.estado === "SOLICITADO").length,
-      ATENDIDO: solicitudes.filter((s) => s.estado === "ATENDIDO").length,
-      DISPONIBLE: solicitudes.filter((s) => s.estado === "DISPONIBLE").length,
-    };
-  }, [solicitudes]);
-
-  const handleCrearSolicitud = async (e) => {
-    e.preventDefault();
-    if (
-      !isDeposito ||
-      bloqueadoPor8hs ||
-      limiteAlcanzado ||
-      !semiSeleccionado ||
-      !cantidadPedir ||
-      !motivoUso.trim()
-    )
-      return;
-
-    if (
-      solicitudesActivas.find(
-        (s) => s.semielaboradoCodigo === semiSeleccionado.codigo,
-      )
-    ) {
-      setErrorDuplicado(true);
-      return;
-    }
-
-    const motivoFormateado = motivoUso.trim().slice(0, 20).toUpperCase();
-
-    // Payload compatible con ambos estándares de backend (camelCase y snake_case)
-    const nueva = {
-      semielaboradoCodigo: semiSeleccionado.codigo || "S/C",
-      semielaborado_codigo: semiSeleccionado.codigo || "S/C",
-      semielaboradoNombre: semiSeleccionado.nombre,
-      semielaborado_nombre: semiSeleccionado.nombre,
-      cantidadSolicitada: Number(cantidadPedir),
-      cantidad_solicitada: Number(cantidadPedir),
-      urgencia: urgenciaPedir,
-      motivoUso: motivoFormateado,
-      motivo_uso: motivoFormateado,
-      estado: "SOLICITADO",
-      solicitadoAt: getNowLocal(),
-      solicitado_at: getNowLocal(),
-    };
-
+  /* ------------------------------------------------------------ acciones */
+  const llamar = async (url, opciones, okTexto) => {
+    setOcupado(true);
     try {
-      const res = await fetch(getApiUrl("/api/solicitudes-internas"), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(nueva),
-      });
-      if (res.ok) {
-        await fetchSolicitudes();
-        setModalNuevoOpen(false);
-        setSemiSeleccionado(null);
-        setCantidadPedir("");
-        setMotivoUso("");
-        setSearchSemiText("");
-        setErrorDuplicado(null);
-      } else {
-        const errData = await res.json();
-        alert(
-          "Error al crear la solicitud: " + (errData.error || "Faltan datos."),
-        );
+      const res = await fetch(getApiUrl(url), opciones);
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        toast(d.error || "No se pudo completar la acción. Probá de nuevo.", "error");
+        return false;
       }
-    } catch (err) {
-      console.error(err);
-      alert("Error de conexión al guardar la solicitud.");
+      if (okTexto) toast(okTexto);
+      await cargar();
+      return true;
+    } catch {
+      toast("No hay conexión con el servidor. Probá de nuevo.", "error");
+      return false;
+    } finally {
+      setOcupado(false);
     }
   };
 
-  const handleOpenEditar = (s) => {
-    setModalEditarOpen(s);
-    setEditCantidad(s.cantidadSolicitada);
-    setEditUrgencia(s.urgencia || "MEDIA");
-    setEditMotivo(getMotivo(s));
+  const crear = async ({ semi, cantidad, urgencia, motivo }) => {
+    if (!isDeposito || bloqueado || limiteAlcanzado) return false;
+    const ahoraTxt = getNowLocal();
+    const ok = await llamar("/api/solicitudes-internas", {
+      method: "POST",
+      headers: JSON_HEADERS,
+      body: JSON.stringify({
+        semielaboradoCodigo: semi.codigo || "S/C", semielaborado_codigo: semi.codigo || "S/C",
+        semielaboradoNombre: semi.nombre, semielaborado_nombre: semi.nombre,
+        cantidadSolicitada: cantidad, cantidad_solicitada: cantidad,
+        urgencia, motivoUso: motivo, motivo_uso: motivo,
+        estado: "SOLICITADO", solicitadoAt: ahoraTxt, solicitado_at: ahoraTxt,
+      }),
+    }, "Solicitud enviada a producción");
+    if (ok) setNuevaAbierta(false);
+    return ok;
   };
 
-  const handleGuardarEdicion = async (e) => {
-    e.preventDefault();
-    if (!modalEditarOpen) return;
-
-    const motivoEditado = editMotivo.trim().slice(0, 20).toUpperCase();
-
-    try {
-      const res = await fetch(
-        getApiUrl(`/api/solicitudes-internas/${modalEditarOpen.id}`),
-        {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            cantidadSolicitada: Number(editCantidad),
-            cantidad_solicitada: Number(editCantidad),
-            urgencia: editUrgencia,
-            motivoUso: motivoEditado,
-            motivo_uso: motivoEditado,
-          }),
-        },
-      );
-      if (res.ok) {
-        await fetchSolicitudes();
-        setModalEditarOpen(null);
-      }
-    } catch (err) {
-      console.error(err);
-    }
+  const guardarEdicion = async ({ cantidad, urgencia, motivo }) => {
+    const ok = await llamar(`/api/solicitudes-internas/${editar.id}`, {
+      method: "PUT",
+      headers: JSON_HEADERS,
+      body: JSON.stringify({ cantidadSolicitada: cantidad, cantidad_solicitada: cantidad, urgencia, motivoUso: motivo, motivo_uso: motivo }),
+    }, "Cambios guardados");
+    if (ok) setEditar(null);
   };
 
-  const handleCambiarEstado = async (sol, nuevoEstado) => {
-    if (nuevoEstado === "CANCELADO" && !isAdmin) return;
-    if (
-      (nuevoEstado === "ATENDIDO" || nuevoEstado === "DISPONIBLE") &&
-      !isProduccion
-    )
-      return;
-
-    const targetId = typeof sol === "object" ? sol.id : sol;
-    if (targetId == null || targetId === "" || targetId === "SOL-") {
-      alert("Esta solicitud no posee un ID válido en la base de datos.");
-      return;
-    }
-
-    const now = getNowLocal();
-    const payload = { estado: nuevoEstado };
-    if (nuevoEstado === "ATENDIDO") payload.atendidoAt = now;
-    if (nuevoEstado === "DISPONIBLE") payload.disponibleAt = now;
-
-    try {
-      const res = await fetch(
-        getApiUrl(
-          `/api/solicitudes-internas/${encodeURIComponent(targetId)}/estado`,
-        ),
-        {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-        },
-      );
-      if (res.ok) await fetchSolicitudes();
-    } catch (err) {
-      console.error(err);
-    }
+  const cambiarEstado = async (s, estado) => {
+    if (estado === "CANCELADO" && !isAdmin) return;
+    if ((estado === "ATENDIDO" || estado === "DISPONIBLE") && !isProduccion) return;
+    const t = getNowLocal();
+    const payload = { estado };
+    if (estado === "ATENDIDO") payload.atendidoAt = t;
+    if (estado === "DISPONIBLE") payload.disponibleAt = t;
+    await llamar(`/api/solicitudes-internas/${encodeURIComponent(s.id)}/estado`, { method: "PUT", headers: JSON_HEADERS, body: JSON.stringify(payload) },
+      estado === "ATENDIDO" ? `${solId(s)} atendida` : estado === "DISPONIBLE" ? `${solId(s)} disponible: avisale a depósito` : `${solId(s)} cancelada`);
   };
 
-  const handleRegistrarRetiro = async (solicitudId, cantidad) => {
+  const registrarRetiro = async (s, cantidad) => {
     if (!isDeposito) return;
-    const qty = Number(cantidad);
-    const sol = solicitudes.find((s) => s.id === solicitudId);
-    if (!qty || !sol) return;
-
-    const now = getNowLocal();
-    const nuevaRetirada = Math.min(
-      sol.cantidadRetirada + qty,
-      sol.cantidadSolicitada,
-    );
-    const completo = nuevaRetirada >= sol.cantidadSolicitada;
-
-    const log = {
-      fecha: now,
-      cantidad: qty,
-      usuario: usuarioActual?.nombre || "Depósito",
-    };
-    const historial = [log, ...(sol.retirosHistorial || [])];
-
-    try {
-      const res = await fetch(
-        getApiUrl(`/api/solicitudes-internas/${solicitudId}/retiro`),
-        {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            cantidadRetirada: nuevaRetirada,
-            estado: completo ? "ENTREGADO" : "DISPONIBLE",
-            entregadoAt: completo ? now : sol.entregadoAt,
-            retirosHistorial: historial,
-          }),
-        },
-      );
-      if (res.ok) {
-        await fetchSolicitudes();
-        setModalRetiroOpen(null);
-        setCantidadRetiroManual("");
-      }
-    } catch (err) {
-      console.error(err);
-    }
+    const t = getNowLocal();
+    const total = Number(s.cantidadSolicitada) || 0;
+    const nueva = Math.min((Number(s.cantidadRetirada) || 0) + cantidad, total);
+    const completo = nueva >= total;
+    const ok = await llamar(`/api/solicitudes-internas/${s.id}/retiro`, {
+      method: "PUT",
+      headers: JSON_HEADERS,
+      body: JSON.stringify({
+        cantidadRetirada: nueva,
+        estado: completo ? "ENTREGADO" : "DISPONIBLE",
+        entregadoAt: completo ? t : s.entregadoAt,
+        retirosHistorial: [{ fecha: t, cantidad, usuario: usuarioActual?.nombre || "Depósito" }, ...(s.retirosHistorial || [])],
+      }),
+    }, completo ? `${solId(s)} entregada completa` : `Retiro registrado: ${nueva} de ${total}`);
+    if (ok) setRetirar(null);
   };
 
-  const solicitudesFiltradas = solicitudes.filter((s) => {
-    const solId = getSolId(s);
-    const motivoText = getMotivo(s);
-    const match =
-      solId.toLowerCase().includes(busqueda.toLowerCase()) ||
-      s.semielaboradoNombre.toLowerCase().includes(busqueda.toLowerCase()) ||
-      s.semielaboradoCodigo.toLowerCase().includes(busqueda.toLowerCase()) ||
-      motivoText.toLowerCase().includes(busqueda.toLowerCase());
-    if (!match) return false;
-    if (filtroEstado === "TODOS")
-      return s.estado !== "ENTREGADO" && s.estado !== "CANCELADO";
-    if (filtroEstado === "AUDITORIA")
-      return s.estado === "ENTREGADO" || s.estado === "CANCELADO";
-    return s.estado === filtroEstado;
-  });
-
-  const totalPages = Math.ceil(solicitudesFiltradas.length / itemsPerPage) || 1;
-  const currentItems = useMemo(() => {
-    const start = (currentPage - 1) * itemsPerPage;
-    return solicitudesFiltradas.slice(start, start + itemsPerPage);
-  }, [solicitudesFiltradas, currentPage, itemsPerPage]);
-
-  const isArchived = (estado) =>
-    estado === "ENTREGADO" || estado === "CANCELADO";
-
-  const getUrgenciaStyle = (urgencia, isArchivedState) => {
-    if (isArchivedState) return "text-zinc-600 border-zinc-800 bg-black";
-    if (urgencia === "ALTA")
-      return "text-[#FF0055] border-[#FF0055]/30 bg-[#FF0055]/10";
-    if (urgencia === "MEDIA")
-      return "text-[#FFD700] border-[#FFD700]/30 bg-[#FFD700]/10";
-    return "text-zinc-400 border-zinc-800 bg-black";
+  const accion = (id, s) => {
+    if (id === "ATENDER") cambiarEstado(s, "ATENDIDO");
+    else if (id === "DISPONIBLE") cambiarEstado(s, "DISPONIBLE");
+    else if (id === "RETIRAR") setRetirar(s);
   };
 
-  const getEstadoStyle = (estado, isArchivedState) => {
-    if (isArchivedState) {
-      if (estado === "CANCELADO")
-        return "text-rose-600 border-rose-950 bg-rose-950/20";
-      return "text-zinc-600 border-zinc-800 bg-black";
-    }
-    if (estado === "SOLICITADO")
-      return "text-white border-zinc-700 bg-zinc-900";
-    if (estado === "ATENDIDO")
-      return "text-[#FF5A00] border-[#FF5A00]/30 bg-[#FF5A00]/10";
-    if (estado === "DISPONIBLE")
-      return "text-[#FFD700] border-[#FFD700]/30 bg-[#FFD700]/10";
-    return "text-zinc-500 border-zinc-800 bg-black";
-  };
-
-  const ESTADOS_OPCIONES = [
-    "TODOS",
-    "SOLICITADO",
-    "ATENDIDO",
-    "DISPONIBLE",
-    "AUDITORIA",
-  ];
-
-  const estadoLabel = (est) => {
-    if (est === "TODOS") return `ACTIVAS ${solicitudesActivas.length}/10`;
-    if (est === "AUDITORIA") return "ARCHIVADAS";
-    return est;
-  };
+  /* ------------------------------------------------------------- pantalla */
+  const [tituloVacio, textoVacio] = busqueda.trim() ? ["Sin resultados", `No encontré solicitudes con “${busqueda.trim()}”.`] : VACIO[filtro];
+  const puedeEditarMenu = menu && isDeposito && !archivada(menu);
+  const puedeCancelarMenu = menu && isAdmin && !archivada(menu);
+  const botonNueva = isDeposito && (
+    <button
+      type="button"
+      onClick={() => setNuevaAbierta(true)}
+      disabled={limiteAlcanzado || bloqueado}
+      className="inline-flex items-center justify-center gap-2 min-h-[52px] px-6 rounded-2xl bg-[#FFD60A] text-black font-extrabold text-base shadow-[0_10px_30px_rgba(255,214,10,0.2)] hover:bg-white active:scale-[0.98] transition-all cursor-pointer disabled:bg-white/[0.06] disabled:text-zinc-600 disabled:shadow-none disabled:cursor-not-allowed"
+    >
+      <Plus size={22} strokeWidth={3} /> <span className="hidden min-[400px]:inline">Nueva solicitud</span><span className="min-[400px]:hidden">Nueva</span>
+    </button>
+  );
 
   return (
-    <div className="flex-1 flex flex-col h-full min-h-0 bg-black font-sans text-zinc-200 overflow-hidden relative selection:bg-[#FF5A00]/30">
-      {/* BANNER BLOQUEO DE 8HS */}
-      {bloqueadoPor8hs && (
-        <div className="bg-[#FF0055]/10 border-b border-[#FF0055]/30 p-2 sm:p-2.5 px-3 sm:px-6 flex items-center gap-2.5 sm:gap-3 text-[#FF0055] text-[11px] sm:text-xs z-20 shrink-0 font-bold">
-          <AlertTriangle size={15} className="shrink-0" />
-          <span className="tracking-wide uppercase truncate">
-            ATENCIÓN: TENÉS SOLICITUDES PENDIENTES HACE MÁS DE 8HS.
-          </span>
-        </div>
-      )}
-
-      {/* HEADER HERO OPTIMIZADO PARA MÓVIL Y TABLET */}
-      <div className="border-b border-zinc-800/50 p-4 sm:p-6 md:p-10 flex flex-col sm:flex-row sm:items-end justify-between gap-4 md:gap-6 shrink-0 bg-[#050505] relative overflow-hidden">
-        <div className="z-10">
-          <h1 className="text-2xl sm:text-3xl md:text-5xl font-extrabold italic tracking-tighter text-white uppercase leading-none">
-            Solicitudes <span className="text-[#FF5A00]">Internas</span>
-          </h1>
-          <p className="text-zinc-500 text-xs sm:text-sm mt-1.5 sm:mt-2 max-w-md uppercase tracking-widest font-bold">
-            ROL DE VISUALIZACIÓN: <span className="text-white">{rolUpper}</span>
-          </p>
-        </div>
-
-        {isDeposito && (
-          <button
-            onClick={() => setModalNuevoOpen(true)}
-            disabled={limiteAlcanzado || bloqueadoPor8hs}
-            className={`flex items-center justify-between gap-3 px-5 py-3 font-bold text-xs uppercase tracking-widest transition-all z-10 w-full sm:w-auto shrink-0 ${
-              limiteAlcanzado || bloqueadoPor8hs
-                ? "bg-zinc-900 text-zinc-600 cursor-not-allowed border border-zinc-800"
-                : "bg-[#FFD700] hover:bg-white text-black active:scale-95 cursor-pointer shadow-lg shadow-[#FFD700]/10"
-            }`}
-          >
-            <span>NUEVA SOLICITUD</span>
-            <ChevronRight size={18} strokeWidth={3} />
-          </button>
-        )}
-      </div>
-
-      {/* BARRA DE HERRAMIENTAS ADAPTATIVA */}
-      <div className="px-3 sm:px-6 md:px-8 py-3 border-b border-zinc-800/50 flex flex-col md:flex-row items-center justify-between gap-3 shrink-0 bg-black relative z-20">
-        <div className="relative w-full md:w-80">
-          <Search
-            size={14}
-            className="absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-600"
-          />
-          <input
-            type="text"
-            value={busqueda}
-            onChange={(e) => setBusqueda(e.target.value)}
-            placeholder="Buscar por ID, artículo o destino..."
-            className="w-full bg-transparent border border-zinc-800 focus:border-[#FF5A00] text-white pl-9 pr-4 py-2 sm:py-2.5 text-xs transition-colors outline-none  "
-          />
-        </div>
-
-        <div className="flex flex-col sm:flex-row items-center gap-3 sm:gap-4 w-full md:w-auto justify-between md:justify-end">
-          {/* VISTA ESCRITORIO CON BADGES DE CONTEO */}
-          <div className="hidden md:flex gap-1 border border-zinc-800 bg-[#050505]">
-            {ESTADOS_OPCIONES.map((est) => {
-              const count = counts[est];
-              return (
-                <button
-                  key={est}
-                  onClick={() => setFiltroEstado(est)}
-                  className={`relative px-4 py-2 text-[10px] font-bold tracking-widest uppercase transition-all whitespace-nowrap border-r border-zinc-800 last:border-r-0 cursor-pointer ${
-                    filtroEstado === est
-                      ? "bg-[#FF5A00] text-[#050505]"
-                      : "text-zinc-500 hover:text-white hover:bg-zinc-900"
-                  }`}
-                >
-                  <span>{estadoLabel(est)}</span>
-                  {count !== undefined && (
-                    <span
-                      className={`absolute -top-1.5 -right-1 text-[8px]   font-black px-1.5 py-0.5 rounded-full border text-center leading-none ${
-                        filtroEstado === est
-                          ? "bg-black text-[#FF5A00] border-[#FF5A00]"
-                          : "bg-[#FF5A00] text-black border-black shadow"
-                      }`}
-                    >
-                      {count}
-                    </span>
-                  )}
-                </button>
-              );
-            })}
-          </div>
-
-          {/* VISTA MÓVIL Y TABLET */}
-          <div className="md:hidden w-full relative">
-            <button
-              onClick={() => setIsFiltroMenuOpen(!isFiltroMenuOpen)}
-              className="w-full flex items-center justify-between bg-[#050505] border border-zinc-800 px-3.5 py-2.5 text-xs font-bold tracking-widest uppercase text-white transition-colors"
-            >
-              <div className="flex items-center gap-2.5">
-                <Filter size={14} className="text-[#FF5A00]" />
-                <span className="text-zinc-500">ESTADO:</span>
-                <span className="text-[#FF5A00]">
-                  {estadoLabel(filtroEstado)}
-                </span>
-              </div>
-              <ChevronDown
-                size={16}
-                className={`text-zinc-500 transition-transform ${isFiltroMenuOpen ? "rotate-180" : ""}`}
-              />
-            </button>
-
-            {isFiltroMenuOpen && (
-              <div className="absolute top-full left-0 w-full mt-1 bg-[#050505] border border-zinc-800 shadow-2xl z-50 flex flex-col">
-                {ESTADOS_OPCIONES.map((est) => {
-                  const count = counts[est];
-                  return (
-                    <button
-                      key={est}
-                      onClick={() => {
-                        setFiltroEstado(est);
-                        setIsFiltroMenuOpen(false);
-                      }}
-                      className={`text-left px-4 py-3 text-xs font-bold tracking-widest uppercase border-l-2 flex justify-between items-center ${
-                        filtroEstado === est
-                          ? "border-[#FF5A00] text-[#FF5A00] bg-[#FF5A00]/10"
-                          : "border-transparent text-zinc-400 hover:text-white hover:bg-zinc-900"
-                      }`}
-                    >
-                      <span>{estadoLabel(est)}</span>
-                      {count !== undefined && (
-                        <span className="bg-[#FF5A00]/20 text-[#FF5A00] border border-[#FF5A00]/40 px-1.5 py-0.5 text-[9px]   font-extrabold rounded">
-                          {count}
-                        </span>
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-
-          <div className="flex items-center border border-zinc-800 bg-[#050505] shrink-0   w-full sm:w-auto justify-center sm:justify-start">
-            <button
-              onClick={() => setVistaMode("TARJETAS")}
-              title="Vista en Tarjetas"
-              className={`flex-1 sm:flex-initial px-4 py-2 sm:p-2.5 transition-colors cursor-pointer flex items-center justify-center gap-1.5 text-[10px] font-bold uppercase tracking-widest ${
-                vistaMode === "TARJETAS"
-                  ? "bg-[#FFD700] text-black"
-                  : "text-zinc-500 hover:text-white"
-              }`}
-            >
-              <LayoutGrid size={15} />
-              <span>TARJETAS</span>
-            </button>
-            <button
-              onClick={() => setVistaMode("TABLA")}
-              title="Vista en Tabla Industrial"
-              className={`flex-1 sm:flex-initial px-4 py-2 sm:p-2.5 transition-colors cursor-pointer flex items-center justify-center gap-1.5 text-[10px] font-bold uppercase tracking-widest border-l border-zinc-800 ${
-                vistaMode === "TABLA"
-                  ? "bg-[#FFD700] text-black"
-                  : "text-zinc-500 hover:text-white"
-              }`}
-            >
-              <TableIcon size={15} />
-              <span>TABLA</span>
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* ÁREA DE CONTENIDO PRINCIPAL */}
-      <div className="flex-1 flex flex-col justify-between overflow-hidden p-3 sm:p-6 md:p-8 bg-black min-h-0 relative z-10">
-        {loading ? (
-          <div className="flex justify-center items-center flex-1 text-[#FF5A00]">
-            <RefreshCw className="animate-spin" size={28} />
-          </div>
-        ) : currentItems.length === 0 ? (
-          <div className="flex justify-center items-center flex-1 text-zinc-600 text-center px-4">
-            <p className="uppercase tracking-widest text-xs font-bold">
-              No hay solicitudes registradas en esta vista.
+    <div className="h-full overflow-y-auto custom-scrollbar">
+      <div className="max-w-[1500px] mx-auto px-4 sm:px-6 lg:px-8 pt-5 sm:pt-7 pb-36 lg:pb-10">
+        <header className="flex items-end justify-between gap-4 mb-5">
+          <div className="min-w-0">
+            <h1 className="text-[26px] sm:text-3xl font-extrabold tracking-tight text-white leading-none">Solicitudes internas</h1>
+            <p className="mt-2 text-sm text-zinc-500">
+              {isDeposito && !isProduccion ? "Pedile a producción lo que necesitás y retiralo cuando esté listo." : isProduccion && !isDeposito ? "Atendé los pedidos de depósito y avisá cuando estén listos." : "Pedidos de depósito a producción, de punta a punta."}
             </p>
           </div>
-        ) : vistaMode === "TARJETAS" ? (
-          /* =========================================================
-             VISTA 1: MODO TARJETAS
-             ========================================================= */
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4 items-start content-start flex-1 overflow-y-auto pr-1 custom-scrollbar">
-            {currentItems.map((s, idx) => {
-              const archived = isArchived(s.estado);
-              const styleEst = getEstadoStyle(s.estado, archived);
-              const pct = Math.round(
-                (s.cantidadRetirada / s.cantidadSolicitada) * 100,
-              );
-              const solIdStr = getSolId(s);
+          <div className="hidden lg:block shrink-0">{botonNueva}</div>
+        </header>
 
-              return (
-                <div
-                  key={s.id}
-                  className={`border transition-colors duration-200 p-4 sm:p-5 flex flex-col justify-between gap-3.5 relative ${
-                    archived
-                      ? "border-zinc-900 bg-[#030303] opacity-80"
-                      : "border-zinc-800 bg-[#050505] hover:border-[#FF5A00]/50"
-                  } ${activeActionMenuId === s.id ? "z-50" : "z-10"}`}
-                >
-                  <div className="flex justify-between items-start border-b border-zinc-800/80 pb-2.5">
-                    <div className="flex flex-col gap-1 min-w-0">
-                      <div className="flex items-center gap-1.5 flex-wrap">
-                        <span
-                          className={`font-extrabold tracking-wider text-sm ${
-                            archived ? "text-zinc-500" : "text-white"
-                          }`}
-                        >
-                          {solIdStr}
-                        </span>
-                        <span
-                          className={`text-[8px] px-1.5 py-0.5 border uppercase font-bold tracking-wider ${getUrgenciaStyle(
-                            s.urgencia,
-                            archived,
-                          )}`}
-                        >
-                          {s.urgencia}
-                        </span>
-                      </div>
-
-                      <div className="text-zinc-600 text-[9px] leading-tight  ">
-                        <span>
-                          {formatFechaArg(s.solicitadoAt || s.solicitado_at)}
-                        </span>
-                        <span className="ml-1">
-                          {formatHoraArg(s.solicitadoAt || s.solicitado_at)} HS
-                        </span>
-                      </div>
-                    </div>
-
-                    <span
-                      className={`text-[8px] px-2 py-0.5 uppercase font-bold tracking-widest border shrink-0 ${styleEst}`}
-                    >
-                      {s.estado}
-                    </span>
-                  </div>
-
-                  {/* CÓDIGO Y NOMBRE */}
-                  <div className="flex items-center gap-2.5">
-                    <span
-                      className={`px-1.5 py-0.5 text-[9px]   font-bold tracking-widest shrink-0 ${
-                        archived
-                          ? "text-zinc-600 bg-zinc-900 border border-zinc-800"
-                          : "text-[#FF5A00] bg-[#FF5A00]/10 border border-[#FF5A00]/20"
-                      }`}
-                    >
-                      {s.semielaboradoCodigo}
-                    </span>
-                    <h3
-                      className={`text-xs sm:text-sm font-bold leading-tight truncate flex-1 ${
-                        archived ? "text-zinc-500" : "text-white"
-                      }`}
-                    >
-                      {s.semielaboradoNombre}
-                    </h3>
-                  </div>
-
-                  {/* BARRAS Y CANTIDADES */}
-                  <div>
-                    <div className="flex justify-between text-[9px] text-zinc-500 mb-1.5 uppercase tracking-wider font-bold  ">
-                      <span>
-                        Retirado:{" "}
-                        <strong
-                          className={
-                            archived ? "text-zinc-500" : "text-zinc-300"
-                          }
-                        >
-                          {s.cantidadRetirada}
-                        </strong>
-                      </span>
-                      <span>
-                        Total:{" "}
-                        <strong
-                          className={archived ? "text-zinc-500" : "text-white"}
-                        >
-                          {s.cantidadSolicitada}
-                        </strong>
-                      </span>
-                    </div>
-                    <div className="h-1.5 w-full bg-zinc-900 overflow-hidden">
-                      <div
-                        className={`h-full ${
-                          archived
-                            ? "bg-zinc-700"
-                            : "bg-gradient-to-r from-[#FF5A00] to-[#FFD700]"
-                        }`}
-                        style={{ width: `${pct}%` }}
-                      />
-                    </div>
-                  </div>
-
-                  {/* BOTÓN DESPLEGABLE ACCIONES EN TARJETA */}
-                  <div className="pt-3 border-t border-zinc-800/80 flex justify-end items-center relative  ">
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setActiveActionMenuId(
-                          activeActionMenuId === s.id ? null : s.id,
-                        );
-                      }}
-                      className={`px-3 py-1.5 border text-[10px] font-bold uppercase tracking-widest flex items-center gap-2 transition-all cursor-pointer ${
-                        activeActionMenuId === s.id
-                          ? "bg-[#050505] border-[#FF5A00] text-[#FF5A00]"
-                          : "bg-[#050505] border-zinc-800 text-zinc-400 hover:border-[#FF5A00] hover:text-white"
-                      }`}
-                    >
-                      <span>OPCIONES</span>
-                      <ChevronDown
-                        size={12}
-                        className={`transition-transform duration-200 ${
-                          activeActionMenuId === s.id
-                            ? "rotate-180 text-[#FF5A00]"
-                            : ""
-                        }`}
-                      />
-                    </button>
-
-                    {/* POPUP SIEMPRE HACIA ABAJO CON ANIMACIÓN */}
-                    {activeActionMenuId === s.id && (
-                      <div
-                        onClick={(e) => e.stopPropagation()}
-                        className={`absolute right-0 w-48 bg-[#050505] border border-zinc-700 shadow-[0_20px_50px_rgba(0,0,0,0.95)] z-[100] flex flex-col text-[10px] animate-in fade-in duration-150 ${"top-full mt-1.5 slide-in-from-top-2 origin-top-right"}`}
-                      >
-                        <button
-                          onClick={() => {
-                            setActiveActionMenuId(null);
-                            setModalHistorialOpen(s);
-                          }}
-                          className="px-4 py-3 text-left font-bold uppercase tracking-widest text-zinc-400 hover:text-white hover:bg-[#FF5A00]/10 transition-colors border-b border-zinc-900 cursor-pointer flex items-center gap-2"
-                        >
-                          <History size={13} className="text-[#FFD700]" />
-                          AUDITORÍA
-                        </button>
-
-                        {isDeposito && !archived && (
-                          <button
-                            onClick={() => {
-                              setActiveActionMenuId(null);
-                              handleOpenEditar(s);
-                            }}
-                            className="px-4 py-3 text-left font-bold uppercase tracking-widest text-zinc-400 hover:text-white hover:bg-[#FF5A00]/10 transition-colors border-b border-zinc-900 cursor-pointer flex items-center gap-2"
-                          >
-                            <Edit2 size={13} className="text-[#FF5A00]" />
-                            EDITAR SOLICITUD
-                          </button>
-                        )}
-
-                        {s.estado === "SOLICITADO" && isProduccion && (
-                          <button
-                            onClick={() => {
-                              setActiveActionMenuId(null);
-                              handleCambiarEstado(s, "ATENDIDO");
-                            }}
-                            className="px-4 py-3 text-left font-bold uppercase tracking-widest text-[#FF5A00] hover:text-white hover:bg-[#FF5A00]/15 transition-colors border-b border-zinc-900 cursor-pointer flex items-center gap-2"
-                          >
-                            <CheckCircle2 size={13} />
-                            ATENDER
-                          </button>
-                        )}
-
-                        {s.estado === "ATENDIDO" && isProduccion && (
-                          <button
-                            onClick={() => {
-                              setActiveActionMenuId(null);
-                              handleCambiarEstado(s, "DISPONIBLE");
-                            }}
-                            className="px-4 py-3 text-left font-bold uppercase tracking-widest text-[#FFD700] hover:text-white hover:bg-[#FFD700]/15 transition-colors border-b border-zinc-900 cursor-pointer flex items-center gap-2"
-                          >
-                            <CheckCircle2 size={13} />
-                            DISPONIBLE
-                          </button>
-                        )}
-
-                        {s.estado === "DISPONIBLE" && isDeposito && (
-                          <button
-                            onClick={() => {
-                              setActiveActionMenuId(null);
-                              setModalRetiroOpen(s);
-                              setCantidadRetiroManual("");
-                            }}
-                            className="px-4 py-3 text-left font-bold uppercase tracking-widest text-black bg-[#FFD700] hover:bg-white transition-colors border-b border-zinc-900 cursor-pointer flex items-center gap-2"
-                          >
-                            <Plus size={13} />
-                            Retirar Productos
-                          </button>
-                        )}
-
-                        {!archived && isAdmin && (
-                          <button
-                            onClick={() => {
-                              setActiveActionMenuId(null);
-                              handleCambiarEstado(s, "CANCELADO");
-                            }}
-                            className="px-4 py-3 text-left font-bold uppercase tracking-widest text-rose-500 hover:text-white hover:bg-rose-950/40 transition-colors cursor-pointer flex items-center gap-2"
-                          >
-                            <Ban size={13} />
-                            CANCELAR
-                          </button>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
+        {bloqueado && (
+          <div role="alert" className="mb-4 flex items-start gap-3 rounded-2xl border border-rose-500/35 bg-rose-500/[0.09] px-4 py-3.5">
+            <AlertTriangle size={20} className="text-rose-300 shrink-0 mt-0.5" />
+            <p className="text-[15px] font-semibold text-rose-100 leading-snug">
+              {demoradas.length === 1 ? "Hay 1 solicitud disponible" : `Hay ${demoradas.length} solicitudes disponibles`} hace más de 8 h sin retirar. Hasta que se retire no se pueden pedir cosas nuevas.
+            </p>
           </div>
-        ) : (
-          /* =========================================================
-             VISTA 2: MODO TABLA INDUSTRIAL CON HORIZONTAL SCROLL EN MÓVIL
-             ========================================================= */
-          <div
-            ref={tableContainerRef}
-            className="flex-1 min-h-0 w-full flex flex-col justify-start overflow-x-auto overflow-y-visible custom-scrollbar"
-          >
-            <div className="w-full border border-zinc-800/90 bg-[#030303] flex flex-col overflow-visible shadow-2xl h-fit min-w-[980px]">
-              {/* CABECERA TABLA (48px) */}
-              <div className="grid grid-cols-[120px_140px_1fr_200px_130px_100px_110px_130px] h-12 bg-[#080808] border-b border-zinc-800/90 items-center text-zinc-500   text-[9px] font-extrabold uppercase tracking-widest shrink-0 px-4 select-none">
-                <div>ID SOL.</div>
-                <div>CÓDIGO</div>
-                <div>SEMIELABORADO</div>
-                <div>MOTIVO / DESTINO</div>
-                <div className="text-right">RET / TOTAL</div>
-                <div className="text-center">PRIORIDAD</div>
-                <div className="text-center">ESTADO</div>
-                <div className="text-right">ACCIONES</div>
-              </div>
+        )}
+        {limiteAlcanzado && !bloqueado && isDeposito && (
+          <p className="mb-4 flex items-center gap-2.5 rounded-2xl border border-[#FFD60A]/25 bg-[#FFD60A]/[0.06] px-4 py-3 text-sm font-semibold text-[#FFD60A]">
+            <AlertTriangle size={17} className="shrink-0" /> Llegaste al máximo de {LIMITE_ACTIVAS} solicitudes activas. Se libera lugar cuando se entregue alguna.
+          </p>
+        )}
 
-              {/* FILAS DE LA TABLA CON Z-INDEX Y SUBMENÚ SIEMPRE HACIA ABAJO */}
-              <div className="flex flex-col bg-black flex-1 overflow-visible  ">
-                {currentItems.map((s, idx) => {
-                  const archived = isArchived(s.estado);
-                  const styleEst = getEstadoStyle(s.estado, archived);
-                  const solIdStr = getSolId(s);
-                  const motivoText = getMotivo(s);
-
+        {/* Búsqueda + filtros */}
+        <div className="sticky top-0 z-20 -mx-4 sm:-mx-6 lg:-mx-8 px-4 sm:px-6 lg:px-8 pt-2 pb-3 bg-[#08080a]/92 backdrop-blur-md">
+          <div className="flex flex-col lg:flex-row gap-3">
+            <div className="relative lg:w-[340px] shrink-0">
+              <Search size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500" />
+              <input type="search" value={busqueda} onChange={(e) => setBusqueda(e.target.value)} placeholder="Buscar por ID, nombre o destino…" aria-label="Buscar solicitudes" className={`${inputCls} pl-11 pr-11`} />
+              {busqueda && <button type="button" onClick={() => setBusqueda("")} aria-label="Borrar búsqueda" className="absolute right-2 top-1/2 -translate-y-1/2 w-9 h-9 rounded-xl grid place-items-center text-zinc-500 hover:text-white cursor-pointer"><X size={17} /></button>}
+            </div>
+            <div className="flex items-center gap-3 min-w-0 flex-1">
+              <div className="flex gap-2 overflow-x-auto no-scrollbar -mx-1 px-1 py-0.5 flex-1" role="tablist" aria-label="Estado">
+                {FILTROS.map((f) => {
+                  const sel = filtro === f.id;
+                  const n = conteo[f.id];
                   return (
-                    <div
-                      key={s.id}
-                      className={`grid grid-cols-[120px_140px_1fr_200px_130px_100px_110px_130px] h-12 items-center px-4 border-b border-zinc-900/80 last:border-b-0 text-xs hover:bg-[#0a0a0a] transition-colors shrink-0 relative ${
-                        archived ? "opacity-60" : ""
-                      } ${activeActionMenuId === s.id ? "z-[60]" : "z-10"}`}
-                    >
-                      <div className="font-extrabold text-white truncate">
-                        {solIdStr}
-                      </div>
-
-                      <div className="truncate">
-                        <span className="text-[#FF5A00] bg-[#FF5A00]/10 border border-[#FF5A00]/20 px-2 py-0.5 text-[10px] font-bold">
-                          {s.semielaboradoCodigo}
-                        </span>
-                      </div>
-
-                      <div className="font-sans font-bold text-white truncate pr-2">
-                        {s.semielaboradoNombre}
-                      </div>
-
-                      <div className="text-zinc-300 font-bold text-[10px] truncate pr-2 uppercase">
-                        {motivoText}
-                      </div>
-
-                      <div className="text-right font-bold text-zinc-300">
-                        <span className="text-emerald-400">
-                          {s.cantidadRetirada}
-                        </span>{" "}
-                        / {s.cantidadSolicitada}
-                      </div>
-
-                      <div className="flex justify-center">
-                        <span
-                          className={`text-[8px] px-1.5 py-0.5 border font-bold uppercase tracking-widest ${getUrgenciaStyle(s.urgencia, archived)}`}
-                        >
-                          {s.urgencia}
-                        </span>
-                      </div>
-
-                      <div className="flex justify-center">
-                        <span
-                          className={`text-[8px] px-2 py-0.5 border font-bold uppercase tracking-widest ${styleEst}`}
-                        >
-                          {s.estado}
-                        </span>
-                      </div>
-
-                      {/* BOTÓN Y MENÚ DE ACCIONES */}
-                      <div className="flex justify-end relative">
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setActiveActionMenuId(
-                              activeActionMenuId === s.id ? null : s.id,
-                            );
-                          }}
-                          className={`px-3 py-1.5 border text-[9px] font-bold uppercase tracking-widest flex items-center gap-1.5 transition-all cursor-pointer ${
-                            activeActionMenuId === s.id
-                              ? "bg-[#050505] border-[#FF5A00] text-[#FF5A00]"
-                              : "bg-[#050505] border-zinc-800 text-zinc-400 hover:border-[#FF5A00] hover:text-white"
-                          }`}
-                        >
-                          <span>OPCIONES</span>
-                          <ChevronDown
-                            size={12}
-                            className={`transition-transform duration-200 ${
-                              activeActionMenuId === s.id
-                                ? "rotate-180 text-[#FF5A00]"
-                                : ""
-                            }`}
-                          />
-                        </button>
-
-                        {/* SUBMENÚ ESTILO MATERIAS PRIMAS SIN CORTAR CON DROPUP INTELIGENTE */}
-                        {activeActionMenuId === s.id && (
-                          <div
-                            onClick={(e) => e.stopPropagation()}
-                            className={`absolute right-0 w-48 bg-[#050505] border border-zinc-700 shadow-[0_20px_50px_rgba(0,0,0,0.95)] z-[100] flex flex-col text-[10px] animate-in fade-in duration-150 ${"top-full mt-1.5 slide-in-from-top-2 origin-top-right"}`}
-                          >
-                            <button
-                              onClick={() => {
-                                setActiveActionMenuId(null);
-                                setModalHistorialOpen(s);
-                              }}
-                              className="px-4 py-3 text-left font-bold uppercase tracking-widest text-zinc-400 hover:text-white hover:bg-[#FF5A00]/10 transition-colors border-b border-zinc-900 cursor-pointer flex items-center gap-2"
-                            >
-                              <History size={13} className="text-[#FFD700]" />
-                              AUDITORÍA
-                            </button>
-
-                            {isDeposito && !archived && (
-                              <button
-                                onClick={() => {
-                                  setActiveActionMenuId(null);
-                                  handleOpenEditar(s);
-                                }}
-                                className="px-4 py-3 text-left font-bold uppercase tracking-widest text-zinc-400 hover:text-white hover:bg-[#FF5A00]/10 transition-colors border-b border-zinc-900 cursor-pointer flex items-center gap-2"
-                              >
-                                <Edit2 size={13} className="text-[#FF5A00]" />
-                                EDITAR SOLICITUD
-                              </button>
-                            )}
-
-                            {s.estado === "SOLICITADO" && isProduccion && (
-                              <button
-                                onClick={() => {
-                                  setActiveActionMenuId(null);
-                                  handleCambiarEstado(s, "ATENDIDO");
-                                }}
-                                className="px-4 py-3 text-left font-bold uppercase tracking-widest text-[#FF5A00] hover:text-white hover:bg-[#FF5A00]/15 transition-colors border-b border-zinc-900 cursor-pointer flex items-center gap-2"
-                              >
-                                <CheckCircle2 size={13} />
-                                ATENDER
-                              </button>
-                            )}
-
-                            {s.estado === "ATENDIDO" && isProduccion && (
-                              <button
-                                onClick={() => {
-                                  setActiveActionMenuId(null);
-                                  handleCambiarEstado(s, "DISPONIBLE");
-                                }}
-                                className="px-4 py-3 text-left font-bold uppercase tracking-widest text-[#FFD700] hover:text-white hover:bg-[#FFD700]/15 transition-colors border-b border-zinc-900 cursor-pointer flex items-center gap-2"
-                              >
-                                <CheckCircle2 size={13} />
-                                DISPONIBLE
-                              </button>
-                            )}
-
-                            {s.estado === "DISPONIBLE" && isDeposito && (
-                              <button
-                                onClick={() => {
-                                  setActiveActionMenuId(null);
-                                  setModalRetiroOpen(s);
-                                  setCantidadRetiroManual("");
-                                }}
-                                className="px-4 py-3 text-left font-bold uppercase tracking-widest text-black bg-[#FFD700] hover:bg-white transition-colors border-b border-zinc-900 cursor-pointer flex items-center gap-2"
-                              >
-                                <Plus size={13} />
-                                RETIRAR PRODUCTOS
-                              </button>
-                            )}
-
-                            {!archived && isAdmin && (
-                              <button
-                                onClick={() => {
-                                  setActiveActionMenuId(null);
-                                  handleCambiarEstado(s, "CANCELADO");
-                                }}
-                                className="px-4 py-3 text-left font-bold uppercase tracking-widest text-rose-500 hover:text-white hover:bg-rose-950/40 transition-colors cursor-pointer flex items-center gap-2"
-                              >
-                                <Ban size={13} />
-                                CANCELAR
-                              </button>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    </div>
+                    <button key={f.id} role="tab" aria-selected={sel} onClick={() => setFiltro(f.id)} className={`shrink-0 min-h-[46px] pl-4 pr-3 lg:min-h-[42px] lg:pl-3.5 lg:pr-2.5 rounded-full border text-[14.5px] font-bold inline-flex items-center gap-2 cursor-pointer transition-colors ${sel ? "bg-[#FF5A00] border-[#FF5A00] text-black" : "bg-white/[0.04] border-white/[0.09] text-zinc-300 hover:text-white hover:bg-white/[0.08]"}`}>
+                      {f.texto}
+                      <span className={`min-w-[24px] h-6 px-1.5 rounded-full grid place-items-center text-xs font-extrabold tabular-nums ${sel ? "bg-black/80 text-[#FFD60A]" : "bg-white/[0.09] text-zinc-300"}`}>
+                        {f.id === "TODOS" ? `${n}/${LIMITE_ACTIVAS}` : n}
+                      </span>
+                    </button>
                   );
                 })}
               </div>
+              <div className="hidden lg:flex shrink-0 p-1 rounded-2xl bg-white/[0.04] border border-white/[0.08]" role="group" aria-label="Tipo de vista">
+                {[["TABLA", Rows3, "Tabla"], ["TARJETAS", LayoutGrid, "Tarjetas"]].map(([id, Icono, t]) => (
+                  <button key={id} type="button" aria-pressed={vista === id} onClick={() => cambiarVista(id)} aria-label={`Vista de ${t.toLowerCase()}`} title={t} className={`w-11 h-10 rounded-xl grid place-items-center cursor-pointer transition-colors ${vista === id ? "bg-white/[0.12] text-white" : "text-zinc-500 hover:text-white"}`}><Icono size={18} /></button>
+                ))}
+              </div>
             </div>
           </div>
-        )}
+        </div>
 
-        {/* PIE DE PAGINACIÓN ADAPTATIVO */}
-        {solicitudesFiltradas.length > 0 && (
-          <div className="mt-3 sm:mt-4 pt-3 sm:pt-4 border-t border-zinc-800/60 flex flex-col sm:flex-row items-center justify-between gap-2 sm:gap-0   text-xs text-zinc-500 shrink-0">
-            <span className="uppercase text-[10px] font-bold tracking-widest text-zinc-400 text-center sm:text-left">
-              Página <strong className="text-white">{currentPage}</strong> de{" "}
-              <strong className="text-white">{totalPages}</strong> (
-              {solicitudesFiltradas.length} registros)
-            </span>
-
-            <div className="flex items-center gap-1.5">
-              <button
-                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                disabled={currentPage === 1}
-                className="w-8 h-8 flex items-center justify-center border border-zinc-800 bg-[#050505] text-zinc-300 hover:border-[#FF5A00] hover:text-[#FF5A00] disabled:opacity-20 transition-all cursor-pointer"
-              >
-                <ChevronLeft size={16} />
-              </button>
-
-              <button
-                onClick={() =>
-                  setCurrentPage((p) => Math.min(totalPages, p + 1))
-                }
-                disabled={currentPage === totalPages}
-                className="w-8 h-8 flex items-center justify-center border border-zinc-800 bg-[#050505] text-zinc-300 hover:border-[#FF5A00] hover:text-[#FF5A00] disabled:opacity-20 transition-all cursor-pointer"
-              >
-                <ChevronRight size={16} />
-              </button>
+        {/* Lista */}
+        <div className="mt-3">
+          {cargando ? (
+            <div className="flex items-center justify-center gap-3 py-28 text-zinc-500"><Loader2 className="animate-spin" size={22} /> Cargando solicitudes…</div>
+          ) : errorCarga && !solicitudes.length ? (
+            <div className="rounded-3xl border border-rose-500/30 bg-rose-500/10 p-8 text-center">
+              <p className="text-rose-100 font-semibold">{errorCarga}</p>
+              <button type="button" onClick={() => { setCargando(true); cargar(); }} className="mt-4 min-h-[48px] px-6 rounded-2xl bg-white/[0.08] text-white font-bold cursor-pointer">Reintentar</button>
             </div>
-          </div>
-        )}
-      </div>
-
-      {/* =========================================
-          MODALES CON TAMAÑO RESPONSIVO TÁCTIL
-      ========================================= */}
-
-      {/* MODAL NUEVA SOLICITUD */}
-      {modalNuevoOpen && (
-        <div className="fixed inset-0 bg-black/90 backdrop-blur-sm z-[100] flex items-center justify-center p-2 sm:p-4 font-sans">
-          <div className="bg-[#050505] border border-zinc-800 w-full max-w-2xl max-h-[92vh] sm:max-h-[90vh] overflow-hidden flex flex-col relative shadow-2xl">
-            <div className="p-4 sm:p-6 border-b border-zinc-800 flex justify-between items-center bg-[#020202]">
-              <h3 className="text-lg sm:text-2xl font-extrabold italic uppercase tracking-tighter text-white">
-                Nueva <span className="text-[#FF5A00]">Solicitud</span>
-              </h3>
-              <button
-                onClick={() => setModalNuevoOpen(false)}
-                className="text-zinc-500 hover:text-[#FF5A00] transition-colors cursor-pointer p-1"
-              >
-                <X size={22} />
-              </button>
+          ) : filtradas.length === 0 ? (
+            <div className="rounded-3xl border border-dashed border-white/[0.12] bg-white/[0.02] py-16 px-6 text-center">
+              <span className="w-16 h-16 mx-auto rounded-3xl grid place-items-center bg-white/[0.05] text-zinc-500 mb-4">{filtro === "AUDITORIA" ? <Archive size={28} /> : busqueda ? <Search size={28} /> : filtro === "DISPONIBLE" ? <CheckCircle2 size={28} /> : <Inbox size={28} />}</span>
+              <p className="text-lg font-extrabold text-zinc-200">{tituloVacio}</p>
+              <p className="mt-1 text-sm text-zinc-500 max-w-sm mx-auto">{textoVacio}</p>
             </div>
-
-            <form
-              onSubmit={handleCrearSolicitud}
-              className="p-4 sm:p-6 overflow-y-auto flex flex-col gap-4 sm:gap-5 custom-scrollbar"
-            >
-              <div>
-                <label className="block text-xs uppercase tracking-widest text-zinc-500 mb-2 font-bold  ">
-                  1. Material / Semielaborado *
-                </label>
-                <div className="relative">
-                  <input
-                    type="text"
-                    value={searchSemiText}
-                    onChange={(e) => {
-                      setSearchSemiText(e.target.value);
-                      setSemiSeleccionado(null);
-                    }}
-                    className="w-full bg-black border border-zinc-800 text-white p-3 sm:p-4 text-xs sm:text-sm focus:border-[#FF5A00] outline-none font-bold uppercase transition-colors  "
-                    placeholder="Buscar por código o nombre..."
-                  />
-                  {searchSemiText && !semiSeleccionado && (
-                    <div className="absolute top-full left-0 w-full bg-[#0a0a0a] border border-zinc-800 mt-1 max-h-48 overflow-y-auto z-50 shadow-2xl custom-scrollbar  ">
-                      {semielaboradosFiltrados.map((item, i) => (
-                        <div
-                          key={i}
-                          onClick={() => {
-                            setSemiSeleccionado(item);
-                            setSearchSemiText(item.nombre);
-                          }}
-                          className="p-3 sm:p-4 border-b border-zinc-800 hover:bg-zinc-900 cursor-pointer flex items-center gap-3 transition-colors"
-                        >
-                          <span className="bg-[#FF5A00]/10 border border-[#FF5A00]/30 text-[#FF5A00] px-2 py-0.5 text-[10px] font-bold shrink-0">
-                            {item.codigo}
-                          </span>
-                          <span className="text-white text-xs font-sans font-bold truncate">
-                            {item.nombre}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4  ">
-                <div>
-                  <label className="block text-xs uppercase tracking-widest text-zinc-500 mb-2 font-bold">
-                    2. Unidades *
-                  </label>
-                  <input
-                    type="number"
-                    required
-                    min="1"
-                    value={cantidadPedir}
-                    onChange={(e) => setCantidadPedir(e.target.value)}
-                    className="w-full bg-black border border-zinc-800 text-white p-3 sm:p-4 focus:border-[#FF5A00] outline-none font-bold text-xs sm:text-sm"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs uppercase tracking-widest text-zinc-500 mb-2 font-bold">
-                    3. Prioridad *
-                  </label>
-                  <select
-                    value={urgenciaPedir}
-                    onChange={(e) => setUrgenciaPedir(e.target.value)}
-                    className="w-full bg-black border border-zinc-800 text-white p-3 sm:p-4 focus:border-[#FF5A00] outline-none font-bold tracking-wider cursor-pointer text-xs"
-                  >
-                    <option value="BAJA">BAJA</option>
-                    <option value="MEDIA">MEDIA</option>
-                    <option value="ALTA">ALTA</option>
-                  </select>
-                </div>
-              </div>
-
-              <div className="space-y-2  ">
-                <div className="flex justify-between items-center">
-                  <label className="block text-xs uppercase tracking-widest text-zinc-500 font-bold">
-                    4. Destino / Motivo de Solicitud *
-                  </label>
-                  <span className="text-[10px] text-zinc-600 font-bold tracking-widest">
-                    {motivoUso.length}/20 MAX
-                  </span>
-                </div>
-
-                <input
-                  type="text"
-                  required
-                  maxLength={20}
-                  value={motivoUso}
-                  onChange={(e) => setMotivoUso(e.target.value.slice(0, 20))}
-                  placeholder="EJ: OP 1500 / Stock..."
-                  className="w-full bg-black border border-zinc-800 text-white p-3 sm:p-4 text-xs font-bold focus:border-[#FF5A00] outline-none uppercase tracking-wider"
-                />
-              </div>
-
-              {errorDuplicado && (
-                <div className="p-3 bg-[#FF0055]/10 border border-[#FF0055]/30 text-[#FF0055] text-xs font-bold uppercase  ">
-                  Ya existe una solicitud activa para este semielaborado.
+          ) : (
+            <>
+              {vista === "TABLA" && (
+                <div className="hidden lg:block">
+                  <TablaSolicitudes items={mostradas} permisos={permisos} onAccion={accion} onMenu={setMenu} ahora={ahora} />
                 </div>
               )}
-
-              <button
-                type="submit"
-                disabled={
-                  !semiSeleccionado || !cantidadPedir || !motivoUso.trim()
-                }
-                className="mt-2 w-full bg-[#FFD700] hover:bg-white text-black font-extrabold italic uppercase tracking-tighter text-lg sm:text-xl p-3.5 sm:p-4 transition-all disabled:opacity-30 flex justify-center items-center gap-2 cursor-pointer"
-              >
-                Confirmar Solicitud <ChevronRight size={20} strokeWidth={3} />
-              </button>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* MODAL EDITAR SOLICITUD */}
-      {modalEditarOpen && (
-        <div className="fixed inset-0 bg-black/90 backdrop-blur-sm z-[100] flex items-center justify-center p-2 sm:p-4 font-sans">
-          <div className="bg-[#050505] border border-zinc-800 w-full max-w-lg flex flex-col relative shadow-2xl">
-            <div className="p-4 sm:p-6 border-b border-zinc-800 flex justify-between items-center bg-[#020202]">
-              <h3 className="text-lg sm:text-xl font-extrabold italic uppercase tracking-tighter text-[#FF5A00]">
-                Editar{" "}
-                <span className="text-white">{getSolId(modalEditarOpen)}</span>
-              </h3>
-              <button
-                onClick={() => setModalEditarOpen(null)}
-                className="text-zinc-500 hover:text-white transition-colors cursor-pointer p-1"
-              >
-                <X size={22} />
-              </button>
-            </div>
-
-            <form
-              onSubmit={handleGuardarEdicion}
-              className="p-4 sm:p-6 space-y-4 sm:space-y-5  "
-            >
-              <div>
-                <span className="bg-[#FF5A00]/10 border border-[#FF5A00]/20 text-[#FF5A00] px-2 py-0.5 text-[10px] font-bold tracking-widest mb-1 inline-block">
-                  {modalEditarOpen.semielaboradoCodigo}
-                </span>
-                <h4 className="text-white font-bold text-sm sm:text-base font-sans">
-                  {modalEditarOpen.semielaboradoNombre}
-                </h4>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
-                <div>
-                  <label className="block text-[10px] uppercase tracking-widest text-zinc-500 mb-1.5 font-bold">
-                    Unidades Solicitadas:
-                  </label>
-                  <input
-                    type="number"
-                    required
-                    min="1"
-                    value={editCantidad}
-                    onChange={(e) => setEditCantidad(e.target.value)}
-                    className="w-full bg-black border border-zinc-800 text-white p-3 text-xs sm:text-sm font-bold focus:border-[#FF5A00] outline-none"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-[10px] uppercase tracking-widest text-zinc-500 mb-1.5 font-bold">
-                    Prioridad:
-                  </label>
-                  <select
-                    value={editUrgencia}
-                    onChange={(e) => setEditUrgencia(e.target.value)}
-                    className="w-full bg-black border border-zinc-800 text-white p-3 text-xs font-bold focus:border-[#FF5A00] outline-none cursor-pointer uppercase"
-                  >
-                    <option value="BAJA">BAJA</option>
-                    <option value="MEDIA">MEDIA</option>
-                    <option value="ALTA">ALTA</option>
-                  </select>
-                </div>
-              </div>
-
-              <div>
-                <div className="flex justify-between items-center mb-1.5">
-                  <label className="block text-[10px] uppercase tracking-widest text-zinc-500 font-bold">
-                    Motivo / Destino:
-                  </label>
-                  <span className="text-[9px] text-zinc-600 font-bold">
-                    {editMotivo.length}/20 MAX
-                  </span>
-                </div>
-                <input
-                  type="text"
-                  required
-                  maxLength={20}
-                  value={editMotivo}
-                  onChange={(e) => setEditMotivo(e.target.value.slice(0, 20))}
-                  className="w-full bg-black border border-zinc-800 text-white p-3 text-xs font-bold focus:border-[#FF5A00] outline-none uppercase"
-                />
-              </div>
-
-              <div className="pt-3 border-t border-zinc-800 flex justify-end gap-3">
-                <button
-                  type="button"
-                  onClick={() => setModalEditarOpen(null)}
-                  className="px-4 py-2.5 text-zinc-500 hover:text-white text-[10px] font-bold uppercase tracking-widest transition cursor-pointer"
-                >
-                  CANCELAR
-                </button>
-                <button
-                  type="submit"
-                  className="px-5 sm:px-6 py-2.5 bg-[#FF5A00] hover:bg-white text-black font-extrabold text-[10px] uppercase tracking-widest transition cursor-pointer"
-                >
-                  GUARDAR CAMBIOS
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* MODAL RETIRO PARCIAL (REDISEÑADO) */}
-      {modalRetiroOpen && (
-        <div className="fixed inset-0 bg-black/90 backdrop-blur-sm z-[100] flex items-center justify-center p-2 sm:p-4 font-sans animate-in fade-in duration-200">
-          <div className="bg-[#050505] border border-zinc-800 w-full max-w-lg flex flex-col relative shadow-[0_0_50px_rgba(0,0,0,0.8)] animate-in zoom-in-95 duration-200">
-            <div className="p-4 sm:p-6 border-b border-zinc-800 flex justify-between items-center bg-[#020202]">
-              <h3 className="text-lg sm:text-2xl font-extrabold italic uppercase tracking-tighter text-[#FFD700]">
-                Retirar Productos
-              </h3>
-              <button
-                onClick={() => setModalRetiroOpen(null)}
-                className="text-zinc-500 hover:text-white transition-colors cursor-pointer p-1"
-              >
-                <X size={24} />
-              </button>
-            </div>
-
-            <div className="p-4 sm:p-6 space-y-6  ">
-              <div className="flex justify-between items-start">
-                <div className="min-w-0 pr-4">
-                  <span className="bg-[#FF5A00]/10 border border-[#FF5A00]/20 text-[#FF5A00] px-1.5 py-0.5 text-[10px] font-bold tracking-widest mb-2 inline-block">
-                    {modalRetiroOpen.semielaboradoCodigo}
-                  </span>
-                  <p className="text-zinc-300 text-sm sm:text-base font-bold font-sans truncate">
-                    {modalRetiroOpen.semielaboradoNombre}
-                  </p>
-                </div>
-                <div className="text-right shrink-0">
-                  <p className="text-[9px] uppercase tracking-widest text-zinc-500 font-bold mb-1">
-                    Disponible
-                  </p>
-                  <p className="text-3xl sm:text-4xl font-extrabold text-[#FFD700] leading-none">
-                    {modalRetiroOpen.cantidadSolicitada -
-                      modalRetiroOpen.cantidadRetirada}
-                  </p>
-                </div>
-              </div>
-
-              <div className="space-y-3 bg-zinc-900/30 p-4 border border-zinc-800/50">
-                <div className="flex justify-between items-end">
-                  <label className="block text-xs uppercase tracking-widest text-zinc-400 font-bold">
-                    Cantidad a retirar
-                  </label>
-                  <span className="text-[10px] text-zinc-600 font-bold">
-                    UNIDADES
-                  </span>
-                </div>
-
-                <div className="relative group">
-                  <input
-                    type="number"
-                    min="1"
-                    max={
-                      modalRetiroOpen.cantidadSolicitada -
-                      modalRetiroOpen.cantidadRetirada
-                    }
-                    value={cantidadRetiroManual}
-                    onChange={(e) => setCantidadRetiroManual(e.target.value)}
-                    className="w-full bg-black border-2 border-zinc-800 text-white p-4 pr-20 text-xl font-bold focus:border-[#FFD700] focus:ring-4 focus:ring-[#FFD700]/10 outline-none transition-all text-center sm:text-left"
-                    placeholder="0"
-                    autoFocus
-                  />
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setCantidadRetiroManual(
-                        modalRetiroOpen.cantidadSolicitada -
-                          modalRetiroOpen.cantidadRetirada,
-                      )
-                    }
-                    className="absolute right-2 top-1/2 -translate-y-1/2 bg-[#FFD700]/10 text-[#FFD700] hover:bg-[#FFD700] hover:text-black border border-[#FFD700]/20 px-3 py-2 text-[10px] font-bold uppercase tracking-widest transition-colors cursor-pointer"
-                  >
-                    MAX
+              <ul className={`grid gap-3.5 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 ${vista === "TABLA" ? "lg:hidden" : ""}`}>
+                <AnimatePresence initial={false}>
+                  {mostradas.map((s, i) => (
+                    <TarjetaSolicitud key={s.id} s={s} indice={i} permisos={permisos} onAccion={accion} onMenu={setMenu} ahora={ahora} />
+                  ))}
+                </AnimatePresence>
+              </ul>
+              {filtradas.length > visibles && (
+                <div className="mt-5 text-center">
+                  <button type="button" onClick={() => setVisibles((v) => v + POR_PAGINA)} className="min-h-[52px] px-8 rounded-2xl border border-white/[0.1] bg-white/[0.05] text-base font-bold text-zinc-200 hover:bg-white/[0.1] cursor-pointer">
+                    Ver más ({filtradas.length - visibles})
                   </button>
                 </div>
-
-                {/* BARRA DE PROGRESO DE RETIRO VISUAL */}
-                <div className="h-1.5 w-full bg-black border border-zinc-800 overflow-hidden mt-2">
-                  <div
-                    className="h-full bg-[#FFD700] transition-all duration-300 ease-out"
-                    style={{
-                      width: `${Math.min(100, Math.max(0, (Number(cantidadRetiroManual) / (modalRetiroOpen.cantidadSolicitada - modalRetiroOpen.cantidadRetirada)) * 100))}%`,
-                    }}
-                  />
-                </div>
-              </div>
-
-              <button
-                onClick={() =>
-                  handleRegistrarRetiro(
-                    modalRetiroOpen.id,
-                    cantidadRetiroManual,
-                  )
-                }
-                disabled={
-                  !cantidadRetiroManual ||
-                  Number(cantidadRetiroManual) <= 0 ||
-                  Number(cantidadRetiroManual) >
-                    modalRetiroOpen.cantidadSolicitada -
-                      modalRetiroOpen.cantidadRetirada
-                }
-                className="w-full bg-[#FFD700] hover:bg-white text-black font-extrabold italic uppercase tracking-tighter text-lg sm:text-xl p-4 transition-all disabled:opacity-30 disabled:cursor-not-allowed flex justify-center items-center gap-2 cursor-pointer shadow-[0_0_20px_rgba(255,215,0,0.15)] group"
-              >
-                Confirmar Retiro{" "}
-                <ChevronRight
-                  size={20}
-                  strokeWidth={3}
-                  className="transition-transform group-hover:translate-x-1"
-                />
-              </button>
-            </div>
-          </div>
+              )}
+            </>
+          )}
         </div>
+      </div>
+
+      {/* Botón flotante en celular y tablet (arriba del menú inferior) */}
+      {isDeposito && (
+        <div className="lg:hidden fixed right-4 bottom-[calc(5rem+env(safe-area-inset-bottom))] z-30">{botonNueva}</div>
       )}
 
-      {/* MODAL HISTORIAL / AUDITORÍA */}
-      {modalHistorialOpen && (
-        <div className="fixed inset-0 bg-black/90 backdrop-blur-sm z-[100] flex flex-col items-center justify-center p-2 sm:p-4 font-sans">
-          <div className="bg-[#050505] border border-zinc-800 w-full max-w-md max-h-[88vh] sm:max-h-[85vh] flex flex-col relative shadow-2xl">
-            <div className="p-4 sm:p-6 border-b border-zinc-800 flex justify-between items-center bg-[#020202] shrink-0">
-              <h3 className="text-lg sm:text-xl font-extrabold italic uppercase tracking-tighter text-white">
-                Auditoría{" "}
-                <span className="text-[#FF5A00]">
-                  {getSolId(modalHistorialOpen)}
-                </span>
-              </h3>
-              <button
-                onClick={() => setModalHistorialOpen(null)}
-                className="text-zinc-500 hover:text-white transition-colors cursor-pointer p-1"
-              >
-                <X size={22} />
-              </button>
-            </div>
-
-            <div className="p-4 sm:p-6 overflow-y-auto space-y-6 custom-scrollbar  ">
-              <div className="space-y-4 border-l border-zinc-800 pl-5 ml-2">
-                <div className="relative">
-                  <div className="w-2.5 h-2.5 rounded-full bg-zinc-600 absolute -left-[26px] top-1" />
-                  <p className="text-[10px] font-bold uppercase text-white tracking-wider">
-                    Solicitado
-                  </p>
-                  <p className="text-[10px] text-zinc-500 mt-0.5">
-                    {formatFechaArg(
-                      modalHistorialOpen.solicitadoAt ||
-                        modalHistorialOpen.solicitado_at,
-                    )}{" "}
-                    {formatHoraArg(
-                      modalHistorialOpen.solicitadoAt ||
-                        modalHistorialOpen.solicitado_at,
-                    )}{" "}
-                    HS
-                  </p>
-                  {getMotivo(modalHistorialOpen) !== "--" && (
-                    <p className="text-[10px] text-[#FFD700] mt-1 font-bold uppercase">
-                      Destino: {getMotivo(modalHistorialOpen)}
-                    </p>
-                  )}
-                </div>
-
-                {(modalHistorialOpen.atendidoAt ||
-                  modalHistorialOpen.atendido_at) && (
-                  <div className="relative">
-                    <div className="w-2.5 h-2.5 rounded-full bg-[#FF5A00] absolute -left-[26px] top-1" />
-                    <p className="text-[10px] font-bold uppercase text-[#FF5A00] tracking-wider">
-                      Atendido
-                    </p>
-                    <p className="text-[10px] text-zinc-500 mt-0.5">
-                      {formatFechaArg(
-                        modalHistorialOpen.atendidoAt ||
-                          modalHistorialOpen.atendido_at,
-                      )}{" "}
-                      {formatHoraArg(
-                        modalHistorialOpen.atendidoAt ||
-                          modalHistorialOpen.atendido_at,
-                      )}{" "}
-                      HS
-                    </p>
-                  </div>
-                )}
-
-                {(modalHistorialOpen.disponibleAt ||
-                  modalHistorialOpen.disponible_at) && (
-                  <div className="relative">
-                    <div className="w-2.5 h-2.5 rounded-full bg-[#FFD700] absolute -left-[26px] top-1" />
-                    <p className="text-[10px] font-bold uppercase text-[#FFD700] tracking-wider">
-                      Disponible
-                    </p>
-                    <p className="text-[10px] text-zinc-500 mt-0.5">
-                      {formatFechaArg(
-                        modalHistorialOpen.disponibleAt ||
-                          modalHistorialOpen.disponible_at,
-                      )}{" "}
-                      {formatHoraArg(
-                        modalHistorialOpen.disponibleAt ||
-                          modalHistorialOpen.disponible_at,
-                      )}{" "}
-                      HS
-                    </p>
-                  </div>
-                )}
-              </div>
-
-              <div className="pt-5 border-t border-zinc-800">
-                <p className="text-[10px] uppercase tracking-widest text-zinc-500 mb-3 font-bold">
-                  Movimientos de Retiro
-                </p>
-                {modalHistorialOpen.retirosHistorial?.length > 0 ? (
-                  <div className="space-y-2">
-                    {modalHistorialOpen.retirosHistorial.map((r, i) => (
-                      <div
-                        key={i}
-                        className="flex justify-between items-center bg-black p-3 border border-zinc-800"
-                      >
-                        <div>
-                          <p className="text-white text-xs font-bold">
-                            +{r.cantidad} u.
-                          </p>
-                          <p className="text-zinc-500 text-[9px] uppercase tracking-wider mt-0.5">
-                            {r.usuario}
-                          </p>
-                        </div>
-                        <p className="text-zinc-500 text-[10px]">
-                          {formatFechaArg(r.fecha)} {formatHoraArg(r.fecha)} HS
-                        </p>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-xs text-zinc-600 italic">
-                    No hay registros de retiro.
-                  </p>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      <NuevaSolicitud abierto={nuevaAbierta} onCerrar={() => setNuevaAbierta(false)} semielaborados={semielaborados} activas={activas} onCrear={crear} ocupado={ocupado} />
+      <OpcionesSolicitud solicitud={menu} puedeEditar={!!puedeEditarMenu} puedeCancelar={!!puedeCancelarMenu} onCerrar={() => setMenu(null)} onAuditoria={setAuditoria} onEditar={setEditar} onCancelar={(s) => cambiarEstado(s, "CANCELADO")} />
+      <EditarSolicitud solicitud={editar} onCerrar={() => setEditar(null)} onGuardar={guardarEdicion} ocupado={ocupado} />
+      <RetirarSolicitud solicitud={retirar} onCerrar={() => setRetirar(null)} onRetirar={registrarRetiro} ocupado={ocupado} />
+      <AuditoriaSolicitud solicitud={auditoria} onCerrar={() => setAuditoria(null)} />
+      {toastNodo}
     </div>
   );
 }
