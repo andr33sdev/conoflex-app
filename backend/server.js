@@ -11,6 +11,7 @@ const path = require("path");
 const jwt = require("jsonwebtoken");
 const crypto = require("crypto");
 const { crearConnie } = require("./connie");
+const { asegurarTablasAgentes, registrarRutasAgentes, iniciarVigilantes } = require("./agentes");
 const { demandaMateriasPrimas } = require("./demanda");
 const { separarDuplicadas, asegurarTablaDuplicadas } = require("./fichero");
 const { asegurarTablasProduccion, registrarRutasProduccion } = require("./produccionRutas");
@@ -5682,8 +5683,17 @@ const connie = crearConnie({
 });
 app.post("/api/chat-ia", requirePermiso("connie"), connie.manejador());
 
+// ==========================================
+// AGENTES: módulo aparte (cada agente con su especialidad y su permiso "agente:<id>").
+// Reutiliza el motor de IA y las funciones de liquidación de Connie sin modificarla.
+// ==========================================
+const agentes = registrarRutasAgentes(app, { db, pool: dbConnie, ai });
+
 app.listen(PORT, () => {
   console.log(`🚀 Servidor Conoflex unificado ejecutándose en puerto ${PORT}`);
   migrarPermisoConnie(db);
   connie.calentarEsquema();
+  asegurarTablasAgentes(db)
+    .then(() => iniciarVigilantes(agentes))
+    .catch((e) => console.error("[agentes] no se pudieron preparar las tablas:", e.message));
 });

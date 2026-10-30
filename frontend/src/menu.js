@@ -20,6 +20,7 @@ import {
   ShoppingCart,
   MessageSquareText,
   LayoutGrid,
+  UsersRound,
 } from "lucide-react";
 
 export const INICIO = {
@@ -167,6 +168,17 @@ export const ALL_MENU_ITEMS = [
     highlight: true,
   },
   {
+    id: "agentes",
+    corto: "Agentes",
+    grupo: "inteligencia",
+    label: "Agentes IA",
+    icon: UsersRound,
+    desc: "Tu equipo de agentes: liquidaciones, avisos y más",
+    kw: "agentes lia rrhh liquidacion horas extra presentismo feriados",
+    highlight: true,
+    porAgente: true,
+  },
+  {
     id: "metricas",
     corto: "Métricas",
     grupo: "inteligencia",
@@ -244,6 +256,18 @@ export const ALL_MENU_ITEMS = [
 const ROLES_SIN_LABORATORIO = ["OPERARIO"];
 export const veLaboratorio = (usuario) => !ROLES_SIN_LABORATORIO.includes(String(usuario?.rol || "").trim().toUpperCase());
 
+/** Agentes que tiene habilitados el usuario (permisos "agente:<id>"; ADMIN y "*" ven todos). */
+export function agentesPermitidos(usuario, todos = []) {
+  const rol = (usuario?.rol || "").toUpperCase();
+  const permisos = usuario?.permisos || [];
+  if (rol === "ADMIN" || permisos.includes("*")) return todos;
+  return todos.filter((a) => permisos.includes(`agente:${a}`));
+}
+
+export const tieneAlgunAgente = (usuario) =>
+  (usuario?.rol || "").toUpperCase() === "ADMIN" ||
+  (usuario?.permisos || []).some((p) => p === "*" || String(p).startsWith("agente:"));
+
 /** Módulos que ve el usuario (misma regla que antes). */
 export function itemsPermitidos(usuario) {
   const rol = (usuario?.rol || "").toUpperCase();
@@ -251,6 +275,7 @@ export function itemsPermitidos(usuario) {
   return ALL_MENU_ITEMS.filter((it) => {
     if (rol === "ADMIN") return true;
     if (it.adminOnly) return false;
+    if (it.porAgente) return tieneAlgunAgente(usuario);
     if (it.libre) return it.grupo !== "laboratorio" || veLaboratorio(usuario);
     return permisos.includes(it.id) || permisos.includes("*");
   });

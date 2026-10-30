@@ -30,6 +30,7 @@ const MODULOS_SISTEMA = [
   { id: "solicitudes-internas", nombre: "Solicitudes Internas" },
   { id: "planta-online", nombre: "Planta On-Line" },
   { id: "control-asistencia", nombre: "Control Asistencia" },
+  { id: "agente:rrhh", nombre: "Agente · RRHH y liquidaciones (Lía)" },
 ];
 
 export default function AdminUsuarios() {
