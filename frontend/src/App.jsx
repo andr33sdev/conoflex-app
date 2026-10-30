@@ -24,7 +24,8 @@ import LaboratorioAR from "./LaboratorioAR";
 import VisorAR from "./VisorAR";
 import SolicitudesCompraModule from "./SolicitudesCompraModule";
 import FirmaSolicitudPublica from "./FirmaSolicitudPublica";
-import { itemPorId, veLaboratorio } from "./menu";
+import Agentes from "./Agentes";
+import { itemPorId, veLaboratorio, tieneAlgunAgente } from "./menu";
 
 // Cada módulo tiene su propia ruta: /<id-del-módulo> (el inicio es "/").
 // Se usa la History API directamente, así que no cambia nada de cómo se renderiza la app.
@@ -89,7 +90,7 @@ function App() {
     if (usuarioActual && usuarioActual.rol?.toUpperCase() !== "ADMIN") {
       // EXCEPCIÓN: Permitir siempre el acceso a los módulos experimentales 3D/AR
       const esLab = ["visor-ar", "lab-ar", "lab-ensamblaje", "simulador-carga"].includes(activeModule);
-      if (activeModule === "inicio" || (esLab && veLaboratorio(usuarioActual))) {
+      if (activeModule === "inicio" || (activeModule === "agentes" && tieneAlgunAgente(usuarioActual)) || (esLab && veLaboratorio(usuarioActual))) {
         return;
       }
 
@@ -229,6 +230,10 @@ function App() {
 
       {hasAccess("metricas") && activeModule === "metricas" && (
         <Metricas key={reloadKey} />
+      )}
+
+      {activeModule === "agentes" && tieneAlgunAgente(usuarioActual) && (
+        <Agentes usuarioActual={usuarioActual} />
       )}
 
       {hasAccess("connie") && activeModule === "connie" && <Connie />}
