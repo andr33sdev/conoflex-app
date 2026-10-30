@@ -3,9 +3,21 @@
 
 const P = require("./produccionPlan");
 const { demandaSemielaborados } = require("./demanda");
+const F = require("./ingenieriaFormula");
+const { moverStock } = require("./stockMovimientos");
+const { registrarAlertaDeCarga, fotoIngenieria, formulaDeFoto } = require("./ingenieriasRutas");
 
 const FECHA = (col) => `DATE_FORMAT(${col}, '%Y-%m-%d')`;
 const esISO = (v) => !!P.parseISO(v);
+const esRoto = (categoria) => /ROTO/i.test(String(categoria || ""));
+const parseJSON = (t) => {
+  if (t == null) return null;
+  try {
+    return JSON.parse(t);
+  } catch {
+    return null;
+  }
+};
 const hoyISO = () => {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -99,6 +111,9 @@ async function asegurarTablasProduccion(db) {
       KEY idx_asig (asignacion_id)
     )`);
 
+  const [colF] = await db.query("SELECT COUNT(*) AS n FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'prod_cargas' AND column_name = 'formula_usada'");
+  if (!Number(colF[0].n)) await db.query("ALTER TABLE prod_cargas ADD COLUMN formula_usada LONGTEXT NULL");
+
   // Primera vez: las máquinas que ya aparecían en órdenes de trabajo anteriores.
   const [[{ n }]] = await db.query("SELECT COUNT(*) AS n FROM prod_maquinas");
   if (Number(n) === 0) {
@@ -140,6 +155,21 @@ function registrarRutasProduccion(app, db, requirePermiso) {
     return r[0]?.nombre || "Usuario";
   };
   const entero = (v) => (v === "" || v == null ? NaN : Number(v));
+
+  /** Fórmula que informa el operario: se valida y se completan código y nombre desde la base. Devuelve { error } o { json }. */
+  async function prepararFormulaUsada(body, kgPorProducto) {
+    const f = body.formula_usada;
+    if (f == null) return { json: null };
+    const v = F.validarLineas(f.lineas);
+    if (v.error) return { error: v.error };
+    const [mps] = await db.query("SELECT id, codigo, nombre FROM materias_primas WHERE id IN (?)", [v.lineas.map((l) => l.mp_id)]);
+    if (mps.length !== v.lineas.length) return { error: "Algún material de la fórmula ya no existe." };
+    const lineas = v.lineas.map((l) => {
+      const m = mps.find((x) => x.id === l.mp_id);
+      return { mp_id: l.mp_id, codigo: m.codigo, nombre: m.nombre, kg_tachada: l.kg_tachada };
+    });
+    return { json: JSON.stringify({ peso: kgPorProducto, lineas }) };
+  }
 
   // ---------------------------------------------------------------- máquinas y catálogo
   app.get("/api/prod/maquinas", TABLET, seguro(async (req, res) => {
@@ -487,7 +517,7 @@ function registrarRutasProduccion(app, db, requirePermiso) {
     const [turnos] = await db.query(`SELECT turno, sin_produccion, motivo, lanzado, comentario, comentario_por FROM prod_turnos WHERE fecha = ?`, [fecha]);
     const [asig] = await db.query(
       `SELECT a.id, a.turno, a.cantidad, a.operario, a.ingenieria_id, ing.nombre_version AS receta_version,
-              i.lote, i.semielaborado_codigo AS modelo_codigo, i.semielaborado_nombre AS modelo_nombre, m.nombre AS maquina
+              i.lote, i.semielaborado_codigo AS modelo_codigo, i.semielaborado_nombre AS modelo_nombre, m.nombre AS maquina, m.categoria AS maquina_categoria
          FROM prod_asignaciones a
          JOIN prod_plan_items i ON i.id = a.item_id
          JOIN prod_turnos t ON t.fecha = a.fecha AND t.turno = a.turno AND t.lanzado = 1
@@ -500,7 +530,7 @@ function registrarRutasProduccion(app, db, requirePermiso) {
     let cargas = [];
     if (ids.length) {
       [cargas] = await db.query(
-        `SELECT id, asignacion_id, operario, ciclos, total_producido, fallas, kg_por_producto, color, codigo_material, observaciones, estado, motivo_rechazo
+        `SELECT id, asignacion_id, operario, ciclos, total_producido, fallas, kg_por_producto, color, codigo_material, observaciones, estado, motivo_rechazo, formula_usada
            FROM prod_cargas WHERE asignacion_id IN (?) ORDER BY id DESC`,
         [ids],
       );
@@ -513,6 +543,11 @@ function registrarRutasProduccion(app, db, requirePermiso) {
         [ingIds],
       );
       for (const d of det) (recetas[d.ingenieria_id] ||= []).push({ codigo: d.codigo, nombre: d.nombre, cantidad: d.cantidad, unidad: d.unidad_medida });
+    }
+    const formulas = {};
+    for (const id of ingIds) {
+      const f = formulaDeFoto(await fotoIngenieria(db, id));
+      if (f) formulas[id] = { peso: f.peso, con_tachada: f.con_tachada, lineas: F.conPorcentajes(f.lineas) };
     }
     res.json({
       fecha,
@@ -531,11 +566,17 @@ function registrarRutasProduccion(app, db, requirePermiso) {
               const propias = cargas.filter((c) => c.asignacion_id === a.id);
               const vigente = propias.find((c) => c.estado !== "RECHAZADA") || null;
               const rechazada = !vigente ? propias.find((c) => c.estado === "RECHAZADA") || null : null;
-              return { ...a, receta: recetas[a.ingenieria_id] || [], carga: vigente, rechazo: rechazada ? rechazada.motivo_rechazo || "La carga fue rechazada. Volvé a cargarla." : null };
+              return { ...a, es_roto: esRoto(a.maquina_categoria), receta: recetas[a.ingenieria_id] || [], formula: formulas[a.ingenieria_id] || null, carga: vigente ? { ...vigente, formula_usada: parseJSON(vigente.formula_usada) } : null, rechazo: rechazada ? rechazada.motivo_rechazo || "La carga fue rechazada. Volvé a cargarla." : null };
             }),
         };
       }),
     });
+  }));
+
+  // Materias primas para elegir al corregir la fórmula usada en la tablet.
+  app.get("/api/prod/materias-primas", TABLET, seguro(async (req, res) => {
+    const [rows] = await db.query("SELECT id, codigo, nombre FROM materias_primas ORDER BY nombre");
+    res.json(rows);
   }));
 
   // Comentario libre del operario sobre su turno (queda guardado junto al turno).
@@ -575,18 +616,22 @@ function registrarRutasProduccion(app, db, requirePermiso) {
     const [ya] = await db.query("SELECT id FROM prod_cargas WHERE asignacion_id = ? AND estado <> 'RECHAZADA'", [a.id]);
     if (ya.length) return res.status(409).json({ error: "Esta producción ya fue cargada." });
     const x = v.valores;
+    // Los ciclos son solo de rotomoldeo: en las demás máquinas no se registran.
+    if (!esRoto(a.maquina_categoria)) x.ciclos = 0;
+    const fu = await prepararFormulaUsada(req.body, x.kg_por_producto);
+    if (fu.error) return res.status(400).json({ error: fu.error });
     const [r] = await db.query(
       `INSERT INTO prod_cargas (asignacion_id, item_id, lote, fecha, turno, operario, maquina, maquina_categoria, modelo_codigo, modelo_nombre,
-                                ciclos, total_producido, fallas, kg_por_producto, color, codigo_material, observaciones, ingenieria_id)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+                                ciclos, total_producido, fallas, kg_por_producto, color, codigo_material, observaciones, ingenieria_id, formula_usada)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [a.id, a.item_id, a.lote, a.fecha, a.turno, operario, a.maquina, a.maquina_categoria, a.semielaborado_codigo, a.semielaborado_nombre,
-       x.ciclos, x.total_producido, x.fallas, x.kg_por_producto, x.color, x.codigo_material, x.observaciones, a.ingenieria_id],
+       x.ciclos, x.total_producido, x.fallas, x.kg_por_producto, x.color, x.codigo_material, x.observaciones, a.ingenieria_id, fu.json],
     );
     res.json({ id: r.insertId });
   }));
 
   app.put("/api/prod/cargas/:id", TABLET, seguro(async (req, res) => {
-    const [c] = await db.query("SELECT id, estado FROM prod_cargas WHERE id = ?", [req.params.id]);
+    const [c] = await db.query("SELECT id, estado, maquina_categoria FROM prod_cargas WHERE id = ?", [req.params.id]);
     if (!c.length) return res.status(404).json({ error: "Carga no encontrada." });
     if (c[0].estado !== "PENDIENTE") return res.status(409).json({ error: "Esta carga ya fue revisada y no se puede modificar." });
     const v = P.validarCarga(req.body);
@@ -594,9 +639,12 @@ function registrarRutasProduccion(app, db, requirePermiso) {
     const x = v.valores;
     const operario = String(req.body.operario || "").trim().slice(0, 255);
     if (!operario) return res.status(400).json({ error: "Indicá quién cargó la producción." });
+    if (!esRoto(c[0].maquina_categoria)) x.ciclos = 0;
+    const fu = await prepararFormulaUsada(req.body, x.kg_por_producto);
+    if (fu.error) return res.status(400).json({ error: fu.error });
     await db.query(
-      "UPDATE prod_cargas SET operario=?, ciclos=?, total_producido=?, fallas=?, kg_por_producto=?, color=?, codigo_material=?, observaciones=? WHERE id=? AND estado='PENDIENTE'",
-      [operario, x.ciclos, x.total_producido, x.fallas, x.kg_por_producto, x.color, x.codigo_material, x.observaciones, req.params.id],
+      "UPDATE prod_cargas SET operario=?, ciclos=?, total_producido=?, fallas=?, kg_por_producto=?, color=?, codigo_material=?, observaciones=?, formula_usada=? WHERE id=? AND estado='PENDIENTE'",
+      [operario, x.ciclos, x.total_producido, x.fallas, x.kg_por_producto, x.color, x.codigo_material, x.observaciones, fu.json, req.params.id],
     );
     res.json({ ok: true });
   }));
@@ -624,8 +672,15 @@ function registrarRutasProduccion(app, db, requirePermiso) {
       if (c.estado !== "PENDIENTE") { await conn.rollback(); return res.status(409).json({ error: "Esta carga ya fue revisada." }); }
       const fecha = c.fecha_iso;
 
+      // Qué materiales se gastaron: la fórmula que informó el operario (porcentajes × peso de la pieza) o, si no la hay, la receta del producto.
       let ingredientes = [];
-      if (c.ingenieria_id) {
+      const usada = parseJSON(c.formula_usada);
+      if (usada && Array.isArray(usada.lineas) && usada.lineas.length) {
+        let peso = Number(c.kg_por_producto) || 0;
+        if (!(peso > 0) && c.ingenieria_id) peso = formulaDeFoto(await fotoIngenieria(conn, c.ingenieria_id))?.peso || 0;
+        if (peso > 0) ingredientes = F.cantidadesPorPieza(usada.lineas, peso).map((l) => ({ mp_id: l.mp_id, codigo: l.codigo, nombre: l.nombre, cantidad: l.kg_pieza, unidad: "Kg" }));
+      }
+      if (!ingredientes.length && c.ingenieria_id) {
         const [det] = await conn.query(
           `SELECT d.materia_prima_id AS mp_id, d.cantidad, d.unidad_medida AS unidad, mp.codigo, mp.nombre
              FROM ingenieria_detalles d JOIN materias_primas mp ON mp.id = d.materia_prima_id WHERE d.ingenieria_id = ?`,
@@ -640,13 +695,31 @@ function registrarRutasProduccion(app, db, requirePermiso) {
          VALUES (?,?,?,?,?,?,0,?,?,?,?)`,
         [fecha, (c.maquina_categoria || c.maquina || "GENERAL").toUpperCase(), c.lote, c.modelo_codigo, c.modelo_nombre, ef.buenas, c.fallas, ef.kg_total, ef.kg_fallas, c.ingenieria_id],
       );
+      const total = Number(c.total_producido) || 0;
       for (const k of ef.consumos) {
-        await conn.query("UPDATE materias_primas SET stock_actual = stock_actual - ? WHERE id = ?", [k.cantidad, k.mp_id]);
+        // El consumo cubre todas las piezas (buenas + fallas): el detalle separa cuánto fue a cada grupo.
+        const kgFallas = total > 0 ? F.redondear((k.cantidad * c.fallas) / total, 4) : 0;
+        await moverStock(conn, {
+          mp_id: k.mp_id,
+          delta: -k.cantidad,
+          tipo: "CONSUMO_PRODUCCION",
+          usuario: nombre,
+          referencia_tipo: "CARGA",
+          referencia_id: c.id,
+          referencia_texto: `${c.lote || "Sin lote"} · ${c.modelo_nombre || c.modelo_codigo || ""}`.trim(),
+          detalle: {
+            lote: c.lote, fecha, turno: c.turno, maquina: c.maquina, modelo_codigo: c.modelo_codigo, modelo_nombre: c.modelo_nombre,
+            operario: c.operario, total: c.total_producido, buenas: ef.buenas, fallas: c.fallas, kg_por_pieza: Number(c.kg_por_producto) || null,
+            kg_buenas: F.redondear(k.cantidad - kgFallas, 4), kg_fallas: kgFallas, unidad: k.unidad,
+          },
+        });
         await conn.query(
           "INSERT INTO registro_produccion_materiales (registro_id, codigo_ot, materia_prima_codigo, materia_prima_nombre, cantidad_usada, unidad_medida, fecha) VALUES (?,?,?,?,?,?,?)",
           [reg.insertId, c.lote, k.codigo || "", k.nombre || "", k.cantidad, k.unidad, fecha],
         );
       }
+      // Si lo que se usó no coincide con la receta definida, queda un aviso para el admin.
+      await registrarAlertaDeCarga(conn, { ...c, fecha_iso: fecha });
       await conn.query("UPDATE prod_cargas SET estado='APROBADA', aprobado_por=?, aprobado_at=NOW(), registro_id=? WHERE id=?", [nombre, reg.insertId, c.id]);
       await conn.commit();
       res.json({ ok: true, buenas: ef.buenas, consumos: ef.consumos });
