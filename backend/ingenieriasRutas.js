@@ -342,6 +342,34 @@ function registrarRutasIngenieria(app, db, requirePermiso, requireAdmin) {
     }),
   );
 
+  // Resumen por producto para la lista: receta activa, quién la tocó y avisos abiertos.
+  app.get("/api/ingenierias/resumen", PERM, async (req, res) => {
+    try {
+      const esSE = req.query.parent_type !== "PT";
+      const campo = esSE ? "semielaborado_id" : "producto_terminado_id";
+      const [rows] = await db.query(
+        `SELECT i.${campo} AS parent_id, i.id AS ingenieria_id, i.nombre_version, i.peso_pieza_kg, i.actualizado_por, i.updated_at,
+                (SELECT COUNT(*) FROM ingenieria_detalles d WHERE d.ingenieria_id = i.id) AS n_items,
+                (SELECT COUNT(*) FROM ingenieria_detalles d WHERE d.ingenieria_id = i.id AND d.cantidad_tachada IS NOT NULL) AS n_tachada
+           FROM ingenierias i WHERE i.${campo} IS NOT NULL AND i.es_activa = 1`,
+      );
+      let alertas = [];
+      if (esSE) [alertas] = await db.query("SELECT semielaborado_id AS parent_id, COUNT(*) AS n FROM ingenieria_alertas WHERE estado = 'ABIERTA' GROUP BY semielaborado_id");
+      const porPadre = new Map();
+      for (const r of rows) if (!porPadre.has(r.parent_id)) porPadre.set(r.parent_id, r);
+      const out = {};
+      for (const [id, r] of porPadre) {
+        out[id] = { ingenieria_id: r.ingenieria_id, version: r.nombre_version, peso_pieza_kg: r.peso_pieza_kg == null ? null : Number(r.peso_pieza_kg), items: Number(r.n_items), con_formula: Number(r.n_tachada) > 0, actualizado_por: r.actualizado_por, actualizado_at: r.updated_at, alertas: 0 };
+      }
+      for (const a of alertas) {
+        out[a.parent_id] = { ...(out[a.parent_id] || { ingenieria_id: null, version: null }), alertas: Number(a.n) };
+      }
+      res.json(out);
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   // ---------------------------------------------------------------- historial de cambios
   app.get("/api/ingenierias/historial", PERM, async (req, res) => {
     try {

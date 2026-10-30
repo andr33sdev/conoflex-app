@@ -52,7 +52,7 @@ export function Modal({ abierto, onCerrar, titulo, subtitulo, children, ancho = 
 }
 
 /** Panel lateral que entra desde la derecha (pantalla completa en celular). */
-export function Drawer({ abierto, onCerrar, titulo, subtitulo, children, pie, derecha }) {
+export function Drawer({ abierto, onCerrar, titulo, subtitulo, children, pie, derecha, ancho = "sm:w-[560px] lg:w-[640px]" }) {
   useEscape(abierto, onCerrar);
   return (
     <AnimatePresence>
@@ -69,7 +69,7 @@ export function Drawer({ abierto, onCerrar, titulo, subtitulo, children, pie, de
             role="dialog"
             aria-modal="true"
             aria-label={titulo}
-            className="h-full w-full sm:w-[560px] lg:w-[640px] flex flex-col bg-[#0d0d10] border-l border-white/[0.08] shadow-[-30px_0_80px_rgba(0,0,0,0.6)]"
+            className={`h-full w-full ${ancho} flex flex-col bg-[#0d0d10] border-l border-white/[0.08] shadow-[-30px_0_80px_rgba(0,0,0,0.6)]`}
             initial={{ x: 80, opacity: 0 }}
             animate={{ x: 0, opacity: 1 }}
             exit={{ x: 80, opacity: 0 }}

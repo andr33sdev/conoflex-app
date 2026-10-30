@@ -235,7 +235,7 @@ function App() {
       {hasAccess("connie") && activeModule === "connie" && <Connie />}
 
       {hasAccess("ingenieria") && activeModule === "ingenieria" && (
-        <Ingenieria />
+        <Ingenieria usuarioActual={usuarioActual} />
       )}
 
       {hasAccess("planificacion") && activeModule === "planificacion" && (

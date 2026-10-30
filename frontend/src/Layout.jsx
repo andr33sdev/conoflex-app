@@ -13,6 +13,7 @@ import {
 
 import logo from "./assets/logo.svg";
 import CommandPalette from "./CommandPalette";
+import Campanita from "./Campanita";
 import {
   GRUPOS,
   INICIO,
@@ -348,6 +349,8 @@ export default function Layout({
               </span>
             </button>
           )}
+
+          <Campanita usuarioActual={usuarioActual} />
 
           <button
             onClick={() => setPaleta(true)}
