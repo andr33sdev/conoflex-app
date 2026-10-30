@@ -1,66 +1,67 @@
-import { useEffect, useRef } from "react";
-import { motion } from "framer-motion";
-import { MessageSquareText, Moon, Sun } from "lucide-react";
-import { Chip } from "../produccion/ui";
-import { diaCorto, diaMes, hoyISO, num } from "../produccion/util";
+import { useState } from "react";
+import { Moon, Plus, Sun } from "lucide-react";
+import { diaCorto, diaMes, hoyISO, nombreDia, num } from "../produccion/util";
 import { estadoTurno } from "./reglas";
 
-function Celda({ fecha, turno, info, asigs, onAbrir, pasado }) {
-  const vacioPasado = pasado && !asigs.length && !info?.sin_produccion && !info?.lanzado;
-  const Icono = turno === "NOCHE" ? Moon : Sun;
+// Cada estado se marca con un punto de color y una palabra, no con fondos enormes.
+const PUNTO = { verde: "bg-emerald-400", amarillo: "bg-[#FFD60A]", azul: "bg-sky-400", naranja: "bg-[#FF5A00]", gris: "bg-zinc-600" };
+const TEXTO = { verde: "text-emerald-300", amarillo: "text-[#FFD60A]", azul: "text-sky-300", naranja: "text-[#ff8a4d]", gris: "text-zinc-500" };
+
+function Celda({ fecha, turno, info, asigs, onAbrir, esHoy, ancha }) {
   const est = estadoTurno(info, asigs);
   const sin = info?.sin_produccion;
+  const Icono = turno === "NOCHE" ? Moon : Sun;
+  const pedido = asigs.reduce((a, x) => a + x.cantidad, 0);
+  const hecho = asigs.reduce((a, x) => a + (x.real?.buenas || 0), 0);
+  const maxFilas = ancha ? 5 : 3;
+
   return (
     <button
       onClick={() => onAbrir(fecha, turno)}
       aria-label={`${turno === "NOCHE" ? "Noche" : "Día"} del ${diaMes(fecha)}: ${est.texto}`}
-      className={`group w-full text-left rounded-2xl border p-3 ${vacioPasado ? "min-h-[56px] opacity-60" : "min-h-[104px]"} flex flex-col gap-2 transition-all cursor-pointer hover:-translate-y-0.5 ${
-        info?.lanzado
-          ? "border-emerald-500/30 bg-emerald-500/[0.06] hover:border-emerald-400/60"
-          : sin
-            ? "border-white/[0.06] bg-white/[0.02] hover:border-white/[0.18]"
-            : asigs.length
-              ? "border-[#FF5A00]/30 bg-[#FF5A00]/[0.05] hover:border-[#FF5A00]/70"
-              : "border-dashed border-white/[0.1] bg-transparent hover:border-[#FF5A00]/50 hover:bg-white/[0.03]"
-      }`}
+      title={est.texto} className={`group relative w-full h-full text-left rounded-xl border p-2.5 flex flex-col gap-1.5 overflow-hidden transition-colors cursor-pointer ${ancha ? "min-h-[120px]" : "min-h-[112px]"} ${
+        asigs.length || info?.lanzado
+          ? "border-white/[0.09] bg-white/[0.035] hover:border-[#FF5A00]/60 hover:bg-white/[0.055]"
+          : "border-dashed border-white/[0.08] bg-transparent hover:border-[#FF5A00]/45 hover:bg-white/[0.03]"
+      } ${esHoy ? "ring-1 ring-[#FF5A00]/25" : ""}`}
     >
-      <div className="flex items-center justify-between gap-2">
-        <span className="inline-flex items-center gap-1.5 text-xs font-extrabold uppercase tracking-wide text-zinc-300">
-          <Icono size={14} className={turno === "NOCHE" ? "text-sky-300" : "text-[#FFD60A]"} />
-          {turno === "NOCHE" ? "Noche" : "Día"}
+      <span className="flex items-center justify-between gap-2">
+        <span className="inline-flex items-center gap-1.5 text-[11px] font-extrabold uppercase tracking-wider text-zinc-400">
+          <Icono size={13} className={turno === "NOCHE" ? "text-sky-300" : "text-[#FFD60A]"} />
+          {ancha ? (turno === "NOCHE" ? "Noche" : "Día") : ""}
         </span>
-        <Chip tono={est.tono} className="!text-[10px] !px-2 whitespace-nowrap shrink-0">{est.texto}</Chip>
-      </div>
+        <span className={`inline-flex items-center gap-1.5 text-[10.5px] font-bold ${TEXTO[est.tono]}`}>
+          <span className={`w-1.5 h-1.5 rounded-full ${PUNTO[est.tono]}`} />
+          <span className={ancha ? "" : "hidden 2xl:inline"}>{est.texto}</span>
+        </span>
+      </span>
+
       {sin ? (
-        <p className="text-xs text-zinc-500 leading-snug">{info.motivo || "No se produce en este turno."}</p>
+        <span className="text-[11px] text-zinc-500 leading-snug line-clamp-3">{info.motivo || "No se produce en este turno."}</span>
       ) : asigs.length ? (
-        <ul className="flex flex-col gap-1 min-w-0">
-          {asigs.slice(0, 3).map((a) => (
-            <li key={a.id} className="text-xs leading-tight min-w-0">
-              {a.real?.estado === "APROBADA" ? (
-                <span className="tabular-nums">
-                  <span className={`font-bold ${a.real.buenas >= a.cantidad ? "text-emerald-300" : "text-[#FFD60A]"}`}>{num(a.real.buenas)}</span>
-                  <span className="text-zinc-500"> de {num(a.cantidad)}</span>
-                </span>
-              ) : a.real ? (
-                <span className="tabular-nums">
-                  <span className="font-bold text-sky-300">{num(a.real.buenas)}</span>
-                  <span className="text-zinc-500"> de {num(a.cantidad)} · por aprobar</span>
-                </span>
-              ) : (
-                <span className="font-bold text-white tabular-nums">{num(a.cantidad)}</span>
-              )}{" "}
-              <span className="text-zinc-300 truncate">{a.semielaborado_nombre}</span>
-              <span className="block text-[11px] text-zinc-500 truncate">{a.maquina || "sin máquina"}{a.operario ? ` · ${a.operario}` : ""}</span>
-            </li>
+        <span className="flex flex-col gap-1 min-w-0">
+          {asigs.slice(0, maxFilas).map((a) => (
+            <span key={a.id} className="block min-w-0 leading-tight">
+              <span className="block text-[12px] font-semibold text-zinc-200 truncate">{a.semielaborado_nombre}</span>
+              <span className="block text-[11px] text-zinc-500 truncate tabular-nums">
+                <b className="text-white">{a.real ? num(a.real.buenas) : num(a.cantidad)}</b>
+                {a.real && <span>/{num(a.cantidad)}</span>}
+                {" u"}{a.maquina ? ` · ${a.maquina}` : ""}
+              </span>
+            </span>
           ))}
-          {asigs.length > 3 && <li className="text-[11px] font-bold text-zinc-500">+{asigs.length - 3} más</li>}
-          {info?.comentario && (
-            <li className="inline-flex items-center gap-1 text-[11px] font-semibold text-sky-300"><MessageSquareText size={12} /> Comentario del turno</li>
-          )}
-        </ul>
+          {asigs.length > maxFilas && <span className="text-[11px] font-bold text-zinc-500">+{asigs.length - maxFilas} más</span>}
+        </span>
       ) : (
-        <p className="text-xs text-zinc-600 group-hover:text-zinc-400 transition-colors">{vacioPasado ? "Sin plan cargado" : "Tocá para armar el turno"}</p>
+        <span className="mt-auto mb-auto self-center inline-flex items-center gap-1 text-[11px] text-zinc-600 group-hover:text-[#FF5A00] transition-colors">
+          <Plus size={13} /> Armar
+        </span>
+      )}
+
+      {pedido > 0 && hecho > 0 && (
+        <span className="mt-auto h-1 rounded-full bg-white/[0.07] overflow-hidden">
+          <span className="block h-full rounded-full bg-emerald-400" style={{ width: `${Math.min(100, (hecho / pedido) * 100)}%` }} />
+        </span>
       )}
     </button>
   );
@@ -68,45 +69,56 @@ function Celda({ fecha, turno, info, asigs, onAbrir, pasado }) {
 
 export default function TableroSemana({ plan, onAbrir }) {
   const hoy = hoyISO();
-  const filaHoy = useRef(null);
-  // Al abrir una semana que incluye hoy, baja hasta el día de hoy (los anteriores ya pasaron).
-  useEffect(() => {
-    if (!plan.dias.includes(hoy)) return;
-    const t = setTimeout(() => filaHoy.current?.scrollIntoView({ block: "center", behavior: "smooth" }), 350);
-    return () => clearTimeout(t);
-  }, [plan.semana, plan.dias, hoy]);
+  // El día elegido solo vale dentro de la semana mostrada; si no, hoy (si está) o el lunes.
+  const [elegido, setDiaSel] = useState(null);
+  const diaSel = elegido && plan.dias.includes(elegido) ? elegido : plan.dias.includes(hoy) ? hoy : plan.dias[0];
+
+  const infoDe = (fecha, turno) => plan.turnos.find((t) => t.fecha === fecha && t.turno === turno);
+  const asigsDe = (fecha, turno) => plan.asignaciones.filter((a) => a.fecha === fecha && a.turno === turno);
+  const puntoDia = (fecha) => (["DIA", "NOCHE"].some((t) => asigsDe(fecha, t).length) ? "bg-[#FF5A00]" : "bg-transparent");
+
   return (
-    <section aria-label="Turnos de la semana" className="flex flex-col gap-3">
-      {plan.dias.map((fecha, i) => {
-        const esHoy = fecha === hoy;
-        return (
-          <motion.div
-            key={fecha}
-            ref={esHoy ? filaHoy : null}
-            initial={{ opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.04 * i, duration: 0.3 }}
-            className={`grid gap-3 rounded-3xl border p-3 sm:grid-cols-[88px_minmax(0,1fr)_minmax(0,1fr)] ${esHoy ? "border-[#FF5A00]/50 bg-[#FF5A00]/[0.04]" : "border-white/[0.06] bg-[#0f0f12]"}`}
-          >
-            <div className="flex sm:flex-col items-baseline sm:items-start justify-between sm:justify-start gap-x-3 sm:gap-1 px-1 sm:pt-1.5">
-              <span className="text-lg font-extrabold text-white tracking-wide">{diaCorto(fecha)}</span>
-              <span className="text-sm text-zinc-500 tabular-nums">{diaMes(fecha)}</span>
-              {esHoy && <span className="text-[10px] font-extrabold uppercase tracking-widest text-[#FF5A00] sm:mt-1">Hoy</span>}
+    <section aria-label="Turnos de la semana">
+      {/* Escritorio: la semana entera en una sola grilla (días en columnas, Día y Noche en filas). */}
+      <div className="hidden md:grid grid-cols-7 gap-2" style={{ gridTemplateRows: "auto 1fr 1fr" }}>
+        {plan.dias.map((fecha) => {
+          const esHoy = fecha === hoy;
+          return (
+            <div key={fecha} className={`rounded-xl px-2.5 py-2 flex items-baseline justify-between ${esHoy ? "bg-[#FF5A00] text-black" : "bg-white/[0.04] text-white"}`}>
+              <span className="text-[13px] font-extrabold tracking-wide">{diaCorto(fecha)}</span>
+              <span className={`text-[12px] tabular-nums font-semibold ${esHoy ? "text-black/70" : "text-zinc-500"}`}>{diaMes(fecha)}</span>
             </div>
-            {["DIA", "NOCHE"].map((turno) => (
-              <Celda
-                key={turno}
-                fecha={fecha}
-                turno={turno}
-                info={plan.turnos.find((t) => t.fecha === fecha && t.turno === turno)}
-                asigs={plan.asignaciones.filter((a) => a.fecha === fecha && a.turno === turno)}
-                onAbrir={onAbrir}
-                pasado={fecha < hoy}
-              />
-            ))}
-          </motion.div>
-        );
-      })}
+          );
+        })}
+        {["DIA", "NOCHE"].map((turno) =>
+          plan.dias.map((fecha) => (
+            <Celda key={`${fecha}-${turno}`} fecha={fecha} turno={turno} info={infoDe(fecha, turno)} asigs={asigsDe(fecha, turno)} onAbrir={onAbrir} esHoy={fecha === hoy} />
+          )),
+        )}
+      </div>
+
+      {/* Celular: una tira de días y los dos turnos del día elegido. */}
+      <div className="md:hidden">
+        <div className="flex gap-1.5 overflow-x-auto no-scrollbar pb-2 -mx-1 px-1" role="tablist" aria-label="Día de la semana">
+          {plan.dias.map((fecha) => {
+            const sel = fecha === diaSel;
+            return (
+              <button key={fecha} role="tab" aria-selected={sel} onClick={() => setDiaSel(fecha)} className={`relative shrink-0 w-[52px] py-2 rounded-xl border text-center cursor-pointer transition-colors ${sel ? "bg-[#FF5A00] border-[#FF5A00] text-black" : "bg-white/[0.04] border-white/[0.08] text-zinc-300"}`}>
+                <span className="block text-[11px] font-extrabold">{diaCorto(fecha)}</span>
+                <span className={`block text-lg font-extrabold tabular-nums leading-tight ${sel ? "text-black" : "text-white"}`}>{diaMes(fecha).split(" ")[0]}</span>
+                <span className={`absolute left-1/2 -translate-x-1/2 bottom-1 w-1 h-1 rounded-full ${sel ? "bg-black/60" : puntoDia(fecha)}`} />
+                {fecha === hoy && !sel && <span className="absolute top-1 right-1.5 text-[8px] font-extrabold text-[#FF5A00]">HOY</span>}
+              </button>
+            );
+          })}
+        </div>
+        <p className="text-sm font-bold text-white mb-2">{nombreDia(diaSel)} {diaMes(diaSel)}</p>
+        <div className="grid grid-cols-1 gap-2">
+          {["DIA", "NOCHE"].map((turno) => (
+            <Celda key={turno} ancha fecha={diaSel} turno={turno} info={infoDe(diaSel, turno)} asigs={asigsDe(diaSel, turno)} onAbrir={onAbrir} esHoy={diaSel === hoy} />
+          ))}
+        </div>
+      </div>
     </section>
   );
 }

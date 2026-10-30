@@ -127,11 +127,10 @@ function Asignacion({ a, maquinas, operarios, bloqueado, choque, onCambio, toast
   const opciones = operarios.includes(a.operario) || !a.operario ? operarios : [a.operario, ...operarios];
 
   return (
-    <motion.li layout initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.97 }} transition={{ duration: 0.25 }} className="rounded-2xl border border-white/[0.08] bg-[#131317] p-4">
+    <motion.li layout initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.97 }} transition={{ duration: 0.25 }} className="rounded-2xl border border-white/[0.08] bg-[#131317] p-3.5">
       <div className="flex items-start gap-2">
         <div className="min-w-0 flex-1">
-          <span className="font-mono text-[12px] font-bold text-[#FFD60A] bg-[#FFD60A]/10 border border-[#FFD60A]/25 rounded-lg px-2 py-0.5">{a.lote}</span>
-          <p className="mt-2 text-base font-bold text-white leading-snug">{a.semielaborado_nombre}</p>
+          <p className="text-[15px] font-bold text-white leading-snug"><span className="font-mono text-[11px] font-bold text-[#FFD60A] mr-2">{a.lote}</span>{a.semielaborado_nombre}</p>
           <p className="text-xs text-zinc-500">{a.semielaborado_codigo}</p>
         </div>
         {!bloqueado && (
@@ -159,7 +158,7 @@ function Asignacion({ a, maquinas, operarios, bloqueado, choque, onCambio, toast
         </p>
       )}
 
-      <div className="mt-4 grid gap-3 sm:grid-cols-3">
+      <div className="mt-3 grid gap-2.5 sm:grid-cols-3">
         <div>
           <Etiqueta>Cantidad del turno</Etiqueta>
           <input
@@ -216,7 +215,7 @@ function Asignacion({ a, maquinas, operarios, bloqueado, choque, onCambio, toast
         <p className="mt-4 text-sm text-zinc-500">Todavía no se cargó lo producido.</p>
       ) : null}
 
-      <div className="mt-4">
+      <div className="mt-3">
         <Receta a={a} bloqueado={bloqueado} onCambio={onCambio} toast={toast} />
       </div>
     </motion.li>
@@ -294,8 +293,8 @@ export default function PanelTurno({ turnoAbierto, plan, maquinas, operarios, on
       )}
     >
       {abierto && (
-        <div className="flex flex-col gap-5">
-          <div className={`rounded-2xl border p-4 ${sin ? "border-white/[0.15] bg-white/[0.04]" : "border-white/[0.07] bg-white/[0.02]"}`}>
+        <div className="flex flex-col gap-4">
+          <div className={`rounded-2xl border p-3.5 ${sin ? "border-white/[0.15] bg-white/[0.04]" : "border-white/[0.07] bg-white/[0.02]"}`}>
             <div className="flex items-center gap-3">
               <div className="flex-1">
                 <p className="text-sm font-bold text-white">No hay producción en este turno</p>
@@ -337,7 +336,7 @@ export default function PanelTurno({ turnoAbierto, plan, maquinas, operarios, on
           {!sin && (
             <>
               {asigs.length > 0 && (
-                <ul className="flex flex-col gap-4">
+                <ul className="flex flex-col gap-3">
                   <AnimatePresence initial={false}>
                     {asigs.map((a) => (
                       <Asignacion key={`${a.id}-${a.cantidad}`} a={a} maquinas={maquinas} operarios={operarios} bloqueado={lanzado} choque={idsChoque.has(a.id)} onCambio={onCambio} toast={toast} />
