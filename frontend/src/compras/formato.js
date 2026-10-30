@@ -36,3 +36,17 @@ export const unidadCorta = (m) => {
   const u = String(m?.unidad_medida || "kg").trim().toLowerCase();
   return u === "kilos" || u === "kilo" || u === "kgs" ? "kg" : u;
 };
+
+export const cerradaSC = (sc) => sc.estado === "COMPLETADA" || sc.estado === "CANCELADA";
+export const faltaFirma = (sc) => !sc.firma_jefe || !sc.firma_gerente;
+
+/** Datos para mostrar una solicitud sin listar todos sus artículos. */
+export function resumenSC(sc) {
+  const av = avance(sc);
+  const proveedores = [...new Set(sc.items.map((i) => String(i.proveedor || "").trim()).filter(Boolean))];
+  const porUrgencia = [...sc.items].sort((a, b) => b.prioridad - a.prioridad || a.id - b.id);
+  return { ...av, proveedores, porUrgencia, masUrgente: porUrgencia[0] || null, urgente: !cerradaSC(sc) && av.maxPrioridad >= 4 };
+}
+
+/** "Mundileno S.A. +2" */
+export const textoProveedores = (lista) => (lista.length === 0 ? "Sin proveedor" : lista.length === 1 ? lista[0] : `${lista[0]} +${lista.length - 1}`);

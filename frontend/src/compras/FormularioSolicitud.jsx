@@ -78,7 +78,7 @@ export default function FormularioSolicitud({ abierto, solicitud, materias, prov
     <Drawer
       abierto={abierto}
       onCerrar={onCerrar}
-      titulo={solicitud ? `Editar ${nroSC(solicitud.id)}` : "Nueva solicitud de compra"}
+      titulo={solicitud ? `Editar ${nroSC(solicitud.id).replace("-", "\u2011")}` : "Nueva solicitud de compra"}
       subtitulo="Qué hay que comprar, a quién y qué tan urgente es."
       ancho="sm:w-[640px] lg:w-[720px]"
       pie={

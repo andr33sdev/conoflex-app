@@ -136,7 +136,7 @@ export default function RecepcionSolicitud({ abierto, solicitud, materias, onCer
     <Drawer
       abierto={abierto && !!solicitud}
       onCerrar={onCerrar}
-      titulo={solicitud ? `Recepción · ${nroSC(solicitud.id)}` : "Recepción"}
+      titulo={solicitud ? `Recepción · ${nroSC(solicitud.id).replace("-", "\u2011")}` : "Recepción"}
       subtitulo={solicitud ? `Emitida el ${formatFecha(solicitud.fecha)} · ${av.completos} de ${items.length} ítems completos` : ""}
       ancho="sm:w-[640px] lg:w-[720px]"
       derecha={solicitud && (

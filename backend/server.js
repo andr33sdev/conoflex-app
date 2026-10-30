@@ -4338,6 +4338,9 @@ app.post("/api/pedidos", async (req, res) => {
         .json({ error: "Faltan datos o no seleccionaste ningún artículo." });
     }
 
+    // La fecha llega como texto ISO ("...T03:00:00.000Z"): se pasa como fecha real para que la base la acepte siempre.
+    const fechaPedido = fecha && !isNaN(new Date(fecha).getTime()) ? new Date(fecha) : new Date();
+
     // Por cada artículo marcado, creamos un Pedido INDEPENDIENTE en la BD
     for (const art of articulosSeleccionados) {
       const modeloLimpio = art.modelo.trim().toUpperCase();
@@ -4346,7 +4349,7 @@ app.post("/api/pedidos", async (req, res) => {
       const [result] = await db.query(
         `INSERT INTO pedidos (op, cliente, articulo, cantidad_total, cantidad_completada, estado, fecha) 
          VALUES (?, ?, ?, ?, 0, 'PENDIENTE', ?)`,
-        [op, cliente, modeloLimpio, cantidadArticulo, fecha || new Date()],
+        [op, cliente, modeloLimpio, cantidadArticulo, fechaPedido],
       );
 
       const pedidoId = result.insertId;
