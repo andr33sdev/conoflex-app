@@ -32,7 +32,7 @@ function Cuerpo({ a, operarios, onCerrar, onGuardado, toast }) {
   const [f, setF] = useState({
     operario: previa?.operario || a.operario || "",
     ciclos: previa ? String(previa.ciclos || "") : "",
-    total: previa ? String(previa.total_producido) : "",
+    buenas: previa ? String(previa.total_producido - previa.fallas) : "",
     fallas: previa ? String(previa.fallas) : "",
     kg: previa ? String(previa.kg_por_producto || "") : mem.kg || "",
     color: previa?.color ?? mem.color ?? "",
@@ -46,15 +46,15 @@ function Cuerpo({ a, operarios, onCerrar, onGuardado, toast }) {
   const [hecho, setHecho] = useState(false);
   const set = (k) => (v) => setF((x) => ({ ...x, [k]: typeof v === "string" ? v : v.target.value }));
 
-  const total = aNumero(f.total);
+  const buenas = aNumero(f.buenas);
   const fallas = f.fallas === "" ? 0 : aNumero(f.fallas);
+  const total = buenas + fallas;
   const errores = {};
-  if (!(total > 0) || !Number.isInteger(total)) errores.total = "Poné cuántas piezas salieron.";
+  if (f.buenas === "" || !Number.isInteger(buenas) || buenas < 0) errores.buenas = "Poné cuántas piezas buenas salieron.";
   if (!Number.isInteger(fallas) || fallas < 0) errores.fallas = "Tiene que ser un número entero.";
-  else if (total > 0 && fallas > total) errores.fallas = "No pueden ser más que el total.";
+  if (!errores.buenas && !errores.fallas && total <= 0) errores.buenas = "Poné las piezas buenas o las fallas.";
   if (f.ciclos !== "" && !Number.isInteger(aNumero(f.ciclos))) errores.ciclos = "Tiene que ser un número entero.";
   if (f.kg !== "" && !(aNumero(f.kg) >= 0)) errores.kg = "Número no válido.";
-  const buenas = total > 0 && fallas >= 0 && fallas <= total ? total - fallas : null;
 
   const enviar = async () => {
     setIntento(true);
@@ -96,8 +96,8 @@ function Cuerpo({ a, operarios, onCerrar, onGuardado, toast }) {
     <>
       <div className="flex flex-col gap-5">
         <div className="grid gap-5 sm:grid-cols-2">
-          <CampoNumero etiqueta="Total producido" valor={f.total} onChange={set("total")} error={err("total")} ayuda={`Se pidieron ${num(a.cantidad)}`} autoFocus />
-          <CampoNumero etiqueta="Fallas" valor={f.fallas} onChange={set("fallas")} error={err("fallas")} ayuda={buenas != null ? `Quedan ${num(buenas)} piezas buenas` : "Dejá en 0 si no hubo"} />
+          <CampoNumero etiqueta="Piezas buenas" valor={f.buenas} onChange={set("buenas")} error={err("buenas")} ayuda={`Se pidieron ${num(a.cantidad)}`} autoFocus />
+          <CampoNumero etiqueta="Fallas" valor={f.fallas} onChange={set("fallas")} error={err("fallas")} ayuda="Dejá en 0 si no hubo" />
         </div>
 
         <CampoNumero etiqueta="Ciclos" valor={f.ciclos} onChange={set("ciclos")} error={err("ciclos")} />
@@ -174,7 +174,7 @@ function Cuerpo({ a, operarios, onCerrar, onGuardado, toast }) {
                 <Check size={52} strokeWidth={3} />
               </span>
               <p className="mt-5 text-3xl font-extrabold text-white">¡Listo, enviado!</p>
-              <p className="mt-2 text-lg text-zinc-400">{num(buenas ?? total)} piezas buenas · gracias {f.operario.split(" ")[0]}</p>
+              <p className="mt-2 text-lg text-zinc-400">{num(buenas)} piezas buenas · gracias {f.operario.split(" ")[0]}</p>
             </motion.div>
           </motion.div>
         )}

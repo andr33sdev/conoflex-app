@@ -3,7 +3,7 @@
 // Todos los usuarios con acceso lo ven; solo el administrador modifica (el servidor también lo exige).
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { AlertTriangle, ChevronDown, Layers, Lock, Pencil, Plus, Search, ShieldCheck, Sparkles, SquareStack, X } from "lucide-react";
+import { AlertTriangle, Check, ChevronDown, Layers, Lock, Loader2, Pencil, Plus, Search, ShieldCheck, Sparkles, SquareStack, X } from "lucide-react";
 import { api } from "./produccion/util";
 import { useToast } from "./produccion/useToast";
 import { Casilla, Pildora } from "./reflectivas/Tilde";
@@ -102,7 +102,7 @@ function Sello({ nombre }) {
 }
 
 // ---------------------------------------------------------------- vista de escritorio / tablet
-function Tabla({ filas, admin, seleccion, alternar, alternarTodos, cambiar, editar, q, abiertos, alternarAbierto }) {
+function Tabla({ cambiados, recien, filas, admin, seleccion, alternar, alternarTodos, cambiar, editar, q, abiertos, alternarAbierto }) {
   const todas = filas.length > 0 && filas.every((r) => seleccion.has(r.id));
   const algunas = filas.some((r) => seleccion.has(r.id));
   return (
@@ -134,7 +134,7 @@ function Tabla({ filas, admin, seleccion, alternar, alternarTodos, cambiar, edit
                   initial={i < 14 ? { opacity: 0, y: 8 } : false}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ duration: 0.25, delay: i < 14 ? i * 0.025 : 0, ease: suave }}
-                  className={`group transition-colors ${sel ? "bg-[#FF5A00]/[0.07]" : "hover:bg-white/[0.025]"}`}
+                  className={`group transition-colors duration-700 ${sel ? "bg-[#FF5A00]/[0.07]" : cambiados.has(r.id) ? "bg-[#FFD60A]/[0.06]" : recien.has(r.id) ? "bg-emerald-500/[0.10]" : "hover:bg-white/[0.025]"}`}
                 >
                   {admin && (
                     <td className={`sticky left-0 z-10 border-b border-white/[0.05] ${fondo}`}>
@@ -146,6 +146,7 @@ function Tabla({ filas, admin, seleccion, alternar, alternarTodos, cambiar, edit
                       <Sello nombre={r.nombre} />
                       <div className="min-w-0 flex-1">
                         <span className="block font-bold text-white leading-snug break-words">{r.nombre}</span>
+                        {cambiados.has(r.id) && <span className="mt-1 inline-block text-[10px] font-extrabold uppercase tracking-wide text-[#FFD60A] border border-[#FFD60A]/40 rounded-full px-2 py-0.5">Sin guardar</span>}
                         <Variantes r={r} abierto={abiertos.has(r.id)} alternar={() => alternarAbierto(r.id)} busqueda={q} />
                       </div>
                       {admin && (
@@ -171,7 +172,7 @@ function Tabla({ filas, admin, seleccion, alternar, alternarTodos, cambiar, edit
 }
 
 // ---------------------------------------------------------------- vista de celular
-function Tarjetas({ filas, admin, seleccion, alternar, cambiar, editar, q, abiertos, alternarAbierto }) {
+function Tarjetas({ cambiados, recien, filas, admin, seleccion, alternar, cambiar, editar, q, abiertos, alternarAbierto }) {
   return (
     <ul className="md:hidden flex flex-col gap-3">
       {filas.map((r, i) => {
@@ -183,13 +184,14 @@ function Tarjetas({ filas, admin, seleccion, alternar, cambiar, editar, q, abier
             initial={i < 8 ? { opacity: 0, y: 14 } : false}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.3, delay: i < 8 ? i * 0.04 : 0, ease: suave }}
-            className={`rounded-3xl border p-4 transition-colors ${sel ? "border-[#FF5A00]/50 bg-[#FF5A00]/[0.06]" : "border-white/[0.08] bg-gradient-to-b from-[#141418] to-[#111114]"}`}
+            className={`rounded-3xl border p-4 transition-colors duration-700 ${sel ? "border-[#FF5A00]/50 bg-[#FF5A00]/[0.06]" : cambiados.has(r.id) ? "border-[#FFD60A]/50 bg-[#FFD60A]/[0.05]" : recien.has(r.id) ? "border-emerald-400/50 bg-emerald-500/[0.07]" : "border-white/[0.08] bg-gradient-to-b from-[#141418] to-[#111114]"}`}
           >
             <div className="flex items-start gap-3">
               {admin && <Casilla on={sel} onChange={() => alternar(r.id)} etiqueta={`Seleccionar ${r.nombre}`} tam="h-11 w-11 shrink-0" />}
               <Sello nombre={r.nombre} />
               <div className="min-w-0 flex-1">
                 <p className="text-[16px] font-extrabold text-white leading-snug break-words">{r.nombre}</p>
+                {cambiados.has(r.id) && <span className="mt-1 inline-block text-[10px] font-extrabold uppercase tracking-wide text-[#FFD60A] border border-[#FFD60A]/40 rounded-full px-2 py-0.5">Sin guardar</span>}
                 <Variantes r={r} abierto={abiertos.has(r.id)} alternar={() => alternarAbierto(r.id)} busqueda={q} />
               </div>
               {admin ? (
@@ -232,7 +234,7 @@ function Tarjetas({ filas, admin, seleccion, alternar, cambiar, editar, q, abier
 // ---------------------------------------------------------------- barra de acciones sobre varios artículos
 const SIGUIENTE = { undefined: true, true: false, false: undefined };
 
-function BarraSeleccion({ cantidad, onLimpiar, onAplicar, ocupado }) {
+function BarraSeleccion({ cantidad, onLimpiar, onAplicar, ocupado, subida }) {
   const [plan, setPlan] = useState({});
   const ciclar = (id) => setPlan((p) => {
     const sig = SIGUIENTE[String(p[id])];
@@ -248,7 +250,7 @@ function BarraSeleccion({ cantidad, onLimpiar, onAplicar, ocupado }) {
       animate={{ y: 0, opacity: 1 }}
       exit={{ y: 120, opacity: 0 }}
       transition={{ duration: 0.32, ease: suave }}
-      className="fixed z-[60] left-3 right-3 bottom-[calc(4.75rem+env(safe-area-inset-bottom))] lg:bottom-6 lg:left-1/2 lg:right-auto lg:-translate-x-1/2 lg:w-[min(760px,calc(100vw-8rem))]"
+      className={`fixed z-[60] left-3 right-3 ${subida ? "bottom-[calc(10.5rem+env(safe-area-inset-bottom))] lg:bottom-28" : "bottom-[calc(4.75rem+env(safe-area-inset-bottom))] lg:bottom-6"} lg:left-1/2 lg:right-auto lg:-translate-x-1/2 lg:w-[min(760px,calc(100vw-8rem))]`}
     >
       <div className="rounded-3xl border border-[#FF5A00]/40 bg-[#17120f]/95 backdrop-blur-xl shadow-[0_20px_60px_rgba(0,0,0,0.6)] p-4">
         <div className="flex items-center gap-3">
@@ -279,10 +281,55 @@ function BarraSeleccion({ cantidad, onLimpiar, onAplicar, ocupado }) {
             onClick={() => onAplicar(plan, () => setPlan({}))}
             className="flex-1 min-h-[50px] rounded-2xl bg-[#FFD60A] text-black text-base font-extrabold hover:bg-white active:scale-[0.99] transition-all disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
           >
-            {hay ? `Aplicar a ${cantidad}` : "Elegí qué cambiar"}
+            {hay ? `Preparar cambio en ${cantidad}` : "Elegí qué cambiar"}
           </button>
         </div>
       </div>
+    </motion.div>
+  );
+}
+
+// ---------------------------------------------------------------- confirmar cambios
+function BarraConfirmar({ cantidad, ocupado, onDescartar, onConfirmar }) {
+  return (
+    <motion.div
+      initial={{ y: 120, opacity: 0 }}
+      animate={{ y: 0, opacity: 1 }}
+      exit={{ y: 120, opacity: 0 }}
+      transition={{ duration: 0.32, ease: suave }}
+      role="region"
+      aria-label="Cambios sin guardar"
+      className="fixed z-[70] left-3 right-3 bottom-[calc(4.75rem+env(safe-area-inset-bottom))] lg:bottom-6 lg:left-1/2 lg:right-auto lg:-translate-x-1/2 lg:w-[min(760px,calc(100vw-8rem))]"
+    >
+      <div className="rounded-3xl border border-[#FFD60A]/45 bg-[#1a1707]/95 backdrop-blur-xl shadow-[0_20px_60px_rgba(0,0,0,0.6)] p-3 sm:p-3.5 flex items-center gap-2 sm:gap-3">
+        <span className="relative hidden sm:grid place-items-center w-10 h-10 shrink-0 rounded-full bg-[#FFD60A]/15 text-[#FFD60A]">
+          <span className="absolute inset-0 rounded-full bg-[#FFD60A]/20 animate-ping" aria-hidden />
+          <Pencil size={18} className="relative" />
+        </span>
+        <p className="flex-1 min-w-0 text-[14px] sm:text-[15px] font-bold text-white leading-tight">
+          {cantidad} {cantidad === 1 ? "artículo con cambios" : "artículos con cambios"}
+          <span className="hidden sm:block text-xs font-medium text-zinc-400">Todavía no se guardó nada.</span>
+        </p>
+        <button onClick={onDescartar} disabled={ocupado} className="min-h-[48px] px-3 sm:px-4 rounded-2xl bg-white/[0.07] text-sm font-bold text-zinc-200 hover:bg-white/[0.13] disabled:opacity-40 cursor-pointer">Descartar</button>
+        <button onClick={onConfirmar} disabled={ocupado} className="min-h-[48px] px-5 rounded-2xl bg-[#FFD60A] text-black text-[15px] font-extrabold inline-flex items-center justify-center gap-2 hover:bg-white active:scale-[0.98] transition-all disabled:opacity-60 cursor-pointer shadow-[0_8px_24px_rgba(255,214,10,0.2)] shrink-0">
+          {ocupado ? <Loader2 size={18} className="animate-spin" /> : <Check size={18} strokeWidth={3} />}
+          {ocupado ? "Guardando…" : "Confirmar"}<span className="sr-only"> cambios</span>
+        </button>
+      </div>
+    </motion.div>
+  );
+}
+
+function Guardado({ cantidad }) {
+  return (
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} role="status" className="fixed inset-0 z-[150] grid place-items-center bg-[#09090b]/80 backdrop-blur-sm pointer-events-none">
+      <motion.div initial={{ scale: 0.6, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={{ type: "spring", stiffness: 260, damping: 18 }} className="text-center px-6">
+        <span className="mx-auto w-24 h-24 rounded-full grid place-items-center bg-emerald-500/15 border-2 border-emerald-400 text-emerald-300 shadow-[0_0_60px_rgba(16,185,129,0.3)]">
+          <Check size={52} strokeWidth={3} />
+        </span>
+        <p className="mt-5 text-3xl font-extrabold text-white">¡Cambios guardados!</p>
+        <p className="mt-2 text-lg text-zinc-400">{cantidad === 1 ? "Se actualizó 1 artículo" : `Se actualizaron ${cantidad} artículos`}</p>
+      </motion.div>
     </motion.div>
   );
 }
@@ -297,6 +344,9 @@ export default function Reflectivas({ usuarioActual }) {
   const [seleccion, setSeleccion] = useState(() => new Set());
   const [abiertos, setAbiertos] = useState(() => new Set());
   const [ocupado, setOcupado] = useState(false);
+  const [borrador, setBorrador] = useState({});
+  const [recien, setRecien] = useState(() => new Set());
+  const [guardadoN, setGuardadoN] = useState(0);
   const [editor, setEditor] = useState({ k: 0, articulo: null });
   const [editorAbierto, setEditorAbierto] = useState(false);
   const { mostrar: toast, nodo: toastNodo } = useToast();
@@ -319,15 +369,25 @@ export default function Reflectivas({ usuarioActual }) {
     };
   }, []);
 
+  // Lo que se ve = lo guardado + los cambios todavía sin confirmar.
+  const vista = useMemo(() => (articulos ? articulos.map((r) => (borrador[r.id] ? conRegla({ ...r, ...borrador[r.id] }) : r)) : null), [articulos, borrador]);
+  const cambiados = useMemo(() => new Set(Object.keys(borrador).map(Number)), [borrador]);
+  useEffect(() => {
+    if (!cambiados.size) return undefined;
+    const aviso = (e) => e.preventDefault();
+    window.addEventListener("beforeunload", aviso);
+    return () => window.removeEventListener("beforeunload", aviso);
+  }, [cambiados.size]);
+
   const visibles = useMemo(() => {
-    if (!articulos) return [];
+    if (!vista) return [];
     const t = norm(q).trim();
     const f = FILTROS.find((x) => x.id === filtro) || FILTROS[0];
-    return articulos.filter((r) => f.ok(r) && (!t || norm(r.nombre).includes(t) || r.variantes.some((v) => norm(v.codigo).includes(t) || norm(v.nombre).includes(t))));
-  }, [articulos, q, filtro]);
+    return vista.filter((r) => f.ok(r) && (!t || norm(r.nombre).includes(t) || r.variantes.some((v) => norm(v.codigo).includes(t) || norm(v.nombre).includes(t))));
+  }, [vista, q, filtro]);
 
   const conteo = useMemo(() => {
-    const l = articulos || [];
+    const l = vista || [];
     return {
       total: l.length,
       variantes: l.reduce((a, r) => a + r.variantes.length, 0),
@@ -335,7 +395,7 @@ export default function Reflectivas({ usuarioActual }) {
       china3m: l.filter((r) => r.china3m).length,
       protector: l.filter((r) => r.protector).length,
     };
-  }, [articulos]);
+  }, [vista]);
 
   const alternar = (id) => setSeleccion((s) => {
     const n = new Set(s);
@@ -365,6 +425,11 @@ export default function Reflectivas({ usuarioActual }) {
   });
   const eliminado = (id) => {
     setArticulos((l) => l.filter((x) => x.id !== id));
+    setBorrador((b) => {
+      const n = { ...b };
+      delete n[id];
+      return n;
+    });
     setSeleccion((s) => {
       const n = new Set(s);
       n.delete(id);
@@ -372,27 +437,56 @@ export default function Reflectivas({ usuarioActual }) {
     });
   };
 
-  // Cambia ya en pantalla y confirma con el servidor; si falla, vuelve atrás y avisa.
-  const cambiar = async (ids, cambios, alTerminar) => {
-    const antes = articulos;
-    const set = new Set(ids);
-    setArticulos((l) => l.map((r) => (set.has(r.id) ? conRegla({ ...r, ...cambios }) : r)));
-    setOcupado(true);
-    try {
-      if (ids.length === 1) {
-        const r = await api(`/api/reflectivas/articulos/${ids[0]}`, { method: "PUT", body: cambios });
-        guardado(r.articulo);
-      } else {
-        const r = await api("/api/reflectivas/lote", { method: "PUT", body: { ids, cambios } });
-        await cargar();
-        toast(r.sin_protector ? `Listo. ${r.sin_protector} artículo(s) sin protector: no se les pudo poner la aplicación.` : `Listo: se actualizaron ${r.actualizados} artículos.`);
+  // Los cambios no se guardan solos: quedan como borrador hasta que el admin los confirma.
+  const cambiar = (ids, cambios, alTerminar) => {
+    let sinProtector = 0;
+    setBorrador((b) => {
+      const n = { ...b };
+      for (const id of ids) {
+        const base = articulos.find((x) => x.id === id);
+        if (!base) continue;
+        const mezcla = { ...(n[id] || {}), ...cambios };
+        const final = conRegla({ ...base, ...mezcla });
+        if ((cambios.aplic_completa === true || cambios.aplic_union === true) && !final.protector) sinProtector++;
+        const dif = {};
+        for (const c of CAMPOS.map((x) => x.id)) if (final[c] !== base[c]) dif[c] = final[c];
+        if (Object.keys(dif).length) n[id] = dif;
+        else delete n[id];
       }
-      alTerminar?.();
-    } catch (e) {
-      setArticulos(antes);
-      toast(e.message, "error");
-    } finally {
-      setOcupado(false);
+      return n;
+    });
+    if (sinProtector) toast(`${sinProtector} sin protector: no se les puede poner aplicación.`, "error");
+    alTerminar?.();
+  };
+
+  const descartar = () => setBorrador({});
+  const confirmar = async () => {
+    const ids = Object.keys(borrador).map(Number);
+    if (!ids.length) return;
+    setOcupado(true);
+    const ok = [];
+    let falla = "";
+    for (const id of ids) {
+      try {
+        const r = await api(`/api/reflectivas/articulos/${id}`, { method: "PUT", body: borrador[id] });
+        guardado(r.articulo);
+        ok.push(id);
+      } catch (e) {
+        falla = e.message;
+      }
+    }
+    setBorrador((b) => {
+      const n = { ...b };
+      for (const id of ok) delete n[id];
+      return n;
+    });
+    setOcupado(false);
+    if (falla) toast(ok.length ? `Se guardaron ${ok.length}, pero hubo un error: ${falla}` : falla, "error");
+    if (ok.length) {
+      setGuardadoN(ok.length);
+      setRecien(new Set(ok));
+      setTimeout(() => setGuardadoN(0), 1700);
+      setTimeout(() => setRecien(new Set()), 2600);
     }
   };
 
@@ -401,7 +495,7 @@ export default function Reflectivas({ usuarioActual }) {
 
   return (
     <div className="h-full overflow-y-auto custom-scrollbar">
-      <div className={`max-w-[1280px] mx-auto px-4 sm:px-6 lg:px-8 py-5 sm:py-7 ${seleccion.size ? "pb-72 lg:pb-56" : "pb-28 lg:pb-10"}`}>
+      <div className={`max-w-[1280px] mx-auto px-4 sm:px-6 lg:px-8 py-5 sm:py-7 ${seleccion.size ? "pb-96 lg:pb-72" : cambiados.size ? "pb-52 lg:pb-32" : "pb-28 lg:pb-10"}`}>
         <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between mb-6">
           <div className="flex items-stretch gap-3">
             <span aria-hidden className="block w-[3px] rounded-full shrink-0" style={{ backgroundImage: "repeating-linear-gradient(to bottom,#FFD60A 0 7px,transparent 7px 12px)" }} />
@@ -480,16 +574,18 @@ export default function Reflectivas({ usuarioActual }) {
         ) : (
           <>
             <p className="text-xs text-zinc-500 mb-3 px-1">{visibles.length === articulos.length ? `${articulos.length} ${articulos.length === 1 ? "artículo" : "artículos"}` : `${visibles.length} de ${articulos.length} artículos`}</p>
-            <Tabla filas={visibles} admin={admin} seleccion={seleccion} alternar={alternar} alternarTodos={alternarTodos} cambiar={cambiar} editar={abrirEditor} q={q} abiertos={abiertos} alternarAbierto={alternarAbierto} />
-            <Tarjetas filas={visibles} admin={admin} seleccion={seleccion} alternar={alternar} cambiar={cambiar} editar={abrirEditor} q={q} abiertos={abiertos} alternarAbierto={alternarAbierto} />
+            <Tabla cambiados={cambiados} recien={recien} filas={visibles} admin={admin} seleccion={seleccion} alternar={alternar} alternarTodos={alternarTodos} cambiar={cambiar} editar={abrirEditor} q={q} abiertos={abiertos} alternarAbierto={alternarAbierto} />
+            <Tarjetas cambiados={cambiados} recien={recien} filas={visibles} admin={admin} seleccion={seleccion} alternar={alternar} cambiar={cambiar} editar={abrirEditor} q={q} abiertos={abiertos} alternarAbierto={alternarAbierto} />
           </>
         )}
       </div>
 
       <AnimatePresence>
-        {admin && seleccion.size > 0 && <BarraSeleccion key="barra" cantidad={seleccion.size} ocupado={ocupado} onLimpiar={() => setSeleccion(new Set())} onAplicar={aplicarLote} />}
+        {admin && seleccion.size > 0 && <BarraSeleccion key="barra" cantidad={seleccion.size} ocupado={ocupado} onLimpiar={() => setSeleccion(new Set())} onAplicar={aplicarLote} subida={cambiados.size > 0} />}
+        {admin && cambiados.size > 0 && <BarraConfirmar key="confirmar" cantidad={cambiados.size} ocupado={ocupado} onDescartar={descartar} onConfirmar={confirmar} />}
+        {guardadoN > 0 && <Guardado key="guardado" cantidad={guardadoN} />}
       </AnimatePresence>
-      {admin && <Editor clave={editor.k} abierto={editorAbierto} articulo={editor.articulo} onCerrar={() => setEditorAbierto(false)} onGuardado={guardado} onEliminado={eliminado} toast={toast} />}
+      {admin && <Editor clave={editor.k} abierto={editorAbierto} articulo={editor.articulo} onCerrar={() => setEditorAbierto(false)} onGuardado={(a) => { guardado(a); setGuardadoN(1); setTimeout(() => setGuardadoN(0), 1700); }} onEliminado={eliminado} toast={toast} />}
       {toastNodo}
     </div>
   );
