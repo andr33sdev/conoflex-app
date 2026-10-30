@@ -13,6 +13,7 @@ const crypto = require("crypto");
 const { crearConnie } = require("./connie");
 const { separarDuplicadas, asegurarTablaDuplicadas } = require("./fichero");
 const { asegurarTablasProduccion, registrarRutasProduccion } = require("./produccionRutas");
+const { asegurarTablaReflectivas, registrarRutasReflectivas } = require("./reflectivasRutas");
 const { asegurarColumnaPagoMensual } = require("./escala");
 const { migrarPermisoConnie } = require("./permisos");
 require("dotenv").config();
@@ -184,6 +185,7 @@ app.use(requireAuth);
 
 // Plan de producción semanal, turnos y carga desde la tablet de planta.
 registrarRutasProduccion(app, db, requirePermiso);
+registrarRutasReflectivas(app, db, requirePermiso, requireAdmin);
 
 // Multer Config
 const uploadTemp = multer({ dest: UPLOADS_DIR });
@@ -793,6 +795,7 @@ async function initDB() {
     }
 
     await asegurarTablasProduccion(db);
+    await asegurarTablaReflectivas(db);
 
     console.log("✅ Estructura MySQL inicializada correctamente.");
   } catch (err) {

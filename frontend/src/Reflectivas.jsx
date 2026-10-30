@@ -1,971 +1,375 @@
-import { useState, useEffect, useMemo, useRef } from "react";
-import {
-  Search,
-  Plus,
-  Edit2,
-  Trash2,
-  Sparkles,
-  Link,
-  CheckCircle2,
-  X,
-  Layers,
-  Shield,
-  Box,
-  Check,
-  ChevronLeft,
-  ChevronRight,
-  ChevronsLeft,
-  ChevronsRight,
-  ArrowUp,
-  ArrowDown,
-  ArrowUpDown,
-  Sparkle,
-} from "lucide-react";
+// Reflectivas & Pegado: una fila por artículo con su reflectiva (Prograf / China 3M), protector Orajet y cómo se aplica.
+// Todos los usuarios con acceso lo ven; solo el administrador puede modificar (el servidor también lo exige).
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { AnimatePresence, motion } from "framer-motion";
+import { AlertTriangle, Layers, Lock, Search, ShieldCheck, Sparkles, X } from "lucide-react";
+import { api } from "./produccion/util";
+import { useToast } from "./produccion/useToast";
+import { Casilla, Pildora } from "./reflectivas/Tilde";
+import { TONOS } from "./reflectivas/tonos";
 
-export default function Reflectivas() {
-  const [configs, setConfigs] = useState([]);
-  const [semielaborados, setSemielaborados] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState("");
+const suave = [0.2, 0.8, 0.2, 1];
 
-  // PESTAÑAS: CONFIGS (Planos) | ENLAZAR (Enlace Masivo)
-  const [activeTab, setActiveTab] = useState("CONFIGS");
+// Campos de la tabla, con su grupo y color.
+const CAMPOS = [
+  { id: "prograf", label: "Prograf", grupo: "reflectiva", tono: "naranja" },
+  { id: "china3m", label: "China 3M", grupo: "reflectiva", tono: "celeste" },
+  { id: "protector", label: "Orajet", grupo: "protector", tono: "amarillo" },
+  { id: "aplic_completa", label: "Completa", grupo: "aplicacion", tono: "verde" },
+  { id: "aplic_union", label: "Unión / puntas", grupo: "aplicacion", tono: "verde" },
+];
 
-  // SELECCIÓN MASIVA EN PESTAÑA ENLAZAR
-  const [selectedSEIds, setSelectedSEIds] = useState([]);
-  const [bulkConfigId, setBulkConfigId] = useState("");
+const FILTROS = [
+  { id: "todos", label: "Todos", ok: () => true },
+  { id: "prograf", label: "Prograf", ok: (r) => r.prograf },
+  { id: "china3m", label: "China 3M", ok: (r) => r.china3m },
+  { id: "protector", label: "Con protector", ok: (r) => r.protector },
+  { id: "sindefinir", label: "Sin definir", ok: (r) => !r.prograf && !r.china3m && !r.protector },
+];
 
-  // MODAL CREAR / EDITAR CONFIGURACIÓN
-  const [isFormModalOpen, setIsFormModalOpen] = useState(false);
-  const [editingConfig, setEditingConfig] = useState(null);
-  const [formData, setFormState] = useState({
-    nombre: "",
-    reflectiva: "NINGUNA",
-    protector_orajet: false,
-    aplicacion_protector: "NO APLICA",
+const norm = (t) => String(t || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+
+// La aplicación del protector solo existe si hay protector (mismo criterio que el servidor).
+const conRegla = (r) => (r.protector ? r : { ...r, aplic_completa: false, aplic_union: false });
+
+function Dato({ icono: Icono, t, v, tono = "text-white" }) {
+  return (
+    <div className="rounded-2xl border border-white/[0.07] bg-[#111114] px-4 py-3 min-w-0">
+      <span className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-[0.08em] text-zinc-500">
+        {Icono && <Icono size={13} />} {t}
+      </span>
+      <span className={`block mt-0.5 text-2xl font-extrabold tabular-nums ${tono}`}>{v}</span>
+    </div>
+  );
+}
+
+function Esqueleto() {
+  return (
+    <div className="flex flex-col gap-3" aria-label="Cargando">
+      {Array.from({ length: 6 }, (_, i) => (
+        <div key={i} className="h-[72px] rounded-2xl bg-white/[0.04] animate-pulse" style={{ animationDelay: `${i * 80}ms` }} />
+      ))}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------- vista de escritorio / tablet
+function Tabla({ filas, admin, seleccion, alternar, alternarTodos, cambiar }) {
+  const todas = filas.length > 0 && filas.every((r) => seleccion.has(r.id));
+  const algunas = filas.some((r) => seleccion.has(r.id));
+  return (
+    <div className="hidden md:block rounded-3xl border border-white/[0.07] bg-[#0f0f12] overflow-hidden">
+      <div className="overflow-x-auto custom-scrollbar">
+        <table className="w-full text-sm border-separate border-spacing-0">
+          <thead>
+            <tr className="text-[11px] font-extrabold uppercase tracking-[0.1em] text-zinc-400">
+              {admin && <th rowSpan={2} className="sticky left-0 z-20 w-14 bg-[#141418] border-b border-white/[0.07]" scope="col"><div className="grid place-items-center"><Casilla tam="h-9 w-9" on={todas} indeterminada={!todas && algunas} onChange={() => alternarTodos(!todas)} etiqueta="Seleccionar todos los artículos visibles" /></div></th>}
+              <th rowSpan={2} scope="col" className={`${admin ? "" : "sticky left-0"} z-10 bg-[#141418] text-left px-4 border-b border-white/[0.07] min-w-[240px]`}>Modelo</th>
+              <th colSpan={2} scope="colgroup" className="bg-[#141418] py-2.5 border-l border-white/[0.07] text-[#ff9a63]">Reflectiva</th>
+              <th scope="col" rowSpan={2} className="bg-[#141418] border-l border-white/[0.07] border-b border-white/[0.07] px-3 text-[#FFD60A]">Protector</th>
+              <th colSpan={2} scope="colgroup" className="bg-[#141418] py-2.5 border-l border-white/[0.07] text-emerald-300">Aplicación del protector</th>
+            </tr>
+            <tr className="text-[11px] font-bold tracking-wide text-zinc-500">
+              <th scope="col" className="bg-[#141418] border-l border-b border-white/[0.07] py-2 w-28">Prograf</th>
+              <th scope="col" className="bg-[#141418] border-b border-white/[0.07] py-2 w-28">China 3M</th>
+              <th scope="col" className="bg-[#141418] border-l border-b border-white/[0.07] py-2 w-28">Completa</th>
+              <th scope="col" className="bg-[#141418] border-b border-white/[0.07] py-2 w-32">Unión / puntas</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filas.map((r, i) => {
+              const sel = seleccion.has(r.id);
+              return (
+                <motion.tr
+                  key={r.id}
+                  initial={i < 14 ? { opacity: 0, y: 8 } : false}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.25, delay: i < 14 ? i * 0.025 : 0, ease: suave }}
+                  className={`group transition-colors ${sel ? "bg-[#FF5A00]/[0.07]" : "hover:bg-white/[0.025]"}`}
+                >
+                  {admin && (
+                    <td className={`sticky left-0 z-10 border-b border-white/[0.05] ${sel ? "bg-[#1c120d]" : "bg-[#0f0f12] group-hover:bg-[#131316]"}`}>
+                      <div className="grid place-items-center py-2.5"><Casilla tam="h-9 w-9" on={sel} onChange={() => alternar(r.id)} etiqueta={`Seleccionar ${r.nombre}`} /></div>
+                    </td>
+                  )}
+                  <th scope="row" className={`${admin ? "" : "sticky left-0"} z-10 text-left px-4 py-2.5 font-normal border-b border-white/[0.05] ${sel ? "bg-[#1c120d]" : "bg-[#0f0f12] group-hover:bg-[#131316]"}`}>
+                    <span className="block font-bold text-white leading-snug">{r.nombre}</span>
+                    <span className="block text-xs text-zinc-500">{r.codigo}</span>
+                  </th>
+                  {CAMPOS.map((c, k) => (
+                    <td key={c.id} className={`border-b border-white/[0.05] text-center ${k === 0 || k === 2 || k === 3 ? "border-l border-l-white/[0.05]" : ""}`}>
+                      <div className="grid place-items-center py-2.5">
+                        <Casilla on={r[c.id]} tono={c.tono} soloLectura={!admin} bloqueada={c.grupo === "aplicacion" && !r.protector} onChange={(v) => cambiar([r.id], { [c.id]: v })} etiqueta={`${c.label} de ${r.nombre}`} />
+                      </div>
+                    </td>
+                  ))}
+                </motion.tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------- vista de celular
+function Tarjetas({ filas, admin, seleccion, alternar, cambiar }) {
+  return (
+    <ul className="md:hidden flex flex-col gap-3">
+      {filas.map((r, i) => {
+        const sel = seleccion.has(r.id);
+        const sinDatos = !r.prograf && !r.china3m && !r.protector;
+        return (
+          <motion.li
+            key={r.id}
+            initial={i < 8 ? { opacity: 0, y: 14 } : false}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.3, delay: i < 8 ? i * 0.04 : 0, ease: suave }}
+            className={`rounded-3xl border p-4 transition-colors ${sel ? "border-[#FF5A00]/50 bg-[#FF5A00]/[0.06]" : "border-white/[0.08] bg-[#111114]"}`}
+          >
+            <div className="flex items-start gap-3">
+              {admin && <Casilla on={sel} onChange={() => alternar(r.id)} etiqueta={`Seleccionar ${r.nombre}`} tam="h-11 w-11 shrink-0" />}
+              <div className="min-w-0 flex-1">
+                <p className="text-[16px] font-extrabold text-white leading-snug break-words">{r.nombre}</p>
+                <p className="text-xs text-zinc-500">{r.codigo}</p>
+              </div>
+              {sinDatos && <span className="shrink-0 text-[10px] font-bold uppercase tracking-wide text-zinc-500 border border-white/[0.1] rounded-full px-2 py-1">Sin definir</span>}
+            </div>
+
+            <div className="mt-4 grid gap-3.5">
+              <div>
+                <p className="text-[11px] font-extrabold uppercase tracking-[0.1em] text-[#ff9a63] mb-2">Reflectiva</p>
+                <div className="flex flex-wrap gap-2">
+                  {CAMPOS.filter((c) => c.grupo === "reflectiva").map((c) => (
+                    <Pildora key={c.id} on={r[c.id]} tono={c.tono} soloLectura={!admin} onChange={(v) => cambiar([r.id], { [c.id]: v })}>{c.label}</Pildora>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <p className="text-[11px] font-extrabold uppercase tracking-[0.1em] text-[#FFD60A] mb-2">Protector</p>
+                <Pildora on={r.protector} tono="amarillo" soloLectura={!admin} onChange={(v) => cambiar([r.id], { protector: v })}>Orajet</Pildora>
+              </div>
+              <div>
+                <p className="text-[11px] font-extrabold uppercase tracking-[0.1em] text-emerald-300 mb-2">Aplicación del protector</p>
+                <div className="flex flex-wrap gap-2">
+                  {CAMPOS.filter((c) => c.grupo === "aplicacion").map((c) => (
+                    <Pildora key={c.id} on={r[c.id]} tono={c.tono} soloLectura={!admin} bloqueada={!r.protector} onChange={(v) => cambiar([r.id], { [c.id]: v })}>{c.label}</Pildora>
+                  ))}
+                </div>
+                {!r.protector && <p className="mt-1.5 text-xs text-zinc-600">Se habilita cuando el artículo lleva protector.</p>}
+              </div>
+            </div>
+          </motion.li>
+        );
+      })}
+    </ul>
+  );
+}
+
+// ---------------------------------------------------------------- barra de acciones sobre varios artículos
+const SIGUIENTE = { undefined: true, true: false, false: undefined };
+
+function BarraSeleccion({ cantidad, onLimpiar, onAplicar, ocupado }) {
+  const [plan, setPlan] = useState({});
+  const ciclar = (id) => setPlan((p) => {
+    const sig = SIGUIENTE[String(p[id])];
+    const n = { ...p };
+    if (sig === undefined) delete n[id];
+    else n[id] = sig;
+    return n;
   });
+  const hay = Object.keys(plan).length > 0;
+  return (
+    <motion.div
+      initial={{ y: 120, opacity: 0 }}
+      animate={{ y: 0, opacity: 1 }}
+      exit={{ y: 120, opacity: 0 }}
+      transition={{ duration: 0.32, ease: suave }}
+      className="fixed z-[60] left-3 right-3 bottom-[calc(4.75rem+env(safe-area-inset-bottom))] lg:bottom-6 lg:left-1/2 lg:right-auto lg:-translate-x-1/2 lg:w-[min(760px,calc(100vw-8rem))]"
+    >
+      <div className="rounded-3xl border border-[#FF5A00]/40 bg-[#17120f]/95 backdrop-blur-xl shadow-[0_20px_60px_rgba(0,0,0,0.6)] p-4">
+        <div className="flex items-center gap-3">
+          <span className="min-w-9 h-9 px-2 rounded-full bg-[#FF5A00] text-black text-base font-extrabold grid place-items-center tabular-nums">{cantidad}</span>
+          <p className="flex-1 text-[15px] font-bold text-white leading-tight">{cantidad === 1 ? "artículo elegido" : "artículos elegidos"}<span className="block text-xs font-medium text-zinc-400">Tocá cada dato para poner ✓ o sacar ✕</span></p>
+          <button onClick={onLimpiar} aria-label="Quitar la selección" className="w-11 h-11 grid place-items-center rounded-xl text-zinc-400 hover:text-white hover:bg-white/[0.07] cursor-pointer"><X size={20} /></button>
+        </div>
+        <div className="mt-3 flex flex-wrap gap-2">
+          {CAMPOS.map((c) => {
+            const v = plan[c.id];
+            const t = TONOS[c.tono];
+            return (
+              <button
+                key={c.id}
+                onClick={() => ciclar(c.id)}
+                aria-label={`${c.label}: ${v === true ? "poner" : v === false ? "sacar" : "sin cambios"}`}
+                className={`min-h-[44px] px-3.5 rounded-full border text-[14px] font-bold inline-flex items-center gap-2 transition-colors cursor-pointer ${v === true ? t.chip : v === false ? "border-rose-400/50 bg-rose-500/15 text-rose-300" : "border-white/[0.1] bg-white/[0.04] text-zinc-400 hover:text-white"}`}
+              >
+                <span className="w-5 text-center">{v === true ? "✓" : v === false ? "✕" : "·"}</span>
+                {c.label}
+              </button>
+            );
+          })}
+        </div>
+        <div className="mt-3 flex gap-2">
+          <button
+            disabled={!hay || ocupado}
+            onClick={() => onAplicar(plan, () => setPlan({}))}
+            className="flex-1 min-h-[50px] rounded-2xl bg-[#FFD60A] text-black text-base font-extrabold hover:bg-white active:scale-[0.99] transition-all disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+          >
+            {hay ? `Aplicar a ${cantidad}` : "Elegí qué cambiar"}
+          </button>
+        </div>
+      </div>
+    </motion.div>
+  );
+}
 
-  // MODAL DE INSPECCIÓN DE SEMIELABORADOS ENLAZADOS
-  const [linkedModalConfig, setLinkedModalConfig] = useState(null);
-  const [linkedSearch, setLinkedSearch] = useState("");
+// ---------------------------------------------------------------- módulo
+export default function Reflectivas({ usuarioActual }) {
+  const admin = String(usuarioActual?.rol || "").toUpperCase() === "ADMIN";
+  const [filas, setFilas] = useState(null);
+  const [error, setError] = useState("");
+  const [q, setQ] = useState("");
+  const [filtro, setFiltro] = useState("todos");
+  const [seleccion, setSeleccion] = useState(() => new Set());
+  const [ocupado, setOcupado] = useState(false);
+  const { mostrar: toast, nodo: toastNodo } = useToast();
 
-  // ORDENAMIENTO
-  const [sortColumn, setSortColumn] = useState("nombre");
-  const [sortDirection, setSortDirection] = useState("asc");
-
-  // PAGINACIÓN Y CÁLCULO DINÁMICO
-  const tableContainerRef = useRef(null);
-  const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage, setItemsPerPage] = useState(10);
-
-  // AJUSTE AUTOMÁTICO DE FILAS
-  useEffect(() => {
-    const updatePageSize = () => {
-      if (!tableContainerRef.current) return;
-      const containerHeight = tableContainerRef.current.clientHeight;
-      const headerHeight = 36;
-      const rowHeight = 42;
-      const availableHeight = containerHeight - headerHeight;
-      const calculatedCount = Math.floor(availableHeight / rowHeight);
-
-      if (calculatedCount > 0 && calculatedCount !== itemsPerPage) {
-        setItemsPerPage(calculatedCount);
-      }
-    };
-
-    updatePageSize();
-    const observer = new ResizeObserver(() => updatePageSize());
-    if (tableContainerRef.current) observer.observe(tableContainerRef.current);
-    return () => observer.disconnect();
-  }, [itemsPerPage]);
-
-  // CARGAR DATOS
-  const fetchData = async () => {
-    setLoading(true);
+  const cargar = useCallback(async () => {
     try {
-      const [resConfig, resSE] = await Promise.all([
-        fetch("/api/configuraciones-pegado"),
-        fetch("/api/semielaborados"),
-      ]);
-
-      if (resConfig.ok) setConfigs(await resConfig.json());
-      if (resSE.ok) setSemielaborados(await resSE.json());
-    } catch (err) {
-      console.error("Error al cargar datos de reflectivas:", err);
-    } finally {
-      setLoading(false);
+      setFilas(await api("/api/reflectivas"));
+      setError("");
+    } catch (e) {
+      setError(e.message);
     }
-  };
-
+  }, []);
   useEffect(() => {
-    fetchData();
+    let vivo = true;
+    api("/api/reflectivas")
+      .then((d) => vivo && setFilas(d))
+      .catch((e) => vivo && setError(e.message));
+    return () => {
+      vivo = false;
+    };
   }, []);
 
-  // FILTRADO Y ORDENAMIENTO DE PLANOS
-  const processedConfigs = useMemo(() => {
-    let result = configs.filter((c) =>
-      c.nombre.toLowerCase().includes(search.toLowerCase()),
-    );
+  const visibles = useMemo(() => {
+    if (!filas) return [];
+    const t = norm(q);
+    const f = FILTROS.find((x) => x.id === filtro) || FILTROS[0];
+    return filas.filter((r) => f.ok(r) && (!t || norm(r.nombre).includes(t) || norm(r.codigo).includes(t)));
+  }, [filas, q, filtro]);
 
-    if (sortColumn) {
-      result.sort((a, b) => {
-        let aVal = a[sortColumn];
-        let bVal = b[sortColumn];
+  const conteo = useMemo(() => {
+    const l = filas || [];
+    return { total: l.length, prograf: l.filter((r) => r.prograf).length, china3m: l.filter((r) => r.china3m).length, protector: l.filter((r) => r.protector).length };
+  }, [filas]);
 
-        if (typeof aVal === "string") {
-          aVal = aVal.toLowerCase();
-          bVal = bVal.toLowerCase();
-        }
+  const alternar = (id) => setSeleccion((s) => {
+    const n = new Set(s);
+    if (n.has(id)) n.delete(id);
+    else n.add(id);
+    return n;
+  });
+  const alternarTodos = (marcar) => setSeleccion((s) => {
+    const n = new Set(s);
+    for (const r of visibles) marcar ? n.add(r.id) : n.delete(r.id);
+    return n;
+  });
 
-        if (aVal < bVal) return sortDirection === "asc" ? -1 : 1;
-        if (aVal > bVal) return sortDirection === "asc" ? 1 : -1;
-        return 0;
-      });
-    }
-
-    return result;
-  }, [configs, search, sortColumn, sortDirection]);
-
-  // FILTRADO DE SEMIELABORADOS PARA PESTAÑA ENLAZAR
-  const processedSE = useMemo(() => {
-    return semielaborados.filter(
-      (s) =>
-        s.codigo.toLowerCase().includes(search.toLowerCase()) ||
-        s.nombre.toLowerCase().includes(search.toLowerCase()),
-    );
-  }, [semielaborados, search]);
-
-  const totalPages =
-    activeTab === "CONFIGS"
-      ? Math.ceil(processedConfigs.length / itemsPerPage) || 1
-      : Math.ceil(processedSE.length / itemsPerPage) || 1;
-
-  const paginatedConfigs = useMemo(() => {
-    const start = (currentPage - 1) * itemsPerPage;
-    return processedConfigs.slice(start, start + itemsPerPage);
-  }, [processedConfigs, currentPage, itemsPerPage]);
-
-  const paginatedSE = useMemo(() => {
-    const start = (currentPage - 1) * itemsPerPage;
-    return processedSE.slice(start, start + itemsPerPage);
-  }, [processedSE, currentPage, itemsPerPage]);
-
-  const emptySlotsCount =
-    activeTab === "CONFIGS"
-      ? Math.max(0, itemsPerPage - paginatedConfigs.length)
-      : Math.max(0, itemsPerPage - paginatedSE.length);
-
-  // MANEJO DE FORMULARIO CREAR / EDITAR
-  const handleOpenForm = (config = null) => {
-    if (config) {
-      setEditingConfig(config);
-      setFormState({
-        nombre: config.nombre,
-        reflectiva: config.reflectiva || "NINGUNA",
-        protector_orajet: Boolean(config.protector_orajet),
-        aplicacion_protector: config.protector_orajet
-          ? config.aplicacion_protector || "COMPLETA"
-          : "NO APLICA",
-      });
-    } else {
-      setEditingConfig(null);
-      setFormState({
-        nombre: "",
-        reflectiva: "NINGUNA",
-        protector_orajet: false,
-        aplicacion_protector: "NO APLICA",
-      });
-    }
-    setIsFormModalOpen(true);
-  };
-
-  const handleSaveConfig = async () => {
-    if (!formData.nombre.trim())
-      return alert("Ingresá un nombre para el plano.");
-
-    const payload = {
-      ...formData,
-      aplicacion_protector: formData.protector_orajet
-        ? formData.aplicacion_protector
-        : "NO APLICA",
-    };
-
+  // Cambia ya en pantalla y confirma con el servidor; si falla, vuelve atrás y avisa.
+  const cambiar = async (ids, cambios, alTerminar) => {
+    const antes = filas;
+    const set = new Set(ids);
+    setFilas((l) => l.map((r) => (set.has(r.id) ? conRegla({ ...r, ...cambios }) : r)));
+    setOcupado(true);
     try {
-      const url = editingConfig
-        ? `/api/configuraciones-pegado/${editingConfig.id}`
-        : `/api/configuraciones-pegado`;
-
-      const method = editingConfig ? "PUT" : "POST";
-
-      const res = await fetch(url, {
-        method,
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-
-      if (res.ok) {
-        setIsFormModalOpen(false);
-        fetchData();
-      } else {
-        alert("Error al guardar la configuración.");
+      const r = ids.length === 1 ? await api(`/api/reflectivas/${ids[0]}`, { method: "PUT", body: cambios }) : await api("/api/reflectivas/lote", { method: "PUT", body: { ids, cambios } });
+      if (ids.length > 1) {
+        await cargar();
+        toast(r.sin_protector ? `Listo. ${r.sin_protector} artículo(s) sin protector: no se les pudo poner la aplicación.` : `Listo: se actualizaron ${r.actualizados} artículos.`);
       }
-    } catch (err) {
-      alert("Error al conectar con el servidor.");
+      alTerminar?.();
+    } catch (e) {
+      setFilas(antes);
+      toast(e.message, "error");
+    } finally {
+      setOcupado(false);
     }
   };
 
-  const handleDeleteConfig = async (id) => {
-    if (
-      !confirm(
-        "¿Eliminar esta configuración de pegado? Los semielaborados enlazados quedarán sin pegado.",
-      )
-    )
-      return;
-
-    try {
-      const res = await fetch(
-        `/api/configuraciones-pegado/${id}`,
-        {
-          method: "DELETE",
-        },
-      );
-      if (res.ok) fetchData();
-    } catch (err) {
-      alert("Error al eliminar.");
-    }
-  };
-
-  // VINCULACIÓN RÁPIDA DESDE MODAL DE INSPECCIÓN
-  const handleToggleSELink = async (seId, currentConfigId) => {
-    const targetConfigId =
-      currentConfigId === linkedModalConfig.id ? null : linkedModalConfig.id;
-
-    try {
-      const res = await fetch(
-        `/api/semielaborados/${seId}/enlazar-pegado`,
-        {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ configuracion_pegado_id: targetConfigId }),
-        },
-      );
-
-      if (res.ok) {
-        fetchData();
-      }
-    } catch (err) {
-      console.error("Error al actualizar enlace:", err);
-    }
-  };
-
-  // VINCULACIÓN MASIVA
-  const handleBulkLink = async () => {
-    if (selectedSEIds.length === 0)
-      return alert("Seleccioná al menos un semielaborado de la lista.");
-
-    try {
-      const res = await fetch(
-        "/api/semielaborados/bulk-enlazar-pegado",
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            ids: selectedSEIds,
-            configuracion_pegado_id: bulkConfigId ? Number(bulkConfigId) : null,
-          }),
-        },
-      );
-
-      if (res.ok) {
-        setSelectedSEIds([]);
-        fetchData();
-        alert("¡Semielaborados enlazados con éxito!");
-      }
-    } catch (err) {
-      alert("Error al aplicar enlace masivo.");
-    }
-  };
-
-  const handleSort = (columnKey) => {
-    if (sortColumn === columnKey) {
-      setSortDirection((prev) => (prev === "asc" ? "desc" : "asc"));
-    } else {
-      setSortColumn(columnKey);
-      setSortDirection("asc");
-    }
-    setCurrentPage(1);
-  };
+  const aplicarLote = (plan, limpiar) => cambiar([...seleccion], plan, () => { limpiar(); setSeleccion(new Set()); });
 
   return (
-    <div className="h-full flex flex-col font-mono text-[#e1d7f5] select-none space-y-2 sm:space-y-2.5 min-h-0 bg-[#1a0f2e] p-1 overflow-hidden">
-      {/* 1. HEADER */}
-      <div className="flex flex-row items-center justify-between pb-2 border-b-2 border-[#432874] gap-2 shrink-0">
-        <div>
-          <h2 className="font-pixel text-sm sm:text-base text-[#ffbe00] font-bold flex items-center gap-2 tracking-wide drop-shadow-[1px_1px_0px_#000]">
-            <Sparkles size={16} className="text-[#ffbe00] shrink-0" /> PLANOS DE
-            REFLECTIVAS Y PEGADO
-          </h2>
-          <p className="text-[10px] text-[#a594c9] font-mono hidden sm:block">
-            Especificaciones maestras de vinilos, protector y enlace a
-            semielaborados.
-          </p>
-        </div>
-
-        <button
-          onClick={() => handleOpenForm()}
-          className="px-3 py-1.5 bg-[#ffbe00] border-2 border-[#b38600] text-[#2c1a4d] font-pixel text-xs font-bold hover:bg-[#ffe066] shadow-[2px_2px_0px_#000] active:translate-x-[1px] active:translate-y-[1px] transition-all rounded-xs flex items-center gap-1.5 shrink-0"
-        >
-          <Plus size={14} /> NUEVA CONFIGURACIÓN
-        </button>
-      </div>
-
-      {/* 2. BARRA DE HERRAMIENTAS */}
-      <div className="bg-[#24173e] border-2 border-[#432874] p-2 sm:p-2.5 space-y-2 shrink-0 rounded-xs shadow-[3px_3px_0px_#000]">
-        <div className="flex items-center justify-between gap-2 overflow-x-auto pb-0.5">
-          <div className="flex items-center gap-1.5 font-pixel text-xs">
-            <button
-              onClick={() => {
-                setActiveTab("CONFIGS");
-                setCurrentPage(1);
-              }}
-              className={`px-3 py-1 border-2 transition-all shrink-0 rounded-xs shadow-[1px_1px_0px_#000] ${
-                activeTab === "CONFIGS"
-                  ? "bg-[#ffbe00] border-[#b38600] text-[#2c1a4d] font-bold"
-                  : "bg-[#160c2b] border-[#432874] text-[#a594c9] hover:text-white"
-              }`}
-            >
-              PLANOS DE PEGADO ({configs.length})
-            </button>
-
-            <button
-              onClick={() => {
-                setActiveTab("ENLAZAR");
-                setCurrentPage(1);
-              }}
-              className={`px-3 py-1 border-2 transition-all shrink-0 rounded-xs shadow-[1px_1px_0px_#000] ${
-                activeTab === "ENLAZAR"
-                  ? "bg-[#38bdf8] border-[#0284c7] text-[#2c1a4d] font-bold"
-                  : "bg-[#160c2b] border-[#432874] text-[#a594c9] hover:text-white"
-              }`}
-            >
-              ENLAZAR SEMIELABORADOS
-            </button>
+    <div className="h-full overflow-y-auto custom-scrollbar">
+      <div className={`max-w-[1280px] mx-auto px-4 sm:px-6 lg:px-8 py-5 sm:py-7 ${seleccion.size ? "pb-72 lg:pb-56" : "pb-28 lg:pb-10"}`}>
+        <header className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between mb-5">
+          <div>
+            <h1 className="cf-h1-largo text-2xl font-extrabold uppercase text-white">Reflectivas &amp; Pegado</h1>
+            <p className="mt-1 text-sm text-zinc-500">Qué lleva cada artículo: reflectiva, protector y cómo se aplica.</p>
           </div>
-
-          <div className="bg-[#160c2b] border border-[#432874] px-2.5 py-1 text-[10px] font-pixel text-[#a594c9] shrink-0 rounded-xs flex items-center gap-1">
-            <span>REGISTROS:</span>
-            <strong className="text-[#24cc8f]">
-              {activeTab === "CONFIGS"
-                ? processedConfigs.length
-                : processedSE.length}
-            </strong>
-          </div>
-        </div>
-
-        {/* FILA BÚSQUEDA / ACCIÓN MASIVA */}
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2">
-          <div className="relative flex-1 max-w-md">
-            <Search
-              size={13}
-              className="absolute left-3 top-1/2 -translate-y-1/2 text-[#a594c9]"
-            />
-            <input
-              type="text"
-              placeholder={
-                activeTab === "CONFIGS"
-                  ? "Buscar plano por nombre..."
-                  : "Buscar semielaborado por código o nombre..."
-              }
-              value={search}
-              onChange={(e) => {
-                setSearch(e.target.value);
-                setCurrentPage(1);
-              }}
-              className="w-full bg-[#160c2b] border-2 border-[#432874] text-xs text-white pl-8 pr-3 py-1 focus:outline-none focus:border-[#ffbe00] transition-colors placeholder:text-[#6e588a] rounded-xs font-mono"
-            />
-          </div>
-
-          {activeTab === "ENLAZAR" && (
-            <div className="flex items-center gap-2 font-pixel text-xs bg-[#160c2b] p-1 border border-[#432874] rounded-xs">
-              <span className="text-[#a594c9] text-[10px] pl-1">
-                ASIGNAR A ({selectedSEIds.length}):
-              </span>
-              <select
-                value={bulkConfigId}
-                onChange={(e) => setBulkConfigId(e.target.value)}
-                className="bg-[#24173e] border border-[#432874] text-white text-xs px-2 py-0.5 focus:outline-none focus:border-[#38bdf8]"
-              >
-                <option value="">-- SIN PEGADO --</option>
-                {configs.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.nombre}
-                  </option>
-                ))}
-              </select>
-              <button
-                onClick={handleBulkLink}
-                className="px-3 py-1 bg-[#38bdf8] text-[#2c1a4d] font-bold text-xs hover:bg-[#7dd3fc] shadow-[1px_1px_0px_#000] active:translate-y-0.5 rounded-2xs"
-              >
-                APLICAR
-              </button>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* 3. PANEL TABLA PRINCIPAL */}
-      <div className="flex-1 bg-[#24173e] border-2 border-[#432874] p-2 sm:p-2.5 flex flex-col min-h-0 shadow-[4px_4px_0px_#000] relative rounded-xs overflow-hidden">
-        <div
-          ref={tableContainerRef}
-          className="hidden md:flex flex-1 border-2 border-[#432874] bg-[#160c2b] min-h-0 flex-col overflow-hidden rounded-xs"
-        >
-          {/* VISTA 1: TABLA DE PLANOS DE PEGADO */}
-          {activeTab === "CONFIGS" ? (
-            <table className="w-full text-left text-xs border-collapse table-fixed">
-              <thead>
-                <tr className="text-[#a594c9] border-b-2 border-[#432874] font-pixel text-[11px] bg-[#2c1a4d] sticky top-0 z-10 h-[36px]">
-                  <th
-                    onClick={() => handleSort("nombre")}
-                    className="w-[30%] px-3 font-normal cursor-pointer hover:bg-[#39215e] hover:text-[#ffbe00] transition-colors select-none"
-                  >
-                    <div className="flex items-center justify-between pr-1">
-                      <span>NOMBRE DEL PLANO</span>
-                      <span className="w-3 flex justify-center shrink-0">
-                        {sortColumn === "nombre" ? (
-                          sortDirection === "asc" ? (
-                            <ArrowUp size={12} className="text-[#ffbe00]" />
-                          ) : (
-                            <ArrowDown size={12} className="text-[#ffbe00]" />
-                          )
-                        ) : (
-                          <ArrowUpDown size={11} className="text-[#6e588a]" />
-                        )}
-                      </span>
-                    </div>
-                  </th>
-
-                  <th className="w-[38%] px-3 font-normal">
-                    ESPECIFICACIÓN TÉCNICA
-                  </th>
-
-                  <th
-                    onClick={() => handleSort("semielaborados_count")}
-                    className="w-[18%] px-3 font-normal text-center cursor-pointer hover:bg-[#39215e] hover:text-[#ffbe00] transition-colors select-none"
-                  >
-                    <div className="flex items-center justify-center gap-1">
-                      <span>ENLAZADOS</span>
-                      <span className="w-3 flex justify-center shrink-0">
-                        {sortColumn === "semielaborados_count" ? (
-                          sortDirection === "asc" ? (
-                            <ArrowUp size={12} className="text-[#ffbe00]" />
-                          ) : (
-                            <ArrowDown size={12} className="text-[#ffbe00]" />
-                          )
-                        ) : (
-                          <ArrowUpDown size={11} className="text-[#6e588a]" />
-                        )}
-                      </span>
-                    </div>
-                  </th>
-
-                  <th className="w-[14%] px-3 font-normal text-center">
-                    ACCIONES
-                  </th>
-                </tr>
-              </thead>
-
-              <tbody
-                key={currentPage}
-                className="divide-y divide-[#432874]/30 bg-[#160c2b] animate-in fade-in duration-200"
-              >
-                {loading ? (
-                  <tr>
-                    <td
-                      colSpan="4"
-                      className="py-16 text-center font-pixel text-xs text-[#ffbe00] animate-pulse"
-                    >
-                      Consultando planos de pegado...
-                    </td>
-                  </tr>
-                ) : paginatedConfigs.length === 0 ? (
-                  <tr>
-                    <td
-                      colSpan="4"
-                      className="py-16 text-center font-pixel text-xs text-[#6e588a]"
-                    >
-                      No hay planos registrados.
-                    </td>
-                  </tr>
-                ) : (
-                  <>
-                    {paginatedConfigs.map((c) => (
-                      <tr
-                        key={c.id}
-                        className="h-[42px] hover:bg-[#281747] hover:shadow-[inset_0_0_15px_rgba(255,190,0,0.12)] transition-all duration-150 align-middle"
-                      >
-                        <td className="px-3 font-pixel text-[#ffbe00] font-bold tracking-wider truncate align-middle">
-                          {c.nombre}
-                        </td>
-
-                        <td className="px-3 align-middle whitespace-nowrap">
-                          <div className="flex items-center gap-1.5">
-                            <span className="text-[10px] font-pixel px-2 py-0.5 border border-[#38bdf8]/40 bg-[#38bdf8]/10 text-[#38bdf8] font-bold shadow-[1px_1px_0px_#000]">
-                              {c.reflectiva || "NINGUNA"}
-                            </span>
-
-                            {Boolean(c.protector_orajet) ? (
-                              <span className="text-[10px] font-pixel px-2 py-0.5 border border-[#24cc8f]/40 bg-[#24cc8f]/10 text-[#24cc8f] font-bold shadow-[1px_1px_0px_#000] flex items-center gap-1">
-                                <Sparkle size={10} /> ORAJET (
-                                {c.aplicacion_protector || "COMPLETA"})
-                              </span>
-                            ) : (
-                              <span className="text-[10px] font-pixel px-2 py-0.5 border border-[#432874] bg-[#24173e] text-[#6e588a]">
-                                SIN ORAJET
-                              </span>
-                            )}
-                          </div>
-                        </td>
-
-                        {/* BOTÓN INTERACTIVO DE ENLAZADOS */}
-                        <td className="px-3 text-center align-middle whitespace-nowrap">
-                          <button
-                            onClick={() => setLinkedModalConfig(c)}
-                            className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-[#2c1a4d] border border-[#38bdf8]/50 text-[#38bdf8] font-pixel text-[11px] font-bold hover:bg-[#38bdf8] hover:text-[#2c1a4d] shadow-[1px_1px_0px_#000] active:translate-y-0.5 transition-all rounded-2xs"
-                          >
-                            <Link size={11} /> {c.semielaborados_count || 0}{" "}
-                            ítems
-                          </button>
-                        </td>
-
-                        <td className="px-3 text-center align-middle">
-                          <div className="flex items-center justify-center gap-1.5">
-                            <button
-                              onClick={() => handleOpenForm(c)}
-                              className="p-1 bg-[#2c1a4d] border border-[#432874] text-[#a594c9] hover:text-[#ffbe00] hover:border-[#ffbe00] transition-all shadow-[1px_1px_0px_#000] rounded-2xs"
-                              title="Editar Plano"
-                            >
-                              <Edit2 size={12} />
-                            </button>
-                            <button
-                              onClick={() => handleDeleteConfig(c.id)}
-                              className="p-1 bg-[#2c1a4d] border border-[#432874] text-[#a594c9] hover:text-[#f87171] hover:border-[#f87171] transition-all shadow-[1px_1px_0px_#000] rounded-2xs"
-                              title="Eliminar Plano"
-                            >
-                              <Trash2 size={12} />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-
-                    {/* RANURAS VACÍAS */}
-                    {Array.from({ length: emptySlotsCount }).map((_, idx) => (
-                      <tr
-                        key={`empty-${idx}`}
-                        className="h-[42px] opacity-15 pointer-events-none"
-                      >
-                        <td className="px-3 text-[#432874] font-pixel text-[10px]">
-                          --
-                        </td>
-                        <td className="px-3 text-[#432874] font-pixel text-[10px]">
-                          -- RANURA VACÍA --
-                        </td>
-                        <td className="px-3 text-center text-[#432874] text-[10px]">
-                          --
-                        </td>
-                        <td className="px-3 text-center text-[#432874] text-[10px]">
-                          --
-                        </td>
-                      </tr>
-                    ))}
-                  </>
-                )}
-              </tbody>
-            </table>
-          ) : (
-            /* VISTA 2: ENLACE MASIVO DE SEMIELABORADOS */
-            <table className="w-full text-left text-xs border-collapse table-fixed">
-              <thead>
-                <tr className="text-[#a594c9] border-b-2 border-[#432874] font-pixel text-[11px] bg-[#2c1a4d] sticky top-0 z-10 h-[36px]">
-                  <th className="w-[8%] px-3 font-normal text-center">
-                    <input
-                      type="checkbox"
-                      checked={
-                        paginatedSE.length > 0 &&
-                        paginatedSE.every((s) => selectedSEIds.includes(s.id))
-                      }
-                      onChange={(e) => {
-                        if (e.target.checked) {
-                          const pageIds = paginatedSE.map((s) => s.id);
-                          setSelectedSEIds(
-                            Array.from(new Set([...selectedSEIds, ...pageIds])),
-                          );
-                        } else {
-                          const pageIds = paginatedSE.map((s) => s.id);
-                          setSelectedSEIds(
-                            selectedSEIds.filter((id) => !pageIds.includes(id)),
-                          );
-                        }
-                      }}
-                      className="accent-[#38bdf8] w-3.5 h-3.5 cursor-pointer"
-                    />
-                  </th>
-                  <th className="w-[22%] px-3 font-normal">CÓDIGO</th>
-                  <th className="w-[45%] px-3 font-normal">
-                    SEMIELABORADO / ARTÍCULO
-                  </th>
-                  <th className="w-[25%] px-3 font-normal text-center">
-                    PLANO ASIGNADO
-                  </th>
-                </tr>
-              </thead>
-
-              <tbody
-                key={currentPage}
-                className="divide-y divide-[#432874]/30 bg-[#160c2b] animate-in fade-in duration-200"
-              >
-                {paginatedSE.map((s) => {
-                  const isChecked = selectedSEIds.includes(s.id);
-                  return (
-                    <tr
-                      key={s.id}
-                      onClick={() => {
-                        if (isChecked)
-                          setSelectedSEIds(
-                            selectedSEIds.filter((id) => id !== s.id),
-                          );
-                        else setSelectedSEIds([...selectedSEIds, s.id]);
-                      }}
-                      className={`h-[42px] cursor-pointer transition-colors ${
-                        isChecked ? "bg-[#281747]" : "hover:bg-[#281747]/50"
-                      }`}
-                    >
-                      <td className="px-3 text-center align-middle">
-                        <input
-                          type="checkbox"
-                          checked={isChecked}
-                          onChange={() => {}}
-                          className="accent-[#38bdf8] w-3.5 h-3.5"
-                        />
-                      </td>
-                      <td className="px-3 font-pixel text-[#ffbe00] font-bold tracking-wider truncate align-middle">
-                        {s.codigo}
-                      </td>
-                      <td className="px-3 text-white font-bold truncate align-middle">
-                        {s.nombre}
-                      </td>
-                      <td className="px-3 text-center align-middle whitespace-nowrap">
-                        <span
-                          className={`text-[10px] font-pixel px-2 py-0.5 border ${
-                            s.pegado_nombre
-                              ? "text-[#38bdf8] border-[#38bdf8]/40 bg-[#38bdf8]/10 font-bold"
-                              : "text-[#6e588a] border-[#432874]"
-                          }`}
-                        >
-                          {s.pegado_nombre || "SIN PEGADO"}
-                        </span>
-                      </td>
-                    </tr>
-                  );
-                })}
-
-                {Array.from({ length: emptySlotsCount }).map((_, idx) => (
-                  <tr
-                    key={`empty-${idx}`}
-                    className="h-[42px] opacity-15 pointer-events-none"
-                  >
-                    <td className="px-3 text-center text-[#432874] text-[10px]">
-                      --
-                    </td>
-                    <td className="px-3 text-[#432874] font-pixel text-[10px]">
-                      --
-                    </td>
-                    <td className="px-3 text-[#432874] font-pixel text-[10px]">
-                      -- RANURA VACÍA --
-                    </td>
-                    <td className="px-3 text-center text-[#432874] text-[10px]">
-                      --
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </div>
-
-        {/* PAGINACIÓN RESPONSIVE */}
-        <div className="flex flex-col sm:flex-row items-center justify-between pt-2 mt-2 border-t-2 border-[#432874] shrink-0 text-xs font-pixel gap-2">
-          <span className="text-[#a594c9] text-[10px] sm:text-[11px]">
-            Página <strong className="text-white">{currentPage}</strong> de{" "}
-            <strong className="text-white">{totalPages}</strong>
+          <span className={`inline-flex items-center gap-2 self-start rounded-full border px-3 py-1.5 text-xs font-bold ${admin ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300" : "border-white/[0.1] bg-white/[0.04] text-zinc-400"}`}>
+            {admin ? <ShieldCheck size={14} /> : <Lock size={14} />}
+            {admin ? "Podés modificar" : "Solo lectura"}
           </span>
+        </header>
 
-          <div className="flex items-center gap-1">
-            <button
-              onClick={() => setCurrentPage(1)}
-              disabled={currentPage === 1}
-              className="p-1 sm:p-1.5 bg-[#2c1a4d] border border-[#432874] text-[#a594c9] hover:text-[#ffbe00] disabled:opacity-30 shadow-[1px_1px_0px_#000] rounded-xs"
-            >
-              <ChevronsLeft size={13} />
-            </button>
-            <button
-              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-              disabled={currentPage === 1}
-              className="px-2 py-1 bg-[#2c1a4d] border border-[#432874] text-[#a594c9] hover:text-[#ffbe00] disabled:opacity-30 shadow-[1px_1px_0px_#000] flex items-center gap-0.5 text-[10px] sm:text-xs rounded-xs"
-            >
-              <ChevronLeft size={13} /> ANT
-            </button>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
+          <Dato icono={Layers} t="Artículos" v={conteo.total} />
+          <Dato t="Prograf" v={conteo.prograf} tono="text-[#ff9a63]" />
+          <Dato t="China 3M" v={conteo.china3m} tono="text-sky-300" />
+          <Dato t="Con protector" v={conteo.protector} tono="text-[#FFD60A]" />
+        </div>
 
-            <span className="px-2.5 py-0.5 bg-[#160c2b] border border-[#432874] text-[#ffbe00] font-bold text-[11px] rounded-xs">
-              {currentPage} / {totalPages}
-            </span>
-
-            <button
-              onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-              disabled={currentPage === totalPages}
-              className="px-2 py-1 bg-[#2c1a4d] border border-[#432874] text-[#a594c9] hover:text-[#ffbe00] disabled:opacity-30 shadow-[1px_1px_0px_#000] flex items-center gap-0.5 text-[10px] sm:text-xs rounded-xs"
-            >
-              SIG <ChevronRight size={13} />
-            </button>
-            <button
-              onClick={() => setCurrentPage(totalPages)}
-              disabled={currentPage === totalPages}
-              className="p-1 sm:p-1.5 bg-[#2c1a4d] border border-[#432874] text-[#a594c9] hover:text-[#ffbe00] disabled:opacity-30 shadow-[1px_1px_0px_#000] rounded-xs"
-            >
-              <ChevronsRight size={13} />
-            </button>
+        <div className="sticky top-0 z-30 -mx-4 sm:-mx-6 lg:-mx-8 px-4 sm:px-6 lg:px-8 py-3 mb-4 bg-[#09090b]/90 backdrop-blur-md border-b border-white/[0.05]">
+          <div className="relative">
+            <Search size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500" />
+            <input
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder="Buscar modelo o código…"
+              aria-label="Buscar artículo"
+              className="w-full min-h-[48px] rounded-2xl bg-[#17171c] border border-white/[0.1] pl-11 pr-11 text-base text-white placeholder:text-zinc-600 focus:outline-none focus:border-[#FF5A00]/70"
+            />
+            {q && <button onClick={() => setQ("")} aria-label="Borrar búsqueda" className="absolute right-2 top-1/2 -translate-y-1/2 w-9 h-9 grid place-items-center rounded-lg text-zinc-500 hover:text-white cursor-pointer"><X size={16} /></button>}
+          </div>
+          <div className="mt-2.5 flex gap-2 overflow-x-auto no-scrollbar pb-0.5" role="tablist" aria-label="Filtrar">
+            {FILTROS.map((f) => (
+              <button key={f.id} role="tab" aria-selected={filtro === f.id} onClick={() => setFiltro(f.id)} className={`shrink-0 min-h-[38px] px-4 rounded-full text-sm font-bold border transition-colors cursor-pointer ${filtro === f.id ? "bg-[#FF5A00] border-[#FF5A00] text-black" : "bg-white/[0.04] border-white/[0.08] text-zinc-300 hover:bg-white/[0.09]"}`}>
+                {f.label}
+              </button>
+            ))}
           </div>
         </div>
+
+        {error ? (
+          <div className="rounded-2xl border border-rose-500/30 bg-rose-500/10 p-5 text-rose-100 flex items-start gap-3">
+            <AlertTriangle className="shrink-0 mt-0.5" size={20} />
+            <div><b>No se pudo cargar.</b><p className="text-sm mt-1">{error}</p><button onClick={cargar} className="mt-3 min-h-[44px] px-4 rounded-xl bg-white/10 font-bold cursor-pointer">Reintentar</button></div>
+          </div>
+        ) : !filas ? (
+          <Esqueleto />
+        ) : visibles.length === 0 ? (
+          <div className="rounded-3xl border border-dashed border-white/[0.12] bg-white/[0.02] px-6 py-16 text-center">
+            <span className="mx-auto w-16 h-16 rounded-full bg-white/[0.05] grid place-items-center text-zinc-500"><Sparkles size={28} /></span>
+            <p className="mt-4 text-lg font-extrabold text-white">{filas.length === 0 ? "Todavía no hay artículos" : "No encontré nada con ese filtro"}</p>
+            <p className="mt-1 text-sm text-zinc-500">{filas.length === 0 ? "Los artículos se cargan en el módulo Semielaborados." : "Probá con otra búsqueda o mirá todos los artículos."}</p>
+            {filas.length > 0 && <button onClick={() => { setQ(""); setFiltro("todos"); }} className="mt-4 min-h-[44px] px-5 rounded-xl bg-white/[0.08] text-sm font-bold text-white cursor-pointer">Ver todos</button>}
+          </div>
+        ) : (
+          <>
+            <p className="text-xs text-zinc-500 mb-3 px-1">{visibles.length === filas.length ? `${filas.length} artículos` : `${visibles.length} de ${filas.length} artículos`}</p>
+            <Tabla filas={visibles} admin={admin} seleccion={seleccion} alternar={alternar} alternarTodos={alternarTodos} cambiar={cambiar} />
+            <Tarjetas filas={visibles} admin={admin} seleccion={seleccion} alternar={alternar} cambiar={cambiar} />
+          </>
+        )}
       </div>
 
-      {/* =========================================================
-          MODAL CREAR / EDITAR CONFIGURACIÓN DE PEGADO
-      ========================================================= */}
-      {isFormModalOpen && (
-        <div className="fixed inset-0 bg-black/85 backdrop-blur-xs z-[100] flex items-center justify-center p-3 animate-in fade-in duration-200 font-mono">
-          <div className="bg-[#24173e] border-2 border-[#ffbe00] w-full max-w-md p-5 shadow-[0_0_35px_rgba(255,190,0,0.3)] space-y-4 relative rounded-xs">
-            <button
-              onClick={() => setIsFormModalOpen(false)}
-              className="absolute top-4 right-4 text-[#a594c9] hover:text-white"
-            >
-              <X size={16} />
-            </button>
-
-            <div className="border-b-2 border-[#432874] pb-2">
-              <span className="text-[10px] font-pixel text-[#ffbe00] bg-[#ffbe00]/10 px-2 py-0.5 border border-[#ffbe00]/30 rounded-xs font-bold">
-                {editingConfig ? "EDITAR PLANO" : "NUEVO PLANO DE PEGADO"}
-              </span>
-              <h3 className="font-pixel text-sm text-white font-bold mt-1.5 flex items-center gap-2">
-                <Sparkles size={16} className="text-[#ffbe00]" /> ESPECIFICACIÓN
-                TÉCNICA
-              </h3>
-            </div>
-
-            <div className="space-y-3 font-pixel text-xs">
-              <div>
-                <label className="text-[#a594c9] block mb-1">
-                  NOMBRE DEL PLANO:
-                </label>
-                <input
-                  type="text"
-                  placeholder="Ej: KING CONE LIGHT"
-                  value={formData.nombre}
-                  onChange={(e) =>
-                    setFormState({ ...formData, nombre: e.target.value })
-                  }
-                  className="w-full bg-[#160c2b] border-2 border-[#432874] p-2 text-white font-bold focus:outline-none focus:border-[#ffbe00] text-xs rounded-xs uppercase"
-                  autoFocus
-                />
-              </div>
-
-              <div>
-                <label className="text-[#a594c9] block mb-1">
-                  TIPO DE REFLECTIVA:
-                </label>
-                <select
-                  value={formData.reflectiva}
-                  onChange={(e) =>
-                    setFormState({ ...formData, reflectiva: e.target.value })
-                  }
-                  className="w-full bg-[#160c2b] border-2 border-[#432874] p-2 text-white font-bold focus:outline-none focus:border-[#ffbe00] text-xs rounded-xs"
-                >
-                  <option value="NINGUNA">NINGUNA</option>
-                  <option value="CHINA 3M">CHINA 3M</option>
-                  <option value="AVERY">AVERY</option>
-                  <option value="3M">3M</option>
-                  <option value="EG 3M">EG 3M</option>
-                  <option value="HIP 3M">HIP 3M</option>
-                  <option value="DG3 3M">DG3 3M</option>
-                </select>
-              </div>
-
-              {/* LÓGICA INTELIGENTE ORAJET */}
-              <div className="bg-[#160c2b] p-3 border border-[#432874] space-y-2 rounded-xs">
-                <label className="flex items-center justify-between cursor-pointer">
-                  <span className="text-[#38bdf8] font-bold">
-                    LLEVA PROTECTOR ORAJET:
-                  </span>
-                  <input
-                    type="checkbox"
-                    checked={formData.protector_orajet}
-                    onChange={(e) => {
-                      const isOrajet = e.target.checked;
-                      setFormState({
-                        ...formData,
-                        protector_orajet: isOrajet,
-                        aplicacion_protector: isOrajet
-                          ? "COMPLETA"
-                          : "NO APLICA",
-                      });
-                    }}
-                    className="w-4 h-4 accent-[#38bdf8] cursor-pointer"
-                  />
-                </label>
-
-                {formData.protector_orajet ? (
-                  <div>
-                    <label className="text-[#a594c9] text-[10px] block mb-1">
-                      APLICACIÓN DE PROTECTOR:
-                    </label>
-                    <select
-                      value={formData.aplicacion_protector}
-                      onChange={(e) =>
-                        setFormState({
-                          ...formData,
-                          aplicacion_protector: e.target.value,
-                        })
-                      }
-                      className="w-full bg-[#24173e] border border-[#432874] p-1.5 text-white font-bold focus:outline-none focus:border-[#38bdf8] text-xs rounded-xs"
-                    >
-                      <option value="COMPLETA">COMPLETA</option>
-                      <option value="PARCIAL">PARCIAL</option>
-                      <option value="SUPERIOR">SUPERIOR</option>
-                      <option value="INFERIOR">INFERIOR</option>
-                    </select>
-                  </div>
-                ) : (
-                  <p className="text-[10px] text-[#6e588a] italic">
-                    Aplicación establecida automáticamente a NO APLICA.
-                  </p>
-                )}
-              </div>
-            </div>
-
-            <div className="pt-2 border-t border-[#432874] flex justify-end gap-2 font-pixel">
-              <button
-                onClick={() => setIsFormModalOpen(false)}
-                className="px-3.5 py-1.5 border border-[#432874] text-[#a594c9] hover:text-white text-xs rounded-xs"
-              >
-                CANCELAR
-              </button>
-              <button
-                onClick={handleSaveConfig}
-                className="px-4 py-1.5 bg-[#ffbe00] text-[#2c1a4d] font-bold text-xs hover:bg-[#ffe066] shadow-[2px_2px_0px_#000] active:translate-x-[1px] active:translate-y-[1px] rounded-xs"
-              >
-                GUARDAR PLANO
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* =========================================================
-          MODAL DE INSPECCIÓN Y GESTIÓN DE ENLAZADOS
-      ========================================================= */}
-      {linkedModalConfig && (
-        <div className="fixed inset-0 bg-black/85 backdrop-blur-xs z-[100] flex items-center justify-center p-3 animate-in fade-in duration-200 font-mono">
-          <div className="bg-[#24173e] border-2 border-[#38bdf8] w-full max-w-xl p-5 shadow-[0_0_35px_rgba(56,189,248,0.25)] space-y-4 relative rounded-xs max-h-[85vh] flex flex-col">
-            <button
-              onClick={() => setLinkedModalConfig(null)}
-              className="absolute top-4 right-4 text-[#a594c9] hover:text-white"
-            >
-              <X size={16} />
-            </button>
-
-            <div className="border-b-2 border-[#432874] pb-2 shrink-0">
-              <span className="text-[10px] font-pixel text-[#38bdf8] bg-[#38bdf8]/10 px-2 py-0.5 border border-[#38bdf8]/30 rounded-xs font-bold">
-                AUDITORÍA DE VINCULACIÓN
-              </span>
-              <h3 className="font-pixel text-sm text-white font-bold mt-1.5 flex items-center gap-2">
-                <Link size={16} className="text-[#38bdf8]" /> PLANO:{" "}
-                {linkedModalConfig.nombre}
-              </h3>
-            </div>
-
-            <div className="relative shrink-0">
-              <Search
-                size={13}
-                className="absolute left-3 top-1/2 -translate-y-1/2 text-[#a594c9]"
-              />
-              <input
-                type="text"
-                placeholder="Filtrar semielaborados..."
-                value={linkedSearch}
-                onChange={(e) => setLinkedSearch(e.target.value)}
-                className="w-full bg-[#160c2b] border border-[#432874] text-xs text-white pl-8 pr-3 py-1.5 focus:outline-none focus:border-[#38bdf8] rounded-xs font-mono"
-              />
-            </div>
-
-            <div className="flex-1 overflow-y-auto space-y-1.5 pr-1 font-pixel text-xs">
-              {semielaborados
-                .filter(
-                  (s) =>
-                    s.codigo
-                      .toLowerCase()
-                      .includes(linkedSearch.toLowerCase()) ||
-                    s.nombre.toLowerCase().includes(linkedSearch.toLowerCase()),
-                )
-                .map((s) => {
-                  const isLinkedToThis =
-                    s.configuracion_pegado_id === linkedModalConfig.id;
-                  return (
-                    <div
-                      key={s.id}
-                      onClick={() =>
-                        handleToggleSELink(s.id, s.configuracion_pegado_id)
-                      }
-                      className={`p-2.5 border flex justify-between items-center cursor-pointer transition-colors ${
-                        isLinkedToThis
-                          ? "border-[#38bdf8] bg-[#2c1a4d] text-white"
-                          : "border-[#432874]/60 bg-[#160c2b] text-[#6e588a]"
-                      }`}
-                    >
-                      <div className="truncate pr-2">
-                        <strong
-                          className={
-                            isLinkedToThis ? "text-[#ffbe00]" : "text-slate-400"
-                          }
-                        >
-                          [{s.codigo}]
-                        </strong>{" "}
-                        <span className="truncate">{s.nombre}</span>
-                      </div>
-
-                      <button
-                        className={`px-2 py-0.5 text-[10px] font-bold border rounded-2xs shrink-0 ${
-                          isLinkedToThis
-                            ? "bg-[#38bdf8] text-[#2c1a4d] border-[#38bdf8]"
-                            : "bg-[#24173e] text-[#a594c9] border-[#432874]"
-                        }`}
-                      >
-                        {isLinkedToThis ? "ENLAZADO" : "VINCULAR"}
-                      </button>
-                    </div>
-                  );
-                })}
-            </div>
-
-            <div className="pt-2 border-t border-[#432874] flex justify-end font-pixel shrink-0">
-              <button
-                onClick={() => setLinkedModalConfig(null)}
-                className="px-4 py-1.5 bg-[#38bdf8] text-[#2c1a4d] font-bold text-xs hover:bg-[#7dd3fc] shadow-[2px_2px_0px_#000] rounded-xs"
-              >
-                FINALIZAR INSPECCIÓN
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <AnimatePresence>
+        {admin && seleccion.size > 0 && <BarraSeleccion key="barra" cantidad={seleccion.size} ocupado={ocupado} onLimpiar={() => setSeleccion(new Set())} onAplicar={aplicarLote} />}
+      </AnimatePresence>
+      {toastNodo}
     </div>
   );
 }
