@@ -33,3 +33,17 @@ test("prograf y china3m pueden convivir; los campos no enviados no cambian", () 
   assert.equal(r.prograf, 1);
   assert.equal(r.china3m, 1);
 });
+
+const { validarNombre, limpiarIds } = require("../reflectivasRutas");
+
+test("nombre: se limpian espacios y se rechaza vacío o demasiado largo", () => {
+  assert.equal(validarNombre("  2071   Econo ").valor, "2071 Econo");
+  assert.ok(validarNombre("   ").error);
+  assert.ok(validarNombre(null).error);
+  assert.ok(validarNombre("x".repeat(121)).error);
+});
+
+test("ids: solo enteros positivos y sin repetidos", () => {
+  assert.deepEqual(limpiarIds([3, "4", 3, -1, 0, "a", 2.5, null]), [3, 4]);
+  assert.deepEqual(limpiarIds("no"), []);
+});
