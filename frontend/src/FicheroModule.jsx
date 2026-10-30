@@ -861,7 +861,7 @@ export default function FicheroModule() {
     <div className="flex flex-col h-full bg-[#050505] text-zinc-100 p-3 sm:p-4 md:p-6 select-none font-sans overflow-hidden print:block print:h-auto print:overflow-visible print:p-0 print:bg-white">
       <style>{`
         @media print {
-          @page { size: landscape; margin: 8mm; }
+          @page { size: A4 landscape; margin: 7mm; }
           *, *::before, *::after { overflow: visible !important; }
           html, body, #root, #root > div, #root > div > div, main, main > div {
             display: block !important; height: auto !important; min-height: 0 !important; max-height: none !important;
@@ -869,6 +869,9 @@ export default function FicheroModule() {
             border: none !important; box-shadow: none !important; background: white !important;
           }
           .bg-dots-orange, .animate-dots-drift { display: none !important; }
+          html body #root .print\\:hidden { display: none !important; }
+          .cf-print-grid { grid-template-rows: none !important; grid-auto-rows: min(30mm, calc(142mm / var(--cf-filas, 6))) !important; }
+          .cf-print-grid > * { height: min(30mm, calc(142mm / var(--cf-filas, 6))) !important; min-height: 0 !important; }
           .hoja-operario-impresion {
             display: block !important; page-break-after: always !important; break-after: page !important;
             page-break-inside: avoid !important; break-inside: avoid !important; clear: both !important;
@@ -1346,8 +1349,9 @@ export default function FicheroModule() {
             </div>
 
             <div
-              className="flex-1 min-h-0 grid grid-cols-7 gap-1 md:gap-2 print:gap-2 overflow-y-auto custom-scrollbar print:overflow-visible print:h-auto"
+              className="flex-1 min-h-0 grid grid-cols-7 gap-1 md:gap-2 print:gap-2 overflow-y-auto custom-scrollbar print:overflow-visible print:h-auto print:gap-1.5 cf-print-grid"
               style={{
+                "--cf-filas": cantidadFilas,
                 gridTemplateRows:
                   window.innerWidth < 1280
                     ? "auto"
@@ -1359,7 +1363,7 @@ export default function FicheroModule() {
                   return (
                     <div
                       key={`empty-${idx}`}
-                      className="rounded border border-transparent min-h-[60px] md:min-h-[84px] print:min-h-[88px]"
+                      className="rounded border border-transparent min-h-[60px] md:min-h-[84px] print:min-h-0 print:h-[21mm]"
                     />
                   );
                 }
@@ -1438,7 +1442,7 @@ export default function FicheroModule() {
                     key={celda.fechaISO}
                     onClick={() => abrirConfiguracionDia(celda)}
                     title="Clic para configurar día (hora pactada, feriado, normales)"
-                    className={`rounded border transition-colors p-1 md:p-2 print:p-2.5 flex flex-col justify-between min-h-[60px] md:min-h-[84px] print:min-h-[88px] overflow-hidden shadow-sm cursor-pointer ${
+                    className={`rounded border transition-colors p-1 md:p-2 print:p-1.5 flex flex-col justify-between min-h-[60px] md:min-h-[84px] print:min-h-0 print:h-[21mm] overflow-hidden shadow-sm cursor-pointer ${
                       esFeriado
                         ? "border-purple-500 bg-purple-950/25"
                         : estaTildado
@@ -1446,7 +1450,7 @@ export default function FicheroModule() {
                           : "border-zinc-750 print:border-gray-300 bg-[#111111] print:bg-white hover:border-zinc-500"
                     }`}
                   >
-                    <div className="flex items-center justify-between shrink-0 mb-1 md:mb-0 print:mb-2">
+                    <div className="flex items-center justify-between shrink-0 mb-1 md:mb-0 print:mb-0.5">
                       <div className="flex items-center gap-1.5">
                         {hsExtras > 0 && (
                           <input
@@ -1513,8 +1517,8 @@ export default function FicheroModule() {
                       </div>
                     </div>
 
-                    <div className="flex flex-col gap-0.5 md:gap-1 print:gap-1.5 min-h-0 justify-center">
-                      <div className="flex items-center justify-between bg-emerald-500/10 print:bg-emerald-50 border border-emerald-500/20 print:border-emerald-300 px-1 py-0.5 print:px-2 print:py-1 rounded text-[8px] md:text-[10px]">
+                    <div className="flex flex-col gap-0.5 md:gap-1 print:gap-0.5 min-h-0 justify-center">
+                      <div className="flex items-center justify-between bg-emerald-500/10 print:bg-emerald-50 border border-emerald-500/20 print:border-emerald-300 px-1 py-0.5 print:px-1.5 print:py-0.5 rounded text-[8px] md:text-[10px]">
                         <span className="font-bold text-emerald-400 print:text-emerald-700 tracking-wider">
                           ENT
                         </span>
@@ -1523,7 +1527,7 @@ export default function FicheroModule() {
                         </span>
                       </div>
 
-                      <div className="flex items-center justify-between bg-rose-500/10 print:bg-rose-50 border border-rose-500/20 print:border-rose-300 px-1 py-0.5 print:px-2 print:py-1 rounded text-[8px] md:text-[10px]">
+                      <div className="flex items-center justify-between bg-rose-500/10 print:bg-rose-50 border border-rose-500/20 print:border-rose-300 px-1 py-0.5 print:px-1.5 print:py-0.5 rounded text-[8px] md:text-[10px]">
                         <span className="font-bold text-rose-400 print:text-rose-700 tracking-wider">
                           SAL
                         </span>
@@ -2080,7 +2084,10 @@ export default function FicheroModule() {
                   ))}
                 </div>
 
-                <div className="grid grid-cols-7 gap-2">
+                <div
+                  className="grid grid-cols-7 gap-2 cf-print-grid"
+                  style={{ "--cf-filas": Math.ceil(celdasOp.length / 7) }}
+                >
                   {celdasOp.map((celda, cIdx) => {
                     if (!celda) {
                       return (

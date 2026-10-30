@@ -59,12 +59,15 @@ select, textarea {
 [class*="bg-[#080808]"][class*="border"]:not([class*="rounded-full"]):not(table):not(tr):not(td):not(th):not(button) {
   border-radius: 14px;
 }
+/* Solo en pantalla: al imprimir mandan los estilos print: de cada módulo */
+@media screen {
 .bg-\[\#050505\], .bg-\[\#080808\], .bg-\[\#0a0a0a\], .bg-\[\#0A0A0A\] { background-color: var(--superficie); }
 .bg-\[\#160c2b\], .bg-\[\#1a0f2e\], .bg-\[\#070a12\], .bg-\[\#090d16\] { background-color: var(--cordon); }
 .bg-\[\#24173e\], .bg-\[\#39215e\] { background-color: var(--elevado); }
 .border-\[\#432874\] { border-color: rgba(255, 255, 255, 0.1); }
 .border-zinc-800, .border-zinc-900 { border-color: var(--linea); }
 .border-zinc-800\/50, .border-zinc-800\/60, .border-zinc-800\/90 { border-color: rgba(255, 255, 255, 0.06); }
+}
 
 /* Títulos de cada módulo: mismo peso industrial, sin cursiva ni tamaño de cartel */
 main h1[class*="uppercase"] { font-style: normal; font-size: clamp(1.6rem, 2.6vw, 2.25rem); letter-spacing: -0.02em; line-height: 1.05; }
@@ -132,7 +135,7 @@ img, video, canvas { max-width: 100%; }
 }
 
 @media print {
-  body { background: #fff !important; }
+  html, body { background: #fff !important; color: #000 !important; }
   .fixed.inset-0 { animation: none !important; }
 }
 
