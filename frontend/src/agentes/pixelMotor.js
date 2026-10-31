@@ -44,7 +44,8 @@ function pintar(p, f) {
     for (let j = y; j < y + h; j++) for (let i = x; i < x + w; i++) if (j >= 0 && j < 16 && i >= 0 && i < 16) g[j][i] = c;
   };
   const dy = f.dy || 0;
-  const H = (x, y, w, h, c) => R(x, y + dy, w, h, c);
+  const dx = f.dx || 0;
+  const H = (x, y, w, h, c) => R(x + dx, y + dy, w, h, c);
 
   // pelo de atrás y cola
   if (p.pelos === "cola") H(13 + (f.cola || 0), 6, 2, 4, p.pelo);
@@ -142,6 +143,23 @@ function pintar(p, f) {
     H(4, 10, 2, 1, A);
     H(4, 4, 1, 1, "#4a4a56");
   }
+  // manos y objetos (se dibujan encima del torso)
+  const m = f.mano;
+  if (m === "tecleo") {
+    const a = f.manoF ? 1 : 0;
+    R(4, 14 - a, 2, 2, p.piel);
+    R(10, 13 + a, 2, 2, p.piel);
+  } else if (m === "saludo" || m === "gesto") {
+    const a = f.manoF ? 1 : 0;
+    R(13, 12, 2, 4, p.ropa2);
+    R(13, 9 + a - (m === "saludo" ? 1 : 0), 2, 3, p.piel);
+  } else if (m === "taza") {
+    R(10, 12, 4, 3, "#ececf2");
+    R(10, 12, 4, 1, "#b9b9c6");
+    R(9, 13, 1, 2, p.piel);
+    R(14, 13, 1, 1, "#ececf2");
+    R(13, f.manoF ? 9 : 10, 1, 1, "#9a9aa8");
+  }
   return g;
 }
 
@@ -167,7 +185,7 @@ function aRectas(g) {
 
 const cache = new Map();
 export function rectas(id, f) {
-  const k = `${id}|${f.ojos}|${f.mirada}|${f.oy}|${f.boca}|${f.dy}|${f.cola}`;
+  const k = `${id}|${f.ojos}|${f.mirada}|${f.oy}|${f.boca}|${f.dy}|${f.cola}|${f.dx}|${f.mano}|${f.manoF}`;
   let r = cache.get(k);
   if (!r) {
     r = aRectas(pintar(PERSONAJES[id] || PERSONAJES.rrhh, f));
@@ -179,24 +197,42 @@ export function rectas(id, f) {
 
 /** Parámetros del frame a partir del "modo" (qué hace) y el reloj. */
 export function frameDe(modo, ojosBase, t, dormido = false) {
-  const f = { ojos: "abiertos", mirada: 0, oy: 0, boca: "neutra", dy: Math.floor(t / 4) % 2, cola: Math.floor(t / 3) % 2 };
-  if (dormido) return { ...f, ojos: "cerrados", dy: Math.floor(t / 6) % 2 };
+  const f = { ojos: "abiertos", mirada: 0, oy: 0, boca: "neutra", dy: Math.floor(t / 4) % 2, cola: Math.floor(t / 3) % 2, dx: 0, mano: null, manoF: t % 2 };
+  if (dormido) return { ...f, ojos: "cerrados", dy: Math.floor(t / 6) % 2, manoF: 0 };
   if (ojosBase === "scan") f.mirada = [-1, 0, 1, 0][t % 4];
-  else if (ojosBase === "abajo") f.oy = 1;
-  else if (ojosBase === "arriba") {
+  else if (ojosBase === "abajo") {
+    f.oy = 1;
+    f.mano = "tecleo";
+  } else if (ojosBase === "arriba") {
     f.oy = -1;
     f.mirada = Math.floor(t / 5) % 2 ? 1 : -1;
   } else if (ojosBase === "cafe") {
     f.ojos = "medio";
     f.boca = "sonrisa";
+    f.mano = "taza";
+    f.manoF = Math.floor(t / 2) % 2;
   } else if (ojosBase === "lado") f.mirada = Math.floor(t / 6) % 2 ? 1 : -1;
-  if (modo === "hablando") f.boca = ["abierta", "neutra", "o", "abierta", "neutra", "neutra"][t % 6];
-  else if (modo === "escuchando") {
+  if (modo === "hablando") {
+    f.boca = ["abierta", "neutra", "o", "abierta", "neutra", "neutra"][t % 6];
+    const c = Math.floor(t / 3) % 4;
+    f.dx = c === 1 ? 1 : c === 3 ? -1 : 0;
+    if (Math.floor(t / 5) % 3 === 1) f.mano = "gesto";
+  } else if (modo === "escuchando") {
     f.boca = "sonrisa";
     f.dy = Math.floor(t / 2) % 2;
-  } else if (modo === "pensando") f.boca = "o";
-  else if (modo === "idle" && ojosBase !== "cafe" && t % 17 === 0) f.boca = "sonrisa";
+    f.dx = Math.floor(t / 7) % 3 === 2 ? 1 : 0;
+  } else if (modo === "pensando") {
+    f.boca = "o";
+    f.dx = Math.floor(t / 4) % 2;
+    f.mano = null;
+  } else if (modo === "idle" && ojosBase !== "cafe") {
+    if (t % 17 === 0) f.boca = "sonrisa";
+    if (t % 53 < 5) {
+      f.mano = "saludo";
+      f.manoF = t % 2;
+      f.boca = "sonrisa";
+    }
+  }
   if (f.ojos === "abiertos" && t % 11 === 0) f.ojos = "cerrados";
   return f;
 }
-

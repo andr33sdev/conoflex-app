@@ -18,7 +18,7 @@ export default function Chat({ perfil, estado, mensajes, enviando, texto, onText
         {mensajes.length === 0 && !enviando ? (
           <div className="h-full grid place-items-center px-6 py-8">
             <div className="max-w-sm text-center cf-msg">
-              <div className="flex justify-center"><Avatar8 id={perfil.id} tam={96} modo={estado.modo} ojos={estado.ojos} icono={estado.icono} /></div>
+              <div className="flex justify-center"><Avatar8 id={perfil.id} tam={128} modo={estado.modo} ojos={estado.ojos} icono={estado.icono} /></div>
               <p className="mt-5 text-[19px] font-bold text-white">{saludo}</p>
               <p className="mt-1 text-[14.5px] text-zinc-400 leading-relaxed">{perfil.presentacion} {resumen}</p>
               {abiertos > 0 && (

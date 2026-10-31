@@ -113,7 +113,7 @@ function pie(pdf, n, total) {
 }
 
 /** Arma el PDF de una liquidación (resultado de liquidarDesdeBD). */
-function pdfLiquidacion(liq, { generado = new Date(), usuario = "" } = {}) {
+function pdfLiquidacion(liq, { generado = new Date(), usuario = "", soloNormales = false } = {}) {
   const pdf = new Pdf();
   const fecha = generado.toLocaleString("es-AR", { timeZone: "America/Argentina/Buenos_Aires", dateStyle: "short", timeStyle: "short" });
   const individual = !liq.operarios;
@@ -121,6 +121,7 @@ function pdfLiquidacion(liq, { generado = new Date(), usuario = "" } = {}) {
   const titulo = individual ? `Liquidación de ${liq.operario}` : `Liquidación del plantel (${lista.length})`;
   const subtitulo = `${liq.liquidacion_de || ""}`.slice(0, 70);
   const soloExtras = /SOLO HORAS EXTRA/i.test(liq.informe || "");
+  const soloNor = soloNormales && !soloExtras;
   const margenBase = 770;
   let y = 0;
   const nueva = () => {
@@ -142,8 +143,8 @@ function pdfLiquidacion(liq, { generado = new Date(), usuario = "" } = {}) {
     pdf.texto(48, y + 20, r.operario, { size: 15, negrita: true });
     pdf.texto(48, y + 38, `Categoría: ${r.categoria || "—"}`, { size: 9.5, color: "#555555" });
     if (r.pago) pdf.texto(48, y + 52, r.pago.tipo === "mensual" ? `Sueldo mensual ${ARS(r.pago.sueldo_mensual)} · hora ordinaria ${ARS(r.pago.valor_hora_ordinaria)}` : `Valor hora ordinaria ${ARS(r.pago.valor_hora_ordinaria)}`, { size: 9.5, color: "#555555" });
-    pdf.texto(A4.w - 48, y + 28, soloExtras ? ARS(res.valor_extras) : ARS(res.total), { size: 20, negrita: true, color: NARANJA, alinear: "der" });
-    pdf.texto(A4.w - 48, y + 46, soloExtras ? "total de horas extra" : "total a liquidar", { size: 9, color: "#555555", alinear: "der" });
+    pdf.texto(A4.w - 48, y + 28, soloExtras ? ARS(res.valor_extras) : soloNor ? ARS(res.valor_normales) : ARS(res.total), { size: 20, negrita: true, color: NARANJA, alinear: "der" });
+    pdf.texto(A4.w - 48, y + 46, soloExtras ? "total de horas extra" : soloNor ? "total de horas normales" : "total a liquidar", { size: 9, color: "#555555", alinear: "der" });
     y += 82;
 
     const cols = soloExtras
@@ -154,9 +155,11 @@ function pdfLiquidacion(liq, { generado = new Date(), usuario = "" } = {}) {
     y += 20;
     const filas = soloExtras
       ? [["Horas extra", res.horas_extra, res.valor_extras]]
+      : soloNor
+      ? [["Horas normales", res.horas_normales, res.valor_normales]]
       : [["Horas normales", res.horas_normales, res.valor_normales], ["Horas extra", res.horas_extra, res.valor_extras], ["Total", res.horas_totales, res.total]];
     filas.forEach(([c, h, v], i) => {
-      const ultima = !soloExtras && i === filas.length - 1;
+      const ultima = !soloExtras && !soloNor && i === filas.length - 1;
       if (ultima) pdf.rect(36, y, A4.w - 72, 22, "#fff4d6");
       pdf.texto(44, y + 15, c, { size: 10.5, negrita: ultima });
       pdf.texto(352, y + 15, HS(h), { size: 10.5, negrita: ultima, alinear: "der" });
@@ -178,7 +181,9 @@ function pdfLiquidacion(liq, { generado = new Date(), usuario = "" } = {}) {
       pdf.texto(36, y, "Detalle por día", { size: 12, negrita: true });
       y += 10;
       pdf.rect(36, y, A4.w - 72, 18, "#ececf1");
-      const hd = [["Fecha", 44, "izq"], ["Ingreso", 170, "der"], ["Salida", 235, "der"], ["Normales", 310, "der"], ["Extras", 380, "der"], ["Importe", A4.w - 44, "der"]];
+      const hd = soloNor
+        ? [["Fecha", 44, "izq"], ["Ingreso", 170, "der"], ["Salida", 235, "der"], ["Normales", 310, "der"]]
+        : [["Fecha", 44, "izq"], ["Ingreso", 170, "der"], ["Salida", 235, "der"], ["Normales", 310, "der"], ["Extras", 380, "der"], ["Importe", A4.w - 44, "der"]];
       for (const [t, x, al] of hd) pdf.texto(x, y + 13, t, { size: 9, negrita: true, alinear: al });
       y += 18;
       for (const d of dias) {
@@ -188,8 +193,10 @@ function pdfLiquidacion(liq, { generado = new Date(), usuario = "" } = {}) {
         pdf.texto(170, y + 13, d.ingreso || "—", { size: 9.5, alinear: "der" });
         pdf.texto(235, y + 13, d.sin_salida ? "sin salida" : d.egreso || "—", { size: 9.5, alinear: "der", color: d.sin_salida ? "#a32121" : "#222222" });
         pdf.texto(310, y + 13, d.sin_salida ? "—" : HS(d.horas_normales), { size: 9.5, alinear: "der" });
-        pdf.texto(380, y + 13, d.sin_salida ? "—" : HS(d.horas_extra), { size: 9.5, alinear: "der" });
-        pdf.texto(A4.w - 44, y + 13, d.sin_salida ? "—" : ARS(d.importe), { size: 9.5, alinear: "der" });
+        if (!soloNor) {
+          pdf.texto(380, y + 13, d.sin_salida ? "—" : HS(d.horas_extra), { size: 9.5, alinear: "der" });
+          pdf.texto(A4.w - 44, y + 13, d.sin_salida ? "—" : ARS(d.importe), { size: 9.5, alinear: "der" });
+        }
         pdf.linea(36, y + 18, A4.w - 36, y + 18, "#e7e7ec", 0.4);
         y += 18;
       }
@@ -209,6 +216,8 @@ function pdfLiquidacion(liq, { generado = new Date(), usuario = "" } = {}) {
     pdf.rect(36, y, A4.w - 72, 20, "#14141a");
     const hd = soloExtras
       ? [["Operario", 44, "izq"], ["Categoría", 260, "izq"], ["Hs extra", 440, "der"], ["Importe extras", A4.w - 44, "der"]]
+      : soloNor
+      ? [["Operario", 44, "izq"], ["Categoría", 260, "izq"], ["Hs normales", 440, "der"], ["Importe normales", A4.w - 44, "der"]]
       : [["Operario", 44, "izq"], ["Categoría", 200, "izq"], ["Normales", 372, "der"], ["Extras", 432, "der"], ["Total", A4.w - 44, "der"]];
     for (const [t, x, al] of hd) pdf.texto(x, y + 14, t, { size: 9.5, negrita: true, color: "#ffffff", alinear: al });
     y += 20;
@@ -217,10 +226,10 @@ function pdfLiquidacion(liq, { generado = new Date(), usuario = "" } = {}) {
       const res = r.resumen || {};
       if (i % 2) pdf.rect(36, y, A4.w - 72, 20, "#f6f6f9");
       pdf.texto(44, y + 14, String(r.operario).slice(0, 28), { size: 9.5 });
-      if (soloExtras) {
+      if (soloExtras || soloNor) {
         pdf.texto(260, y + 14, String(r.categoria || "—").slice(0, 26), { size: 9, color: "#555555" });
-        pdf.texto(440, y + 14, HS(res.horas_extra), { size: 9.5, alinear: "der" });
-        pdf.texto(A4.w - 44, y + 14, ARS(res.valor_extras), { size: 9.5, alinear: "der" });
+        pdf.texto(440, y + 14, HS(soloNor ? res.horas_normales : res.horas_extra), { size: 9.5, alinear: "der" });
+        pdf.texto(A4.w - 44, y + 14, ARS(soloNor ? res.valor_normales : res.valor_extras), { size: 9.5, alinear: "der" });
       } else {
         pdf.texto(200, y + 14, String(r.categoria || "—").slice(0, 22), { size: 9, color: "#555555" });
         pdf.texto(372, y + 14, HS(res.horas_normales), { size: 9.5, alinear: "der" });
@@ -233,7 +242,10 @@ function pdfLiquidacion(liq, { generado = new Date(), usuario = "" } = {}) {
     y += 8;
     pdf.rect(36, y, A4.w - 72, 26, "#fff4d6");
     pdf.texto(44, y + 17, "TOTAL", { size: 11, negrita: true });
-    if (soloExtras) {
+    if (soloNor) {
+      pdf.texto(440, y + 17, HS(liq.total_horas_normales), { size: 10.5, negrita: true, alinear: "der" });
+      pdf.texto(A4.w - 44, y + 17, ARS(liq.total_importe_normales), { size: 11, negrita: true, alinear: "der" });
+    } else if (soloExtras) {
       pdf.texto(440, y + 17, HS(liq.total_horas_extra), { size: 10.5, negrita: true, alinear: "der" });
       pdf.texto(A4.w - 44, y + 17, ARS(liq.total_importe_extras), { size: 11, negrita: true, alinear: "der" });
     } else {
