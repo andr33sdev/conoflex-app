@@ -8,6 +8,7 @@ import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeometry.js";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
+import { crearPersonajeArcilla } from "./personajeArcilla.js";
 
 export function soportaWebGL() {
   try {
@@ -182,77 +183,6 @@ export function dibujarCara(ctx, W, H, e) {
   }
 }
 
-// ---------- blazer con credencial (lleva el logo) ----------
-function dibujarTorso(ctx, W, H, logo) {
-  ctx.clearRect(0, 0, W, H);
-  // blusa en V
-  ctx.fillStyle = "#f6f2ea";
-  ctx.beginPath();
-  ctx.moveTo(W * 0.33, 0);
-  ctx.lineTo(W * 0.67, 0);
-  ctx.lineTo(W * 0.5, H * 0.44);
-  ctx.closePath();
-  ctx.fill();
-  // solapas del blazer
-  ctx.fillStyle = "#3b4056";
-  ctx.beginPath();
-  ctx.moveTo(W * 0.33, 0);
-  ctx.lineTo(W * 0.5, H * 0.44);
-  ctx.lineTo(W * 0.31, H * 0.3);
-  ctx.closePath();
-  ctx.fill();
-  ctx.beginPath();
-  ctx.moveTo(W * 0.67, 0);
-  ctx.lineTo(W * 0.5, H * 0.44);
-  ctx.lineTo(W * 0.69, H * 0.3);
-  ctx.closePath();
-  ctx.fill();
-  // costura y botones
-  ctx.strokeStyle = "rgba(0,0,0,0.4)";
-  ctx.lineWidth = 4;
-  ctx.beginPath();
-  ctx.moveTo(W * 0.5, H * 0.44);
-  ctx.lineTo(W * 0.5, H);
-  ctx.stroke();
-  ctx.fillStyle = "#e85c0d";
-  for (const y of [0.6, 0.78]) {
-    ctx.beginPath();
-    ctx.arc(W * 0.46, H * y, 8, 0, Math.PI * 2);
-    ctx.fill();
-  }
-  // pañuelito en el bolsillo
-  ctx.fillStyle = "#e85c0d";
-  ctx.beginPath();
-  ctx.moveTo(W * 0.14, H * 0.56);
-  ctx.lineTo(W * 0.26, H * 0.56);
-  ctx.lineTo(W * 0.24, H * 0.62);
-  ctx.lineTo(W * 0.16, H * 0.62);
-  ctx.closePath();
-  ctx.fill();
-  // cordón + credencial con el logo
-  ctx.strokeStyle = "#e85c0d";
-  ctx.lineWidth = 9;
-  ctx.beginPath();
-  ctx.moveTo(W * 0.37, 0);
-  ctx.lineTo(W * 0.64, H * 0.5);
-  ctx.moveTo(W * 0.63, 0);
-  ctx.lineTo(W * 0.66, H * 0.5);
-  ctx.stroke();
-  ctx.fillStyle = "#fff";
-  ctx.beginPath();
-  ctx.roundRect(W * 0.55, H * 0.5, W * 0.22, H * 0.26, 10);
-  ctx.fill();
-  if (logo) ctx.drawImage(logo, W * 0.585, H * 0.52, W * 0.15, W * 0.15);
-  else {
-    ctx.fillStyle = "#e85c0d";
-    ctx.fillRect(W * 0.55, H * 0.5, W * 0.22, H * 0.06);
-  }
-  ctx.fillStyle = "#222";
-  ctx.font = "bold 22px sans-serif";
-  ctx.textAlign = "center";
-  ctx.fillText("LÍA", W * 0.66, H * 0.73);
-}
-
 export const HORA_ARG = () => {
   try {
     const p = new Intl.DateTimeFormat("es-AR", { timeZone: "America/Argentina/Buenos_Aires", hour: "numeric", minute: "numeric", hour12: false }).formatToParts(new Date());
@@ -281,7 +211,7 @@ export function crearEscena(contenedor, { logoUrl, onActividad, onSaludo } = {})
   scene.environmentIntensity = 0.6;
 
   const camera = new THREE.PerspectiveCamera(32, 1, 0.1, 80);
-  const TARGET = new THREE.Vector3(1.4, 2.7, 0.6);
+  const TARGET = new THREE.Vector3(1.4, 3.45, 0.6);
   const DIR_CAM = new THREE.Vector3(-2.3, 2.3, 12.0).normalize();
   camera.position.copy(TARGET).addScaledVector(DIR_CAM, 12);
   const controles = new OrbitControls(camera, renderer.domElement);
@@ -812,80 +742,21 @@ export function crearEscena(contenedor, { logoUrl, onActividad, onSaludo } = {})
   franjaResp.rotation.x = -0.1;
   lia.add(franjaResp);
 
-  const matPiel = plastico(COLOR.piel);
-  const matSaco = plastico(COLOR.saco);
-  const matPantalon = plastico(COLOR.pantalon);
-  const matPelo = plastico(COLOR.pelo, { roughness: 0.25, clearcoat: 0.8, clearcoatRoughness: 0.15 });
-  const matZapa = plastico(0xf4f1ea);
-
-  const piernas = [];
-  for (const lado of [1, -1]) {
-    const pivote = new THREE.Group();
-    pivote.position.set(lado * 0.41, 1.1, 0);
-    const pierna = caja(0.78, 1.1, 0.86, matPantalon, 0.07);
-    pierna.position.y = -0.55;
-    pivote.add(pierna);
-    const zapa = caja(0.8, 0.32, 0.9, matZapa, 0.08);
-    zapa.position.y = -0.96;
-    pivote.add(zapa);
-    const rayita = caja(0.82, 0.07, 0.92, plastico(COLOR.naranja), 0.02);
-    rayita.position.y = -0.84;
-    pivote.add(rayita);
-    pivote.rotation.x = -Math.PI / 2 + 0.02; // piernas hacia adelante, como una minifigura sentada
-    lia.add(pivote);
-    piernas.push(pivote);
-  }
-  const cadera = caja(1.6, 0.5, 0.92, matPantalon, 0.07);
-  cadera.position.y = 1.3;
-  lia.add(cadera);
-  const cinto = caja(1.62, 0.08, 0.94, plastico(COLOR.naranja), 0.02);
-  cinto.position.y = 1.5;
-  lia.add(cinto);
-
-  const tronco = new THREE.Group();
-  tronco.position.y = 1.55;
-  lia.add(tronco);
-  const torso = caja(1.6, 1.5, 0.9, matSaco, 0.1);
-  torso.position.y = 0.75;
-  tronco.add(torso);
-  const torsoDecal = textura(512, 480, (ctx, w, h) => dibujarTorso(ctx, w, h, null));
-  const decal = new THREE.Mesh(
-    new THREE.PlaneGeometry(1.52, 1.42),
-    new THREE.MeshStandardMaterial({ map: torsoDecal.tex, transparent: true, roughness: 0.5, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 }),
-  );
-  decal.position.set(0, 0.75, 0.456);
-  tronco.add(decal);
-  conLogo(() => {
-    dibujarTorso(torsoDecal.ctx, 512, 480, logo);
-    torsoDecal.tex.needsUpdate = true;
+  // personaje de plastilina: rige el mismo árbol (caderas > tronco > cabeza / brazos) que usan las animaciones
+  const pj = crearPersonajeArcilla({
+    sentada: true,
+    piel: 0xf2bb92,
+    saco: 0x233a78,
+    camisa: 0xa9cbea,
+    pantalon: 0x1f2740,
+    pelo: 0x5c3a29,
+    peloTipo: "colita",
+    iris: "#6b3f23",
+    ceja: "#5a3320",
+    credencial: true,
   });
-  const cuello = cilindro(0.22, 0.24, 0.2, matPiel, 24);
-  cuello.position.y = 1.58;
-  tronco.add(cuello);
-
-  const hacerBrazo = (lado) => {
-    const pivote = new THREE.Group();
-    pivote.position.set(lado * 1.0, 1.38, 0);
-    const manga = cilindro(0.22, 0.2, 1.0, matSaco, 28);
-    manga.position.y = -0.5;
-    pivote.add(manga);
-    const puño = cilindro(0.215, 0.215, 0.1, plastico(0xf6f2ea), 28);
-    puño.position.y = -0.98;
-    pivote.add(puño);
-    const mano = new THREE.Group();
-    mano.position.y = -1.1;
-    const arco = sombra(new THREE.Mesh(new THREE.TorusGeometry(0.2, 0.085, 12, 28, Math.PI * 1.6), matPiel));
-    arco.rotation.set(Math.PI / 2, 0, Math.PI * 0.2);
-    mano.add(arco);
-    const muneca = cilindro(0.15, 0.15, 0.14, matPiel, 20);
-    muneca.position.y = 0.1;
-    mano.add(muneca);
-    pivote.add(mano);
-    tronco.add(pivote);
-    return { pivote, mano };
-  };
-  const brazoI = hacerBrazo(1);
-  const brazoD = hacerBrazo(-1);
+  lia.add(pj.raiz);
+  const { tronco, brazoI, brazoD, cabeza, ec, refrescarCara } = pj;
 
   // objetos que toma en la mano (solo se ven cuando los usa)
   const tazaMano = tazaEscr.clone(true);
@@ -908,77 +779,6 @@ export function crearEscena(contenedor, { logoUrl, onActividad, onSaludo } = {})
   hojaMano.rotation.x = -0.5;
   hojaMano.visible = false;
   tronco.add(hojaMano);
-
-  // cabeza
-  const cabeza = new THREE.Group();
-  cabeza.position.y = 1.68;
-  tronco.add(cabeza);
-  const RH = 0.58;
-  const HH = 0.8;
-  const craneo = cilindro(RH, RH, HH, matPiel, 64);
-  craneo.position.y = HH / 2;
-  cabeza.add(craneo);
-  const tacho = cilindro(0.22, 0.22, 0.14, matPiel, 24);
-  tacho.position.y = HH + 0.07;
-  cabeza.add(tacho);
-  const cara = textura(1024, 652, () => {});
-  const ec = { parp: 0, boca: 0, forma: 0, sonrisa: 0.5, ceja: 0, mirarX: 0, mirarY: 0, guiño: 0 };
-  let claveCara = "";
-  const refrescarCara = (forzar) => {
-    const clave = [ec.parp, ec.boca, ec.forma, ec.sonrisa, ec.ceja, ec.mirarX, ec.mirarY, ec.guiño].map((v) => Math.round(v * 10)).join("|");
-    if (clave === claveCara && !forzar) return;
-    claveCara = clave;
-    cara.ctx.save();
-    cara.ctx.scale(2, 2);
-    dibujarCara(cara.ctx, 512, 326, ec);
-    cara.ctx.restore();
-    cara.tex.needsUpdate = true;
-  };
-  refrescarCara(true);
-  const arcoCara = (Math.PI * 2) / 3;
-  const decalCara = new THREE.Mesh(
-    new THREE.CylinderGeometry(RH + 0.004, RH + 0.004, HH, 56, 1, true, -arcoCara / 2, arcoCara),
-    new THREE.MeshStandardMaterial({ map: cara.tex, transparent: true, roughness: 0.4, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 }),
-  );
-  decalCara.position.y = HH / 2;
-  cabeza.add(decalCara);
-
-  // pelo: casquete, nuca, flequillo ladeado, mechones y detalle naranja
-  const domo = sombra(new THREE.Mesh(new THREE.SphereGeometry(RH + 0.07, 48, 24, 0, Math.PI * 2, 0, Math.PI / 2), matPelo));
-  domo.scale.y = 0.55;
-  domo.position.y = HH - 0.03;
-  cabeza.add(domo);
-  const matPeloDoble = matPelo.clone();
-  matPeloDoble.side = THREE.DoubleSide;
-  const nuca = sombra(new THREE.Mesh(new THREE.CylinderGeometry(RH + 0.07, RH + 0.07, HH - 0.02, 48, 1, true, (Math.PI * 62) / 180, (Math.PI * 236) / 180), matPeloDoble));
-  nuca.position.y = (HH - 0.02) / 2 + 0.03;
-  cabeza.add(nuca);
-  const flequillo = sombra(new THREE.Mesh(new THREE.CylinderGeometry(RH + 0.055, RH + 0.055, 0.2, 48, 1, true, (-Math.PI * 78) / 180, (Math.PI * 156) / 180), matPeloDoble));
-  flequillo.position.y = HH - 0.08;
-  cabeza.add(flequillo);
-  const mecha = sombra(new THREE.Mesh(new THREE.SphereGeometry(0.3, 24, 16), matPelo));
-  mecha.scale.set(1, 0.55, 0.45);
-  mecha.position.set(-0.28, HH - 0.02, RH - 0.02);
-  mecha.rotation.z = 0.5;
-  cabeza.add(mecha);
-  const melena = caja(1.34, 1.35, 0.36, matPelo, 0.16);
-  melena.position.set(0, 0.02, -RH - 0.0);
-  cabeza.add(melena);
-  const puntas = caja(1.3, 0.3, 0.34, matPelo, 0.14);
-  puntas.position.set(0, -0.66, -RH + 0.02);
-  cabeza.add(puntas);
-  for (const lado of [1, -1]) {
-    const mechon = caja(0.2, 0.9, 0.3, matPelo, 0.09);
-    mechon.position.set(lado * (RH + 0.03), 0.28, -0.15);
-    cabeza.add(mechon);
-  }
-  const tachoPelo = cilindro(0.2, 0.2, 0.12, matPelo, 24);
-  tachoPelo.position.y = HH + RH * 0.55 + 0.04;
-  cabeza.add(tachoPelo);
-  const broche = caja(0.3, 0.12, 0.1, plastico(COLOR.naranja), 0.04);
-  broche.position.set(0.46, HH - 0.12, 0.3);
-  broche.rotation.set(0, -0.7, -0.5);
-  cabeza.add(broche);
 
   // burbujas de pensamiento
   const burbujas = new THREE.Group();
@@ -1504,7 +1304,7 @@ export function crearEscena(contenedor, { logoUrl, onActividad, onSaludo } = {})
 
     // cámara: acercamiento suave cuando habla y un balanceo sutil si nadie la mueve
     zoom = amortiguar(zoom, ctrl.hablando ? 1.1 : atiende ? 1.05 : 1, 2.5, dt);
-    camera.zoom = zoom;
+    camera.zoom = zoom * (window.__liaZoomBase || 1);
     camera.updateProjectionMatrix();
     if (performance.now() / 1000 - ultimoToque > 6) controles.target.x = TARGET.x + Math.sin(t * 0.25) * 0.15;
     controles.update();
@@ -1519,7 +1319,7 @@ export function crearEscena(contenedor, { logoUrl, onActividad, onSaludo } = {})
     // encuadre automático: siempre entran Lía, su escritorio, el logo y el calendario, sea cual sea la forma del recuadro
     camera.fov = camera.aspect >= 1.15 ? 32 : Math.min(52, 32 + (1.15 - camera.aspect) * 28);
     const tanV = Math.tan((camera.fov * Math.PI) / 360);
-    const dist = Math.max(3.15 / tanV, 3.0 / (tanV * camera.aspect)) * 1.06 + 1.2;
+    const dist = Math.max(3.7 / tanV, 3.3 / (tanV * camera.aspect)) * 1.06 + 1.2;
     controles.minDistance = dist * 0.55;
     controles.maxDistance = dist * 1.3;
     camera.position.copy(controles.target).addScaledVector(DIR_CAM, dist);

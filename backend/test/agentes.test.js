@@ -346,3 +346,19 @@ test("voces: cada agente tiene una voz femenina distinta", () => {
   assert.equal(new Set(voces).size, AGENTES.length);
   for (const v of voces) assert.ok(VOCES_FEMENINAS.includes(v), v);
 });
+
+test("resolverMateria tolera abreviaturas, signos y códigos pegados (PE G°50 IF33)", () => {
+  const L = require("../agentes/listaCompra");
+  const M = [{ id: 1, codigo: "MP-12", nombre: "PE G°50 IF 33" }, { id: 2, codigo: "MP-13", nombre: "PE G°50 IF 26" }, { id: 3, codigo: "MP-1", nombre: "Carbonato" }];
+  assert.equal(L.resolverMateria(M, "Polietileno grado 50 de IF33").materia?.id, 1);
+  assert.equal(L.resolverMateria(M, "PE G°50 IF33").materia?.id, 1);
+  assert.ok(L.resolverMateria(M, "pe g50").coincidencias?.length === 2);
+  assert.ok(L.resolverMateria(M, "zzz").error);
+});
+
+test("verificarRespuesta reemplaza la tabla inventada por la real y descarta Ojo con nombres falsos", () => {
+  const { verificarRespuesta } = require("../agentes/liaChat");
+  const r = { liquidacion_de: "octubre 2026", cantidad_de_operarios: 2, tabla_markdown: "| Operario | HE |\n|---|---|\n| Alan Borda | 3 |\n| Carlos Caceres | 7 |" };
+  const out = verificarRespuesta("Listo.\nTotal 254 horas, $ 3.766.173,06.\n\n| Operario | HE |\n|---|---|\n| Emiliano Giménez | 47 |\n\nOjo: Emiliano Giménez tiene fichadas faltantes.", [{ nombre: "liquidar_horas", args: {}, r }]);
+  assert.ok(out.includes("Alan Borda") && !out.includes("Emiliano") && !out.includes("254") && !/Ojo/.test(out));
+});

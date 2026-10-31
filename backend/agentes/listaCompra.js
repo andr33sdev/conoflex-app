@@ -19,12 +19,40 @@ async function asegurarTablaListas(db) {
 
 const hoyIso = () => new Intl.DateTimeFormat("en-CA", { timeZone: "America/Argentina/Buenos_Aires" }).format(new Date());
 
-/** Busca una materia prima por nombre o código dentro de la lista [{id,codigo,nombre,unidad}]. */
+const PARCHES = { polietileno: "pe", polietilenos: "pe", polipropileno: "pp", grado: "g", gr: "g", densidad: "d", de: "", del: "", la: "", el: "", con: "", para: "", kg: "", kilos: "", material: "" };
+/** Palabras comparables: sin acentos ni signos (G°50 → g 50), separando letras de números (IF33 → if 33) y con abreviaturas unificadas. */
+function tokens(t) {
+  return sinAcentos(t)
+    .replace(/[°º\u00aa.,;:_\-\/\\()[\]"']/g, " ")
+    .replace(/([a-z])(\d)/g, "$1 $2")
+    .replace(/(\d)([a-z])/g, "$1 $2")
+    .split(/\s+/)
+    .map((w) => (w in PARCHES ? PARCHES[w] : w))
+    .filter(Boolean);
+}
+/** Cuántas palabras de la consulta aparecen (completas o como inicio) en el nombre/código. */
+function puntaje(qt, m) {
+  const nt = tokens(`${m.nombre} ${m.codigo || ""}`);
+  if (!qt.length) return 0;
+  const hit = qt.filter((w) => nt.some((n) => n === w || (w.length >= 3 && n.startsWith(w)))).length;
+  return hit / qt.length;
+}
+
+/** Busca una materia prima por nombre o código dentro de la lista [{id,codigo,nombre,unidad}]. Tolera abreviaturas y signos. */
 function resolverMateria(materias, q) {
   const t = sinAcentos(q);
   if (!t) return { error: "Falta indicar la materia prima." };
   let c = materias.filter((m) => sinAcentos(m.nombre) === t || sinAcentos(m.codigo) === t);
   if (!c.length) c = materias.filter((m) => sinAcentos(m.nombre).includes(t) || sinAcentos(m.codigo).includes(t));
+  if (!c.length) {
+    const qt = tokens(q);
+    const ptj = materias.map((m) => ({ m, p: puntaje(qt, m) })).filter((x) => x.p > 0).sort((a, b) => b.p - a.p);
+    const mejor = ptj[0]?.p || 0;
+    if (mejor === 1) c = ptj.filter((x) => x.p === 1).map((x) => x.m);
+    else if (mejor >= 0.5) {
+      return { error: `No encuentro exactamente "${q}". Son parecidas: ${ptj.slice(0, 5).map((x) => x.m.nombre).join("; ")}. Preguntale a la persona cuál es.`, coincidencias: ptj.slice(0, 5).map((x) => x.m.nombre) };
+    }
+  }
   if (!c.length) return { error: `No encuentro una materia prima que coincida con "${q}".` };
   if (c.length > 1) return { error: `"${q}" coincide con varias materias primas. Indicá cuál.`, coincidencias: c.slice(0, 10).map((m) => m.nombre) };
   return { materia: c[0] };

@@ -5,7 +5,8 @@ import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeometry.js";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
-import { COLOR, HORA_ARG, plastico, sombra, caja, cilindro, amortiguar, rnd, clamp, suavizar, textura, dibujarCara } from "./escenaLego.js";
+import { arcilla, crearPersonajeArcilla } from "./personajeArcilla.js";
+import { COLOR, HORA_ARG, plastico, sombra, caja, cilindro, amortiguar, rnd, clamp, suavizar, textura } from "./escenaLego.js";
 
 export { soportaWebGL } from "./escenaLego.js";
 
@@ -27,7 +28,7 @@ export function crearEscena(contenedor, { logoUrl, onActividad, onSaludo } = {})
   scene.environmentIntensity = 0.6;
 
   const camera = new THREE.PerspectiveCamera(32, 1, 0.1, 90);
-  const TARGET = new THREE.Vector3(0.8, 2.9, 0);
+  const TARGET = new THREE.Vector3(0.8, 3.2, 0);
   const DIR_CAM = new THREE.Vector3(-1.2, 1.9, 12).normalize();
   const controles = new OrbitControls(camera, renderer.domElement);
   controles.target.copy(TARGET);
@@ -379,75 +380,24 @@ export function crearEscena(contenedor, { logoUrl, onActividad, onSaludo } = {})
   // ---------- Vera ----------
   const vera = new THREE.Group();
   vera.position.set(0.6, 0, 2.4);
-  vera.scale.setScalar(1.18);
+  vera.scale.setScalar(1.05);
   mundo.add(vera);
-  const matPiel = plastico(0xf0cf9a, { roughness: 0.3 });
-  const matChaleco = plastico(0x2457c5, { roughness: 0.4 });
-  const matRemera = plastico(0xf4f1ea);
-  const matPant = plastico(0x23252e);
-  const matPelo = plastico(0xe8c26a, { roughness: 0.3 });
-
-  const caderas = new THREE.Group();
-  caderas.position.y = 1.15;
-  vera.add(caderas);
-  const patas = [];
-  for (const lado of [1, -1]) {
-    const pierna = new THREE.Group();
-    pierna.position.set(lado * 0.28, 0, 0);
-    const muslo = caja(0.5, 1.1, 0.7, matPant, 0.1);
-    muslo.position.y = -0.55;
-    pierna.add(muslo);
-    const bota = caja(0.56, 0.3, 0.9, plastico(0x16171c, { roughness: 0.6 }), 0.1);
-    bota.position.set(0, -1.0, 0.1);
-    pierna.add(bota);
-    caderas.add(pierna);
-    patas.push(pierna);
-  }
-  const cadera = caja(1.2, 0.34, 0.74, matPant, 0.1);
-  cadera.position.y = 0.05;
-  caderas.add(cadera);
-
-  const tronco = new THREE.Group();
-  tronco.position.y = 0.2;
-  caderas.add(tronco);
-  const torso = caja(1.3, 1.45, 0.78, matRemera, 0.16);
-  torso.position.y = 0.78;
-  tronco.add(torso);
-  // chaleco naranja con bandas reflectivas
-  const chaleco = caja(1.36, 1.3, 0.84, matChaleco, 0.14);
-  chaleco.position.y = 0.72;
-  tronco.add(chaleco);
-  const abierto = caja(0.26, 1.34, 0.9, matRemera, 0.05);
-  abierto.position.set(0, 0.72, 0.01);
-  tronco.add(abierto);
-  // solapas del saco
-  [-0.46, 0.46].forEach((x) => {
-    const sol = caja(0.2, 1.1, 0.9, plastico(0x1b44a0), 0.05);
-    sol.position.set(x * 1.0, 0.78, 0.01);
-    tronco.add(sol);
+  // personaje de plastilina (mismo árbol que antes: caderas > tronco > cabeza / brazos)
+  const pj = crearPersonajeArcilla({
+    piel: 0xf5c9a4,
+    saco: 0x2457c5,
+    camisa: 0xf4f1ea,
+    pantalon: 0x232a40,
+    zapato: 0x2a2b33,
+    pelo: 0xd7ae62,
+    peloTipo: "bob",
+    iris: "#3a6fa3",
+    ceja: "#9a7436",
+    labial: "#c75a5a",
+    credencial: false,
   });
-  const credencial = caja(0.26, 0.32, 0.04, plastico(0xffffff), 0.02);
-  credencial.position.set(-0.32, 1.05, 0.44);
-  tronco.add(credencial);
-
-  // brazos
-  const hacerBrazo = (lado) => {
-    const pivote = new THREE.Group();
-    pivote.position.set(lado * 0.88, 1.28, 0);
-    const manga = caja(0.4, 0.8, 0.46, matRemera, 0.12);
-    manga.position.y = -0.38;
-    pivote.add(manga);
-    const mano = new THREE.Group();
-    mano.position.y = -0.85;
-    const palma = cilindro(0.17, 0.17, 0.22, matPiel, 20);
-    palma.rotation.z = Math.PI / 2;
-    mano.add(palma);
-    pivote.add(mano);
-    tronco.add(pivote);
-    return { pivote, mano };
-  };
-  const brazoI = hacerBrazo(1);
-  const brazoD = hacerBrazo(-1);
+  vera.add(pj.raiz);
+  const { patas, tronco, brazoI, brazoD, cabeza, ec, refrescarCara, R, ALTO_CABEZA } = pj;
 
   // tablet de inventario (la sostiene con la mano izquierda)
   const pantTab = textura(256, 340, () => {});
@@ -487,71 +437,23 @@ export function crearEscena(contenedor, { logoUrl, onActividad, onSaludo } = {})
   tablet.rotation.x = -0.15;
   brazoI.mano.add(tablet);
 
-  // cabeza
-  const cabeza = new THREE.Group();
-  cabeza.position.y = 1.68;
-  tronco.add(cabeza);
-  const RH = 0.58;
-  const HH = 0.8;
-  const craneo = cilindro(RH, RH, HH, matPiel, 64);
-  craneo.position.y = HH / 2;
-  cabeza.add(craneo);
-  const tacho = cilindro(0.22, 0.22, 0.14, matPiel, 24);
-  tacho.position.y = HH + 0.07;
-  cabeza.add(tacho);
-  const cara = textura(1024, 652, () => {});
-  const ec = { parp: 0, boca: 0, forma: 0, sonrisa: 0.5, ceja: 0, mirarX: 0, mirarY: 0, guiño: 0 };
-  let claveCara = "";
-  const refrescarCara = (forzar) => {
-    const clave = [ec.parp, ec.boca, ec.forma, ec.sonrisa, ec.ceja, ec.mirarX, ec.mirarY, ec.guiño].map((v) => Math.round(v * 10)).join("|");
-    if (clave === claveCara && !forzar) return;
-    claveCara = clave;
-    cara.ctx.save();
-    cara.ctx.scale(2, 2);
-    dibujarCara(cara.ctx, 512, 326, ec);
-    cara.ctx.restore();
-    cara.tex.needsUpdate = true;
-  };
-  refrescarCara(true);
-  const arcoCara = (Math.PI * 2) / 3;
-  const decal = new THREE.Mesh(
-    new THREE.CylinderGeometry(RH + 0.004, RH + 0.004, HH, 56, 1, true, -arcoCara / 2, arcoCara),
-    new THREE.MeshStandardMaterial({ map: cara.tex, transparent: true, roughness: 0.4, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 }),
-  );
-  decal.position.y = HH / 2;
-  cabeza.add(decal);
-  // melena rubia tipo carré con flequillo y un auricular con micrófono
-  const bobNuca = caja(1.34, 1.15, 0.5, matPelo, 0.2);
-  bobNuca.position.set(0, 0.2, -RH - 0.02);
-  cabeza.add(bobNuca);
-  [1, -1].forEach((lado) => {
-    const lateral = caja(0.22, 0.95, 0.7, matPelo, 0.1);
-    lateral.position.set(lado * (RH + 0.06), 0.18, -0.12);
-    cabeza.add(lateral);
-  });
-  const coronilla = sombra(new THREE.Mesh(new THREE.SphereGeometry(RH + 0.08, 48, 24, 0, Math.PI * 2, 0, Math.PI / 2), matPelo));
-  coronilla.scale.y = 0.62;
-  coronilla.position.y = HH - 0.06;
-  cabeza.add(coronilla);
-  const flequillo = caja(0.95, 0.16, 0.12, matPelo, 0.05);
-  flequillo.position.set(-0.18, HH - 0.2, RH - 0.1);
-  flequillo.rotation.z = 0.2;
-  cabeza.add(flequillo);
-  const matAur = plastico(0x16171c, { roughness: 0.3 });
-  const arco = sombra(new THREE.Mesh(new THREE.TorusGeometry(RH + 0.1, 0.05, 10, 40, Math.PI), matAur));
-  arco.rotation.set(0, Math.PI / 2, 0);
-  arco.position.y = HH * 0.55;
+  // auricular con micrófono (la luz verde parpadea cuando escucha o habla)
+  const matAur = arcilla(0x16171c, { roughness: 0.45 });
+  const arco = sombra(new THREE.Mesh(new THREE.TorusGeometry(R * 1.04 + 0.13, 0.055, 12, 48, Math.PI), matAur));
+  arco.position.y = ALTO_CABEZA - 0.02;
   cabeza.add(arco);
-  const orejera = cilindro(0.22, 0.22, 0.14, matAur, 24);
-  orejera.rotation.z = Math.PI / 2;
-  orejera.position.set(RH + 0.16, 0.3, 0);
-  cabeza.add(orejera);
-  const brazoMic = caja(0.06, 0.06, 0.6, matAur, 0.02);
-  brazoMic.position.set(RH + 0.16, 0.12, 0.3);
-  brazoMic.rotation.y = -0.5;
+  for (const lado of [1, -1]) {
+    const orejera = sombra(new THREE.Mesh(new THREE.CylinderGeometry(0.26, 0.26, 0.16, 28), matAur));
+    orejera.rotation.z = Math.PI / 2;
+    orejera.position.set(lado * (R * 1.04 + 0.2), ALTO_CABEZA - 0.02, 0.02);
+    cabeza.add(orejera);
+  }
+  const brazoMic = sombra(new THREE.Mesh(new THREE.CapsuleGeometry(0.035, 0.7, 6, 12), matAur));
+  brazoMic.position.set(R * 1.04 + 0.1, ALTO_CABEZA - 0.3, 0.45);
+  brazoMic.rotation.set(Math.PI / 2 - 0.35, 0, -0.95);
   cabeza.add(brazoMic);
-  const punta = new THREE.Mesh(new THREE.SphereGeometry(0.08, 12, 10), new THREE.MeshBasicMaterial({ color: 0x3ecf6f, toneMapped: false }));
-  punta.position.set(RH - 0.02, 0.05, 0.58);
+  const punta = new THREE.Mesh(new THREE.SphereGeometry(0.1, 14, 12), new THREE.MeshBasicMaterial({ color: 0x3ecf6f, toneMapped: false }));
+  punta.position.set(0.42, ALTO_CABEZA - 0.48, R * 0.92);
   cabeza.add(punta);
 
   // ---------- estado y animación ----------
