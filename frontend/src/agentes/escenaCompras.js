@@ -29,7 +29,7 @@ export function crearEscena(contenedor, { logoUrl, onActividad, onSaludo } = {})
   scene.environmentIntensity = 0.6;
 
   const camera = new THREE.PerspectiveCamera(32, 1, 0.1, 90);
-  const TARGET = new THREE.Vector3(1.6, 2.5, 0);
+  const TARGET = new THREE.Vector3(1.4, 2.7, 0);
   const DIR_CAM = new THREE.Vector3(-1.2, 1.9, 12).normalize();
   const controles = new OrbitControls(camera, renderer.domElement);
   controles.target.copy(TARGET);
@@ -424,6 +424,7 @@ export function crearEscena(contenedor, { logoUrl, onActividad, onSaludo } = {})
   tablet.add(caraTab);
   tablet.position.set(0, 0.05, 0.22);
   tablet.rotation.x = -0.15;
+  tablet.visible = false; // sin tablet en la mano
   brazoI.mano.add(tablet);
 
   // auricular con micrófono (la luz verde parpadea cuando escucha o habla)
@@ -488,6 +489,8 @@ export function crearEscena(contenedor, { logoUrl, onActividad, onSaludo } = {})
   let boca = 0;
   const pose = { tY: 0, tX: 0, mirar: 0, tronco: 0, brazoI: 0, brazoD: 0, tabX: 0, cabX: 0, cabY: 0 };
   let proxCambio = 0;
+  let wCI = 0;
+  let wCD = 0;
   let confetiT = 0;
   const NCONF = 40;
   const confeti = new THREE.InstancedMesh(new RoundedBoxGeometry(0.22, 0.14, 0.22, 2, 0.03), plastico(0xffffff), NCONF);
@@ -524,16 +527,20 @@ export function crearEscena(contenedor, { logoUrl, onActividad, onSaludo } = {})
 
     // objetivos de pose
     let objMirar = 0;
-    let objBrazoI = 0.9; // tablet adelante
+    let objBrazoI = 0.12;
+    let cI = 0;
+    let cD = 0;
     let objBrazoD = 0.1;
     let objCabY = 0;
     let objCabX = 0.05;
     let objTY = 0;
     let objTX = 0;
     if (a === "revisar") {
-      objCabX = 0.28;
-      objBrazoI = 1.15;
-      objBrazoD = Math.sin(t * 2.1) * 0.15 + 0.7 * (Math.sin(t * 1.1) > 0 ? 1 : 0.2); // desliza el dedo
+      objMirar = 0.55; // se vuelve hacia la compu del escritorio
+      objCabY = 0.45 + Math.sin(t * 0.7) * 0.08;
+      objCabX = 0.18;
+      cI = 1;
+      objBrazoD = 0.55 + Math.max(0, Math.sin(t * 1.3)) * 0.35;
     } else if (a === "tablero") {
       objMirar = -0.25;
       objCabY = -0.35 + Math.sin(t * 1.2) * 0.12;
@@ -542,7 +549,7 @@ export function crearEscena(contenedor, { logoUrl, onActividad, onSaludo } = {})
     } else if (a === "llamar") {
       objBrazoD = 2.35;
       objCabY = 0.3;
-      objBrazoI = 0.5 + Math.sin(t * 2) * 0.1;
+      cI = 1;
     } else if (a === "explicar") {
       objBrazoI = 0.9 + Math.sin(t * 1.7) * 0.45;
       objBrazoD = 1.05 + Math.sin(t * 1.3 + 1) * 0.5;
@@ -559,15 +566,15 @@ export function crearEscena(contenedor, { logoUrl, onActividad, onSaludo } = {})
       objMirar = 0.7;
       objCabY = 0.5 + Math.sin(t * 0.8) * 0.1;
       objCabX = 0.3;
-      objBrazoI = 1.2 + Math.sin(t * 1.8) * 0.1;
-      objBrazoD = 1.3 + Math.sin(t * 2.2) * 0.15;
+      objBrazoI = 0.9 + Math.sin(t * 1.8) * 0.12;
+      objBrazoD = 1.0 + Math.sin(t * 2.2) * 0.15;
       objTY = 0.2;
       objTX = 0.12;
     } else if (a === "pensar") {
       objCabY = -0.3 + Math.sin(t * 0.6) * 0.2;
       objCabX = -0.15;
       objBrazoD = 1.9;
-      objBrazoI = 0.5;
+      cI = 1;
       objTY = -0.08;
     } else if (a === "saludar") {
       objBrazoD = 2.7 + Math.sin(t * 9) * 0.35;
@@ -585,8 +592,11 @@ export function crearEscena(contenedor, { logoUrl, onActividad, onSaludo } = {})
       objCabX = -0.05;
       objBrazoD = 1.0;
     } else if ((ctrl.estado === "speaking" || ctrl.hablando) && a !== "celebrar") {
-      objBrazoD = 0.8 + Math.sin(t * 3) * 0.25;
+      objBrazoD = 0.95 + Math.sin(t * 2.6) * 0.4;
+      objBrazoI = 0.45 + Math.max(0, Math.sin(t * 1.7 + 1)) * 0.55;
+      cI = 0;
       objCabY = Math.sin(t * 1.4) * 0.2;
+      objTY = Math.sin(t * 0.9) * 0.08;
     } else if (!atiende && puntero.dentro && a === "controlar") {
       objCabY = clamp(puntero.x * 0.45, -0.5, 0.5);
     }
@@ -643,6 +653,9 @@ export function crearEscena(contenedor, { logoUrl, onActividad, onSaludo } = {})
     ec.mirarX = clamp(pose.cabY * -0.6, -1, 1);
     ec.mirarY = 0;
     ec.guiño = a === "saludar" && u > 0.4 && u < 0.7 ? 1 : 0;
+    wCI = amortiguar(wCI, cI, 6, dt);
+    wCD = amortiguar(wCD, cD, 6, dt);
+    pj.manoPose = { L: { x: 0.1, y: -0.68, z: 0.08, polo: 1.2, w: wCI }, R: { x: 0.1, y: -0.68, z: 0.08, polo: 1.2, w: wCD } };
     pj.actualizar?.(dt);
     refrescarCara();
     punta.material.color.setHex(hablando || ctrl.estado === "listening" ? (Math.floor(t * 6) % 2 ? 0x3ecf6f : 0x1c7a43) : 0x3ecf6f);
@@ -672,7 +685,7 @@ export function crearEscena(contenedor, { logoUrl, onActividad, onSaludo } = {})
     }
 
     zoom = amortiguar(zoom, ctrl.hablando ? 1.1 : atiende ? 1.05 : 1, 2.5, dt);
-    camera.zoom = zoom * (window.__liaZoomBase || 1.8) * (camera.aspect > 1.2 ? 0.78 : 1); // en el recuadro bajo y ancho (celular) no se acerca tanto
+    camera.zoom = zoom * (window.__liaZoomBase || 2.0) * (camera.aspect > 1.2 ? 0.78 : 1); // en el recuadro bajo y ancho (celular) no se acerca tanto
     camera.updateProjectionMatrix();
     if (performance.now() / 1000 - ultimoToque > 6) controles.target.x = TARGET.x + Math.sin(t * 0.25) * 0.15;
     controles.update();

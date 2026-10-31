@@ -38,7 +38,7 @@ export function crearEscena(contenedor, { logoUrl, onActividad, onSaludo } = {})
   scene.environmentIntensity = 0.6;
 
   const camera = new THREE.PerspectiveCamera(32, 1, 0.1, 90);
-  const TARGET = new THREE.Vector3(-0.3, 2.5, 0);
+  const TARGET = new THREE.Vector3(-0.3, 2.45, 0);
   const DIR_CAM = new THREE.Vector3(-1.2, 1.9, 12).normalize();
   const controles = new OrbitControls(camera, renderer.domElement);
   controles.target.copy(TARGET);
@@ -467,6 +467,7 @@ export function crearEscena(contenedor, { logoUrl, onActividad, onSaludo } = {})
   tablet.add(caraTab);
   tablet.position.set(0, 0.05, 0.22);
   tablet.rotation.x = -0.15;
+  tablet.visible = false; // sin tablet en la mano
   brazoI.mano.add(tablet);
 
   // láser de escaneo
@@ -510,13 +511,13 @@ export function crearEscena(contenedor, { logoUrl, onActividad, onSaludo } = {})
   const puntero = { x: 0, y: 0, dentro: false };
 
   const ACT = {
-    controlar: { dur: [6, 9], texto: () => "Controla el inventario con la tablet" },
+    controlar: { dur: [6, 9], texto: () => "Revisa el inventario de los estantes" },
     escanear: { dur: [5, 7], texto: () => (info.criticas ? "Escanea los estantes críticos" : "Escanea los estantes") },
     mirar: { dur: [4, 6], texto: () => "Recorre el depósito con la vista" },
     explicar: { dur: [5, 8], texto: () => "Le explica un pendiente a alguien" },
     estirar: { dur: [3, 4], texto: () => "Estira un poco la espalda" },
     contar: { dur: [5, 7], texto: () => "Cuenta las cajas del estante" },
-    anotar: { dur: [5, 8], texto: () => "Anota en la tablet" },
+    cintura: { dur: [4, 6], texto: () => "Se toma un respiro" },
     saludar: { dur: [2.2, 2.6], texto: () => "Saluda" },
     celebrar: { dur: [2.4, 3], texto: () => "¡Todo en orden en el depósito!" },
   };
@@ -541,6 +542,8 @@ export function crearEscena(contenedor, { logoUrl, onActividad, onSaludo } = {})
   let boca = 0;
   const pose = { tY: 0, tX: 0, mirar: 0, tronco: 0, brazoI: 0, brazoD: 0, tabX: 0, cabX: 0, cabY: 0 };
   let proxCambio = 0;
+  let wCI = 0;
+  let wCD = 0;
   let confetiT = 0;
   const NCONF = 40;
   const confeti = new THREE.InstancedMesh(new RoundedBoxGeometry(0.22, 0.14, 0.22, 2, 0.03), plastico(0xffffff), NCONF);
@@ -570,7 +573,7 @@ export function crearEscena(contenedor, { logoUrl, onActividad, onSaludo } = {})
     const atiende = ctrl.estado !== "idle";
     // ritmo de actividades
     if (!atiende && t - act.t0 > act.dur) {
-      const opciones = info.criticas ? ["controlar", "escanear", "contar", "explicar", "anotar", "mirar", "estirar"] : ["controlar", "mirar", "escanear", "contar", "anotar", "explicar", "estirar"];
+      const opciones = info.criticas ? ["controlar", "escanear", "contar", "explicar", "cintura", "mirar", "estirar"] : ["controlar", "mirar", "escanear", "contar", "cintura", "explicar", "estirar"];
       pasar(opciones[Math.floor(Math.random() * opciones.length)]);
     }
     const a = atiende ? "controlar" : act.id;
@@ -578,7 +581,9 @@ export function crearEscena(contenedor, { logoUrl, onActividad, onSaludo } = {})
 
     // objetivos de pose
     let objMirar = 0;
-    let objBrazoI = 0.9; // tablet adelante
+    let objBrazoI = 0.12;
+    let cI = 0;
+    let cD = 0;
     let objBrazoD = 0.1;
     let objCabY = 0;
     let objCabX = 0.05;
@@ -586,9 +591,11 @@ export function crearEscena(contenedor, { logoUrl, onActividad, onSaludo } = {})
     let objTX = 0;
     let escanea = false;
     if (a === "controlar") {
-      objCabX = 0.28;
-      objBrazoI = 1.15;
-      objBrazoD = Math.sin(t * 2.1) * 0.15 + 0.7 * (Math.sin(t * 1.1) > 0 ? 1 : 0.2); // tipea
+      objMirar = -0.25 + Math.sin(t * 0.5) * 0.25;
+      objCabY = Math.sin(t * 0.6) * 0.4;
+      objCabX = 0.08;
+      cI = 1;
+      objBrazoD = 0.35 + Math.max(0, Math.sin(t * 0.9)) * 0.5;
     } else if (a === "escanear") {
       const vaA = Math.sin(u * Math.PI * 3);
       objMirar = vaA * 0.6;
@@ -598,7 +605,7 @@ export function crearEscena(contenedor, { logoUrl, onActividad, onSaludo } = {})
     } else if (a === "mirar") {
       objMirar = Math.sin(t * 0.7) * 0.7;
       objCabY = Math.sin(t * 0.7 + 0.5) * 0.6;
-      objBrazoI = 0.5;
+      objBrazoI = 0.18;
     } else if (a === "explicar") {
       objBrazoI = 0.9 + Math.sin(t * 1.7) * 0.45;
       objBrazoD = 1.05 + Math.sin(t * 1.3 + 1) * 0.5;
@@ -615,14 +622,14 @@ export function crearEscena(contenedor, { logoUrl, onActividad, onSaludo } = {})
       objMirar = -0.55;
       objCabY = -0.5 + Math.sin(t * 1.1) * 0.15;
       objBrazoD = 1.5 + Math.sin(t * 2.4) * 0.12;
-      objBrazoI = 1.0;
+      cI = 1;
       objTY = -0.2;
       objTX = 0.06;
-    } else if (a === "anotar") {
-      objCabX = 0.35;
-      objBrazoI = 1.25;
-      objBrazoD = 0.9 + Math.sin(t * 7) * 0.1;
-      objTX = 0.1;
+    } else if (a === "cintura") {
+      cI = 1;
+      cD = 1;
+      objCabY = Math.sin(t * 0.5) * 0.3;
+      objTY = Math.sin(t * 0.4) * 0.06;
     } else if (a === "saludar") {
       objBrazoD = 2.7 + Math.sin(t * 9) * 0.35;
       objCabY = 0.15;
@@ -639,8 +646,11 @@ export function crearEscena(contenedor, { logoUrl, onActividad, onSaludo } = {})
       objCabX = -0.05;
       objBrazoD = 1.0;
     } else if ((ctrl.estado === "speaking" || ctrl.hablando) && a !== "celebrar") {
-      objBrazoD = 0.8 + Math.sin(t * 3) * 0.25;
+      objBrazoD = 0.95 + Math.sin(t * 2.6) * 0.4;
+      objBrazoI = 0.45 + Math.max(0, Math.sin(t * 1.7 + 1)) * 0.55;
+      cI = 0;
       objCabY = Math.sin(t * 1.4) * 0.2;
+      objTY = Math.sin(t * 0.9) * 0.08;
     } else if (!atiende && puntero.dentro && a === "controlar") {
       objCabY = clamp(puntero.x * 0.45, -0.5, 0.5);
     }
@@ -721,6 +731,9 @@ export function crearEscena(contenedor, { logoUrl, onActividad, onSaludo } = {})
     ec.mirarX = clamp(pose.cabY * -0.6, -1, 1);
     ec.mirarY = 0;
     ec.guiño = a === "saludar" && u > 0.4 && u < 0.7 ? 1 : 0;
+    wCI = amortiguar(wCI, cI, 6, dt);
+    wCD = amortiguar(wCD, cD, 6, dt);
+    pj.manoPose = { L: { x: 0.1, y: -0.68, z: 0.08, polo: 1.2, w: wCI }, R: { x: 0.1, y: -0.68, z: 0.08, polo: 1.2, w: wCD } };
     pj.actualizar?.(dt);
     refrescarCara();
     luzCasco.material.color.setHex(Math.floor(t * 1.5) % 2 ? 0xfff3b0 : 0xd8c97a);
@@ -750,7 +763,7 @@ export function crearEscena(contenedor, { logoUrl, onActividad, onSaludo } = {})
     }
 
     zoom = amortiguar(zoom, ctrl.hablando ? 1.1 : atiende ? 1.05 : 1, 2.5, dt);
-    camera.zoom = zoom * (window.__liaZoomBase || 1.95) * (camera.aspect > 1.2 ? 0.78 : 1); // en el recuadro bajo y ancho (celular) no se acerca tanto
+    camera.zoom = zoom * (window.__liaZoomBase || 2.2) * (camera.aspect > 1.2 ? 0.78 : 1); // en el recuadro bajo y ancho (celular) no se acerca tanto
     camera.updateProjectionMatrix();
     if (performance.now() / 1000 - ultimoToque > 6) controles.target.x = TARGET.x + Math.sin(t * 0.25) * 0.15;
     controles.update();

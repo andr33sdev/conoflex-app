@@ -307,7 +307,7 @@ export function crearEscena(contenedor, { logoUrl, onActividad, onSaludo } = {})
   scene.environmentIntensity = 0.6;
 
   const camera = new THREE.PerspectiveCamera(32, 1, 0.1, 80);
-  const TARGET = new THREE.Vector3(1.5, 2.6, 0.9);
+  const TARGET = new THREE.Vector3(1.6, 2.7, 0.9);
   const DIR_CAM = new THREE.Vector3(-2.3, 2.3, 12.0).normalize();
   camera.position.copy(TARGET).addScaledVector(DIR_CAM, 12);
   const controles = new OrbitControls(camera, renderer.domElement);
@@ -858,7 +858,9 @@ export function crearEscena(contenedor, { logoUrl, onActividad, onSaludo } = {})
   const pantCelu = new THREE.Mesh(new THREE.PlaneGeometry(0.36, 0.66), new THREE.MeshBasicMaterial({ color: 0x4aa3ff, toneMapped: false }));
   pantCelu.position.z = 0.04;
   celu.add(pantCelu);
-  celu.position.set(0, -0.1, 0.2);
+  celu.position.set(0, -0.12, 0.16);
+  celu.rotation.z = Math.PI / 2; // el celu se agarra a lo ancho, no como un palo en la dirección del brazo
+  celu.scale.setScalar(0.55);
   celu.visible = false;
   brazoI.mano.add(celu);
   const hojaMano = caja(0.95, 1.2, 0.04, plastico(0xffffff), 0.01);
@@ -1404,7 +1406,7 @@ export function crearEscena(contenedor, { logoUrl, onActividad, onSaludo } = {})
 
     // cámara: acercamiento suave cuando habla y un balanceo sutil si nadie la mueve
     zoom = amortiguar(zoom, ctrl.hablando ? 1.1 : atiende ? 1.05 : 1, 2.5, dt);
-    camera.zoom = zoom * (window.__liaZoomBase || 2.0) * (camera.aspect > 1.2 ? 0.78 : 1); // en el recuadro bajo y ancho (celular) no se acerca tanto
+    camera.zoom = zoom * (window.__liaZoomBase || 2.6) * (camera.aspect > 1.2 ? 0.78 : 1); // en el recuadro bajo y ancho (celular) no se acerca tanto
     camera.updateProjectionMatrix();
     if (performance.now() / 1000 - ultimoToque > 6) controles.target.x = TARGET.x + Math.sin(t * 0.25) * 0.15;
     controles.update();
