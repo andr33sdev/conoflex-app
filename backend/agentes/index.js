@@ -10,7 +10,7 @@ const { analizarCompras, rankingProveedores, AUTORESOLVIBLES: AUTO_COMPRAS } = r
 const { asegurarTablaListas, leerLista } = require("./listaCompra");
 const { analizarStock, armarPanorama, cargarStock } = require("./vigilanteStock");
 const { sintetizar } = require("./voz");
-const { pdfLiquidacion } = require("./pdf");
+const { pdfLiquidacion, pdfReporte } = require("./pdf");
 const { liquidarDesdeBD } = require("../liquidacionDb");
 const { crearNotificacion } = require("../notificaciones");
 
@@ -504,6 +504,23 @@ function registrarRutasAgentes(app, { db, pool, ai }) {
       res.send(pdf);
     } catch (e) {
       console.error("[agentes] pdf:", e.message);
+      res.status(500).json({ error: "No pude armar el PDF." });
+    }
+  });
+
+  // Reporte en PDF de cualquier agente: arma el PDF con el texto que el agente escribió en el chat.
+  app.post("/api/agentes/:id/reporte.pdf", delAgente, async (req, res) => {
+    const texto = String(req.body?.texto || "").trim().slice(0, 30000);
+    if (!texto) return res.status(400).json({ error: "No hay nada para pasar a PDF." });
+    try {
+      const titulo = String(req.body?.titulo || "").trim().slice(0, 120) || `Reporte de ${req.agente.nombre}`;
+      const pdf = pdfReporte({ agente: req.agente, titulo, texto, usuario: req.usuario.nombre });
+      const slug = titulo.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^\w]+/g, "-").replace(/^-+|-+$/g, "").toLowerCase().slice(0, 40) || "reporte";
+      await registrarActividad(db, req.agente.id, "GESTION", `${req.usuario.nombre} descargó un reporte en PDF`, titulo, req.usuario.nombre);
+      res.set({ "Content-Type": "application/pdf", "Content-Length": pdf.length, "Content-Disposition": `attachment; filename="${slug}.pdf"`, "Cache-Control": "no-store" });
+      res.send(pdf);
+    } catch (e) {
+      console.error("[agentes] reporte pdf:", e.message);
       res.status(500).json({ error: "No pude armar el PDF." });
     }
   });

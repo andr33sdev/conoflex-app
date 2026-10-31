@@ -52,3 +52,9 @@ export const TIPOS_AVISO = {
   LISTA_ABIERTA: { texto: "Lista en armado", tono: "azul" },
   INTERNA_DEMORADA: { texto: "Pedido interno demorado", tono: "naranja" },
 };
+
+export function saludoSegunHora(nombre) {
+  const h = new Date().getHours();
+  const base = h < 6 ? "Buenas noches" : h < 13 ? "Buen día" : h < 20 ? "Buenas tardes" : "Buenas noches";
+  return nombre ? `${base}, ${String(nombre).split(" ")[0]}` : base;
+}

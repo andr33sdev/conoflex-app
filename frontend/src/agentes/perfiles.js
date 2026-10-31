@@ -1,67 +1,52 @@
-// Lo que cambia entre un agente y otro en la pantalla: nombre, escena 3D, ideas y cómo se resume su estado.
-import { IDEAS_COMPRAS, IDEAS_RRHH, IDEAS_STOCK, propuestasCompras, propuestasDesde, propuestasStock } from "./propuestas";
+// Lo que cambia entre un agente y otro: nombre, voz, qué panel extra tiene y cómo se resume su estado.
+
+const aviso = (n, altas) => `${n} ${n === 1 ? "aviso abierto" : "avisos abiertos"}${altas ? `, ${altas} urgente${altas === 1 ? "" : "s"}` : ""}`;
 
 export const PERFILES = {
   rrhh: {
     id: "rrhh",
     nombre: "Lía",
-    inicial: "L",
-    color: "#FF5A00",
-    presentacion: "Soy Lía, de RRHH.",
-    escena: "oficina",
-    claves: { chat: "lia_chat_v2", voz: "lia_voz_v1", escena: "lia_escena_v1" },
-    pdf: true,
+    claves: { chat: "lia_chat_v2", voz: "lia_voz_v1" },
     panorama: null,
     voz: { indice: 0, tono: 1.1, ritmo: 1 },
-    revisando: (e) => `Revisé las fichadas de ${e?.operarios_revisados ?? "todos los"} operarios`,
-    ideas: IDEAS_RRHH,
-    propuestas: propuestasDesde,
+    presentacion: "Soy Lía, de RRHH.",
+    reporte: "Armame un reporte de RRHH para pasar a PDF: estado de los avisos abiertos, fichadas y presentismo que haya que revisar, y qué atender primero. Con títulos y viñetas.",
     resumen: (estado, abiertos) =>
       estado?.ultima_revision
         ? abiertos > 0
-          ? `Revisé las fichadas de ${estado.operarios_revisados ?? "todos los"} operarios y hay ${abiertos} ${abiertos === 1 ? "aviso abierto" : "avisos abiertos"}${estado.altas ? `, ${estado.altas} urgente${estado.altas === 1 ? "" : "s"}` : ""}. Esto es lo que atendería primero:`
-          : "Revisé todo y no hay nada pendiente. Podés pedirme una liquidación o preguntarme lo que necesites."
-        : "Todavía no hice mi primera revisión. Podés pedirme que revise ahora o preguntarme lo que necesites.",
+          ? `Revisé las fichadas de ${estado.operarios_revisados ?? "todos los"} operarios y hay ${aviso(abiertos, estado.altas)}.`
+          : "Revisé todo y no hay nada pendiente."
+        : "Todavía no hice mi primera revisión.",
   },
   stock: {
     id: "stock",
     nombre: "Nati",
-    inicial: "N",
-    color: "#22c55e",
-    presentacion: "Soy Nati, del depósito.",
-    escena: "deposito",
-    claves: { chat: "nati_chat_v1", voz: "nati_voz_v1", escena: "nati_escena_v1" },
-    pdf: false,
+    claves: { chat: "nati_chat_v1", voz: "nati_voz_v1" },
     panorama: "stock",
     voz: { indice: 1, tono: 1.28, ritmo: 1.08 },
-    ideas: IDEAS_STOCK,
-    propuestas: propuestasStock,
+    presentacion: "Soy Nati, del depósito.",
+    reporte: "Armame un reporte del depósito para pasar a PDF: materias primas y semielaborados críticos o bajos, compras e internos pendientes, y qué conviene pedir o fabricar primero. Con títulos y una tabla.",
     resumen: (estado, abiertos) =>
       estado?.ultima_revision
         ? abiertos > 0
-          ? `Revisé todo el stock y hay ${abiertos} ${abiertos === 1 ? "aviso abierto" : "avisos abiertos"}${estado.altas ? `, ${estado.altas} urgente${estado.altas === 1 ? "" : "s"}` : ""}. Esto es lo primero que miraría:`
-          : "Revisé el depósito y no hay nada urgente. Preguntame lo que necesites."
-        : "Todavía no hice mi primera revisión del depósito. Podés pedirme que revise ahora o preguntarme lo que necesites.",
+          ? `Revisé todo el stock y hay ${aviso(abiertos, estado.altas)}.`
+          : "Revisé el depósito y no hay nada urgente."
+        : "Todavía no hice mi primera revisión del depósito.",
   },
   compras: {
     id: "compras",
     nombre: "Vera",
-    inicial: "V",
-    color: "#3b82f6",
-    presentacion: "Soy Vera, de compras.",
-    escena: "compras",
-    claves: { chat: "vera_chat_v1", voz: "vera_voz_v1", escena: "vera_escena_v1" },
-    pdf: false,
+    claves: { chat: "vera_chat_v1", voz: "vera_voz_v1" },
     panorama: "compras",
     voz: { indice: 2, tono: 0.95, ritmo: 0.95 },
-    ideas: IDEAS_COMPRAS,
-    propuestas: propuestasCompras,
+    presentacion: "Soy Vera, de compras.",
+    reporte: "Armame un reporte de compras para pasar a PDF: la lista en armado, solicitudes sin firma, entregas demoradas y proveedores que incumplen. Con títulos y viñetas.",
     resumen: (estado, abiertos) =>
       estado?.ultima_revision
         ? abiertos > 0
-          ? `Revisé las compras y hay ${abiertos} ${abiertos === 1 ? "aviso abierto" : "avisos abiertos"}${estado.altas ? `, ${estado.altas} urgente${estado.altas === 1 ? "" : "s"}` : ""}. Esto es lo primero que miraría:`
-          : "Las compras están en orden. Decime qué materiales querés pedir y te armo la solicitud."
-        : "Todavía no hice mi primera revisión de compras. Decime qué querés pedir y te armo la solicitud, o pedile a Nati que me pase lo que falta.",
+          ? `Revisé las compras y hay ${aviso(abiertos, estado.altas)}.`
+          : "Las compras están en orden."
+        : "Todavía no hice mi primera revisión de compras.",
   },
 };
 export const perfilDe = (id) => PERFILES[id] || PERFILES.rrhh;
