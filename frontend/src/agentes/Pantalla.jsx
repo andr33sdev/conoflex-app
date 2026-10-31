@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { ArrowLeft, Bell, FileDown, History, LayoutGrid, ClipboardList, Loader2, MessageCircle, ScanSearch, Volume2, VolumeX } from "lucide-react";
+import { Bell, FileDown, History, LayoutGrid, ClipboardList, Loader2, MessageCircle, ScanSearch, Volume2, VolumeX } from "lucide-react";
 import { api } from "../produccion/util";
 import { useToast } from "../produccion/useToast";
 import Chat from "./Chat";
@@ -45,7 +45,7 @@ const tituloDe = (texto, defecto) => {
   return (h ? h[1].replace(/[*_`]/g, "").trim() : defecto).slice(0, 100) || defecto;
 };
 
-export default function Pantalla({ agente, usuario, pregunta, onPreguntaUsada, onDerivar, onModo, onAbiertos, onVolver }) {
+export default function Pantalla({ agente, usuario, pregunta, onPreguntaUsada, onDerivar, onModo, onAbiertos }) {
   const perfil = perfilDe(agente.id);
   const CLAVE_CHAT = perfil.claves.chat;
   const CLAVE_VOZ = perfil.claves.voz;
@@ -389,14 +389,8 @@ export default function Pantalla({ agente, usuario, pregunta, onPreguntaUsada, o
 
   return (
     <div className="h-full min-h-0 flex flex-col bg-[#0c0c0f] text-zinc-200">
-      <header className="shrink-0 flex items-center gap-3 px-3 sm:px-5 h-[88px] border-b border-white/[0.06]">
-        {onVolver && (
-          <button onClick={onVolver} aria-label="Volver al equipo" className="lg:hidden -ml-1 w-10 h-10 grid place-items-center rounded-lg text-zinc-300 hover:bg-white/[0.07]">
-            <ArrowLeft size={20} />
-          </button>
-        )}
-        <Avatar8 id={agente.id} tam={64} modo={actual.modo} ojos={actual.ojos} icono={actual.icono} />
-        <div className="min-w-0 flex-1">
+      <header className="shrink-0 flex items-center gap-3 px-3 sm:px-5 h-[68px] border-b border-white/[0.06]">
+                <div className="min-w-0 flex-1">
           <h2 className="text-[16px] font-bold text-white leading-tight truncate">{agente.nombre} <span className="hidden sm:inline font-medium text-zinc-500">· {agente.puesto}</span></h2>
           <p className="mt-0.5 text-[13px] text-zinc-400 truncate" aria-live="polite" key={actual.texto}><span className="cf-estado">{actual.texto}</span></p>
         </div>
@@ -437,7 +431,7 @@ export default function Pantalla({ agente, usuario, pregunta, onPreguntaUsada, o
       <div className="flex-1 min-h-0 flex">
         {tab === "chat" && (
           <aside className="hidden xl:flex w-[260px] shrink-0 flex-col items-center pt-10 px-4 border-r border-white/[0.06]" aria-hidden="true">
-            <Avatar8 id={agente.id} tam={160} modo={actual.modo} ojos={actual.ojos} icono={actual.icono} />
+            <Avatar8 id={agente.id} tam={168} modo={actual.modo} ojos={actual.ojos} icono={actual.icono} />
             <p className="mt-5 text-[16px] font-bold text-white">{agente.nombre}</p>
             <p className="mt-1 text-[13px] text-zinc-400 text-center leading-snug" key={actual.texto}><span className="cf-estado">{actual.texto}</span></p>
           </aside>

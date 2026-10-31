@@ -1,5 +1,5 @@
 import { memo } from "react";
-import { frameDe, rectas, useTick } from "./pixelMotor";
+import { frameDe, GRILLA, rectas, useTick } from "./pixelMotor";
 
 // ---------- íconos de actividad de 7×7 ----------
 const ICONOS = {
@@ -61,7 +61,7 @@ export const Avatar8 = memo(function Avatar8({ id, tam = 64, modo = "idle", ojos
   return (
     <span className={`relative inline-block shrink-0 ${className}`} style={{ width: tam, height: tam }}>
       <span className="absolute inset-0 rounded-[10px] bg-[#1a1a20] border border-white/[0.08] overflow-hidden">
-        <svg viewBox="0 0 16 16" width="100%" height="100%" shapeRendering="crispEdges" style={{ imageRendering: "pixelated" }} aria-hidden="true">
+        <svg viewBox={`0 0 ${GRILLA} ${GRILLA}`} width="100%" height="100%" shapeRendering="crispEdges" style={{ imageRendering: "pixelated" }} aria-hidden="true">
           {rs.map((r) => (
             <rect key={`${r.x},${r.y}`} x={r.x} y={r.y} width={r.w} height="1" fill={r.c} />
           ))}

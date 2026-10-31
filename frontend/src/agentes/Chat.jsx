@@ -10,7 +10,7 @@ export default function Chat({ perfil, estado, mensajes, enviando, texto, onText
     fin.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [mensajes, enviando]);
 
-  const mini = <Avatar8 id={perfil.id} tam={32} burbuja={false} modo={estado.modo} ojos={estado.ojos} />;
+  const mini = <Avatar8 id={perfil.id} tam={48} burbuja={false} modo={estado.modo} ojos={estado.ojos} />;
 
   return (
     <div className="flex flex-col min-h-0 h-full">
@@ -18,7 +18,7 @@ export default function Chat({ perfil, estado, mensajes, enviando, texto, onText
         {mensajes.length === 0 && !enviando ? (
           <div className="h-full grid place-items-center px-6 py-8">
             <div className="max-w-sm text-center cf-msg">
-              <div className="flex justify-center"><Avatar8 id={perfil.id} tam={128} modo={estado.modo} ojos={estado.ojos} icono={estado.icono} /></div>
+              <div className="flex justify-center xl:hidden"><Avatar8 id={perfil.id} tam={144} modo={estado.modo} ojos={estado.ojos} icono={estado.icono} /></div>
               <p className="mt-5 text-[19px] font-bold text-white">{saludo}</p>
               <p className="mt-1 text-[14.5px] text-zinc-400 leading-relaxed">{perfil.presentacion} {resumen}</p>
               {abiertos > 0 && (

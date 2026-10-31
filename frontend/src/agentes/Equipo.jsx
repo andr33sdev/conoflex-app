@@ -1,78 +1,49 @@
-import { ArrowLeft, Lock } from "lucide-react";
+import { ArrowLeft, LayoutGrid, Lock } from "lucide-react";
 import { Avatar8 } from "./pixel";
 import { estadoDe, useSlotEstado } from "./estados";
 import { PROXIMOS } from "./proximos";
 
-/** Lista del equipo: cada agente con su avatar, qué hace ahora y, si hay, cuántos avisos tiene. */
-export function Equipo({ agentes, activo, onElegir, modo, abiertosVivo, vivoId }) {
+/** Riel angosto con el equipo: la oficina y cada agente. Arriba a la izquierda en escritorio; una tira en el celular. */
+export function Riel({ agentes, activo, onElegir, modo, abiertosVivo, vivoId }) {
   useSlotEstado();
+  const item = (sel) => `relative shrink-0 flex flex-col items-center gap-1 rounded-xl py-2 px-1 w-[76px] lg:w-full transition-colors ${sel ? "bg-white/[0.07]" : "hover:bg-white/[0.04]"}`;
+  const barra = (sel) => sel && <span className="absolute left-0 top-3 bottom-3 w-[2px] bg-[#FF5A00] max-lg:hidden" />;
   return (
-    <>
-      <div className="shrink-0 px-5 h-[76px] flex items-end pb-3">
-        <div>
-          <h1 className="text-[18px] font-bold text-white leading-none">Equipo</h1>
-          <p className="mt-1.5 text-[12.5px] text-zinc-500">{agentes.length} {agentes.length === 1 ? "agente" : "agentes"} a tu disposición</p>
-        </div>
-      </div>
-      <ul role="tablist" aria-label="Agentes" className="flex-1 min-h-0 overflow-y-auto custom-scrollbar px-3 pb-4 space-y-1">
-        {agentes.map((a) => {
-          const sel = a.id === activo;
-          const propio = a.id === vivoId;
-          const abiertos = propio && abiertosVivo != null ? abiertosVivo : a.abiertos || 0;
-          const est = estadoDe(a.id, a.nombre, { modo: propio ? modo : "idle", abiertos });
-          return (
-            <li key={a.id}>
-              <button
-                role="tab"
-                aria-selected={sel}
-                onClick={() => onElegir(a.id)}
-                className={`relative w-full flex items-center gap-3.5 text-left rounded-xl pl-3 pr-3 py-3 transition-colors ${sel ? "bg-white/[0.06]" : "hover:bg-white/[0.035]"}`}
-              >
-                {sel && <span className="absolute left-0 top-3 bottom-3 w-[2px] bg-[#FF5A00]" />}
-                <Avatar8 id={a.id} tam={64} modo={est.modo} ojos={est.ojos} icono={est.icono} />
-                <span className="min-w-0 flex-1">
-                  <span className="flex items-baseline gap-2">
-                    <span className="text-[15.5px] font-bold text-white leading-tight">{a.nombre}</span>
-                    {abiertos > 0 && <span className="text-[11.5px] font-semibold text-zinc-500 tabular-nums">{abiertos} {abiertos === 1 ? "aviso" : "avisos"}</span>}
-                  </span>
-                  <span className="block text-[12.5px] text-zinc-500 leading-tight">{a.puesto}</span>
-                  <span className="block mt-1.5 text-[12.5px] text-zinc-300 leading-snug line-clamp-2" key={est.texto}><span className="cf-estado">{est.texto}</span></span>
-                </span>
-              </button>
-            </li>
-          );
-        })}
-        {PROXIMOS.map((a) => {
-          const sel = a.id === activo;
-          return (
-            <li key={a.id}>
-              <button
-                role="tab"
-                aria-selected={sel}
-                onClick={() => onElegir(a.id)}
-                className={`relative w-full flex items-center gap-3.5 text-left rounded-xl pl-3 pr-3 py-3 transition-colors ${sel ? "bg-white/[0.06]" : "hover:bg-white/[0.035]"}`}
-              >
-                {sel && <span className="absolute left-0 top-3 bottom-3 w-[2px] bg-zinc-500" />}
-                <Avatar8 id="ventas" tam={64} dormido burbuja={false} className="opacity-60" />
-                <span className="min-w-0 flex-1">
-                  <span className="block text-[15.5px] font-bold text-zinc-300 leading-tight">{a.nombre}</span>
-                  <span className="block text-[12.5px] text-zinc-600 leading-tight">{a.puesto}</span>
-                  <span className="mt-1.5 flex items-center gap-1.5 text-[12.5px] text-zinc-600"><Lock size={11} /> Pronto</span>
-                </span>
-              </button>
-            </li>
-          );
-        })}
-      </ul>
-    </>
+    <nav role="tablist" aria-label="Equipo" className="flex lg:flex-col gap-1 p-2 overflow-x-auto lg:overflow-y-auto custom-scrollbar">
+      <button role="tab" aria-selected={activo === "oficina"} onClick={() => onElegir("oficina")} className={item(activo === "oficina")} title="Oficina">
+        {barra(activo === "oficina")}
+        <span className="w-12 h-12 grid place-items-center rounded-[10px] border border-white/[0.08] bg-[#1a1a20] text-zinc-300"><LayoutGrid size={20} /></span>
+        <span className="text-[11.5px] font-semibold text-zinc-300 leading-none">Oficina</span>
+      </button>
+      {agentes.map((a) => {
+        const sel = a.id === activo;
+        const propio = a.id === vivoId;
+        const abiertos = propio && abiertosVivo != null ? abiertosVivo : a.abiertos || 0;
+        const est = estadoDe(a.id, a.nombre, { modo: propio ? modo : "idle", abiertos });
+        return (
+          <button key={a.id} role="tab" aria-selected={sel} onClick={() => onElegir(a.id)} className={item(sel)} title={`${a.nombre}: ${est.texto}`}>
+            {barra(sel)}
+            <Avatar8 id={a.id} tam={48} modo={est.modo} ojos={est.ojos} burbuja={false} />
+            <span className="text-[11.5px] font-semibold text-white leading-none">{a.nombre}{abiertos > 0 && <span className="ml-1 font-medium text-zinc-500">{abiertos}</span>}</span>
+          </button>
+        );
+      })}
+      {PROXIMOS.map((a) => (
+        <button key={a.id} role="tab" aria-selected={a.id === activo} onClick={() => onElegir(a.id)} className={item(a.id === activo)} title={`${a.nombre}: pronto`}>
+          {barra(a.id === activo)}
+          <Avatar8 id="ventas" tam={48} dormido burbuja={false} className="opacity-50" />
+          <span className="text-[11.5px] font-semibold text-zinc-500 leading-none inline-flex items-center gap-1">{a.nombre} <Lock size={9} /></span>
+        </button>
+      ))}
+    </nav>
   );
 }
 
 export function Proximamente({ agente, onVolver }) {
   return (
     <div className="h-full min-h-0 flex flex-col bg-[#0c0c0f]">
-      <div className="lg:hidden shrink-0 h-14 px-2 flex items-center">
-        <button onClick={onVolver} aria-label="Volver al equipo" className="w-10 h-10 grid place-items-center rounded-lg text-zinc-300 hover:bg-white/[0.07]"><ArrowLeft size={20} /></button>
+      <div className="shrink-0 h-12 px-2 flex items-center">
+        <button onClick={onVolver} className="h-10 px-3 inline-flex items-center gap-2 rounded-lg text-[13px] font-semibold text-zinc-300 hover:bg-white/[0.07]"><ArrowLeft size={17} /> Oficina</button>
       </div>
       <div className="flex-1 overflow-y-auto grid place-items-center p-6">
         <div className="max-w-md w-full text-center">
