@@ -281,16 +281,15 @@ export function crearEscena(contenedor, { logoUrl, onActividad, onSaludo } = {})
   scene.environmentIntensity = 0.6;
 
   const camera = new THREE.PerspectiveCamera(32, 1, 0.1, 80);
-  const TARGET = new THREE.Vector3(0.9, 2.85, 0.6);
-  camera.position.set(-1.4, 5.2, 12.6);
+  const TARGET = new THREE.Vector3(1.4, 2.7, 0.6);
+  const DIR_CAM = new THREE.Vector3(-2.3, 2.3, 12.0).normalize();
+  camera.position.copy(TARGET).addScaledVector(DIR_CAM, 12);
   const controles = new OrbitControls(camera, renderer.domElement);
   controles.target.copy(TARGET);
   controles.enableDamping = true;
   controles.dampingFactor = 0.08;
   controles.enablePan = false;
-  controles.minDistance = 6;
-  controles.maxDistance = 16;
-  controles.minPolarAngle = 0.45;
+    controles.minPolarAngle = 0.45;
   controles.maxPolarAngle = Math.PI / 2 - 0.08;
   controles.minAzimuthAngle = -1.3;
   controles.maxAzimuthAngle = 0.9;
@@ -394,9 +393,9 @@ export function crearEscena(contenedor, { logoUrl, onActividad, onSaludo } = {})
   mundo.add(zocalo);
 
   // gran logo en la pared
-  const aro = cilindro(1.55, 1.55, 0.2, plastico(COLOR.naranja), 64);
+  const aro = cilindro(1.38, 1.38, 0.2, plastico(COLOR.naranja), 64);
   aro.rotation.x = Math.PI / 2;
-  aro.position.set(1.9, 4.45, -3.85);
+  aro.position.set(2.3, 4.5, -3.85);
   mundo.add(aro);
   const discoLogo = textura(512, 512, () => {});
   const dibujarDisco = () => {
@@ -411,8 +410,8 @@ export function crearEscena(contenedor, { logoUrl, onActividad, onSaludo } = {})
   };
   dibujarDisco();
   conLogo(dibujarDisco);
-  const discoMesh = new THREE.Mesh(new THREE.CircleGeometry(1.38, 64), new THREE.MeshBasicMaterial({ map: discoLogo.tex, transparent: true, toneMapped: false }));
-  discoMesh.position.set(1.9, 4.45, -3.74);
+  const discoMesh = new THREE.Mesh(new THREE.CircleGeometry(1.22, 64), new THREE.MeshBasicMaterial({ map: discoLogo.tex, transparent: true, toneMapped: false }));
+  discoMesh.position.set(2.3, 4.5, -3.74);
   mundo.add(discoMesh);
 
   // ventana con el cielo de la hora real
@@ -474,13 +473,13 @@ export function crearEscena(contenedor, { logoUrl, onActividad, onSaludo } = {})
     hemi.intensity = 0.7 * (noche ? 0.7 : 1);
   };
   dibujarCielo();
-  const marcoV = caja(2.9, 2.7, 0.25, plastico(0xf4f1ea), 0.1);
-  marcoV.position.set(-2.1, 3.9, -3.85);
+  const marcoV = caja(2.5, 2.4, 0.25, plastico(0xf4f1ea), 0.1);
+  marcoV.position.set(-2.9, 3.8, -3.85);
   mundo.add(marcoV);
-  const vidrio = new THREE.Mesh(new THREE.PlaneGeometry(2.5, 2.3), new THREE.MeshBasicMaterial({ map: cielo.tex, toneMapped: false }));
-  vidrio.position.set(-2.1, 3.9, -3.71);
+  const vidrio = new THREE.Mesh(new THREE.PlaneGeometry(2.14, 2.04), new THREE.MeshBasicMaterial({ map: cielo.tex, toneMapped: false }));
+  vidrio.position.set(-2.9, 3.8, -3.71);
   mundo.add(vidrio);
-  for (const [w, h, x, y] of [[0.1, 2.3, -2.1, 3.9], [2.5, 0.1, -2.1, 3.9]]) {
+  for (const [w, h, x, y] of [[0.1, 2.04, -2.9, 3.8], [2.14, 0.1, -2.9, 3.8]]) {
     const b = caja(w, h, 0.08, plastico(0xf4f1ea), 0.02);
     b.position.set(x, y, -3.66);
     mundo.add(b);
@@ -518,8 +517,8 @@ export function crearEscena(contenedor, { logoUrl, onActividad, onSaludo } = {})
     reloj.tex.needsUpdate = true;
   };
   dibujarReloj();
-  const relojMesh = new THREE.Mesh(new THREE.CircleGeometry(0.5, 40), new THREE.MeshBasicMaterial({ map: reloj.tex, transparent: true, toneMapped: false }));
-  relojMesh.position.set(-0.25, 5.7, -3.9);
+  const relojMesh = new THREE.Mesh(new THREE.CircleGeometry(0.42, 40), new THREE.MeshBasicMaterial({ map: reloj.tex, transparent: true, toneMapped: false }));
+  relojMesh.position.set(-0.4, 5.4, -3.9);
   mundo.add(relojMesh);
 
   // calendario de pared
@@ -548,8 +547,8 @@ export function crearEscena(contenedor, { logoUrl, onActividad, onSaludo } = {})
         ctx.fillText(String(r * 7 + c + 1), 24 + c * 34, 104 + r * 38);
       }
   });
-  const calMesh = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 1.75), new THREE.MeshBasicMaterial({ map: cal.tex, toneMapped: false }));
-  calMesh.position.set(-0.2, 3.7, -3.9);
+  const calMesh = new THREE.Mesh(new THREE.PlaneGeometry(1.4, 1.64), new THREE.MeshBasicMaterial({ map: cal.tex, toneMapped: false }));
+  calMesh.position.set(-0.4, 3.65, -3.9);
   mundo.add(calMesh);
 
   // tablero de la pared (TV) con el estado real de los avisos
@@ -586,10 +585,10 @@ export function crearEscena(contenedor, { logoUrl, onActividad, onSaludo } = {})
   dibujarTV(0);
   conLogo(() => dibujarTV(0));
   const tvMarco = caja(3.0, 1.75, 0.16, plastico(0x101115), 0.06);
-  tvMarco.position.set(5.3, 3.7, -3.85);
+  tvMarco.position.set(5.7, 3.8, -3.85);
   mundo.add(tvMarco);
   const tvPantalla = new THREE.Mesh(new THREE.PlaneGeometry(2.8, 1.575), new THREE.MeshBasicMaterial({ map: tv.tex, toneMapped: false }));
-  tvPantalla.position.set(5.3, 3.7, -3.76);
+  tvPantalla.position.set(5.7, 3.8, -3.76);
   mundo.add(tvPantalla);
 
   // ----- puesto de trabajo -----
@@ -620,9 +619,10 @@ export function crearEscena(contenedor, { logoUrl, onActividad, onSaludo } = {})
   // monitor (su espalda lleva el logo, como una compu de diseño)
   const monitor = new THREE.Group();
   monitor.position.set(-0.3, 1.56, -0.25);
+  monitor.scale.setScalar(0.8);
   escritorio.add(monitor);
   const marcoM = caja(2.1, 1.35, 0.14, plastico(0x15161b), 0.06);
-  marcoM.position.y = 1.15;
+  marcoM.position.y = 0.95;
   monitor.add(marcoM);
   const pie = cilindro(0.1, 0.12, 0.5, plastico(0x15161b), 20);
   pie.position.y = 0.25;
@@ -632,11 +632,11 @@ export function crearEscena(contenedor, { logoUrl, onActividad, onSaludo } = {})
   monitor.add(base);
   const pantalla = textura(512, 320, () => {});
   const vid = new THREE.Mesh(new THREE.PlaneGeometry(1.94, 1.2), new THREE.MeshBasicMaterial({ map: pantalla.tex, toneMapped: false }));
-  vid.position.set(0, 1.15, 0.075);
+  vid.position.set(0, 0.95, 0.075);
   monitor.add(vid);
   const logoEspalda = new THREE.Mesh(new THREE.CircleGeometry(0.26, 40), new THREE.MeshBasicMaterial({ map: discoLogo.tex, transparent: true, toneMapped: false }));
   logoEspalda.rotation.y = Math.PI;
-  logoEspalda.position.set(0, 1.15, -0.08);
+  logoEspalda.position.set(0, 0.95, -0.08);
   monitor.add(logoEspalda);
   let escribiendoPantalla = 0;
   const dibujarPantalla = (t) => {
@@ -1112,7 +1112,7 @@ export function crearEscena(contenedor, { logoUrl, onActividad, onSaludo } = {})
       texto: (i) => (i.feriado ? `Mirando el calendario: próximo feriado: ${i.feriado}` : "Mirando el calendario de feriados"),
       pose(u, o) {
         const g = pulso(u, 0.2, 1.4) * (1 - pulso(u, 5.6, 6.8));
-        o.giro = Y_TRABAJO + difAngulo(Y_TRABAJO, haciaPared(-0.2, -3.9)) * g;
+        o.giro = Y_TRABAJO + difAngulo(Y_TRABAJO, haciaPared(-0.4, -3.9)) * g;
         o.iX = -0.5 + (-1.15) * g;
         o.iZ = 0.12 + 0.35 * g;
         o.cabPitch = -0.2 * g;
@@ -1125,7 +1125,7 @@ export function crearEscena(contenedor, { logoUrl, onActividad, onSaludo } = {})
       texto: (i) => (i.abiertos ? `Controlando el tablero: ${i.abiertos} ${i.abiertos === 1 ? "aviso abierto" : "avisos abiertos"}` : "Controlando el tablero de RRHH"),
       pose(u, o) {
         const g = pulso(u, 0.2, 1.4) * (1 - pulso(u, 5.6, 6.8));
-        o.giro = Y_TRABAJO + difAngulo(Y_TRABAJO, haciaPared(5.3, -3.8)) * g;
+        o.giro = Y_TRABAJO + difAngulo(Y_TRABAJO, haciaPared(5.7, -3.8)) * g;
         o.cabPitch = -0.16 * g;
         o.ceja = 0.3 * g;
         o.dX = -0.5 + (-0.9) * g;
@@ -1516,7 +1516,13 @@ export function crearEscena(contenedor, { logoUrl, onActividad, onSaludo } = {})
     renderer.setSize(w, h, false);
     camera.aspect = w / h;
     // en formatos angostos abre el campo para que entren Lía y su escritorio
-    camera.fov = camera.aspect >= 1.1 ? 32 : Math.min(54, 32 + (1.1 - camera.aspect) * 30);
+    // encuadre automático: siempre entran Lía, su escritorio, el logo y el calendario, sea cual sea la forma del recuadro
+    camera.fov = camera.aspect >= 1.15 ? 32 : Math.min(52, 32 + (1.15 - camera.aspect) * 28);
+    const tanV = Math.tan((camera.fov * Math.PI) / 360);
+    const dist = Math.max(3.15 / tanV, 3.0 / (tanV * camera.aspect)) * 1.06 + 1.2;
+    controles.minDistance = dist * 0.55;
+    controles.maxDistance = dist * 1.3;
+    camera.position.copy(controles.target).addScaledVector(DIR_CAM, dist);
     camera.updateProjectionMatrix();
   }
   const ro = new ResizeObserver(ajustar);

@@ -78,14 +78,61 @@ function hablarDispositivo(texto, { onInicio, onFin, onPulso }) {
   };
 }
 
-// ---------- voz natural (servidor) con análisis del volumen para mover la boca ----------
-let audioCtx = null;
-function hablarNatural(blob, { onInicio, onFin, onNivel }) {
-  const url = URL.createObjectURL(blob);
+// ---------- voz natural (servidor) ----------
+// El audio se reproduce con un <audio> común (sin enganchar nada del AudioContext, que si queda "suspendido" deja todo mudo).
+// La boca se mueve con una envolvente de volumen calculada de antemano a partir del propio WAV.
+const VENTANA = 0.025; // segundos por muestra de la envolvente
+
+/** Envolvente de volumen (0..1) de un WAV PCM de 16 bits mono. Devuelve null si el formato no es el esperado. */
+export async function envolventeDeWav(blob) {
+  try {
+    const buf = await blob.arrayBuffer();
+    const dv = new DataView(buf);
+    if (dv.byteLength < 48 || dv.getUint32(0) !== 0x52494646) return null; // "RIFF"
+    const frecuencia = dv.getUint32(24, true) || 24000;
+    const bits = dv.getUint16(34, true);
+    if (bits !== 16) return null;
+    let pos = 12;
+    let ini = -1;
+    let largo = 0;
+    while (pos + 8 <= dv.byteLength) {
+      const id = dv.getUint32(pos);
+      const tam = dv.getUint32(pos + 4, true);
+      if (id === 0x64617461) { // "data"
+        ini = pos + 8;
+        largo = Math.min(tam, dv.byteLength - ini);
+        break;
+      }
+      pos += 8 + tam + (tam % 2);
+    }
+    if (ini < 0) return null;
+    const porVentana = Math.max(1, Math.round(frecuencia * VENTANA));
+    const n = Math.floor(largo / 2 / porVentana);
+    const env = new Float32Array(n);
+    for (let i = 0; i < n; i++) {
+      let suma = 0;
+      for (let k = 0; k < porVentana; k++) {
+        const x = dv.getInt16(ini + (i * porVentana + k) * 2, true) / 32768;
+        suma += x * x;
+      }
+      env[i] = Math.sqrt(suma / porVentana);
+    }
+    const orden = Array.from(env).sort((x, y) => x - y);
+    const p90 = orden[Math.floor(orden.length * 0.9)] || 0.1;
+    const k = 0.75 / Math.max(0.02, p90);
+    for (let i = 0; i < n; i++) env[i] = Math.min(1, env[i] * k);
+    return env;
+  } catch {
+    return null;
+  }
+}
+
+function hablarNatural(prep, { onInicio, onFin, onNivel, onFallo }) {
+  const url = URL.createObjectURL(prep.blob);
   const audio = new Audio(url);
+  audio.preload = "auto";
   let raf = 0;
   let terminado = false;
-  let analizador = null;
   const limpiar = () => {
     cancelAnimationFrame(raf);
     audio.pause();
@@ -97,47 +144,78 @@ function hablarNatural(blob, { onInicio, onFin, onNivel }) {
     limpiar();
     onFin?.();
   };
-  try {
-    audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
-    const fuente = audioCtx.createMediaElementSource(audio);
-    analizador = audioCtx.createAnalyser();
-    analizador.fftSize = 512;
-    fuente.connect(analizador);
-    analizador.connect(audioCtx.destination);
-    audioCtx.resume?.();
-  } catch {
-    analizador = null; // sin análisis: la boca sigue un ritmo propio
-  }
-  const datos = analizador ? new Uint8Array(analizador.fftSize) : null;
   const medir = () => {
-    if (analizador) {
-      analizador.getByteTimeDomainData(datos);
-      let suma = 0;
-      for (let i = 0; i < datos.length; i++) {
-        const x = (datos[i] - 128) / 128;
-        suma += x * x;
-      }
-      onNivel?.(Math.min(1, Math.sqrt(suma / datos.length) * 3.2));
+    const env = prep.envolvente;
+    if (env && env.length) {
+      const i = Math.min(env.length - 1, Math.floor(audio.currentTime / VENTANA));
+      const suave = (env[i] + (env[i + 1] ?? env[i])) / 2;
+      onNivel?.(suave);
+    } else {
+      onNivel?.(0.35 + 0.3 * Math.abs(Math.sin(audio.currentTime * 9)));
     }
     raf = requestAnimationFrame(medir);
   };
   audio.onended = fin;
-  audio.onerror = fin;
-  const listo = audio.play().then(() => {
-    onInicio?.();
-    if (analizador) medir();
-    return true;
+  audio.onerror = () => {
+    if (terminado) return;
+    terminado = true;
+    limpiar();
+    onFallo?.();
+  };
+  audio.volume = 1;
+  audio.play().then(
+    () => {
+      if (terminado) return;
+      onInicio?.();
+      medir();
+    },
+    () => {
+      if (terminado) return;
+      terminado = true;
+      limpiar();
+      onFallo?.();
+    },
+  );
+  return { cortar: fin };
+}
+
+const esperarVoces = () =>
+  new Promise((ok) => {
+    if (typeof window === "undefined" || !("speechSynthesis" in window)) return ok();
+    if (window.speechSynthesis.getVoices().length) return ok();
+    const t = setTimeout(ok, 1200);
+    window.speechSynthesis.addEventListener?.("voiceschanged", () => { clearTimeout(t); ok(); }, { once: true });
   });
-  return { cortar: fin, listo };
+
+/**
+ * Prepara la voz ANTES de mostrar la respuesta, para que texto, voz y animación arranquen juntos.
+ * Devuelve { tipo: "natural", blob, envolvente } | { tipo: "dispositivo" } | { tipo: "nada" }.
+ */
+export async function prepararVoz(texto, { base, timeoutMs = 16000 } = {}) {
+  const ctl = new AbortController();
+  const t = setTimeout(() => ctl.abort(), timeoutMs);
+  try {
+    const res = await fetch(getApiUrl(`${base}/voz`), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ texto }), signal: ctl.signal });
+    if (!res.ok) throw new Error(`voz ${res.status}`);
+    const blob = await res.blob();
+    if (!blob.size) throw new Error("audio vacío");
+    return { tipo: "natural", blob, envolvente: await envolventeDeWav(blob) };
+  } catch (e) {
+    console.warn("[Lía] voz natural no disponible:", e.message);
+  } finally {
+    clearTimeout(t);
+  }
+  await esperarVoces();
+  return hayVozFemenina() ? { tipo: "dispositivo" } : { tipo: "nada" };
 }
 
 /**
- * Lee `texto` con la voz de Lía. Devuelve { cortar } y avisa por callbacks.
- * Orden: voz natural del servidor → voz femenina del dispositivo → nada (y onSinVoz).
+ * Reproduce una voz ya preparada. Devuelve { cortar } y avisa por callbacks.
+ * Si la natural falla al reproducirse, cae a la voz femenina del dispositivo; si no hay, onSinVoz.
  */
-export function hablar(texto, { base, onInicio, onFin, onPulso, onNivel, onSinVoz }) {
-  let cancelado = false;
+export function reproducirVoz(prep, texto, { onInicio, onFin, onPulso, onNivel, onSinVoz }) {
   let cortarActual = () => {};
+  let cancelado = false;
   const usarDispositivo = () => {
     if (cancelado) return;
     if (!hayVozFemenina()) {
@@ -147,19 +225,14 @@ export function hablar(texto, { base, onInicio, onFin, onPulso, onNivel, onSinVo
     }
     cortarActual = hablarDispositivo(texto, { onInicio, onFin, onPulso });
   };
-  (async () => {
-    try {
-      const res = await fetch(getApiUrl(`${base}/voz`), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ texto }) });
-      if (!res.ok) throw new Error("sin voz natural");
-      const blob = await res.blob();
-      if (cancelado) return;
-      const r = hablarNatural(blob, { onInicio, onFin, onNivel });
-      cortarActual = r.cortar;
-      await r.listo;
-    } catch {
-      usarDispositivo();
-    }
-  })();
+  if (prep?.tipo === "natural") {
+    const r = hablarNatural(prep, { onInicio, onFin, onNivel, onFallo: usarDispositivo });
+    cortarActual = r.cortar;
+  } else if (prep?.tipo === "dispositivo") usarDispositivo();
+  else {
+    onSinVoz?.();
+    onFin?.();
+  }
   return {
     cortar: () => {
       cancelado = true;

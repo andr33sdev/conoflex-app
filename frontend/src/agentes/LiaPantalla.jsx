@@ -9,7 +9,7 @@ import Actividad from "./Actividad";
 import EstadoActual from "./EstadoActual";
 import { cuando } from "./formato";
 import { propuestasDesde, saludoSegunHora } from "./propuestas";
-import { dictar, hablar, soportaDictado, textoParaVoz } from "./voz";
+import { dictar, prepararVoz, reproducirVoz, soportaDictado, textoParaVoz } from "./voz";
 
 const CLAVE_CHAT = "lia_chat_v2";
 const CLAVE_VOZ = "lia_voz_v1";
@@ -111,11 +111,10 @@ export default function LiaPantalla({ agente, usuario }) {
     setHablando(false);
   };
 
-  const empezarAHablar = (resp, porVoz) => {
+  const empezarAHablar = (resp, prep) => {
     cortarLectura();
-    if (porVoz || vozActiva) {
-      lectura.current = hablar(textoParaVoz(resp), {
-        base,
+    if (prep) {
+      lectura.current = reproducirVoz(prep, textoParaVoz(resp), {
         onInicio: () => setHablando(true),
         onFin: () => {
           setHablando(false);
@@ -123,7 +122,7 @@ export default function LiaPantalla({ agente, usuario }) {
         },
         onPulso: () => escena.current?.pulso(),
         onNivel: (n) => escena.current?.nivel(n),
-        onSinVoz: () => mostrar("Este dispositivo no tiene una voz femenina en español. Lía te responde por escrito.", "error"),
+        onSinVoz: () => mostrar("No pude reproducir la voz en este dispositivo. Lía te responde por escrito.", "error"),
       });
     } else {
       setHablando(true);
@@ -146,8 +145,10 @@ export default function LiaPantalla({ agente, usuario }) {
         method: "POST",
         body: { mensaje: t, historial: nuevos.slice(-20).map(({ rol, texto: x }) => ({ rol, texto: x })) },
       });
+      // Con voz: se prepara el audio mientras Lía "piensa", así el texto, la voz y la animación llegan juntos.
+      const prep = porVoz || vozActiva ? await prepararVoz(textoParaVoz(data.respuesta || ""), { base }) : null;
       setMensajes([...nuevos, { rol: "assistant", texto: data.respuesta, herramientas: data.herramientas || [] }]);
-      empezarAHablar(data.respuesta || "", porVoz);
+      empezarAHablar(data.respuesta || "", prep);
       setVersion((v) => v + 1);
     } catch (e) {
       setMensajes([...nuevos, { rol: "assistant", texto: `No pude responderte: ${e.message}` }]);
@@ -269,7 +270,7 @@ export default function LiaPantalla({ agente, usuario }) {
         <div className={`relative shrink-0 overflow-hidden lg:block lg:h-[clamp(340px,52vh,470px)] lg:min-h-0 lg:max-h-none ${escenaVisible ? "block h-[30vh] min-h-[190px] max-h-[270px]" : "hidden"}`}>
           <EscenaLia ref={escena} estado={estadoEscena} hablando={hablando} info={infoEscena} onActividad={setActividad} />
           <div className="absolute top-2.5 left-2.5 right-2.5 flex items-start justify-between gap-2 pointer-events-none">
-            <div className="pointer-events-auto rounded-xl bg-black/55 backdrop-blur-md border border-white/10 px-3 py-1.5">
+            <div className="pointer-events-auto hidden sm:block rounded-xl bg-black/55 backdrop-blur-md border border-white/10 px-3 py-1.5">
               <h2 className="text-[15px] font-black text-white leading-none">{agente.nombre}</h2>
               <p className="mt-0.5 text-[11px] font-semibold text-[#ff8a4d] leading-tight">{agente.puesto}</p>
             </div>
@@ -280,9 +281,12 @@ export default function LiaPantalla({ agente, usuario }) {
           </div>
           <div className="absolute bottom-2.5 left-2.5 right-2.5 flex flex-col items-center gap-1.5 pointer-events-none">
             {subtitulo && <div className="max-w-[520px] rounded-2xl rounded-bl-md bg-white text-zinc-900 text-[13px] font-semibold leading-snug px-3.5 py-2 shadow-xl cf-msg">{subtitulo}</div>}
-            <div className="lg:hidden w-full rounded-xl bg-black/60 backdrop-blur-md border border-white/10 px-3 py-1.5"><EstadoActual texto={actividad} compacto /></div>
           </div>
         </div>
+
+        {escenaVisible && (
+          <div className="lg:hidden shrink-0 px-3 py-2 border-t border-white/[0.06] bg-[#0b0b0e]"><EstadoActual texto={actividad} compacto /></div>
+        )}
 
         {/* Tarjetas bajo la escena (escritorio) */}
         <div className="hidden lg:flex flex-col gap-2.5 p-3">
