@@ -64,7 +64,7 @@ const MODOS = {
 const SEGUNDOS = 9;
 
 // Quiénes están en el equipo de esta persona (según sus permisos): el mapa y los estados hablan solo de ellos.
-let EQUIPO = { ids: ORDEN.slice(), nombres: { rrhh: "Lía", stock: "Nati", compras: "Vera", produccion: "Maru" } };
+let EQUIPO = { ids: ORDEN.slice(), nombres: { rrhh: "Lía", stock: "Nati", compras: "Vera", produccion: "Romi" } };
 export function setEquipo(agentes = []) {
   const ids = ORDEN.filter((id) => agentes.some((a) => a.id === id));
   EQUIPO = { ids, nombres: { ...EQUIPO.nombres, ...Object.fromEntries(agentes.map((a) => [a.id, a.nombre])) } };

@@ -13,7 +13,7 @@ function Dato({ titulo, valor, detalle }) {
   );
 }
 
-/** Panel de Maru: qué conviene fabricar primero (cruce de pedidos, stock y plan), el plan de la semana y la gente en planta. */
+/** Panel de Romi: qué conviene fabricar primero (cruce de pedidos, stock y plan), el plan de la semana y la gente en planta. */
 export default function PanoramaProduccion({ datos, error, onPreguntar }) {
   if (error) return <div className="p-6 text-center text-sm text-zinc-400">{error}</div>;
   if (!datos) return <div className="h-full grid place-items-center text-zinc-500 py-16"><Loader2 className="animate-spin" size={22} /></div>;
