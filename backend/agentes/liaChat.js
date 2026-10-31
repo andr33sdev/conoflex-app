@@ -2,12 +2,15 @@
 // Chat de Lía, la agente de RRHH y liquidaciones. Usa el MISMO motor de IA que Connie (mismo cliente Gemini, mismo
 // modelo y configuración de CONFIG de connie.js) y las MISMAS funciones de liquidación (liquidarDesdeBD / simularTurno),
 // pero con un perfil acotado: solo liquidaciones, horas extra, fichadas, presentismo, feriados y faltas.
-const { CONFIG, normalizarHistorial, limpiarMarkdown } = require("../connie");
+const { CONFIG, normalizarHistorial } = require("../connie");
 const { liquidarDesdeBD, simularTurno } = require("../liquidacionDb");
 const { calcular } = require("../calculadora");
 const { feriadosEfectivos } = require("./vigilanteRRHH");
 const { REGLAS_CONNIE } = require("./reglasLiquidacion");
 const { HERRAMIENTAS_LIQUIDACION } = require("./herramientasLiquidacion");
+
+// Lía responde con herramientas que ya hacen las cuentas: no necesita pensar tanto como Connie (más rápido).
+const PENSAMIENTO = Number.isFinite(Number(process.env.AGENTES_PENSAMIENTO)) && process.env.AGENTES_PENSAMIENTO !== undefined && process.env.AGENTES_PENSAMIENTO !== "" ? Number(process.env.AGENTES_PENSAMIENTO) : 256;
 
 const esperar = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -33,12 +36,18 @@ TU ESPECIALIDAD (única y exclusiva)
 
 ${REGLAS_CONNIE.join("\n")}
 
-CÓMO RESPONDER
-- Si te saludan o te preguntan quién sos o qué podés hacer, presentate de forma abierta y breve (sos Lía, la agente de RRHH y liquidaciones de Conoflex) y preguntá en qué podés ayudar. No enumeres funciones salvo que te lo pidan.
-- Español rioplatense, tono cálido, profesional y directo. Primero la respuesta, después el detalle.
-- TEXTO PLANO: la pantalla no interpreta markdown. No uses **negritas**, # títulos ni tablas con "|". Para listas usá guiones "- ".
-- Formato argentino: miles con punto y decimales con coma ($ 1.234.567,89). Aclará la unidad y el período.
-- Sé concisa: lo importante, sin relleno. Si hay algo que RRHH debería saber (una pérdida de presentismo, una fichada faltante, una falta por justificar), decilo en una línea.
+CÓMO RESPONDER (el formato importa: la persona lee en un chat y quiere poco texto, muy prolijo)
+- Español rioplatense, cálido, directo. Primero la respuesta, después el detalle. Nada de relleno ni repetir lo que ya dijiste.
+- PRIMERA LÍNEA = una frase corta y natural (máx. 25 palabras) que resume lo que hiciste, como si la dijeras en voz alta: "Listo, te preparé la liquidación de Juan de la primera quincena." Esa línea se lee en voz alta, así que sin números largos, sin símbolos y sin listas.
+- Si hay datos para mostrar, dejá una línea en blanco y mostralos en MARKDOWN prolijo:
+  - Comparaciones o desgloses: tabla markdown (máx. 8 filas, columnas cortas). Para importes, alineá con la columna de la derecha.
+  - Enumeraciones: lista con "- ", una idea por línea.
+  - Respuestas largas: secciones con "### Título" (máx. 3) y **negrita** solo para cifras o nombres clave.
+- Si hay mucha información, mostrá lo más importante (los primeros 5 a 8 renglones) y ofrecé el resto en una pregunta corta ("¿Querés el detalle día por día?"). Nunca vuelques todo.
+- Cuando liquides horas, ofrecé en una línea final descargar el PDF ("Si querés te lo dejo en PDF"): la pantalla muestra el botón de descarga sola cuando liquidás.
+- Algo que RRHH deba saber (presentismo perdido, fichada faltante, falta por justificar) va en una línea final que empiece con "Ojo:".
+- Si te saludan o preguntan quién sos, presentate en una o dos frases y preguntá en qué ayudar. No enumeres funciones salvo que te lo pidan.
+- Formato argentino: miles con punto y decimales con coma ($ 1.234.567,89). Aclará unidad y período.
 - No sos abogada ni contadora: en temas con consecuencias legales sugerí confirmar con el contador o un abogado laboralista.`;
 }
 
@@ -77,7 +86,7 @@ function crearLia({ pool, db, ai }) {
       temperature: 0.2,
       httpOptions: { timeout: CONFIG.tiempoLlamadaModeloMs },
       tools: HERRAMIENTAS,
-      thinkingConfig: { thinkingBudget: CONFIG.presupuestoPensamiento },
+      thinkingConfig: { thinkingBudget: PENSAMIENTO },
     };
     if (!conHerramientas) config.toolConfig = { functionCallingConfig: { mode: "NONE" } };
     const intentar = () => ai.models.generateContent({ model: CONFIG.modelo, contents, config });
@@ -100,9 +109,15 @@ function crearLia({ pool, db, ai }) {
 
     const ejecutar = async (llamada) => {
       const args = llamada.args || {};
-      usadas.push({ nombre: llamada.name, texto: PALABRAS_HERRAMIENTA[llamada.name] || llamada.name, periodo: args.mes || args.desde || (args.fechas ? args.fechas.join(", ") : null), operario: args.operario || null });
+      const uso = { nombre: llamada.name, texto: PALABRAS_HERRAMIENTA[llamada.name] || llamada.name, periodo: args.mes || args.desde || (args.fechas ? args.fechas.join(", ") : null), operario: args.operario || null, ok: true };
+      if (llamada.name === "liquidar_horas") uso.args = parametrosPDF(args);
+      usadas.push(uso);
       try {
-        if (llamada.name === "liquidar_horas") return await liquidarDesdeBD(pool, args);
+        if (llamada.name === "liquidar_horas") {
+          const r = await liquidarDesdeBD(pool, args);
+          if (r?.error) uso.ok = false;
+          return r;
+        }
         if (llamada.name === "simular_turno") return await simularTurno(pool, args);
         if (llamada.name === "calculadora") return calcular(args.expresion);
         if (llamada.name === "avisos_abiertos") {
@@ -143,7 +158,7 @@ function crearLia({ pool, db, ai }) {
     return finalizar(respuesta);
 
     function finalizar(resp) {
-      const texto = limpiarMarkdown(resp.text);
+      const texto = String(resp.text || "").replace(/\n{3,}/g, "\n\n").trim();
       return { respuesta: texto || "No pude armar una respuesta con los datos que tengo. ¿Me la repetís de otra forma?", herramientas: usadas, ms: Date.now() - inicio };
     }
   }
@@ -151,4 +166,15 @@ function crearLia({ pool, db, ai }) {
   return { responder };
 }
 
-module.exports = { crearLia, construirInstrucciones, HERRAMIENTAS };
+/** Parámetros de una liquidación que alcanzan para volver a generarla en PDF (solo los conocidos y con tipos simples). */
+function parametrosPDF(a = {}) {
+  const o = {};
+  for (const k of ["operario", "mes", "desde", "hasta"]) if (typeof a[k] === "string" && a[k]) o[k] = a[k].slice(0, 80);
+  if (Number.isInteger(a.quincena)) o.quincena = a.quincena;
+  if (a.solo_extras === true) o.solo_extras = true;
+  if (a.solo_con_categoria === true) o.solo_con_categoria = true;
+  if (Array.isArray(a.fechas)) o.fechas = a.fechas.filter((f) => typeof f === "string").slice(0, 40);
+  return o;
+}
+
+module.exports = { parametrosPDF, crearLia, construirInstrucciones, HERRAMIENTAS };

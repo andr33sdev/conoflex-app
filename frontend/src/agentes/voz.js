@@ -5,26 +5,40 @@ import { getApiUrl } from "../apiConfig";
 export const soportaDictado = () => typeof window !== "undefined" && !!(window.SpeechRecognition || window.webkitSpeechRecognition);
 export const soportaAudio = () => typeof window !== "undefined" && typeof Audio !== "undefined";
 
-/** Texto apto para leer: sin markdown, sin símbolos de tablas ni emojis, y acotado (el detalle queda en pantalla). */
-export function textoParaVoz(texto, max = 420) {
-  let t = String(texto || "")
+/** Limpia markdown, símbolos y emojis para que se pueda leer en voz alta. */
+function limpiarParaVoz(texto) {
+  return String(texto || "")
     .replace(/```[\s\S]*?```/g, " ")
     .replace(/^\s*\|?[-:| ]{3,}\|?\s*$/gm, " ")
     .replace(/\|/g, ", ")
     .replace(/[*_`#>~]/g, "")
     .replace(/\p{Extended_Pictographic}/gu, "")
     .replace(/\$\s?(\d[\d.,]*)/g, "$1 pesos")
+    .replace(/^\s*[-•]\s+/gm, "")
     .replace(/[ \t]+/g, " ")
-    .replace(/\n{2,}/g, ". ")
-    .replace(/\n/g, ". ")
+    .replace(/\n+/g, ". ")
     .replace(/\.\s*\./g, ".")
     .trim();
-  if (t.length > max) {
-    const corte = t.slice(0, max);
+}
+
+/**
+ * Lo que Lía dice en voz alta. Respuestas cortas: se leen enteras. Respuestas largas (listas, tablas o mucho texto):
+ * solo la primera frase, a modo de introducción ("Listo, te preparé la liquidación"), y el detalle se lee en pantalla.
+ */
+export function textoParaVoz(texto, { maxIntro = 230, maxCorto = 300 } = {}) {
+  const crudo = String(texto || "").trim();
+  const lineasLista = (crudo.match(/^\s*([-*•]\s|\d+[.)]\s|\|)/gm) || []).length;
+  const largo = crudo.length > maxCorto || lineasLista >= 2 || /\n#{1,4}\s/.test(crudo);
+  if (!largo) return limpiarParaVoz(crudo);
+  const primero = crudo.split(/\n\s*\n/)[0].split("\n").filter((l) => !/^\s*([-*•]\s|\d+[.)]\s|\||#)/.test(l)).join(" ");
+  let intro = limpiarParaVoz(primero);
+  if (intro.length > maxIntro) {
+    const corte = intro.slice(0, maxIntro);
     const fin = Math.max(corte.lastIndexOf(". "), corte.lastIndexOf("? "), corte.lastIndexOf("! "));
-    t = (fin > 120 ? corte.slice(0, fin + 1) : corte.replace(/\s\S*$/, "")) + " El detalle completo lo tenés en pantalla.";
+    intro = fin > 60 ? corte.slice(0, fin + 1) : corte.replace(/\s\S*$/, "") + ".";
   }
-  return t;
+  if (!intro) intro = "Listo, ya lo tengo.";
+  return /pantalla/i.test(intro) ? intro : `${intro} El detalle lo tenés en pantalla.`;
 }
 
 // ---------- voz del dispositivo (solo femenina) ----------
@@ -191,19 +205,23 @@ const esperarVoces = () =>
  * Prepara la voz ANTES de mostrar la respuesta, para que texto, voz y animación arranquen juntos.
  * Devuelve { tipo: "natural", blob, envolvente } | { tipo: "dispositivo" } | { tipo: "nada" }.
  */
-export async function prepararVoz(texto, { base, timeoutMs = 16000 } = {}) {
-  const ctl = new AbortController();
-  const t = setTimeout(() => ctl.abort(), timeoutMs);
-  try {
-    const res = await fetch(getApiUrl(`${base}/voz`), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ texto }), signal: ctl.signal });
-    if (!res.ok) throw new Error(`voz ${res.status}`);
-    const blob = await res.blob();
-    if (!blob.size) throw new Error("audio vacío");
-    return { tipo: "natural", blob, envolvente: await envolventeDeWav(blob) };
-  } catch (e) {
-    console.warn("[Lía] voz natural no disponible:", e.message);
-  } finally {
-    clearTimeout(t);
+export async function prepararVoz(texto, { base, timeoutMs = 14000 } = {}) {
+  for (let intento = 0; intento < 2; intento++) {
+    const ctl = new AbortController();
+    const t = setTimeout(() => ctl.abort(), timeoutMs);
+    try {
+      const res = await fetch(getApiUrl(`${base}/voz`), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ texto }), signal: ctl.signal });
+      if (res.status === 403 || res.status === 429 || res.status === 400) throw Object.assign(new Error(`voz ${res.status}`), { definitivo: true });
+      if (!res.ok) throw new Error(`voz ${res.status}`);
+      const blob = await res.blob();
+      if (!blob.size) throw new Error("audio vacío");
+      return { tipo: "natural", blob, envolvente: await envolventeDeWav(blob) };
+    } catch (e) {
+      console.warn("[Lía] voz natural no disponible:", e.message);
+      if (e.definitivo) break;
+    } finally {
+      clearTimeout(t);
+    }
   }
   await esperarVoces();
   return hayVozFemenina() ? { tipo: "dispositivo" } : { tipo: "nada" };

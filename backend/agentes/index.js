@@ -5,6 +5,8 @@
 const { analizarRRHH, AUTORESOLVIBLES } = require("./vigilanteRRHH");
 const { crearLia } = require("./liaChat");
 const { sintetizar } = require("./voz");
+const { pdfLiquidacion } = require("./pdf");
+const { liquidarDesdeBD } = require("../liquidacionDb");
 const { crearNotificacion } = require("../notificaciones");
 
 const AGENTES = [
@@ -307,6 +309,34 @@ function registrarRutasAgentes(app, { db, pool, ai }) {
       res.status(saturado ? 503 : 500).json({ error: saturado ? "El servicio de IA está saturado. Probá de nuevo en unos segundos." : "Error al procesar la consulta." });
     } finally {
       u.liberar();
+    }
+  });
+
+  // Liquidación en PDF (la misma liquidación que hace Lía en el chat), para descargar desde la conversación.
+  app.get("/api/agentes/:id/liquidacion.pdf", delAgente, async (req, res) => {
+    if (req.agente.id !== "rrhh") return res.status(400).json({ error: "Este agente no liquida." });
+    try {
+      const q = req.query;
+      const texto = (k) => (typeof q[k] === "string" && q[k].trim() ? q[k].trim().slice(0, 80) : undefined);
+      const params = {
+        operario: texto("operario"), mes: texto("mes"), desde: texto("desde"), hasta: texto("hasta"),
+        quincena: Number.isInteger(Number(q.quincena)) && q.quincena !== "" && q.quincena !== undefined ? Number(q.quincena) : undefined,
+        solo_extras: q.solo_extras === "1" || q.solo_extras === "true" || undefined,
+        solo_con_categoria: q.solo_con_categoria === "1" || q.solo_con_categoria === "true" || undefined,
+        fechas: typeof q.fechas === "string" && q.fechas ? q.fechas.split(",").map((f) => f.trim()).filter(Boolean).slice(0, 40) : undefined,
+        detalle: "completo",
+      };
+      const liq = await liquidarDesdeBD(pool, params);
+      if (liq.error) return res.status(400).json({ error: liq.error });
+      const pdf = pdfLiquidacion(liq, { usuario: req.usuario.nombre });
+      const slug = (t) => String(t || "").normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^\w]+/g, "-").replace(/^-+|-+$/g, "").toLowerCase();
+      const nombre = ["liquidacion", slug(liq.operario || "plantel"), slug(params.mes || params.desde || liq.liquidacion_de).slice(0, 20), params.quincena ? `q${params.quincena}` : ""].filter(Boolean).join("-");
+      await registrarActividad(db, "rrhh", "LIQUIDACION", `${req.usuario.nombre} descargó el PDF de ${liq.operario ? "la liquidación de " + liq.operario : "la liquidación del plantel"}`, liq.liquidacion_de, req.usuario.nombre);
+      res.set({ "Content-Type": "application/pdf", "Content-Length": pdf.length, "Content-Disposition": `attachment; filename="${nombre}.pdf"`, "Cache-Control": "no-store" });
+      res.send(pdf);
+    } catch (e) {
+      console.error("[agentes] pdf:", e.message);
+      res.status(500).json({ error: "No pude armar el PDF." });
     }
   });
 
