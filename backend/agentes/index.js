@@ -4,6 +4,8 @@
 // Hoy: "rrhh" (Lía). No toca a Connie: solo reutiliza su motor de IA y sus funciones de liquidación.
 const { analizarRRHH, AUTORESOLVIBLES } = require("./vigilanteRRHH");
 const { crearLia } = require("./liaChat");
+const { crearNati } = require("./natiChat");
+const { analizarStock, armarPanorama, cargarStock } = require("./vigilanteStock");
 const { sintetizar } = require("./voz");
 const { pdfLiquidacion } = require("./pdf");
 const { liquidarDesdeBD } = require("../liquidacionDb");
@@ -17,6 +19,14 @@ const AGENTES = [
     descripcion: "Liquida horas y sueldos igual que Connie, y vigila presentismo, feriados, fichadas y faltas.",
     permiso: "agente:rrhh",
     color: "#FF5A00",
+  },
+  {
+    id: "stock",
+    nombre: "Nati",
+    puesto: "Stock y depósito",
+    descripcion: "Vigila materias primas y semielaborados, anticipa quiebres de stock y te propone qué comprar y qué fabricar.",
+    permiso: "agente:stock",
+    color: "#22c55e",
   },
 ];
 const agentePorId = (id) => AGENTES.find((a) => a.id === id) || null;
@@ -128,7 +138,7 @@ async function revisarRRHH({ pool, db }, { ahora = new Date() } = {}) {
 
     if (nuevos.length) {
       const roles = await rolesDelAgente(db, "agente:rrhh");
-      const aviso = (titulo, texto) => crearNotificacion(db, { tipo: "AGENTE_RRHH", titulo, texto, ruta: "/agentes", roles });
+      const aviso = (titulo, texto) => crearNotificacion(db, { tipo: "AGENTE_RRHH", titulo, texto, ruta: "/agentes?a=rrhh", roles });
       if (nuevos.length <= 3) for (const h of nuevos) await aviso(`Lía: ${h.titulo}`, h.texto);
       else await aviso(`Lía encontró ${nuevos.length} avisos nuevos`, nuevos.slice(0, 3).map((h) => h.titulo).join(" · ") + (nuevos.length > 3 ? ` · y ${nuevos.length - 3} más` : ""));
       await registrarActividad(db, agente, "AVISO", `Detectó ${nuevos.length} ${nuevos.length === 1 ? "aviso nuevo" : "avisos nuevos"}`, nuevos.map((h) => `• ${h.titulo}`).join("\n"));
@@ -157,8 +167,57 @@ async function revisarRRHH({ pool, db }, { ahora = new Date() } = {}) {
   }
 }
 
+/** Revisión del vigilante de stock (Nati): lee, analiza, guarda avisos nuevos, cierra los que se resolvieron y notifica. */
+async function revisarStock({ pool, db }, { ahora = new Date() } = {}) {
+  const agente = "stock";
+  try {
+    const datos = await cargarStock(pool, { ahoraMs: ahora.getTime() });
+    const encontrados = analizarStock(datos);
+    const [previos] = await db.query("SELECT id, clave, tipo, estado FROM agentes_hallazgos WHERE agente = ?", [agente]);
+    const porClave = new Map(previos.map((p) => [p.clave, p]));
+    const claves = new Set(encontrados.map((h) => h.clave));
+    const nuevos = [];
+    for (const h of encontrados) {
+      const previo = porClave.get(h.clave);
+      if (!previo) {
+        await db.query("INSERT INTO agentes_hallazgos (agente, clave, tipo, severidad, titulo, texto, operario, fecha) VALUES (?,?,?,?,?,?,?,?)", [agente, h.clave, h.tipo, h.severidad, h.titulo, h.texto, h.operario, h.fecha]);
+        nuevos.push(h);
+      } else if (previo.estado === "ABIERTO") {
+        await db.query("UPDATE agentes_hallazgos SET severidad = ?, titulo = ?, texto = ?, fecha = ? WHERE id = ?", [h.severidad, h.titulo, h.texto, h.fecha, previo.id]);
+      }
+    }
+    // Todo lo de stock se resuelve solo cuando la condición desaparece (llegó la compra, se fabricó, se corrigió la carga).
+    const resueltos = previos.filter((p) => p.estado === "ABIERTO" && !claves.has(p.clave));
+    for (const r of resueltos) await db.query("UPDATE agentes_hallazgos SET estado = 'RESUELTO', resuelto_por = 'Nati (automático)', resuelto_en = NOW() WHERE id = ?", [r.id]);
+
+    const aNotificar = nuevos.filter((h) => h.severidad !== "BAJA");
+    if (aNotificar.length) {
+      const roles = await rolesDelAgente(db, "agente:stock");
+      const aviso = (titulo, texto) => crearNotificacion(db, { tipo: "AGENTE_STOCK", titulo, texto, ruta: "/agentes?a=stock", roles });
+      if (aNotificar.length <= 3) for (const h of aNotificar) await aviso(`Nati: ${h.titulo}`, h.texto);
+      else await aviso(`Nati encontró ${aNotificar.length} cosas para atender en el stock`, aNotificar.slice(0, 3).map((h) => h.titulo).join(" · ") + ` · y ${aNotificar.length - 3} más`);
+    }
+    if (nuevos.length) await registrarActividad(db, agente, "AVISO", `Detectó ${nuevos.length} ${nuevos.length === 1 ? "aviso nuevo" : "avisos nuevos"}`, nuevos.map((h) => `• ${h.titulo}`).join("\n"));
+    if (resueltos.length) await registrarActividad(db, agente, "RESUELTO", `Cerró ${resueltos.length} ${resueltos.length === 1 ? "aviso que ya se resolvió" : "avisos que ya se resolvieron"}`);
+
+    const items = datos.mps.length + datos.semis.length;
+    const abiertos = Number((await db.query("SELECT COUNT(*) AS n FROM agentes_hallazgos WHERE agente = ? AND estado = 'ABIERTO'", [agente]))[0][0].n);
+    const resumen = abiertos ? `Revisé ${items} ítems de stock: hay ${abiertos} ${abiertos === 1 ? "aviso abierto" : "avisos abiertos"}.` : `Revisé ${items} ítems de stock: todo en orden.`;
+    await db.query(
+      "INSERT INTO agentes_estado (agente, ultima_revision, resumen, operarios_revisados, ultimo_error) VALUES (?, NOW(), ?, ?, NULL) ON DUPLICATE KEY UPDATE ultima_revision = NOW(), resumen = VALUES(resumen), operarios_revisados = VALUES(operarios_revisados), ultimo_error = NULL",
+      [agente, resumen, items],
+    );
+    return { ok: true, operarios: items, nuevos: nuevos.length, resueltos: resueltos.length, abiertos, resumen };
+  } catch (e) {
+    console.error("[agentes] revisión de stock falló:", e.message);
+    await db.query("INSERT INTO agentes_estado (agente, ultimo_error) VALUES (?, ?) ON DUPLICATE KEY UPDATE ultimo_error = VALUES(ultimo_error)", [agente, String(e.message).slice(0, 300)]).catch(() => {});
+    return { ok: false, error: "No pude revisar el stock en este momento." };
+  }
+}
+
 function registrarRutasAgentes(app, { db, pool, ai }) {
-  const lia = crearLia({ pool, db, ai });
+  const chats = { rrhh: crearLia({ pool, db, ai }), stock: crearNati({ pool, db, ai }) };
+  const revisiones = { rrhh: () => revisarRRHH({ pool, db }), stock: () => revisarStock({ pool, db }) };
 
   const quien = async (req) => {
     const [r] = await db.query("SELECT id, nombre, rol FROM usuarios WHERE id = ?", [req.user?.id]);
@@ -260,17 +319,30 @@ function registrarRutasAgentes(app, { db, pool, ai }) {
     }
   });
 
-  let revisando = false;
+  const revisando = new Set();
   app.post("/api/agentes/:id/revisar", delAgente, async (req, res) => {
-    if (req.agente.id !== "rrhh") return res.status(400).json({ error: "Este agente no tiene vigilante." });
-    if (revisando) return res.status(429).json({ error: "Ya estoy revisando, esperá un momento." });
-    revisando = true;
+    const revisar = revisiones[req.agente.id];
+    if (!revisar) return res.status(400).json({ error: "Este agente no tiene vigilante." });
+    if (revisando.has(req.agente.id)) return res.status(429).json({ error: "Ya estoy revisando, esperá un momento." });
+    revisando.add(req.agente.id);
     try {
-      const r = await revisarRRHH({ pool, db });
-      if (r.ok) await registrarActividad(db, "rrhh", "REVISION", `Revisión pedida por ${req.usuario.nombre}`, r.resumen, req.usuario.nombre);
+      const r = await revisar();
+      if (r.ok) await registrarActividad(db, req.agente.id, "REVISION", `Revisión pedida por ${req.usuario.nombre}`, r.resumen, req.usuario.nombre);
       res.status(r.ok ? 200 : 500).json(r);
     } finally {
-      revisando = false;
+      revisando.delete(req.agente.id);
+    }
+  });
+
+  // Panorama de stock (Nati): niveles reales de materias primas y semielaborados, para el tablero y el depósito 3D.
+  app.get("/api/agentes/:id/panorama", delAgente, async (req, res) => {
+    if (req.agente.id !== "stock") return res.status(400).json({ error: "Este agente no tiene panorama." });
+    try {
+      const p = armarPanorama(await cargarStock(pool));
+      res.json(p);
+    } catch (e) {
+      console.error("[agentes] panorama:", e.message);
+      res.status(500).json({ error: "No pude armar el panorama del stock." });
     }
   });
 
@@ -289,22 +361,27 @@ function registrarRutasAgentes(app, { db, pool, ai }) {
     return { ok: true, liberar: () => (e.enCurso = false) };
   };
   app.post("/api/agentes/:id/chat", delAgente, async (req, res) => {
-    if (req.agente.id !== "rrhh") return res.status(400).json({ error: "Este agente todavía no conversa." });
+    const cerebro = chats[req.agente.id];
+    if (!cerebro) return res.status(400).json({ error: "Este agente todavía no conversa." });
     const mensaje = String(req.body?.mensaje || "").trim().slice(0, 2000);
-    if (!mensaje) return res.status(400).json({ error: "Escribile algo a Lía." });
+    if (!mensaje) return res.status(400).json({ error: `Escribile algo a ${req.agente.nombre}.` });
     const u = controlarUso(req.usuario.id);
     if (!u.ok) return res.status(429).json({ error: u.error });
     try {
-      const r = await lia.responder({ mensaje, historial: req.body?.historial });
-      const hechas = r.herramientas.filter((h) => h.nombre !== "calculadora");
+      // A quién puede derivar: los otros agentes que este usuario tiene habilitados y que ya conversan.
+      const destinos = [];
+      for (const a of AGENTES) if (a.id !== req.agente.id && chats[a.id] && (await tienePermiso(req.usuario, a.permiso))) destinos.push({ id: a.id, nombre: a.nombre, puesto: a.puesto });
+      const r = await cerebro.responder({ mensaje, historial: req.body?.historial, destinos });
+      const hechas = r.herramientas.filter((h) => h.nombre !== "calculadora" && h.nombre !== "derivar_a_agente");
+      const tipo = hechas.some((h) => h.nombre === "liquidar_horas") ? "LIQUIDACION" : r.derivacion ? "DERIVACION" : "CHAT";
       await registrarActividad(
-        db, "rrhh", hechas.some((h) => h.nombre === "liquidar_horas") ? "LIQUIDACION" : "CHAT",
-        hechas.length ? `${hechas[0].texto}${hechas[0].operario ? " de " + hechas[0].operario : ""}${hechas[0].periodo ? " (" + hechas[0].periodo + ")" : ""}` : "Respondió una consulta",
+        db, req.agente.id, tipo,
+        r.derivacion ? `Le pasó una consulta a ${r.derivacion.nombre}` : hechas.length ? `${hechas[0].texto}${hechas[0].operario ? " · " + hechas[0].operario : ""}${hechas[0].periodo ? " (" + hechas[0].periodo + ")" : ""}` : "Respondió una consulta",
         `Consulta de ${req.usuario.nombre}: ${mensaje.slice(0, 200)}`, req.usuario.nombre,
       );
-      res.json({ success: true, respuesta: r.respuesta, herramientas: r.herramientas, ms: r.ms });
+      res.json({ success: true, respuesta: r.respuesta, herramientas: r.herramientas, derivacion: r.derivacion || null, ms: r.ms });
     } catch (error) {
-      console.error("[Lía] Error:", error);
+      console.error(`[${req.agente.nombre}] Error:`, error);
       const saturado = error && (error.status === 503 || error.status === 429);
       res.status(saturado ? 503 : 500).json({ error: saturado ? "El servicio de IA está saturado. Probá de nuevo en unos segundos." : "Error al procesar la consulta." });
     } finally {
@@ -360,13 +437,17 @@ function registrarRutasAgentes(app, { db, pool, ai }) {
     }
   });
 
-  return { revisarRRHH: () => revisarRRHH({ pool, db }) };
+  return { revisarRRHH: revisiones.rrhh, revisarStock: revisiones.stock };
 }
 
 /** Deja corriendo el vigilante: una revisión poco después de arrancar y luego cada N minutos (sin IA, solo consultas). */
 function iniciarVigilantes(agentes, { intervaloMin = Number(process.env.AGENTES_INTERVALO_MIN) || 30 } = {}) {
   if (String(process.env.AGENTES_VIGILANTE || "").toLowerCase() === "off") return () => {};
-  const correr = () => agentes.revisarRRHH().catch((e) => console.error("[agentes] vigilante:", e.message));
+  const correr = () => {
+    agentes.revisarRRHH().catch((e) => console.error("[agentes] vigilante RRHH:", e.message));
+    // Nati revisa un poco después para no pisar la revisión de Lía.
+    setTimeout(() => agentes.revisarStock?.().catch((e) => console.error("[agentes] vigilante stock:", e.message)), 15000).unref?.();
+  };
   const t0 = setTimeout(correr, 20000);
   const t = setInterval(correr, Math.max(5, intervaloMin) * 60 * 1000);
   t0.unref?.();
@@ -377,4 +458,4 @@ function iniciarVigilantes(agentes, { intervaloMin = Number(process.env.AGENTES_
   };
 }
 
-module.exports = { AGENTES, agentePorId, asegurarTablasAgentes, registrarRutasAgentes, iniciarVigilantes, revisarRRHH, ahoraArgentina };
+module.exports = { AGENTES, agentePorId, asegurarTablasAgentes, registrarRutasAgentes, iniciarVigilantes, revisarRRHH, revisarStock, ahoraArgentina };

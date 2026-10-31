@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Bell, ChevronDown, ChevronUp, History, Loader2, MessageCircle, ScanSearch, Volume2, VolumeX } from "lucide-react";
+import { Bell, ChevronDown, ChevronUp, History, LayoutGrid, Loader2, MessageCircle, ScanSearch, Volume2, VolumeX } from "lucide-react";
 import { api } from "../produccion/util";
 import { useToast } from "../produccion/useToast";
 import EscenaLia from "./EscenaLia";
@@ -8,16 +8,15 @@ import Avisos from "./Avisos";
 import Actividad from "./Actividad";
 import EstadoActual from "./EstadoActual";
 import { cuando } from "./formato";
-import { propuestasDesde, saludoSegunHora } from "./propuestas";
+import { saludoSegunHora } from "./propuestas";
+import { perfilDe } from "./perfiles";
+import Panorama from "./Panorama";
 import { dictar, prepararVoz, reproducirVoz, soportaDictado, textoParaVoz } from "./voz";
 import { getApiUrl } from "../apiConfig";
 
-const CLAVE_CHAT = "lia_chat_v2";
-const CLAVE_VOZ = "lia_voz_v1";
-const CLAVE_ESCENA = "lia_escena_v1";
-const leerChat = () => {
+const leerChat = (clave) => {
   try {
-    const g = JSON.parse(sessionStorage.getItem(CLAVE_CHAT) || "null");
+    const g = JSON.parse(sessionStorage.getItem(clave) || "null");
     if (Array.isArray(g)) return g;
   } catch {
     /* sin almacenamiento */
@@ -40,10 +39,14 @@ const guardarFlag = (clave, v) => {
   }
 };
 
-export default function LiaPantalla({ agente, usuario }) {
+export default function LiaPantalla({ agente, usuario, pregunta, onPreguntaUsada, onDerivar }) {
+  const perfil = perfilDe(agente.id);
+  const CLAVE_CHAT = perfil.claves.chat;
+  const CLAVE_VOZ = perfil.claves.voz;
+  const CLAVE_ESCENA = perfil.claves.escena;
   const base = `/api/agentes/${agente.id}`;
   const { mostrar, nodo } = useToast();
-  const [mensajes, setMensajes] = useState(leerChat);
+  const [mensajes, setMensajes] = useState(() => leerChat(CLAVE_CHAT));
   const [texto, setTexto] = useState("");
   const [enviando, setEnviando] = useState(false);
   const [escribiendo, setEscribiendo] = useState(false);
@@ -60,6 +63,8 @@ export default function LiaPantalla({ agente, usuario }) {
   const [hallazgos, setHallazgos] = useState([]);
   const [version, setVersion] = useState(0);
   const [revisando, setRevisando] = useState(false);
+  const [pano, setPano] = useState(null);
+  const [errPano, setErrPano] = useState("");
   const [actividad, setActividad] = useState("");
   const escena = useRef(null);
   const timers = useRef({ escribir: null, hablar: null, nota: null });
@@ -77,6 +82,7 @@ export default function LiaPantalla({ agente, usuario }) {
     } catch {
       /* sin almacenamiento */
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mensajes]);
 
   useEffect(() => {
@@ -84,6 +90,7 @@ export default function LiaPantalla({ agente, usuario }) {
     const cargar = () => {
       api(`${base}/estado`).then((r) => vivo && setEstado(r)).catch(() => {});
       api(`${base}/hallazgos`).then((r) => vivo && setHallazgos(r)).catch(() => {});
+      if (perfil.panorama) api(`${base}/panorama`).then((r) => vivo && (setPano(r), setErrPano(""))).catch((e) => vivo && setErrPano(e.message));
     };
     cargar();
     const id = setInterval(cargar, 60000);
@@ -91,7 +98,7 @@ export default function LiaPantalla({ agente, usuario }) {
       vivo = false;
       clearInterval(id);
     };
-  }, [base, version]);
+  }, [base, version, perfil.panorama]);
 
   useEffect(() => {
     const t = timers.current;
@@ -167,7 +174,7 @@ export default function LiaPantalla({ agente, usuario }) {
       const promesa = conVoz ? prepararVoz(textoParaVoz(resp), { base }) : null;
       const prep = promesa ? await Promise.race([promesa, new Promise((r) => setTimeout(() => r(null), 3500))]) : null;
       if (turno.current !== mi) return;
-      setMensajes([...nuevos, { rol: "assistant", texto: resp, herramientas: data.herramientas || [] }]);
+      setMensajes([...nuevos, { rol: "assistant", texto: resp, herramientas: data.herramientas || [], derivacion: data.derivacion || null }]);
       if (promesa && !prep) {
         empezarAHablar(resp, null);
         promesa.then((p) => {
@@ -200,7 +207,7 @@ export default function LiaPantalla({ agente, usuario }) {
       onFin: (err, ultimo) => {
         setDictando(false);
         if (ultimo) enviarRef.current?.(ultimo, true);
-        else if (err === "not-allowed" || err === "service-not-allowed") setAviso("Tenés que permitir el micrófono en el navegador para hablarle a Lía.");
+        else if (err === "not-allowed" || err === "service-not-allowed") setAviso(`Tenés que permitir el micrófono en el navegador para hablarle a ${perfil.nombre}.`);
         else if (err === "no-speech") setAviso("No te escuché. Probá de nuevo acercándote al micrófono.");
         else if (err) setAviso("No pude usar el micrófono en este navegador. Escribile y listo.");
       },
@@ -236,7 +243,7 @@ export default function LiaPantalla({ agente, usuario }) {
         if (err === "not-allowed" || err === "service-not-allowed") return terminarManos("Tenés que permitir el micrófono en el navegador para usar el manos libres.");
         if (ultimo) {
           manosRef.current.fallos = 0;
-          if (/^\s*(chau|chao|listo|terminar|terminá|salir|gracias,? l[ií]a|pará|parar|basta)\b/i.test(ultimo)) {
+          if (/^\s*(chau|chao|listo|terminar|terminá|salir|gracias|pará|parar|basta)\b/i.test(ultimo)) {
             setTexto("");
             return terminarManos("Listo, terminé el manos libres.");
           }
@@ -311,6 +318,16 @@ export default function LiaPantalla({ agente, usuario }) {
     else enviar(p.pregunta);
   };
 
+  const alPropuesta2 = (q) => enviar(q);
+
+  // Pregunta que llega derivada desde otro agente: se envía sola apenas esta pantalla está lista.
+  useEffect(() => {
+    if (!pregunta) return;
+    onPreguntaUsada?.();
+    enviarRef.current?.(pregunta);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pregunta]);
+
   const estadoEscena = enviando ? "thinking" : hablando ? "speaking" : escribiendo || dictando ? "listening" : "idle";
   const subtitulo = hablando ? dicho.slice(0, 190) + (dicho.length > 190 ? "…" : "") : "";
   const abiertos = estado?.abiertos ?? agente.abiertos ?? 0;
@@ -318,16 +335,13 @@ export default function LiaPantalla({ agente, usuario }) {
   const altas = estado?.altas || 0;
   const operarios = estado?.operarios_revisados || 0;
   const feriado = /el (\S+ \d+\/\d+)/.exec(feriadoAviso)?.[1] || "";
-  const infoEscena = useMemo(() => ({ abiertos, altas, operarios, feriado }), [abiertos, altas, operarios, feriado]);
-  const resumen = estado?.ultima_revision
-    ? abiertos > 0
-      ? `Revisé las fichadas de ${estado.operarios_revisados ?? "todos los"} operarios y hay ${abiertos} ${abiertos === 1 ? "aviso abierto" : "avisos abiertos"}${estado.altas ? `, ${estado.altas} urgente${estado.altas === 1 ? "" : "s"}` : ""}. Esto es lo que atendería primero:`
-      : "Revisé todo y no hay nada pendiente. Podés pedirme una liquidación o preguntarme lo que necesites."
-    : "Todavía no hice mi primera revisión. Podés pedirme que revise ahora o preguntarme lo que necesites.";
-  const propuestas = propuestasDesde(hallazgos);
+  const infoEscena = useMemo(() => (perfil.panorama ? { panorama: pano } : { abiertos, altas, operarios, feriado }), [perfil.panorama, pano, abiertos, altas, operarios, feriado]);
+  const resumen = perfil.resumen(estado, abiertos);
+  const propuestas = perfil.propuestas(hallazgos);
 
   const TABS = [
     { id: "chat", texto: "Chat", icono: MessageCircle },
+    ...(perfil.panorama ? [{ id: "panorama", texto: "Panorama", icono: LayoutGrid, n: (pano?.resumen?.criticas || 0) + (pano?.resumen?.semis_criticos || 0) }] : []),
     { id: "avisos", texto: "Avisos", icono: Bell, n: abiertos },
     { id: "actividad", texto: "Actividad", icono: History },
   ];
@@ -346,7 +360,7 @@ export default function LiaPantalla({ agente, usuario }) {
       <button
         onClick={alternarVoz}
         aria-pressed={vozActiva}
-        aria-label={vozActiva ? "Silenciar la voz de Lía" : "Activar la voz de Lía"}
+        aria-label={vozActiva ? `Silenciar la voz de ${perfil.nombre}` : `Activar la voz de ${perfil.nombre}`}
         className={`h-10 px-3 rounded-xl backdrop-blur-md border text-[12.5px] font-bold inline-flex items-center gap-1.5 ${vozActiva ? "bg-[#FF5A00] border-[#FF5A00] text-black" : "bg-black/55 border-white/10 text-zinc-200 hover:border-white/30"}`}
       >
         {vozActiva ? <Volume2 size={15} /> : <VolumeX size={15} />}
@@ -361,13 +375,13 @@ export default function LiaPantalla({ agente, usuario }) {
       <aside className="order-1 lg:order-2 shrink-0 flex flex-col lg:w-[clamp(340px,30vw,440px)] border-b lg:border-b-0 lg:border-l border-white/[0.06] bg-[#0b0b0e] lg:overflow-y-auto custom-scrollbar">
         {!escenaVisible && (
           <div className="lg:hidden flex items-center gap-3 px-3 h-14">
-            <span className="w-9 h-9 shrink-0 rounded-xl bg-[#FF5A00] grid place-items-center text-black font-black shadow-[0_3px_0_#b33f00]">L</span>
+            <span className="w-9 h-9 shrink-0 rounded-xl grid place-items-center text-black font-black" style={{ background: perfil.color, boxShadow: `0 3px 0 color-mix(in srgb, ${perfil.color} 55%, black)` }}>{perfil.inicial}</span>
             <EstadoActual texto={actividad} compacto className="flex-1" />
-            <button onClick={alternarEscena} aria-label="Mostrar a Lía" className="w-10 h-10 grid place-items-center rounded-xl bg-white/[0.07] text-zinc-200"><ChevronDown size={18} /></button>
+            <button onClick={alternarEscena} aria-label={`Mostrar a ${perfil.nombre}`} className="w-10 h-10 grid place-items-center rounded-xl bg-white/[0.07] text-zinc-200"><ChevronDown size={18} /></button>
           </div>
         )}
         <div className={`relative shrink-0 overflow-hidden lg:block lg:h-[clamp(340px,52vh,470px)] lg:min-h-0 lg:max-h-none ${escenaVisible ? "block h-[30vh] min-h-[190px] max-h-[270px]" : "hidden"}`}>
-          <EscenaLia ref={escena} estado={estadoEscena} hablando={hablando} info={infoEscena} onActividad={setActividad} />
+          <EscenaLia ref={escena} tipo={perfil.escena} nombre={perfil.nombre} estado={estadoEscena} hablando={hablando} info={infoEscena} onActividad={setActividad} />
           <div className="absolute top-2.5 left-2.5 right-2.5 flex items-start justify-between gap-2 pointer-events-none">
             <div className="pointer-events-auto hidden sm:block rounded-xl bg-black/55 backdrop-blur-md border border-white/10 px-3 py-1.5">
               <h2 className="text-[15px] font-black text-white leading-none">{agente.nombre}</h2>
@@ -375,7 +389,7 @@ export default function LiaPantalla({ agente, usuario }) {
             </div>
             <div className="pointer-events-auto flex gap-1.5">
               {botonesEscena}
-              <button onClick={alternarEscena} aria-label="Ocultar a Lía" className="lg:hidden h-10 w-10 grid place-items-center rounded-xl bg-black/55 backdrop-blur-md border border-white/10 text-zinc-200"><ChevronUp size={17} /></button>
+              <button onClick={alternarEscena} aria-label={`Ocultar a ${perfil.nombre}`} className="lg:hidden h-10 w-10 grid place-items-center rounded-xl bg-black/55 backdrop-blur-md border border-white/10 text-zinc-200"><ChevronUp size={17} /></button>
             </div>
           </div>
           <div className="absolute bottom-2.5 left-2.5 right-2.5 flex flex-col items-center gap-1.5 pointer-events-none">
@@ -398,7 +412,7 @@ export default function LiaPantalla({ agente, usuario }) {
             <div className="rounded-2xl border border-white/[0.08] bg-[#111116] p-3.5">
               <p className="text-[10.5px] font-bold uppercase tracking-[0.12em] text-zinc-500">Última revisión</p>
               <p className="mt-1 text-[15px] font-extrabold text-white">{estado?.ultima_revision ? cuando(estado.ultima_revision) : "—"}</p>
-              <p className="text-[11.5px] text-zinc-500">{estado?.operarios_revisados ? `${estado.operarios_revisados} operarios` : "sin datos aún"}</p>
+              <p className="text-[11.5px] text-zinc-500">{perfil.panorama ? (estado?.ultima_revision ? "stock completo" : "sin datos aún") : estado?.operarios_revisados ? `${estado.operarios_revisados} operarios` : "sin datos aún"}</p>
             </div>
             <div className="rounded-2xl border border-white/[0.08] bg-[#111116] p-3.5">
               <p className="text-[10.5px] font-bold uppercase tracking-[0.12em] text-zinc-500">Avisos abiertos</p>
@@ -430,7 +444,7 @@ export default function LiaPantalla({ agente, usuario }) {
                 className={`flex-1 min-h-[44px] rounded-xl text-[13.5px] font-bold inline-flex items-center justify-center gap-1.5 transition-colors ${activo ? "bg-white/[0.09] text-white" : "text-zinc-500 hover:text-zinc-200"}`}
               >
                 <Icono size={16} className={activo ? "text-[#FF5A00]" : ""} />
-                {t.texto}
+                <span className={activo ? "" : "hidden sm:inline"}>{t.texto}</span>
                 {t.n > 0 && <span className="min-w-[20px] h-5 px-1.5 rounded-full bg-[#FF5A00] text-black text-[11px] font-black grid place-items-center">{t.n}</span>}
               </button>
             );
@@ -456,7 +470,15 @@ export default function LiaPantalla({ agente, usuario }) {
               onManos={alternarManos}
               onPdf={descargarPdf}
               hablando={hablando}
+              perfil={perfil}
+              ideas={perfil.ideas}
+              onDerivar={onDerivar}
             />
+          )}
+          {tab === "panorama" && (
+            <div className="h-full overflow-y-auto custom-scrollbar">
+              <Panorama datos={pano} error={errPano} onPreguntar={alPropuesta2} />
+            </div>
           )}
           {tab === "avisos" && (
             <div className="h-full overflow-y-auto custom-scrollbar">
