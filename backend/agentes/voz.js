@@ -33,16 +33,23 @@ function frecuenciaDe(mime) {
 async function sintetizar(ai, texto, { voz = VOZ_DEFECTO, modelo = MODELO_VOZ, timeoutMs = 25000 } = {}) {
   const limpio = String(texto || "").replace(/\s+/g, " ").trim().slice(0, MAX_CARACTERES);
   if (!limpio) throw new Error("Sin texto para leer.");
-  const r = await ai.models.generateContent({
-    model: modelo,
-    contents: [{ role: "user", parts: [{ text: `Decilo con voz de mujer joven, cálida, natural y cercana, con acento rioplatense argentino y ritmo de conversación, sin sonar robótica: ${limpio}` }] }],
-    config: {
-      responseModalities: ["AUDIO"],
-      speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: VOCES_FEMENINAS.includes(voz) ? voz : VOZ_DEFECTO } } },
-      httpOptions: { timeout: timeoutMs },
-    },
-  });
-  const parte = r.candidates?.[0]?.content?.parts?.find((p) => p.inlineData?.data);
+  const pedir = () =>
+    ai.models.generateContent({
+      model: modelo,
+      contents: [{ role: "user", parts: [{ text: `Decilo con voz de mujer joven, cálida, natural y cercana, con acento rioplatense argentino y ritmo de conversación, sin sonar robótica: ${limpio}` }] }],
+      config: {
+        responseModalities: ["AUDIO"],
+        speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: VOCES_FEMENINAS.includes(voz) ? voz : VOZ_DEFECTO } } },
+        httpOptions: { timeout: timeoutMs },
+      },
+    });
+  // El modelo de voz a veces responde sin audio: se reintenta una vez antes de rendirse.
+  let r = await pedir();
+  let parte = r.candidates?.[0]?.content?.parts?.find((p) => p.inlineData?.data);
+  if (!parte) {
+    r = await pedir();
+    parte = r.candidates?.[0]?.content?.parts?.find((p) => p.inlineData?.data);
+  }
   if (!parte) throw new Error("El modelo no devolvió audio.");
   const pcm = Buffer.from(parte.inlineData.data, "base64");
   const mime = String(parte.inlineData.mimeType || "");
