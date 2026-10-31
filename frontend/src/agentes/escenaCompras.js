@@ -6,7 +6,8 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeometry.js";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import { arcilla, crearPersonajeArcilla } from "./personajeArcilla.js";
-import { COLOR, HORA_ARG, plastico, sombra, caja, cilindro, amortiguar, rnd, clamp, suavizar, textura } from "./escenaLego.js";
+import { vestirConFBX } from "./personajeFBX.js";
+import { COLOR, HORA_ARG, plastico, pisoReal, paredReal, sombra, caja, cilindro, amortiguar, rnd, clamp, suavizar, textura } from "./escenaLego.js";
 
 export { soportaWebGL } from "./escenaLego.js";
 
@@ -73,7 +74,7 @@ export function crearEscena(contenedor, { logoUrl, onActividad, onSaludo } = {})
   // ---------- mundo ----------
   const mundo = new THREE.Group();
   scene.add(mundo);
-  const piso = caja(15, 0.5, 9.6, plastico(0x181a20, { roughness: 0.5, clearcoat: 0.25 }), 0.2);
+  const piso = caja(15, 0.5, 9.6, pisoReal("alfombra", 5, 3.4), 0.12);
   piso.position.set(0.6, -0.25, 0);
   mundo.add(piso);
   // franjas amarillas de seguridad
@@ -84,20 +85,8 @@ export function crearEscena(contenedor, { logoUrl, onActividad, onSaludo } = {})
   };
   franja(0.6, 2.9, 14, 0.12);
   franja(0.6, -1.35, 14, 0.12);
-  // puntitos de ladrillo
-  const studs = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.2, 0.2, 0.1, 16), plastico(0x1f2128, { roughness: 0.45 }), 18 * 11);
-  studs.receiveShadow = true;
-  const m4 = new THREE.Matrix4();
-  let n = 0;
-  for (let i = 0; i < 18; i++)
-    for (let j = 0; j < 11; j++) {
-      m4.makeTranslation(-7.2 + i * 0.8, 0.05, -4.2 + j * 0.8);
-      studs.setMatrixAt(n++, m4);
-    }
-  mundo.add(studs);
-
   // pared del fondo + zócalo
-  const pared = caja(15, 8, 0.5, plastico(0x1c1e26, { roughness: 0.55, clearcoat: 0.15 }), 0.15);
+  const pared = caja(15, 8, 0.5, paredReal("#c3c1bb"), 0.15);
   pared.position.set(0.6, 4, -4.6);
   mundo.add(pared);
   const zocalo = caja(15, 0.4, 0.62, plastico(COLOR.naranja), 0.1);
@@ -456,6 +445,8 @@ export function crearEscena(contenedor, { logoUrl, onActividad, onSaludo } = {})
   punta.position.set(0.42, ALTO_CABEZA - 0.48, R * 0.92);
   cabeza.add(punta);
 
+  vestirConFBX(pj, { carpeta: `${import.meta.env.BASE_URL}modelos/agentes/business4`, prefijo: "f020", sentada: false, altura: 6.2 }).catch((e) => console.warn("[agentes] modelo 3D no disponible, se usa el de respaldo:", e.message));
+
   // ---------- estado y animación ----------
   const ctrl = { estado: "idle", hablando: false, nivelExterno: -1, pulso: 0 };
   let t = 0;
@@ -617,6 +608,7 @@ export function crearEscena(contenedor, { logoUrl, onActividad, onSaludo } = {})
     ec.mirarX = clamp(pose.cabY * -0.6, -1, 1);
     ec.mirarY = 0;
     ec.guiño = a === "saludar" && u > 0.4 && u < 0.7 ? 1 : 0;
+    pj.actualizar?.(dt);
     refrescarCara();
     punta.material.color.setHex(hablando || ctrl.estado === "listening" ? (Math.floor(t * 6) % 2 ? 0x3ecf6f : 0x1c7a43) : 0x3ecf6f);
     if (ctrl.pulso > 0) ctrl.pulso = Math.max(0, ctrl.pulso - dt * 3);

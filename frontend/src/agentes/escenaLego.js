@@ -9,6 +9,7 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeometry.js";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import { crearPersonajeArcilla } from "./personajeArcilla.js";
+import { vestirConFBX } from "./personajeFBX.js";
 
 export function soportaWebGL() {
   try {
@@ -28,11 +29,106 @@ export const COLOR = {
   amarillo: 0xffd60a,
   blanco: 0xf4f1ea,
   suelo: 0x15161b,
-  pared: 0x1c1e26,
+  pared: 0xb8bbc2,
 };
 
-export const plastico = (color, extra = {}) =>
-  new THREE.MeshPhysicalMaterial({ color, roughness: 0.3, metalness: 0, clearcoat: 0.55, clearcoatRoughness: 0.22, ...extra });
+export const plastico = (color, extra = {}) => {
+  // materiales de oficina real (pintura satinada, laminado, goma): sin barniz brillante de juguete
+  const { clearcoat, clearcoatRoughness, ...resto } = extra;
+  void clearcoat;
+  void clearcoatRoughness;
+  return new THREE.MeshPhysicalMaterial({ color, metalness: 0.03, ...resto, roughness: Math.max(0.5, resto.roughness ?? 0.62) });
+};
+
+// ---------- superficies realistas (texturas dibujadas en el momento, sin descargar nada) ----------
+const ruido = (ctx, w, h, fuerza, n = 1) => {
+  const img = ctx.getImageData(0, 0, w, h);
+  for (let i = 0; i < img.data.length; i += 4) {
+    const k = (Math.random() - 0.5) * fuerza * n;
+    img.data[i] += k;
+    img.data[i + 1] += k;
+    img.data[i + 2] += k;
+  }
+  ctx.putImageData(img, 0, 0);
+};
+const conRepeticion = (t, rx, ry) => {
+  t.tex.wrapS = t.tex.wrapT = THREE.RepeatWrapping;
+  t.tex.repeat.set(rx, ry);
+  return t.tex;
+};
+/** Piso: "parquet" (madera), "hormigon" (cemento pulido con juntas) o "alfombra" (placas de alfombra de oficina). */
+export function pisoReal(tipo, rx = 4, ry = 3) {
+  const t = textura(1024, 1024, (ctx, W, H) => {
+    if (tipo === "parquet") {
+      const tablas = 8;
+      const largo = 4;
+      for (let j = 0; j < tablas * 2; j++) {
+        const h0 = H / (tablas * 2);
+        let x = -((j * 137) % 200);
+        while (x < W) {
+          const l = W / largo + ((j * 53 + x) % 60);
+          const tono = 118 + Math.random() * 34;
+          ctx.fillStyle = `rgb(${tono + 34},${tono + 4},${tono - 40})`;
+          ctx.fillRect(x, j * h0, l - 3, h0 - 3);
+          ctx.strokeStyle = "rgba(60,35,15,0.25)";
+          for (let v = 0; v < 6; v++) {
+            ctx.beginPath();
+            const yy = j * h0 + Math.random() * h0;
+            ctx.moveTo(x, yy);
+            ctx.bezierCurveTo(x + l * 0.3, yy + (Math.random() - 0.5) * 6, x + l * 0.7, yy + (Math.random() - 0.5) * 6, x + l, yy);
+            ctx.stroke();
+          }
+          x += l;
+        }
+      }
+      ctx.fillStyle = "rgba(30,18,8,0.55)";
+      for (let j = 0; j <= tablas * 2; j++) ctx.fillRect(0, j * (H / (tablas * 2)) - 1.5, W, 3);
+    } else if (tipo === "alfombra") {
+      ctx.fillStyle = "#4a4e5a";
+      ctx.fillRect(0, 0, W, H);
+      ruido(ctx, W, H, 46, 1);
+      ctx.fillStyle = "rgba(0,0,0,0.5)";
+      for (let i = 0; i <= 4; i++) {
+        ctx.fillRect((i * W) / 4 - 1.5, 0, 3, H);
+        ctx.fillRect(0, (i * H) / 4 - 1.5, W, 3);
+      }
+    } else {
+      ctx.fillStyle = "#6c6f75";
+      ctx.fillRect(0, 0, W, H);
+      for (let i = 0; i < 70; i++) {
+        const g = ctx.createRadialGradient(Math.random() * W, Math.random() * H, 4, Math.random() * W, Math.random() * H, 160);
+        const a = Math.random() * 0.08;
+        g.addColorStop(0, Math.random() > 0.5 ? `rgba(255,255,255,${a})` : `rgba(0,0,0,${a})`);
+        g.addColorStop(1, "rgba(0,0,0,0)");
+        ctx.fillStyle = g;
+        ctx.fillRect(0, 0, W, H);
+      }
+      ruido(ctx, W, H, 18, 1);
+      ctx.fillStyle = "rgba(20,20,22,0.55)";
+      ctx.fillRect(W / 2 - 1.5, 0, 3, H);
+      ctx.fillRect(0, H / 2 - 1.5, W, 3);
+    }
+  });
+  const tex = conRepeticion(t, rx, ry);
+  return new THREE.MeshStandardMaterial({ map: tex, bumpMap: tex, bumpScale: tipo === "alfombra" ? 0.6 : 0.25, roughness: tipo === "parquet" ? 0.5 : tipo === "alfombra" ? 0.95 : 0.55, metalness: 0 });
+}
+/** Pared pintada con textura suave de enduido. */
+export function paredReal(color = "#b8bbc2", rx = 3, ry = 2) {
+  const t = textura(512, 512, (ctx, W, H) => {
+    ctx.fillStyle = color;
+    ctx.fillRect(0, 0, W, H);
+    ruido(ctx, W, H, 14, 1);
+    for (let i = 0; i < 30; i++) {
+      const g = ctx.createRadialGradient(Math.random() * W, Math.random() * H, 2, Math.random() * W, Math.random() * H, 120);
+      g.addColorStop(0, `rgba(0,0,0,${Math.random() * 0.05})`);
+      g.addColorStop(1, "rgba(0,0,0,0)");
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, W, H);
+    }
+  });
+  const tex = conRepeticion(t, rx, ry);
+  return new THREE.MeshStandardMaterial({ map: tex, bumpMap: tex, bumpScale: 0.15, roughness: 0.85, metalness: 0 });
+}
 export const sombra = (m) => {
   m.castShadow = true;
   m.receiveShadow = true;
@@ -261,22 +357,9 @@ export function crearEscena(contenedor, { logoUrl, onActividad, onSaludo } = {})
   // ----- mundo -----
   const mundo = new THREE.Group();
   scene.add(mundo);
-  const piso = caja(12.4, 0.5, 9.4, plastico(COLOR.suelo, { roughness: 0.5, clearcoat: 0.2 }), 0.2);
+  const piso = caja(12.4, 0.5, 9.4, pisoReal("parquet", 4.5, 3.4), 0.12);
   piso.position.set(1.4, -0.25, 0.2);
   mundo.add(piso);
-  const COLS = 15;
-  const FILAS = 11;
-  const studs = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.22, 0.22, 0.13, 20), plastico(0x1f2128, { roughness: 0.45 }), COLS * FILAS);
-  studs.castShadow = true;
-  studs.receiveShadow = true;
-  const m4 = new THREE.Matrix4();
-  let n = 0;
-  for (let i = 0; i < COLS; i++)
-    for (let j = 0; j < FILAS; j++) {
-      m4.makeTranslation(-3.6 + i * 0.8, 0.065, -3.7 + j * 0.8);
-      studs.setMatrixAt(n++, m4);
-    }
-  mundo.add(studs);
 
   // alfombra redonda con el logo
   const alfombra = textura(512, 512, () => {});
@@ -315,7 +398,7 @@ export function crearEscena(contenedor, { logoUrl, onActividad, onSaludo } = {})
   mundo.add(alfBase);
 
   // pared del fondo
-  const pared = caja(12.4, 7.2, 0.5, plastico(COLOR.pared, { roughness: 0.55, clearcoat: 0.15 }), 0.15);
+  const pared = caja(12.4, 7.2, 0.5, paredReal(), 0.15);
   pared.position.set(1.4, 3.6, -4.2);
   mundo.add(pared);
   const zocalo = caja(12.4, 0.4, 0.62, plastico(COLOR.naranja), 0.1);
@@ -685,17 +768,16 @@ export function crearEscena(contenedor, { logoUrl, onActividad, onSaludo } = {})
     archivero.add(m);
   }
   const ladrillo = (w, d, color, x, z, ry = 0) => {
+    // cajas de cartón de archivo (el color ya no importa: son todas de cartón)
+    void color;
     const g = new THREE.Group();
-    const b = caja(w * 0.8, 0.5, d * 0.8, plastico(color), 0.04);
-    b.position.y = 0.25;
+    const b = caja(w * 0.8, 0.62, d * 0.8, plastico(0xb38a5a, { roughness: 0.9 }), 0.03);
+    b.position.y = 0.31;
     g.add(b);
-    for (let i = 0; i < w; i++)
-      for (let j = 0; j < d; j++) {
-        const s = cilindro(0.2, 0.2, 0.14, plastico(color), 16);
-        s.position.set((i - (w - 1) / 2) * 0.8, 0.57, (j - (d - 1) / 2) * 0.8);
-        g.add(s);
-      }
-    g.position.set(x, 0.13, z);
+    const cinta = caja(w * 0.8 + 0.01, 0.01, 0.12, plastico(0xd8c9a5, { roughness: 0.5 }), 0.004);
+    cinta.position.y = 0.625;
+    g.add(cinta);
+    g.position.set(x, 0.0, z);
     g.rotation.y = ry;
     mundo.add(g);
     return g;
@@ -757,6 +839,7 @@ export function crearEscena(contenedor, { logoUrl, onActividad, onSaludo } = {})
   });
   lia.add(pj.raiz);
   const { tronco, brazoI, brazoD, cabeza, ec, refrescarCara } = pj;
+  vestirConFBX(pj, { carpeta: `${import.meta.env.BASE_URL}modelos/agentes/business1`, prefijo: "f014", sentada: true, altura: 4.5 }).catch((e) => console.warn("[agentes] modelo 3D no disponible, se usa el de respaldo:", e.message));
 
   // objetos que toma en la mano (solo se ven cuando los usa)
   const tazaMano = tazaEscr.clone(true);
@@ -1266,6 +1349,7 @@ export function crearEscena(contenedor, { logoUrl, onActividad, onSaludo } = {})
     ec.mirarX = pose.mirarX;
     ec.mirarY = pose.mirarY;
     ec.guiño = pose.guiño;
+    pj.actualizar?.(dt);
     refrescarCara(false);
 
     // monitor, tablero, reloj

@@ -473,5 +473,9 @@ export function crearPersonajeArcilla(est = {}) {
     pelo.add(fondo);
   }
 
-  return { raiz, caderas, patas, tronco, brazoI, brazoD, cabeza, ec, refrescarCara, R, ALTO_CABEZA, pelo, mats: { piel: matPiel, saco: matSaco, pelo: matPelo, pantalon: matPant, camisa: matCamisa }, dibujarPecho: dibujarP };
+  const baseCabeza = new Set(cabeza.children);
+  raiz.traverse((o) => {
+    if (o.isMesh) o.userData.cuerpo = true; // el modelo 3D real (VRM) los reemplaza al cargar
+  });
+  return { baseCabeza, raiz, caderas, patas, tronco, brazoI, brazoD, cabeza, ec, refrescarCara, R, ALTO_CABEZA, pelo, mats: { piel: matPiel, saco: matSaco, pelo: matPelo, pantalon: matPant, camisa: matCamisa }, dibujarPecho: dibujarP };
 }
