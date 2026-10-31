@@ -374,3 +374,13 @@ test("pdf: el reporte genérico arma un PDF válido con títulos, viñetas, tabl
   assert.match(pdf.toString("latin1"), /Reporte generado por Nati/);
   assert.ok(pdfReporte({ agente, titulo: "", texto: "hola" }).length > 500);
 });
+
+test("pdf: la liquidación puede salir solo con horas normales", () => {
+  const { pdfLiquidacion } = require("../agentes/pdf");
+  const op = { operario: "Ana", categoria: "X", resumen: { horas_normales: 80, horas_extra: 5, horas_totales: 85, valor_normales: 1000, valor_extras: 200, total: 1200 }, dias: [{ fecha: "2026-10-01", dia: "jueves", ingreso: "08:00", egreso: "17:00", horas_normales: 8, horas_extra: 1, importe: 150 }] };
+  const ind = pdfLiquidacion(op, { soloNormales: true }).toString("latin1");
+  assert.match(ind, /total de horas normales/);
+  assert.doesNotMatch(ind, /total a liquidar/);
+  const plantel = pdfLiquidacion({ liquidacion_de: "octubre", operarios: [op], total_horas_normales: 80, total_importe_normales: 1000, informe: "" }, { soloNormales: true }).toString("latin1");
+  assert.match(plantel, /Importe normales/);
+});

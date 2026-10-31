@@ -489,14 +489,14 @@ function registrarRutasAgentes(app, { db, pool, ai }) {
       const params = {
         operario: texto("operario"), mes: texto("mes"), desde: texto("desde"), hasta: texto("hasta"),
         quincena: Number.isInteger(Number(q.quincena)) && q.quincena !== "" && q.quincena !== undefined ? Number(q.quincena) : undefined,
-        solo_extras: q.solo_extras === "1" || q.solo_extras === "true" || undefined,
+        solo_extras: q.tipo === "extras" || q.solo_extras === "1" || q.solo_extras === "true" || undefined,
         solo_con_categoria: q.solo_con_categoria === "1" || q.solo_con_categoria === "true" || undefined,
         fechas: typeof q.fechas === "string" && q.fechas ? q.fechas.split(",").map((f) => f.trim()).filter(Boolean).slice(0, 40) : undefined,
         detalle: "completo",
       };
       const liq = await liquidarDesdeBD(pool, params);
       if (liq.error) return res.status(400).json({ error: liq.error });
-      const pdf = pdfLiquidacion(liq, { usuario: req.usuario.nombre });
+      const pdf = pdfLiquidacion(liq, { usuario: req.usuario.nombre, soloNormales: q.tipo === "normales" });
       const slug = (t) => String(t || "").normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^\w]+/g, "-").replace(/^-+|-+$/g, "").toLowerCase();
       const nombre = ["liquidacion", slug(liq.operario || "plantel"), slug(params.mes || params.desde || liq.liquidacion_de).slice(0, 20), params.quincena ? `q${params.quincena}` : ""].filter(Boolean).join("-");
       await registrarActividad(db, "rrhh", "LIQUIDACION", `${req.usuario.nombre} descargó el PDF de ${liq.operario ? "la liquidación de " + liq.operario : "la liquidación del plantel"}`, liq.liquidacion_de, req.usuario.nombre);
