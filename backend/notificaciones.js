@@ -23,10 +23,16 @@ async function asegurarTablasNotificaciones(db) {
     )`);
 }
 
+// Quien quiera enterarse de cada notificación creada (los avisos al celular) se engancha acá.
+let alCrear = null;
+const alCrearNotificacion = (fn) => {
+  alCrear = fn;
+};
+
 const limpiarRoles = (roles) => [...new Set((roles || []).map((r) => String(r).trim().toUpperCase()).filter(Boolean))];
 
 /** Deja una notificación para los roles indicados. Nunca rompe la operación que la origina. */
-async function crearNotificacion(db, { tipo, titulo, texto = null, ruta = null, roles, creada_por_id = null }) {
+async function crearNotificacion(db, { tipo, titulo, texto = null, ruta = null, roles, creada_por_id = null, push = false }) {
   try {
     const lista = limpiarRoles(roles);
     if (!lista.length) return null;
@@ -34,6 +40,7 @@ async function crearNotificacion(db, { tipo, titulo, texto = null, ruta = null, 
       "INSERT INTO notificaciones (tipo, titulo, texto, ruta, roles, creada_por_id) VALUES (?,?,?,?,?,?)",
       [tipo, String(titulo).slice(0, 255), texto ? String(texto).slice(0, 500) : null, ruta, lista.join(","), creada_por_id],
     );
+    if (push && alCrear) Promise.resolve(alCrear({ roles: lista, titulo, texto, ruta, excluirUsuario: creada_por_id })).catch((e) => console.error("[notificaciones] push:", e.message));
     return r.insertId;
   } catch (e) {
     console.error("[notificaciones] no se pudo crear:", e.message);
@@ -105,4 +112,4 @@ function registrarRutasNotificaciones(app, db) {
   });
 }
 
-module.exports = { asegurarTablasNotificaciones, crearNotificacion, registrarRutasNotificaciones, limpiarRoles };
+module.exports = { alCrearNotificacion, asegurarTablasNotificaciones, crearNotificacion, registrarRutasNotificaciones, limpiarRoles };

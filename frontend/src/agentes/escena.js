@@ -90,6 +90,37 @@ function camino(id, destino, k = 0) {
   return { pts: limpiar(pts), dirFin: h.visitaDir };
 }
 
+// ---- Reunión de las 08:00 (lunes a viernes): todos van a la sala del medio, se quedan 9 minutos y vuelven ----
+const ZONA = "America/Argentina/Buenos_Aires";
+const REUNION_SEG = 8 * 3600;
+const REUNION_DURA = 10 * 60;
+const REUNION_QUEDA = 9 * 60;
+const REUNION_SPOTS = [{ x: 74, y: 42 }, { x: 83, y: 42 }, { x: 92, y: 42 }, { x: 101, y: 42 }];
+
+/** Segundos desde las 08:00 de hoy si ahora corre la reunión (lunes a viernes), o null. */
+export function segundosDeReunion(ahora = Date.now()) {
+  const p = Object.fromEntries(
+    new Intl.DateTimeFormat("en-US", { timeZone: ZONA, weekday: "short", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false })
+      .formatToParts(new Date(ahora)).filter((x) => x.type !== "literal").map((x) => [x.type, x.value]),
+  );
+  if (["Sat", "Sun"].includes(p.weekday)) return null;
+  const seg = (Number(p.hour) % 24) * 3600 + Number(p.minute) * 60 + Number(p.second) + (ahora % 1000) / 1000;
+  const s = seg - REUNION_SEG;
+  return s >= 0 && s < REUNION_DURA ? s : null;
+}
+
+function viajesReunion(lista) {
+  return lista.map((id, i) => {
+    const g = geometria(id);
+    const spot = REUNION_SPOTS[i % REUNION_SPOTS.length];
+    const pts = limpiar([g.silla, { x: g.silla.x, y: g.pasoY }, { x: g.puertaX, y: g.pasoY }, { x: g.puertaX, y: PASILLO_Y }, { x: 88, y: PASILLO_Y }, { x: 88, y: spot.y }, spot]);
+    const L = largo(pts);
+    const walk = L / SPEED;
+    const off = i * 2;
+    return { id, destino: "reunion", pts, dirFin: "up", L, walk, off, quedarse: Math.max(5, REUNION_QUEDA - off - walk) };
+  });
+}
+
 const memo = new Map();
 function planDe(slot, ids) {
   const clave = `${slot}|${ids.join(",")}`;
@@ -128,9 +159,10 @@ function planDe(slot, ids) {
  */
 export function escena(ahora = Date.now(), ids = ORDEN) {
   const lista = ORDEN.filter((x) => ids.includes(x));
+  const sReunion = segundosDeReunion(ahora);
   const slot = Math.floor(ahora / SLOT_MS);
-  const t = (ahora % SLOT_MS) / 1000;
-  const { viajes } = planDe(slot, lista);
+  const t = sReunion != null ? sReunion : (ahora % SLOT_MS) / 1000;
+  const viajes = sReunion != null ? viajesReunion(lista) : planDe(slot, lista).viajes;
   const out = {};
   for (const id of lista) {
     const g = geometria(id);
@@ -148,8 +180,8 @@ export function escena(ahora = Date.now(), ids = ORDEN) {
       out[v.id] = { fase: "sale", x: p.x, y: p.y, dir: p.dir, camina: true, sentado: false, con: dest, paso: Math.floor((t - ini) * 3) };
     } else if (t < sigue) {
       const f = v.pts[v.pts.length - 1];
-      out[v.id] = { fase: dest === "cafe" ? "cafe" : "visita", x: f.x, y: f.y, dir: v.dirFin, camina: false, sentado: false, con: dest, paso: 0 };
-      if (dest !== "cafe" && out[dest]) {
+      out[v.id] = { fase: dest === "cafe" ? "cafe" : dest === "reunion" ? "reunion" : "visita", x: f.x, y: f.y, dir: v.dirFin, camina: false, sentado: false, con: dest, paso: 0 };
+      if (dest !== "cafe" && dest !== "reunion" && out[dest]) {
         const h = geometria(dest);
         out[dest] = { ...out[dest], fase: "recibe", dir: h.visitaDir === "left" ? "right" : "left", con: v.id };
       }

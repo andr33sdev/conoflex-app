@@ -2,7 +2,11 @@ import { memo, useEffect, useMemo, useState } from "react";
 import { Lock } from "lucide-react";
 import { rectasMini } from "./pixelMini";
 import { estadoDe, equipoIds, useSlotEstado } from "./estados";
-import { CAFE, H, REUNION, W, escena, geometria } from "./escena";
+import { CAFE, H, REUNION, W, escena, geometria, segundosDeReunion } from "./escena";
+import Reunion from "./Reunion";
+import { useReunion } from "./useReunion";
+import PreguntaOficina from "./PreguntaOficina";
+import AvisosCelular from "./AvisosCelular";
 import { PROXIMOS } from "./proximos";
 
 // El departamento visto desde arriba. Todo se dibuja con rectángulos en un mapa de 176×112 unidades;
@@ -258,7 +262,24 @@ function Globo({ e, texto, sub }) {
   );
 }
 
-function Mapa({ agentes, onElegir, modo, vivoId, abiertosVivo }) {
+/** Durante la reunión habla uno por vez: su globo trae lo más importante de su área. */
+function ReunionEnCurso({ esc, reunion, s }) {
+  const sentados = Object.entries(esc).filter(([, e]) => e.fase === "reunion").map(([id]) => id);
+  if (!sentados.length) return null;
+  const turno = Math.floor(Math.max(0, s - 20) / 9) % sentados.length;
+  const id = sentados[turno];
+  const sec = reunion?.secciones?.find((x) => x.agente === id);
+  return (
+    <>
+      <div className="absolute left-1/2 -translate-x-1/2 top-[13%] pointer-events-none z-10">
+        <span className="block rounded-md bg-black/60 px-2 py-0.5 text-[10.5px] sm:text-[11px] font-semibold text-zinc-200">Reunión de las 08:00 en curso</span>
+      </div>
+      {sec && <Globo e={esc[id]} texto={sec.resumen} />}
+    </>
+  );
+}
+
+function Mapa({ agentes, onElegir, modo, vivoId, abiertosVivo, reunion }) {
   const ahora = useReloj();
   useSlotEstado();
   const ids = equipoIds();
@@ -268,6 +289,7 @@ function Mapa({ agentes, onElegir, modo, vivoId, abiertosVivo }) {
   const hora = new Date(ahora).getHours();
   const f = franja(hora);
   const nombre = (id) => agentes.find((a) => a.id === id)?.nombre || id;
+  const enReunion = segundosDeReunion(ahora);
   const lista = ids2.filter((id) => esc[id]).sort((a, b) => esc[a].y - esc[b].y);
   return (
     <div className="relative rounded-2xl overflow-hidden border border-white/[0.08] bg-[#14141a] select-none">
@@ -303,10 +325,12 @@ function Mapa({ agentes, onElegir, modo, vivoId, abiertosVivo }) {
         const e = esc[id];
         if (e.fase === "escritorio") return null;
         const est = estadoDe(id, nombre(id), { modo: id === vivoId ? modo : "idle", abiertos: id === vivoId ? abiertosVivo : 0, ahora });
+        if (e.fase === "reunion") return null;
         if (e.fase === "visita") return <Globo key={id} e={e} texto={DICHOS[`${id}>${e.con}`] || est.texto} />;
         if (e.fase === "recibe") return <Globo key={id} e={e} texto={est.texto} sub />;
         return <Globo key={id} e={e} texto={est.texto} sub />;
       })}
+      {enReunion != null && <ReunionEnCurso esc={esc} reunion={reunion} s={enReunion} />}
     </div>
   );
 }
@@ -320,16 +344,22 @@ function Pendiente({ a, onClick }) {
 }
 
 /** Vista principal del módulo: el departamento con todo el equipo a la vista. */
-export default function Mundo({ agentes, onElegir, modo, abiertosVivo, vivoId }) {
+export default function Mundo({ agentes, onElegir, modo, abiertosVivo, vivoId, esAdmin }) {
+  const [reunion, recargar] = useReunion();
   const total = agentes.reduce((a, x) => a + (x.id === vivoId && abiertosVivo != null ? abiertosVivo : x.abiertos || 0), 0);
   return (
     <div className="h-full overflow-y-auto custom-scrollbar bg-[#0b0b0d]">
       <div className="max-w-5xl mx-auto px-3 sm:px-6 py-5">
-        <div className="mb-4">
+        <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+          <div>
           <h1 className="text-[20px] font-bold text-white leading-tight">Oficina</h1>
           <p className="text-[13px] text-zinc-500 mt-0.5">{agentes.length} {agentes.length === 1 ? "agente trabajando" : "agentes trabajando"}{total > 0 ? ` · ${total} ${total === 1 ? "aviso abierto" : "avisos abiertos"} en total` : " · todo en orden"} · tocá una sala para hablar</p>
+          </div>
+          <AvisosCelular />
         </div>
-        <Mapa agentes={agentes} onElegir={onElegir} modo={modo} vivoId={vivoId} abiertosVivo={abiertosVivo} />
+        <div className="mb-4"><PreguntaOficina agentes={agentes} onElegir={onElegir} /></div>
+        <Mapa agentes={agentes} onElegir={onElegir} modo={modo} vivoId={vivoId} abiertosVivo={abiertosVivo} reunion={reunion} />
+        <div className="mt-4"><Reunion reunion={reunion} esAdmin={esAdmin} onRehacer={recargar} onElegir={onElegir} /></div>
         {PROXIMOS.length > 0 && <div className="mt-3 flex flex-wrap gap-2">{PROXIMOS.map((a) => <Pendiente key={a.id} a={a} onClick={() => onElegir(a.id)} />)}</div>}
       </div>
     </div>
