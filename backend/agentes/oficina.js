@@ -74,7 +74,7 @@ async function preguntarOficina({ ai, chats, disponibles, mensaje, usuario }) {
   const consultas = await elegirAgentes({ ai, pregunta: mensaje, disponibles });
   if (!consultas.length) return { respuestas: [], nadie: true };
   const res = await Promise.allSettled(
-    consultas.map((c) => chats[c.agente].responder({ mensaje: c.pregunta, historial: [], destinos: [], usuario })),
+    consultas.map((c) => chats[c.agente].responder({ mensaje: c.pregunta, historial: [], destinos: [], usuario, modo: "oficina" })),
   );
   const respuestas = consultas.map((c, i) => {
     const a = disponibles.find((x) => x.id === c.agente);

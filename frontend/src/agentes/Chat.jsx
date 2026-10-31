@@ -1,10 +1,40 @@
 import { useEffect, useRef } from "react";
-import { ArrowRight, ArrowUp, AudioLines, FileDown, Mic, Square } from "lucide-react";
+import { ArrowRight, ArrowUp, AudioLines, Check, FileDown, Loader2, Mic, Square, X } from "lucide-react";
 import Markdown from "./Markdown";
 import { Avatar8 } from "./pixel";
 
+const num = (n) => Number(n).toLocaleString("es-AR", { maximumFractionDigits: 3 });
+const verbo = { sumar: "Sumar", restar: "Restar", fijar: "Dejar en" };
+
+/** Confirmación de un ajuste de stock: muestra exactamente qué se va a cambiar y no hace nada hasta que se toca el botón. */
+function TarjetaAjuste({ c, onAceptar, onCancelar }) {
+  const u = c.unidad ? ` ${c.unidad}` : "";
+  return (
+    <div className="mt-3 rounded-xl border border-white/[0.14] bg-white/[0.04] p-3.5" role="group" aria-label="Confirmar ajuste de stock">
+      <p className="text-[12px] font-semibold uppercase tracking-wide text-zinc-500">Ajuste de stock · falta tu confirmación</p>
+      <p className="mt-1 text-[15px] font-bold text-white">{c.nombre}</p>
+      <p className="mt-0.5 text-[14px] text-zinc-200">{verbo[c.operacion]} <b className="text-white">{num(c.cantidad)}{u}</b></p>
+      <p className="mt-1 text-[13.5px] text-zinc-400">Stock: {num(c.stockBase)}{u} → <b className="text-white">{num(c.stockNuevo)}{u}</b>{c.motivo ? ` · ${c.motivo}` : ""}</p>
+      {c.estado === "pendiente" || c.estado === "enviando" ? (
+        <div className="mt-3 flex flex-wrap gap-2">
+          <button onClick={onAceptar} disabled={c.estado === "enviando"} className="inline-flex items-center gap-2 min-h-[42px] px-4 rounded-lg bg-[#FF5A00] hover:bg-[#ff6d1f] text-[14px] font-bold text-black disabled:opacity-60">
+            {c.estado === "enviando" ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} strokeWidth={3} />} Confirmar: {verbo[c.operacion].toLowerCase()} {num(c.cantidad)}{u}
+          </button>
+          <button onClick={onCancelar} disabled={c.estado === "enviando"} className="inline-flex items-center gap-1.5 min-h-[42px] px-3 rounded-lg bg-white/[0.07] hover:bg-white/[0.12] text-[13.5px] font-semibold text-zinc-200 disabled:opacity-60">
+            <X size={15} /> Cancelar
+          </button>
+        </div>
+      ) : (
+        <p className={`mt-3 text-[13.5px] font-semibold ${c.estado === "hecho" ? "text-emerald-400" : c.estado === "error" ? "text-red-400" : "text-zinc-400"}`}>
+          {c.estado === "hecho" ? `Listo: el stock quedó en ${num(c.stockFinal)}${u}.` : c.estado === "cancelado" ? "Cancelado: no se modificó nada." : c.error || "No se pudo aplicar."}
+        </p>
+      )}
+    </div>
+  );
+}
+
 /** Chat del agente: mensajes y una barra para escribir. Sin sugerencias ni tarjetas que ocupen lugar. */
-export default function Chat({ perfil, estado, mensajes, enviando, texto, onTexto, onEnviar, dictando, onDictado, puedeDictar, aviso, saludo, resumen, abiertos, onVerAvisos, manos, onManos, hablando, onPdf, onReporte, onDerivar }) {
+export default function Chat({ perfil, estado, mensajes, enviando, texto, onTexto, onEnviar, dictando, onDictado, puedeDictar, aviso, saludo, resumen, abiertos, onVerAvisos, manos, onManos, hablando, onPdf, onReporte, onDerivar, onConfirmar }) {
   const fin = useRef(null);
   useEffect(() => {
     fin.current?.scrollIntoView({ behavior: "smooth", block: "end" });
@@ -53,6 +83,7 @@ export default function Chat({ perfil, estado, mensajes, enviando, texto, onText
                         </button>
                       </div>
                     )}
+                    {m.confirmacion && <TarjetaAjuste c={m.confirmacion} onAceptar={() => onConfirmar?.(i, true)} onCancelar={() => onConfirmar?.(i, false)} />}
                     {!m.error && m.texto && (
                       <div className="mt-2 flex items-center gap-1 -ml-2">
                         {m.herramientas?.filter((h) => h.nombre === "liquidar_horas" && h.ok && h.args).slice(-1).map((h) => (

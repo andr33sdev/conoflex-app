@@ -54,7 +54,7 @@ function crearMotor({ ai, nombre, construirInstrucciones, herramientas, palabras
   }
 
   /** destinos: agentes a los que este usuario puede derivar [{id, nombre, puesto}] */
-  async function responder({ mensaje, historial, destinos = [], usuario = null }) {
+  async function responder({ mensaje, historial, destinos = [], usuario = null, modo = null }) {
     const inicio = Date.now();
     const instrucciones = construirInstrucciones(destinos);
     const tools = destinos.length ? [{ functionDeclarations: [...herramientas[0].functionDeclarations, herramientaDerivar(destinos)] }] : herramientas;
@@ -62,6 +62,7 @@ function crearMotor({ ai, nombre, construirInstrucciones, herramientas, palabras
     const usadas = [];
     const resultadosReales = []; // lo que devolvieron las herramientas: sirve para verificar la respuesta final
     let derivacion = null;
+    let confirmacion = null;
 
     const ejecutarUna = async (llamada) => {
       const args = llamada.args || {};
@@ -79,12 +80,17 @@ function crearMotor({ ai, nombre, construirInstrucciones, herramientas, palabras
           uso.texto = `Se lo pasó a ${d.nombre}`;
           return { ok: true, derivado_a: d.nombre, instruccion: `Ya se lo pasaste a ${d.nombre}. Decile al usuario en UNA línea que se lo pasás y que ${d.nombre} lo ve ahora. No respondas el contenido.` };
         }
-        const r = await ejecutar(llamada, uso, { usuario, destinos });
+        const r = await ejecutar(llamada, uso, { usuario, destinos, modo });
         resultadosReales.push({ nombre: llamada.name, args, r });
         // Una herramienta puede dejar una derivación lista (ej: Nati le pasa materiales a Vera): la pantalla la muestra como tarjeta.
         if (uso.derivacion) {
           derivacion = uso.derivacion;
           delete uso.derivacion;
+        }
+        // Una herramienta puede dejar algo para confirmar con un botón (ej: Nati propone un ajuste de stock).
+        if (uso.confirmacion) {
+          confirmacion = uso.confirmacion;
+          delete uso.confirmacion;
         }
         return r;
       } catch (e) {
@@ -107,6 +113,7 @@ function crearMotor({ ai, nombre, construirInstrucciones, herramientas, palabras
         respuesta: texto || (derivacion ? `Se lo paso a ${derivacion.nombre}.` : "No pude armar una respuesta con los datos que tengo. ¿Me la repetís de otra forma?"),
         herramientas: usadas,
         derivacion,
+        confirmacion,
         ms: Date.now() - inicio,
       };
     };
