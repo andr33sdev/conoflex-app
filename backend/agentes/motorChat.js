@@ -31,7 +31,7 @@ function herramientaDerivar(destinos) {
  *  ai, construirInstrucciones(destinos) → string, herramientas: [{functionDeclarations}], palabras: {tool: texto},
  *  ejecutar(llamada, uso) → resultado, nombre
  */
-function crearMotor({ ai, nombre, construirInstrucciones, herramientas, palabras = {}, ejecutar }) {
+function crearMotor({ ai, nombre, construirInstrucciones, herramientas, palabras = {}, ejecutar, posprocesar = null }) {
   async function llamarModelo(contents, instrucciones, tools, { conHerramientas }) {
     const config = {
       systemInstruction: instrucciones,
@@ -60,6 +60,7 @@ function crearMotor({ ai, nombre, construirInstrucciones, herramientas, palabras
     const tools = destinos.length ? [{ functionDeclarations: [...herramientas[0].functionDeclarations, herramientaDerivar(destinos)] }] : herramientas;
     const contents = [...normalizarHistorial(historial, mensaje), { role: "user", parts: [{ text: mensaje }] }];
     const usadas = [];
+    const resultadosReales = []; // lo que devolvieron las herramientas: sirve para verificar la respuesta final
     let derivacion = null;
 
     const ejecutarUna = async (llamada) => {
@@ -79,6 +80,7 @@ function crearMotor({ ai, nombre, construirInstrucciones, herramientas, palabras
           return { ok: true, derivado_a: d.nombre, instruccion: `Ya se lo pasaste a ${d.nombre}. Decile al usuario en UNA línea que se lo pasás y que ${d.nombre} lo ve ahora. No respondas el contenido.` };
         }
         const r = await ejecutar(llamada, uso, { usuario, destinos });
+        resultadosReales.push({ nombre: llamada.name, args, r });
         // Una herramienta puede dejar una derivación lista (ej: Nati le pasa materiales a Vera): la pantalla la muestra como tarjeta.
         if (uso.derivacion) {
           derivacion = uso.derivacion;
@@ -93,7 +95,14 @@ function crearMotor({ ai, nombre, construirInstrucciones, herramientas, palabras
     };
 
     const finalizar = (resp) => {
-      const texto = String(resp.text || "").replace(/\n{3,}/g, "\n\n").trim();
+      let texto = String(resp.text || "").replace(/\n{3,}/g, "\n\n").trim();
+      if (posprocesar && texto) {
+        try {
+          texto = posprocesar(texto, resultadosReales) || texto;
+        } catch (e) {
+          console.error(`[${nombre} posprocesar]`, e.message);
+        }
+      }
       return {
         respuesta: texto || (derivacion ? `Se lo paso a ${derivacion.nombre}.` : "No pude armar una respuesta con los datos que tengo. ¿Me la repetís de otra forma?"),
         herramientas: usadas,
