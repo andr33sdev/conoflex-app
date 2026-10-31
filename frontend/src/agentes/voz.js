@@ -151,50 +151,6 @@ export async function envolventeDeWav(blob) {
 }
 
 
-/**
- * Voz "de máquina": se le baja un poco la resolución al audio natural (menos frecuencia de muestreo y menos niveles)
- * para que suene a equipo electrónico, sin llegar a robot ni a 8 bits. Devuelve un WAV nuevo o null si no pudo.
- */
-export async function efectoMaquina(blob) {
-  try {
-    const buf = await blob.arrayBuffer();
-    const dv = new DataView(buf);
-    if (dv.byteLength < 48 || dv.getUint32(0) !== 0x52494646 || dv.getUint16(34, true) !== 16) return null;
-    const frecuencia = dv.getUint32(24, true) || 24000;
-    let pos = 12;
-    let ini = -1;
-    let largo = 0;
-    while (pos + 8 <= dv.byteLength) {
-      const id = dv.getUint32(pos);
-      const tam = dv.getUint32(pos + 4, true);
-      if (id === 0x64617461) {
-        ini = pos + 8;
-        largo = Math.min(tam, dv.byteLength - ini);
-        break;
-      }
-      pos += 8 + tam + (tam % 2);
-    }
-    if (ini < 0) return null;
-    const muestras = Math.floor(largo / 2);
-    const sujetar = Math.max(2, Math.round(frecuencia / 11000)); // cada muestra se repite: ~11 kHz efectivos
-    const niveles = 96; // ~6,5 bits: se nota el grano pero se entiende perfecto
-    const out = new Uint8Array(buf.slice(0));
-    const dvOut = new DataView(out.buffer);
-    let prev = 0;
-    for (let i = 0; i < muestras; i++) {
-      let v = i % sujetar === 0 ? dv.getInt16(ini + i * 2, true) / 32768 : prev;
-      prev = v;
-      v = Math.round(v * niveles) / niveles;
-      // un poco de realce para compensar lo que se pierde al bajar la resolución
-      v = Math.max(-1, Math.min(1, v * 1.08));
-      dvOut.setInt16(ini + i * 2, Math.round(v * 32767), true);
-    }
-    return new Blob([out], { type: "audio/wav" });
-  } catch {
-    return null;
-  }
-}
-
 function hablarNatural(prep, { onInicio, onFin, onNivel, onFallo }) {
   const url = URL.createObjectURL(prep.blob);
   const audio = new Audio(url);
@@ -269,8 +225,7 @@ export async function prepararVoz(texto, { base, timeoutMs = 14000 } = {}) {
       if (!res.ok) throw new Error(`voz ${res.status}`);
       const blob = await res.blob();
       if (!blob.size) throw new Error("audio vacío");
-      const maquina = (await efectoMaquina(blob)) || blob;
-      return { tipo: "natural", blob: maquina, envolvente: await envolventeDeWav(maquina) };
+      return { tipo: "natural", blob, envolvente: await envolventeDeWav(blob) };
     } catch (e) {
       console.warn("[Lía] voz natural no disponible:", e.message);
       if (e.definitivo) break;

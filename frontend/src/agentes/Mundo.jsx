@@ -345,7 +345,7 @@ function Pendiente({ a, onClick }) {
 
 /** Vista principal del módulo: el departamento con todo el equipo a la vista. */
 export default function Mundo({ agentes, onElegir, modo, abiertosVivo, vivoId, esAdmin }) {
-  const [reunion, recargar] = useReunion();
+  const [reunion, recargar, temario] = useReunion();
   const total = agentes.reduce((a, x) => a + (x.id === vivoId && abiertosVivo != null ? abiertosVivo : x.abiertos || 0), 0);
   return (
     <div className="h-full overflow-y-auto custom-scrollbar bg-[#0b0b0d]">
@@ -359,7 +359,7 @@ export default function Mundo({ agentes, onElegir, modo, abiertosVivo, vivoId, e
         </div>
         <div className="mb-4"><PreguntaOficina agentes={agentes} onElegir={onElegir} /></div>
         <Mapa agentes={agentes} onElegir={onElegir} modo={modo} vivoId={vivoId} abiertosVivo={abiertosVivo} reunion={reunion} />
-        <div className="mt-4"><Reunion reunion={reunion} esAdmin={esAdmin} onRehacer={recargar} onElegir={onElegir} /></div>
+        <div className="mt-4"><Reunion reunion={reunion} temario={temario} esAdmin={esAdmin} onRehacer={recargar} onElegir={onElegir} /></div>
         {PROXIMOS.length > 0 && <div className="mt-3 flex flex-wrap gap-2">{PROXIMOS.map((a) => <Pendiente key={a.id} a={a} onClick={() => onElegir(a.id)} />)}</div>}
       </div>
     </div>

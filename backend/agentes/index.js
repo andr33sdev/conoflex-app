@@ -9,6 +9,7 @@ const { crearVera } = require("./veraChat");
 const { crearRomi } = require("./maruChat");
 const { decisionProduccion } = require("./produccionDecision");
 const { listarOperarios, fichaOperario } = require("./fichaOperario");
+const { armarTemario, olvidarTemario } = require("./temario");
 const { asegurarTablaReuniones, hacerReunion, ultimaReunion, iniciarReunion, ahoraAR } = require("./reunion");
 const { preguntarOficina } = require("./oficina");
 const { analizarCompras, rankingProveedores, AUTORESOLVIBLES: AUTO_COMPRAS } = require("./vigilanteCompras");
@@ -371,10 +372,25 @@ function registrarRutasAgentes(app, { db, pool, ai }) {
       const hoy = ahoraAR().hoy;
       if (!r) return res.json({ hay: false, hoy: false });
       const ids = new Set(mios.map((a) => a.id));
-      res.json({ hay: true, hoy: r.fecha === hoy, fecha: r.fecha, generada: r.generada, secciones: r.secciones.filter((x) => ids.has(x.agente)), urgentes: r.secciones.filter((x) => ids.has(x.agente) && x.urgente).length });
+      res.json({ hay: true, hoy: r.fecha === hoy, fecha: r.fecha, generada: r.generada, sugerencias: (r.sugerencias || []).filter((x) => ids.has(x.agente)), secciones: r.secciones.filter((x) => ids.has(x.agente)), urgentes: r.secciones.filter((x) => ids.has(x.agente) && x.urgente).length });
     } catch (e) {
       console.error("[agentes] reunión:", e.message);
       res.status(500).json({ error: "No pude cargar la reunión." });
+    }
+  });
+  // Temario en vivo: lo que cada agente va encontrando y llevaría a la próxima reunión.
+  app.get("/api/agentes/reunion/temario", async (req, res) => {
+    try {
+      const usuario = await quien(req);
+      const mios = await permisosDe(usuario);
+      if (!mios.length) return res.status(403).json({ error: "Tu rol no tiene agentes habilitados." });
+      const t = await armarTemario({ pool, db, agentes: AGENTES });
+      const ids = new Set(mios.map((a) => a.id));
+      const secciones = t.secciones.filter((x) => ids.has(x.agente));
+      res.json({ secciones, urgentes: secciones.filter((x) => x.urgente).length, sugerencias: t.sugerencias.filter((x) => ids.has(x.agente)), proxima: t.proxima, actualizado: t.actualizado });
+    } catch (e) {
+      console.error("[agentes] temario:", e.message);
+      res.status(500).json({ error: "No pude armar el temario." });
     }
   });
   // Solo administración: rehace la reunión de hoy (sin avisar a nadie), para probarla o actualizarla.
@@ -383,6 +399,7 @@ function registrarRutasAgentes(app, { db, pool, ai }) {
       const usuario = await quien(req);
       if (String(usuario?.rol || "").toUpperCase() !== "ADMIN") return res.status(403).json({ error: "Solo administración puede rehacer la reunión." });
       await hacerReunion(depsReunion, { forzar: true });
+      olvidarTemario();
       res.json({ ok: true });
     } catch (e) {
       console.error("[agentes] reunión ahora:", e.message);
@@ -642,7 +659,7 @@ function registrarRutasAgentes(app, { db, pool, ai }) {
 
   // La reunión de las 08:00 se avisa por la campanita y al celular a todos los roles que tengan algún agente.
   const depsReunion = {
-    pool, db, agentes: AGENTES,
+    pool, db, ai, agentes: AGENTES,
     revisar: [revisiones.rrhh, revisiones.stock, revisiones.compras],
     notificar: async (c) => {
       const [rows] = await db.query("SELECT DISTINCT rol_nombre FROM permisos_roles WHERE modulo_id LIKE 'agente:%' OR modulo_id = '*'");
