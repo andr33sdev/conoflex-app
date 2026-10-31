@@ -107,7 +107,7 @@ function crearLia({ pool, db, ai }) {
     }
     return { error: `Herramienta desconocida: ${llamada.name}` };
   };
-  return crearMotor({ ai, nombre: "Lía", construirInstrucciones, herramientas: HERRAMIENTAS, palabras: PALABRAS_HERRAMIENTA, ejecutar });
+  return crearMotor({ ai, nombre: "Lía", construirInstrucciones, herramientas: HERRAMIENTAS, palabras: PALABRAS_HERRAMIENTA, ejecutar, posprocesar: verificarRespuesta });
 }
 
 const pesos = (n) => `$ ${Number(n || 0).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -144,6 +144,38 @@ function compactarPlantel(r, args = {}) {
   };
 }
 
+const NOMBRE_PROPIO = /[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+(?:\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+)+/g;
+
+/**
+ * Última barrera contra datos inventados. Si la liquidación fue de todo el plantel, la tabla y los totales de la respuesta
+ * salen SIEMPRE del servidor (el modelo solo aporta, a lo sumo, lo que dice después de la tabla). Y una línea "Ojo:"
+ * se descarta si nombra a alguien que no está en lo que devolvieron las herramientas.
+ */
+function verificarRespuesta(texto, resultados = []) {
+  const reales = JSON.stringify(resultados.map((x) => x.r)).toLowerCase();
+  const plantel = [...resultados].reverse().find((x) => x.nombre === "liquidar_horas" && x.r?.tabla_markdown);
+  let lineas = texto.split("\n");
+  if (plantel) {
+    // se saca todo bloque de tabla escrito por el modelo y se lo reemplaza por el real
+    lineas = lineas.filter((l) => !/^\s*\|/.test(l));
+    const r = plantel.r;
+    const extras = plantel.args?.solo_extras === true;
+    const intro = `Listo, te preparé la liquidación de ${r.liquidacion_de || "horas"} de ${r.cantidad_de_operarios} ${r.cantidad_de_operarios === 1 ? "operario" : "operarios"}.`;
+    const resto = lineas.filter((l) => l.trim() && !/^listo|^te prepar/i.test(l.trim()) && !/\d[\d.]*,\d{2}|\b\d+\s*(horas|hs)\b/i.test(l));
+    lineas = [intro, "", r.tabla_markdown, ...(resto.length ? ["", ...resto] : [])];
+    void extras;
+  }
+  // "Ojo:" solo si lo que dice está respaldado
+  const hayAvisos = (x) => /avisos_presentismo|operarios_sin_categoria|fichada|"avisos"/i.test(JSON.stringify(x.r || {}).slice(0, 200000));
+  lineas = lineas.filter((l) => {
+    if (!/^\s*(\*\*)?ojo/i.test(l)) return true;
+    const nombres = l.match(NOMBRE_PROPIO) || [];
+    if (nombres.some((n) => !reales.includes(n.toLowerCase()))) return false;
+    return resultados.some(hayAvisos);
+  });
+  return lineas.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+}
+
 /** Parámetros de una liquidación que alcanzan para volver a generarla en PDF (solo los conocidos y con tipos simples). */
 function parametrosPDF(a = {}) {
   const o = {};
@@ -155,4 +187,4 @@ function parametrosPDF(a = {}) {
   return o;
 }
 
-module.exports = { compactarPlantel, parametrosPDF, crearLia, construirInstrucciones, HERRAMIENTAS };
+module.exports = { verificarRespuesta, compactarPlantel, parametrosPDF, crearLia, construirInstrucciones, HERRAMIENTAS };
