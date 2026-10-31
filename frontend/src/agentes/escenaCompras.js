@@ -7,7 +7,7 @@ import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeom
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import { arcilla, crearPersonajeArcilla } from "./personajeArcilla.js";
 import { vestirConFBX } from "./personajeFBX.js";
-import { COLOR, HORA_ARG, plastico, pisoReal, paredReal, sombra, caja, cilindro, amortiguar, rnd, clamp, suavizar, textura } from "./escenaLego.js";
+import { COLOR, pulso, HORA_ARG, plastico, pisoReal, paredReal, sombra, caja, cilindro, amortiguar, rnd, clamp, suavizar, textura } from "./escenaLego.js";
 
 export { soportaWebGL } from "./escenaLego.js";
 
@@ -445,7 +445,7 @@ export function crearEscena(contenedor, { logoUrl, onActividad, onSaludo } = {})
   punta.position.set(0.42, ALTO_CABEZA - 0.48, R * 0.92);
   cabeza.add(punta);
 
-  vestirConFBX(pj, { carpeta: `${import.meta.env.BASE_URL}modelos/agentes/business4`, prefijo: "f020", sentada: false, altura: 6.2 }).catch((e) => console.warn("[agentes] modelo 3D no disponible, se usa el de respaldo:", e.message));
+  vestirConFBX(pj, { carpeta: `${import.meta.env.BASE_URL}modelos/agentes/business4`, prefijo: "f020", sentada: false, altura: 4.0 }).catch((e) => console.warn("[agentes] modelo 3D no disponible, se usa el de respaldo:", e.message));
 
   // ---------- estado y animación ----------
   const ctrl = { estado: "idle", hablando: false, nivelExterno: -1, pulso: 0 };
@@ -460,6 +460,10 @@ export function crearEscena(contenedor, { logoUrl, onActividad, onSaludo } = {})
     revisar: { dur: [6, 9], texto: () => (info.lista.length ? `Revisa la lista de compra (${info.lista.length} ${info.lista.length === 1 ? "renglón" : "renglones"})` : "Revisa qué hay que comprar") },
     tablero: { dur: [5, 7], texto: () => (info.proveedores.length ? "Controla el cumplimiento de los proveedores" : "Mira el tablero de proveedores") },
     llamar: { dur: [5, 7], texto: () => (info.sinRecibir ? `Llama a un proveedor: hay ${info.sinRecibir} ${info.sinRecibir === 1 ? "renglón" : "renglones"} sin recibir` : "Atiende una llamada de un proveedor") },
+    explicar: { dur: [5, 8], texto: () => "Habla de un pedido con el equipo" },
+    estirar: { dur: [3, 4], texto: () => "Estira un poco la espalda" },
+    papeles: { dur: [5, 8], texto: () => "Ordena los papeles del escritorio" },
+    pensar: { dur: [4, 6], texto: () => "Piensa a qué proveedor convendría llamar" },
     saludar: { dur: [2.2, 2.6], texto: () => "Saluda" },
     celebrar: { dur: [2.4, 3], texto: () => "¡Lista de compra cerrada!" },
   };
@@ -482,7 +486,7 @@ export function crearEscena(contenedor, { logoUrl, onActividad, onSaludo } = {})
   let proxParp = 2;
   let tHabla = 0;
   let boca = 0;
-  const pose = { mirar: 0, tronco: 0, brazoI: 0, brazoD: 0, tabX: 0, cabX: 0, cabY: 0 };
+  const pose = { tY: 0, tX: 0, mirar: 0, tronco: 0, brazoI: 0, brazoD: 0, tabX: 0, cabX: 0, cabY: 0 };
   let proxCambio = 0;
   let confetiT = 0;
   const NCONF = 40;
@@ -512,7 +516,7 @@ export function crearEscena(contenedor, { logoUrl, onActividad, onSaludo } = {})
     const atiende = ctrl.estado !== "idle";
     // ritmo de actividades
     if (!atiende && t - act.t0 > act.dur) {
-      const opciones = info.sinRecibir ? ["revisar", "llamar", "llamar", "tablero"] : ["revisar", "tablero", "llamar"];
+      const opciones = info.sinRecibir ? ["revisar", "llamar", "papeles", "explicar", "tablero", "llamar", "pensar", "estirar"] : ["revisar", "tablero", "papeles", "llamar", "explicar", "pensar", "estirar"];
       pasar(opciones[Math.floor(Math.random() * opciones.length)]);
     }
     const a = atiende ? "revisar" : act.id;
@@ -524,6 +528,8 @@ export function crearEscena(contenedor, { logoUrl, onActividad, onSaludo } = {})
     let objBrazoD = 0.1;
     let objCabY = 0;
     let objCabX = 0.05;
+    let objTY = 0;
+    let objTX = 0;
     if (a === "revisar") {
       objCabX = 0.28;
       objBrazoI = 1.15;
@@ -537,6 +543,32 @@ export function crearEscena(contenedor, { logoUrl, onActividad, onSaludo } = {})
       objBrazoD = 2.35;
       objCabY = 0.3;
       objBrazoI = 0.5 + Math.sin(t * 2) * 0.1;
+    } else if (a === "explicar") {
+      objBrazoI = 0.9 + Math.sin(t * 1.7) * 0.45;
+      objBrazoD = 1.05 + Math.sin(t * 1.3 + 1) * 0.5;
+      objCabY = Math.sin(t * 0.9) * 0.25;
+      objCabX = 0.05 + Math.sin(t * 2.3) * 0.05;
+      objTY = Math.sin(t * 0.8) * 0.14;
+    } else if (a === "estirar") {
+      const s = pulso(u, 0.1, 0.35) * (1 - pulso(u, 0.7, 0.95));
+      objBrazoI = 0.9 + 1.9 * s;
+      objBrazoD = 0.1 + 2.5 * s;
+      objCabX = 0.05 - 0.3 * s;
+      objTX = -0.2 * s;
+    } else if (a === "papeles") {
+      objMirar = 0.7;
+      objCabY = 0.5 + Math.sin(t * 0.8) * 0.1;
+      objCabX = 0.3;
+      objBrazoI = 1.2 + Math.sin(t * 1.8) * 0.1;
+      objBrazoD = 1.3 + Math.sin(t * 2.2) * 0.15;
+      objTY = 0.2;
+      objTX = 0.12;
+    } else if (a === "pensar") {
+      objCabY = -0.3 + Math.sin(t * 0.6) * 0.2;
+      objCabX = -0.15;
+      objBrazoD = 1.9;
+      objBrazoI = 0.5;
+      objTY = -0.08;
     } else if (a === "saludar") {
       objBrazoD = 2.7 + Math.sin(t * 9) * 0.35;
       objCabY = 0.15;
@@ -558,13 +590,16 @@ export function crearEscena(contenedor, { logoUrl, onActividad, onSaludo } = {})
     } else if (!atiende && puntero.dentro && a === "controlar") {
       objCabY = clamp(puntero.x * 0.45, -0.5, 0.5);
     }
+    pose.tY = amortiguar(pose.tY, objTY, 3, dt);
+    pose.tX = amortiguar(pose.tX, objTX, 4, dt);
     pose.mirar = amortiguar(pose.mirar, objMirar, 5, dt);
     pose.cabY = amortiguar(pose.cabY, objCabY, 6, dt);
     pose.cabX = amortiguar(pose.cabX, objCabX, 6, dt);
     pose.brazoI = amortiguar(pose.brazoI, objBrazoI, 6, dt);
     pose.brazoD = amortiguar(pose.brazoD, objBrazoD, 7, dt);
     vera.rotation.y = pose.mirar * 0.5 + Math.sin(t * 0.3) * 0.03;
-    tronco.rotation.x = 0.04 + Math.sin(t * 1.4) * 0.012;
+    tronco.rotation.x = 0.04 + pose.tX + Math.sin(t * 1.4) * 0.012;
+    tronco.rotation.y = pose.tY;
     cabeza.rotation.y = pose.cabY;
     cabeza.rotation.x = pose.cabX;
     brazoI.pivote.rotation.x = -pose.brazoI;

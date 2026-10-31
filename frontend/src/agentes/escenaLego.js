@@ -307,7 +307,7 @@ export function crearEscena(contenedor, { logoUrl, onActividad, onSaludo } = {})
   scene.environmentIntensity = 0.6;
 
   const camera = new THREE.PerspectiveCamera(32, 1, 0.1, 80);
-  const TARGET = new THREE.Vector3(1.4, 3.45, 0.6);
+  const TARGET = new THREE.Vector3(1.3, 2.9, 0.6);
   const DIR_CAM = new THREE.Vector3(-2.3, 2.3, 12.0).normalize();
   camera.position.copy(TARGET).addScaledVector(DIR_CAM, 12);
   const controles = new OrbitControls(camera, renderer.domElement);
@@ -605,11 +605,11 @@ export function crearEscena(contenedor, { logoUrl, onActividad, onSaludo } = {})
   mundo.add(tvPantalla);
 
   // ----- puesto de trabajo -----
-  const Y_TRABAJO = -1.0; // hacia dónde mira cuando trabaja (derecha y un poco hacia nosotros)
+  const Y_TRABAJO = -1.45; // hacia dónde mira cuando trabaja (derecha y un poco hacia nosotros)
   const POS_SILLA = new THREE.Vector3(1.9, 0, 0.5);
   const dirT = new THREE.Vector3(Math.sin(Y_TRABAJO), 0, Math.cos(Y_TRABAJO));
   const escritorio = new THREE.Group();
-  escritorio.position.copy(POS_SILLA).addScaledVector(dirT, 1.55);
+  escritorio.position.copy(POS_SILLA).addScaledVector(dirT, 1.3);
   escritorio.rotation.y = Y_TRABAJO + Math.PI;
   mundo.add(escritorio);
   const tablero = caja(3.6, 0.22, 1.6, plastico(0xe9e4d8), 0.08);
@@ -810,17 +810,20 @@ export function crearEscena(contenedor, { logoUrl, onActividad, onSaludo } = {})
 
   // ----- Lía -----
   const lia = new THREE.Group();
-  lia.position.set(POS_SILLA.x, -0.5, POS_SILLA.z); // sentada: la cadera apoya en el asiento (alto 0.55)
+  lia.position.set(POS_SILLA.x, -0.1, POS_SILLA.z); // sentada: la cadera apoya en el asiento (alto 0.55)
   mundo.add(lia);
   const asiento = caja(1.75, 0.2, 1.7, matSilla, 0.09);
-  asiento.position.set(0, 0.95, -0.05);
+  asiento.position.set(0, 0.95, 0.25);
+  asiento.scale.set(0.62, 1, 0.6);
   lia.add(asiento);
   const respaldo = caja(1.6, 1.15, 0.2, matSilla, 0.1);
-  respaldo.position.set(0, 1.62, -0.95);
+  respaldo.position.set(0, 1.62, -0.5);
+  respaldo.scale.x = 0.62;
   respaldo.rotation.x = -0.1;
   lia.add(respaldo);
   const franjaResp = caja(1.2, 0.12, 0.06, plastico(COLOR.naranja), 0.03);
-  franjaResp.position.set(0, 1.98, -0.83);
+  franjaResp.position.set(0, 1.98, -0.38);
+  franjaResp.scale.x = 0.62;
   franjaResp.rotation.x = -0.1;
   lia.add(franjaResp);
 
@@ -839,7 +842,7 @@ export function crearEscena(contenedor, { logoUrl, onActividad, onSaludo } = {})
   });
   lia.add(pj.raiz);
   const { tronco, brazoI, brazoD, cabeza, ec, refrescarCara } = pj;
-  vestirConFBX(pj, { carpeta: `${import.meta.env.BASE_URL}modelos/agentes/business1`, prefijo: "f014", sentada: true, altura: 4.5 }).catch((e) => console.warn("[agentes] modelo 3D no disponible, se usa el de respaldo:", e.message));
+  vestirConFBX(pj, { carpeta: `${import.meta.env.BASE_URL}modelos/agentes/business1`, prefijo: "f014", sentada: true, altura: 3.7 }).catch((e) => console.warn("[agentes] modelo 3D no disponible, se usa el de respaldo:", e.message));
 
   // objetos que toma en la mano (solo se ven cuando los usa)
   const tazaMano = tazaEscr.clone(true);
@@ -1388,7 +1391,7 @@ export function crearEscena(contenedor, { logoUrl, onActividad, onSaludo } = {})
 
     // cámara: acercamiento suave cuando habla y un balanceo sutil si nadie la mueve
     zoom = amortiguar(zoom, ctrl.hablando ? 1.1 : atiende ? 1.05 : 1, 2.5, dt);
-    camera.zoom = zoom * (window.__liaZoomBase || 1);
+    camera.zoom = zoom * (window.__liaZoomBase || 1.5);
     camera.updateProjectionMatrix();
     if (performance.now() / 1000 - ultimoToque > 6) controles.target.x = TARGET.x + Math.sin(t * 0.25) * 0.15;
     controles.update();
