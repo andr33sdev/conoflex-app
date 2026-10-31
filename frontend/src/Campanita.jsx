@@ -5,6 +5,8 @@ import { api } from "./produccion/util";
 import { fechaCorta, hace } from "./ingenieria/formato";
 
 const CADA_MS = 45000;
+const COLOR_AGENTE = { AGENTE_RRHH: "#FF5A00", AGENTE_STOCK: "#22c55e", AGENTE_COMPRAS: "#3b82f6" };
+const NOMBRE_AGENTE = { AGENTE_RRHH: "Lía", AGENTE_STOCK: "Nati", AGENTE_COMPRAS: "Vera" };
 
 /**
  * Campanita de admin y producción.
@@ -153,9 +155,9 @@ export default function Campanita({ usuarioActual }) {
             className="fixed sm:absolute left-3 right-3 sm:left-auto sm:right-0 top-[calc(3.5rem+env(safe-area-inset-top)+0.5rem)] sm:top-full sm:mt-2 sm:w-[380px] z-[95] rounded-2xl border border-[#FFD60A]/40 bg-[#17171b] shadow-[0_20px_60px_rgba(0,0,0,0.7)] overflow-hidden"
           >
             <button onClick={verAviso} className="w-full text-left flex items-start gap-3 p-3.5 cursor-pointer hover:bg-white/[0.04]">
-              <span className="shrink-0 w-10 h-10 rounded-xl grid place-items-center text-black font-black" style={{ background: aviso.tipo === "AGENTE_STOCK" ? "#22c55e" : "#FF5A00" }}>{aviso.tipo === "AGENTE_STOCK" ? "N" : "L"}</span>
+              <span className="shrink-0 w-10 h-10 rounded-xl grid place-items-center text-black font-black" style={{ background: COLOR_AGENTE[aviso.tipo] || "#FF5A00" }}>{(NOMBRE_AGENTE[aviso.tipo] || "L")[0]}</span>
               <span className="min-w-0 flex-1">
-                <span className="block text-[10.5px] font-bold uppercase tracking-[0.12em] text-[#FFD60A]">{aviso.tipo === "AGENTE_STOCK" ? "Nati te avisa" : "Lía te avisa"}</span>
+                <span className="block text-[10.5px] font-bold uppercase tracking-[0.12em] text-[#FFD60A]">{NOMBRE_AGENTE[aviso.tipo] || "Lía"} te avisa</span>
                 <span className="block text-sm font-extrabold text-white leading-snug mt-0.5">{aviso.titulo}</span>
                 {aviso.texto && <span className="block text-xs text-zinc-400 mt-0.5 leading-snug line-clamp-2">{aviso.texto}</span>}
               </span>
@@ -190,7 +192,7 @@ export default function Campanita({ usuarioActual }) {
                         <li key={it.clave}>
                           <button onClick={() => abrirNotif(x)} className={`w-full text-left flex items-center gap-3 rounded-2xl px-3 py-3 hover:bg-white/[0.06] transition-colors cursor-pointer ${x.sin_leer ? "bg-white/[0.04]" : "opacity-70"}`}>
                             {String(x.tipo).startsWith("AGENTE_") ? (
-                              <span className="shrink-0 w-10 h-10 rounded-xl grid place-items-center text-black font-black" style={{ background: x.tipo === "AGENTE_STOCK" ? "#22c55e" : "#FF5A00" }}>{x.tipo === "AGENTE_STOCK" ? "N" : "L"}</span>
+                              <span className="shrink-0 w-10 h-10 rounded-xl grid place-items-center text-black font-black" style={{ background: COLOR_AGENTE[x.tipo] || "#FF5A00" }}>{(NOMBRE_AGENTE[x.tipo] || "L")[0]}</span>
                             ) : (
                               <span className="shrink-0 w-10 h-10 rounded-xl bg-[#FF5A00]/12 border border-[#FF5A00]/25 grid place-items-center text-[#ff9a63]"><PackageSearch size={17} /></span>
                             )}

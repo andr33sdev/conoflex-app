@@ -289,3 +289,60 @@ test("derivaciones: el motor deriva solo a agentes habilitados", async () => {
   const r2 = await crearMotor({ ai: ai2, nombre: "T", construirInstrucciones: () => "x", herramientas: [{ functionDeclarations: [] }], ejecutar: async () => ({}) }).responder({ mensaje: "hola", historial: [], destinos: [] });
   assert.equal(r2.derivacion, null);
 });
+
+test("Lía: la liquidación del plantel viene con la tabla ya armada y sin filas inventadas", () => {
+  const { compactarPlantel } = require("../agentes/liaChat");
+  const op = (operario, he, v) => ({ operario, dias: [{ fecha: "2026-10-01" }], resumen: { horas_normales: 100, horas_extra: he, valor_extras: v, total: v + 1000 } });
+  const r = compactarPlantel({ liquidacion_de: "octubre", informe: "x", cantidad_de_operarios: 2, operarios: [op("Ana Ruiz", 47, 697072.32), op("Beto Paz", 19, 280811.46)], total_horas_extra: 66, total_importe_extras: 977883.78, total_horas_normales: 200, total_importe: 979883.78 }, { solo_extras: true });
+  assert.match(r.tabla_markdown, /\| Ana Ruiz \| 47 \| \$ 697\.072,32 \|/);
+  assert.match(r.tabla_markdown, /\| Beto Paz \| 19 \| \$ 280\.811,46 \|/);
+  assert.match(r.tabla_markdown, /TOTAL/);
+  assert.ok(r.operarios.every((o) => !("dias" in o)));
+  const uno = { operario: "x", error: undefined, operarios: [{ operario: "A" }] };
+  assert.equal(compactarPlantel(uno, { operario: "A" }), uno);
+});
+
+test("vera: detecta solicitudes sin firmar, renglones demorados, proveedores que incumplen y listas a medias", () => {
+  const { analizarCompras } = require("../agentes/vigilanteCompras");
+  const ahoraMs = new Date("2026-10-31T12:00:00").getTime();
+  const r = (solicitud_id, articulo, proveedor, ped, rec, creada) => ({ solicitud_id, articulo, proveedor, cantidad_solicitada: ped, cantidad_recibida: rec, creada });
+  const out = analizarCompras({
+    ahoraMs,
+    solicitudes: [
+      { id: 1, fecha: "2026-10-20", estado: "ABIERTA", firma_jefe: 0, firma_gerente: 0, created_at: "2026-10-20 10:00:00" },
+      { id: 2, fecha: "2026-10-30", estado: "ABIERTA", firma_jefe: 0, firma_gerente: 0, created_at: "2026-10-30 10:00:00" },
+      { id: 3, fecha: "2026-10-29", estado: "ABIERTA", firma_jefe: 0, firma_gerente: 0, created_at: "2026-10-29 10:00:00" },
+    ],
+    renglones: [1, 2, 3, 4].map((i) => r(1, `Art ${i}`, "Lento SA", 100, 10, "2026-10-01 10:00:00")),
+    listas: [{ solicitud_id: 3, usuario: "Andrés", renglones: 2, desde: "2026-10-29 10:00:00" }],
+  });
+  const tipos = out.map((h) => h.tipo);
+  assert.ok(tipos.includes("SOLICITUD_SIN_FIRMA"));
+  assert.ok(out.find((h) => h.tipo === "SOLICITUD_SIN_FIRMA").clave.endsWith(":1"), "solo la vieja");
+  assert.ok(!out.some((h) => h.clave === "sin-firma:3"), "la lista en armado no es una solicitud sin firmar");
+  assert.ok(tipos.includes("RENGLONES_DEMORADOS"));
+  assert.ok(tipos.includes("PROVEEDOR_INCUMPLE"));
+  assert.ok(tipos.includes("LISTA_ABIERTA"));
+});
+
+test("vera: resuelve materias por nombre sin ambigüedad y sus herramientas no firman ni compran", () => {
+  const { resolverMateria } = require("../agentes/listaCompra");
+  const { HERRAMIENTAS: H, construirInstrucciones: I } = require("../agentes/veraChat");
+  const mats = [{ id: 1, codigo: "PE-N", nombre: "Polietileno natural" }, { id: 2, codigo: "PE-5", nombre: "Polietileno grado 50" }, { id: 3, codigo: "CAL", nombre: "Carbonato" }];
+  assert.equal(resolverMateria(mats, "carbonato").materia.id, 3);
+  assert.equal(resolverMateria(mats, "polietileno natural").materia.id, 1);
+  assert.ok(resolverMateria(mats, "polietileno").coincidencias.length === 2);
+  assert.ok(resolverMateria(mats, "zzz").error);
+  const nombres = H[0].functionDeclarations.map((f) => f.name);
+  for (const n of ["lista_actual", "agregar_a_lista", "agregar_recomendadas", "cerrar_lista"]) assert.ok(nombres.includes(n), n);
+  assert.ok(!nombres.some((n) => /^(firmar|enviar|pagar|comprar)/.test(n)));
+  assert.match(I(), /UNA solicitud de compra en armado/);
+});
+
+test("voces: cada agente tiene una voz femenina distinta", () => {
+  const { AGENTES } = require("../agentes");
+  const { VOCES_FEMENINAS } = require("../agentes/voz");
+  const voces = AGENTES.map((a) => a.voz);
+  assert.equal(new Set(voces).size, AGENTES.length);
+  for (const v of voces) assert.ok(VOCES_FEMENINAS.includes(v), v);
+});

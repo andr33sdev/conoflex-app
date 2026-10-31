@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Bell, ChevronDown, ChevronUp, History, LayoutGrid, Loader2, MessageCircle, ScanSearch, Volume2, VolumeX } from "lucide-react";
+import { Bell, ChevronDown, ClipboardList, ChevronUp, History, LayoutGrid, Loader2, MessageCircle, ScanSearch, Volume2, VolumeX } from "lucide-react";
 import { api } from "../produccion/util";
 import { useToast } from "../produccion/useToast";
 import EscenaLia from "./EscenaLia";
@@ -11,7 +11,8 @@ import { cuando } from "./formato";
 import { saludoSegunHora } from "./propuestas";
 import { perfilDe } from "./perfiles";
 import Panorama from "./Panorama";
-import { dictar, prepararVoz, reproducirVoz, soportaDictado, textoParaVoz } from "./voz";
+import PanoramaCompras from "./PanoramaCompras";
+import { dictar, fijarVozAgente, prepararVoz, reproducirVoz, soportaDictado, textoParaVoz } from "./voz";
 import { getApiUrl } from "../apiConfig";
 
 const leerChat = (clave) => {
@@ -326,7 +327,14 @@ export default function LiaPantalla({ agente, usuario, pregunta, onPreguntaUsada
     else enviar(p.pregunta);
   };
 
-  const alPropuesta2 = (q) => enviar(q);
+  const alPropuesta2 = (q) => {
+    setTab("chat");
+    enviar(q);
+  };
+
+  useEffect(() => {
+    fijarVozAgente(perfil.voz);
+  }, [perfil]);
 
   // Pregunta que llega derivada desde otro agente: se envía sola apenas esta pantalla está lista.
   useEffect(() => {
@@ -349,7 +357,8 @@ export default function LiaPantalla({ agente, usuario, pregunta, onPreguntaUsada
 
   const TABS = [
     { id: "chat", texto: "Chat", icono: MessageCircle },
-    ...(perfil.panorama ? [{ id: "panorama", texto: "Panorama", icono: LayoutGrid, n: (pano?.resumen?.criticas || 0) + (pano?.resumen?.semis_criticos || 0) }] : []),
+    ...(perfil.panorama === "stock" ? [{ id: "panorama", texto: "Panorama", icono: LayoutGrid, n: (pano?.resumen?.criticas || 0) + (pano?.resumen?.semis_criticos || 0) }] : []),
+    ...(perfil.panorama === "compras" ? [{ id: "panorama", texto: "Mi lista", icono: ClipboardList, n: pano?.lista?.total_renglones || 0 }] : []),
     { id: "avisos", texto: "Avisos", icono: Bell, n: abiertos },
     { id: "actividad", texto: "Actividad", icono: History },
   ];
@@ -420,7 +429,7 @@ export default function LiaPantalla({ agente, usuario, pregunta, onPreguntaUsada
             <div className="rounded-2xl border border-white/[0.08] bg-[#111116] p-3.5">
               <p className="text-[10.5px] font-bold uppercase tracking-[0.12em] text-zinc-500">Última revisión</p>
               <p className="mt-1 text-[15px] font-extrabold text-white">{estado?.ultima_revision ? cuando(estado.ultima_revision) : "—"}</p>
-              <p className="text-[11.5px] text-zinc-500">{perfil.panorama ? (estado?.ultima_revision ? "stock completo" : "sin datos aún") : estado?.operarios_revisados ? `${estado.operarios_revisados} operarios` : "sin datos aún"}</p>
+              <p className="text-[11.5px] text-zinc-500">{perfil.panorama ? (estado?.ultima_revision ? (perfil.panorama === "compras" ? "solicitudes y proveedores" : "stock completo") : "sin datos aún") : estado?.operarios_revisados ? `${estado.operarios_revisados} operarios` : "sin datos aún"}</p>
             </div>
             <div className="rounded-2xl border border-white/[0.08] bg-[#111116] p-3.5">
               <p className="text-[10.5px] font-bold uppercase tracking-[0.12em] text-zinc-500">Avisos abiertos</p>
@@ -485,7 +494,7 @@ export default function LiaPantalla({ agente, usuario, pregunta, onPreguntaUsada
           )}
           {tab === "panorama" && (
             <div className="h-full overflow-y-auto custom-scrollbar">
-              <Panorama datos={pano} error={errPano} onPreguntar={alPropuesta2} />
+              {perfil.panorama === "compras" ? <PanoramaCompras datos={pano} error={errPano} onPreguntar={alPropuesta2} /> : <Panorama datos={pano} error={errPano} onPreguntar={alPropuesta2} />}
             </div>
           )}
           {tab === "avisos" && (

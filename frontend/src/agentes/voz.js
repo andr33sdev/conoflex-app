@@ -45,6 +45,12 @@ export function textoParaVoz(texto, { maxIntro = 230, maxCorto = 300 } = {}) {
 const FEMENINAS = /helena|paulina|sabina|m[oó]nica|monica|elena|laura|luc[ií]a|lucia|sof[ií]a|sofia|elsa|marisol|paloma|marina|carolina|valentina|camila|female|mujer|google espa[nñ]ol|google us espa|dalia|elvira|ximena|catalina|isabela|natalia|mia|luciana/i;
 const MASCULINAS = /jorge|diego|carlos|juan|pablo|ra[uú]l|raul|enrique|miguel|alvaro|[aá]lvaro|andr[eé]s|alberto|antonio|fernando|male|hombre|jaime|pedro|luis|ricardo|alex\b|tom\b|daniel|david|jorge/i;
 let cache;
+// Cada agente suena distinto también con la voz del dispositivo: otra voz femenina si hay más de una, y otro tono y ritmo.
+let perfilVoz = { indice: 0, tono: 1.08, ritmo: 1 };
+export function fijarVozAgente(v) {
+  perfilVoz = { indice: 0, tono: 1.08, ritmo: 1, ...v };
+  cache = undefined;
+}
 export function vozFemenina() {
   if (typeof window === "undefined" || !("speechSynthesis" in window)) return null;
   const voces = window.speechSynthesis.getVoices();
@@ -57,7 +63,10 @@ export function vozFemenina() {
     fem.find((v) => /es[-_](419|MX|US|UY|CL|CO)/i.test(v.lang)),
     fem[0],
   ];
-  cache = orden.find(Boolean) || null;
+  const base = orden.find(Boolean) || null;
+  // Con indice > 0 se prefiere otra voz femenina distinta de la primera (si el dispositivo tiene más de una).
+  const otras = fem.filter((v) => v !== base);
+  cache = perfilVoz.indice > 0 && otras.length ? otras[(perfilVoz.indice - 1) % otras.length] : base;
   return cache;
 }
 export const hayVozFemenina = () => !!vozFemenina();
@@ -73,8 +82,8 @@ function hablarDispositivo(texto, { onInicio, onFin, onPulso }) {
   const u = new SpeechSynthesisUtterance(texto);
   u.voice = v;
   u.lang = v.lang;
-  u.rate = 1;
-  u.pitch = 1.08;
+  u.rate = perfilVoz.ritmo;
+  u.pitch = perfilVoz.tono;
   let terminado = false;
   const fin = () => {
     if (terminado) return;

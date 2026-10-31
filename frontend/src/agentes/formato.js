@@ -46,5 +46,9 @@ export const TIPOS_AVISO = {
   SEMI_CRITICO: { texto: "Semielaborado crítico", tono: "rojo" },
   SEMI_BAJO: { texto: "Semielaborado bajo", tono: "amarillo" },
   COMPRA_DEMORADA: { texto: "Compra demorada", tono: "naranja" },
+  SOLICITUD_SIN_FIRMA: { texto: "Falta firma", tono: "naranja" },
+  RENGLONES_DEMORADOS: { texto: "Proveedor demorado", tono: "naranja" },
+  PROVEEDOR_INCUMPLE: { texto: "Proveedor incumple", tono: "rojo" },
+  LISTA_ABIERTA: { texto: "Lista en armado", tono: "azul" },
   INTERNA_DEMORADA: { texto: "Pedido interno demorado", tono: "naranja" },
 };
