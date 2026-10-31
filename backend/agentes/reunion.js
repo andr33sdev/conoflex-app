@@ -106,6 +106,15 @@ async function hacerReunion(deps, { fecha = new Date(), forzar = false } = {}) {
     // Antes de hablar cada uno repasa su área, para llegar con datos de esta mañana.
     for (const f of revisar) await f().catch((e) => console.error("[reunión] revisión:", e.message));
     const c = await armarReunion({ ...deps, agentes });
+    // De la reunión salen ideas para mejorar (reglas + algunas de Gemini, si está disponible).
+    try {
+      const { sugerenciasDe, ideasConIA } = require("./temario");
+      c.sugerencias = await sugerenciasDe({ db, secciones: c.secciones });
+      c.sugerencias.push(...(await ideasConIA({ ai: deps.ai, secciones: c.secciones, ya: c.sugerencias })));
+    } catch (e) {
+      console.error("[reunión] sugerencias:", e.message);
+      c.sugerencias = [];
+    }
     const contenido = { fecha: hoy, generada: new Date().toISOString(), ...c };
     await db.query("UPDATE agentes_reuniones SET contenido = ? WHERE fecha = ?", [JSON.stringify(contenido), hoy]);
     if (!forzar && notificar) await notificar(contenido);

@@ -188,23 +188,15 @@ export default function Pantalla({ agente, usuario, pregunta, onPreguntaUsada, o
         method: "POST",
         body: { mensaje: t, historial: nuevos.slice(-20).map(({ rol, texto: x }) => ({ rol, texto: x })) },
       });
-      // Con voz: se prepara el audio mientras Lía "piensa" para que texto, voz y animación lleguen juntos.
-      // Como la voz es solo una introducción, suele estar lista enseguida; si tarda más de 3,5 s, no se hace esperar.
+      // Con voz: el texto aparece recién cuando el audio está listo, y los dos arrancan en el mismo instante
+      // (mientras tanto Lía sigue "pensando"). Si el audio tarda demasiado o falla, se muestra solo el texto.
       const resp = data.respuesta || "";
       const mi = turno.current;
       const conVoz = porVoz || vozActiva || manosRef.current.activo;
-      const promesa = conVoz ? prepararVoz(textoParaVoz(resp), { base }) : null;
-      const prep = promesa ? await Promise.race([promesa, new Promise((r) => setTimeout(() => r(null), 3500))]) : null;
+      const prep = conVoz ? await Promise.race([prepararVoz(textoParaVoz(resp), { base }), new Promise((r) => setTimeout(() => r(null), 16000))]) : null;
       if (turno.current !== mi) return;
       setMensajes([...nuevos, { rol: "assistant", texto: resp, herramientas: data.herramientas || [], derivacion: data.derivacion || null }]);
-      if (promesa && !prep) {
-        empezarAHablar(resp, null);
-        promesa.then((p) => {
-          if (turno.current !== mi) return;
-          clearTimeout(timers.current.hablar);
-          empezarAHablar(resp, p);
-        });
-      } else empezarAHablar(resp, prep);
+      empezarAHablar(resp, prep);
       setVersion((v) => v + 1);
       if (reporteAuto.current) {
         reporteAuto.current = false;
