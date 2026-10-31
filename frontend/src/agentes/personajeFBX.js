@@ -222,14 +222,30 @@ export async function vestirConFBX(pj, { carpeta, prefijo, sentada = false, altu
       const hombro = reposo.get(nu).b.getWorldPosition(new THREE.Vector3()).sub(hojaPos).applyQuaternion(qHojaInv);
       const hombroRig = a.rig.pivote.getWorldPosition(new THREE.Vector3());
       const manoRig = a.punta.getWorldPosition(new THREE.Vector3());
-      const meta = manoRig.sub(hombroRig).applyQuaternion(qHojaInv).multiplyScalar(((l1 + l2) / a.largoRig) * 0.98).add(hombro);
+      // dirección y alcance del brazo lógico: un brazo real casi nunca está estirado del todo (más doblado cuanto más arriba)
+      const vRig = manoRig.sub(hombroRig).applyQuaternion(qHojaInv);
+      const dirRig = vRig.clone().normalize();
+      const lev = clamp((dirRig.y + 1) / 2, 0, 1);
+      dirRig.x += sg * 0.12 * (1 - lev); // separado del cuerpo para no atravesar el saco
+      dirRig.normalize();
+      const alcance = (l1 + l2) * (0.97 - 0.24 * clamp(lev * 1.4, 0, 1));
+      const meta = hombro.clone().addScaledVector(dirRig, alcance);
+      const colgado = 1 - clamp(lev * 2.2, 0, 1); // brazo colgando: el codo va atrás y pegado al cuerpo
+      let poloX = THREE.MathUtils.lerp(sg * 0.45, sg * 0.15, colgado), poloY = THREE.MathUtils.lerp(-1, -0.35, colgado), poloZ = THREE.MathUtils.lerp(-0.35, -0.95, colgado);
+      const mp = pj.manoPose?.[lado];
+      if (mp && mp.w > 0.001) {
+        // pose de mano en el marco del pecho (x hacia afuera, y arriba, z adelante), en largos de brazo
+        const v2 = new THREE.Vector3(sg * mp.x, mp.y, mp.z).multiplyScalar(l1 + l2).applyQuaternion(rt);
+        meta.lerp(hombro.clone().add(v2), mp.w);
+        poloX = THREE.MathUtils.lerp(poloX, sg * (mp.polo ?? 0.45), mp.w);
+      }
       const ov = pj.manoMeta?.[lado];
       if (ov && ov.w > 0.001) meta.lerp(ov.p.clone().sub(hojaPos).applyQuaternion(qHojaInv), ov.w); // la escena puede fijar adónde va la mano (p. ej. el teclado)
       // el codo cae hacia abajo y un poco hacia afuera y atrás
       const eje = meta.clone().sub(hombro);
       const d = clamp(eje.length(), 0.05, (l1 + l2) * 0.995);
       eje.normalize();
-      const polo = new THREE.Vector3(sg * 0.45, -1, -0.35);
+      const polo = new THREE.Vector3(poloX, poloY, poloZ);
       polo.addScaledVector(eje, -polo.dot(eje)).normalize();
       const aa = (l1 * l1 - l2 * l2 + d * d) / (2 * d);
       const hh = Math.sqrt(Math.max(0, l1 * l1 - aa * aa));
