@@ -76,6 +76,8 @@ const nombreDe = (id) => EQUIPO.nombres[id] || "un compañero";
 function estadoEscena(id, e) {
   if (!e || e.fase === "escritorio") return null;
   const con = nombreDe(e.con);
+  if (e.fase === "reunion") return A("En la reunión de las 08:00", "chat", "frente");
+  if (e.fase === "sale" && e.con === "reunion") return A("Yendo a la reunión de las 08:00", "pasos", "lado");
   if (e.fase === "sale") return e.con === "cafe" ? A("Yendo a tomar un café", "pasos", "lado") : A(`Yendo a ver a ${con}`, "pasos", "lado");
   if (e.fase === "vuelve") return A("Volviendo a su escritorio", "pasos", "lado");
   if (e.fase === "cafe") return A("Tomando un café en la cocina", "taza", "cafe");

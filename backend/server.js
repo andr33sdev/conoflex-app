@@ -17,7 +17,8 @@ const { separarDuplicadas, asegurarTablaDuplicadas } = require("./fichero");
 const { asegurarTablasProduccion, registrarRutasProduccion } = require("./produccionRutas");
 const { asegurarTablaReflectivas, registrarRutasReflectivas } = require("./reflectivasRutas");
 const { asegurarTablasIngenieria, registrarRutasIngenieria } = require("./ingenieriasRutas");
-const { asegurarTablasNotificaciones, crearNotificacion, registrarRutasNotificaciones } = require("./notificaciones");
+const { asegurarTablasNotificaciones, crearNotificacion, registrarRutasNotificaciones, alCrearNotificacion } = require("./notificaciones");
+const { asegurarPush, enviarPush, registrarRutasPush } = require("./push");
 const { asegurarTablaMovimientos, moverStock, historialMateriaPrima } = require("./stockMovimientos");
 const { asegurarComprasStock, buscarMateriaPrima, aplicarRecepcion, norm } = require("./comprasStock");
 const { asegurarColumnaPagoMensual } = require("./escala");
@@ -194,6 +195,7 @@ registrarRutasProduccion(app, db, requirePermiso);
 registrarRutasReflectivas(app, db, requirePermiso, requireAdmin);
 registrarRutasIngenieria(app, db, requirePermiso, requireAdmin);
 registrarRutasNotificaciones(app, db);
+registrarRutasPush(app, db);
 
 // Multer Config
 const uploadTemp = multer({ dest: UPLOADS_DIR });
@@ -5693,6 +5695,9 @@ app.listen(PORT, () => {
   console.log(`🚀 Servidor Conoflex unificado ejecutándose en puerto ${PORT}`);
   migrarPermisoConnie(db);
   connie.calentarEsquema();
+  asegurarPush(db)
+    .then(() => alCrearNotificacion((n) => enviarPush(db, n)))
+    .catch((e) => console.error("[push] no se pudo preparar:", e.message));
   asegurarTablasAgentes(db)
     .then(() => iniciarVigilantes(agentes))
     .catch((e) => console.error("[agentes] no se pudieron preparar las tablas:", e.message));

@@ -9,6 +9,8 @@ const { crearVera } = require("./veraChat");
 const { crearRomi } = require("./maruChat");
 const { decisionProduccion } = require("./produccionDecision");
 const { listarOperarios, fichaOperario } = require("./fichaOperario");
+const { asegurarTablaReuniones, hacerReunion, ultimaReunion, iniciarReunion, ahoraAR } = require("./reunion");
+const { preguntarOficina } = require("./oficina");
 const { analizarCompras, rankingProveedores, AUTORESOLVIBLES: AUTO_COMPRAS } = require("./vigilanteCompras");
 const { asegurarTablaListas, leerLista } = require("./listaCompra");
 const { analizarStock, armarPanorama, cargarStock } = require("./vigilanteStock");
@@ -62,6 +64,7 @@ const AGENTES = [
 const agentePorId = (id) => AGENTES.find((a) => a.id === id) || null;
 
 async function asegurarTablasAgentes(db) {
+  await asegurarTablaReuniones(db).catch((e) => console.error("[agentes] tabla de reuniones:", e.message));
   await asegurarTablaListas(db).catch((e) => console.error("[agentes] tabla de listas:", e.message));
   await db.query(`
     CREATE TABLE IF NOT EXISTS agentes_estado (
@@ -169,9 +172,9 @@ async function revisarRRHH({ pool, db }, { ahora = new Date() } = {}) {
 
     if (nuevos.length) {
       const roles = await rolesDelAgente(db, "agente:rrhh");
-      const aviso = (titulo, texto) => crearNotificacion(db, { tipo: "AGENTE_RRHH", titulo, texto, ruta: "/agentes?a=rrhh", roles });
-      if (nuevos.length <= 3) for (const h of nuevos) await aviso(`Lía: ${h.titulo}`, h.texto);
-      else await aviso(`Lía encontró ${nuevos.length} avisos nuevos`, nuevos.slice(0, 3).map((h) => h.titulo).join(" · ") + (nuevos.length > 3 ? ` · y ${nuevos.length - 3} más` : ""));
+      const aviso = (titulo, texto, push = false) => crearNotificacion(db, { tipo: "AGENTE_RRHH", titulo, texto, ruta: "/agentes?a=rrhh", roles, push });
+      if (nuevos.length <= 3) for (const h of nuevos) await aviso(`Lía: ${h.titulo}`, h.texto, h.severidad === "ALTA");
+      else await aviso(`Lía encontró ${nuevos.length} avisos nuevos`, nuevos.slice(0, 3).map((h) => h.titulo).join(" · ") + (nuevos.length > 3 ? ` · y ${nuevos.length - 3} más` : ""), nuevos.some((h) => h.severidad === "ALTA"));
       await registrarActividad(db, agente, "AVISO", `Detectó ${nuevos.length} ${nuevos.length === 1 ? "aviso nuevo" : "avisos nuevos"}`, nuevos.map((h) => `• ${h.titulo}`).join("\n"));
     }
     if (resueltos.length) {
@@ -224,9 +227,9 @@ async function revisarStock({ pool, db }, { ahora = new Date() } = {}) {
     const aNotificar = nuevos.filter((h) => h.severidad !== "BAJA");
     if (aNotificar.length) {
       const roles = await rolesDelAgente(db, "agente:stock");
-      const aviso = (titulo, texto) => crearNotificacion(db, { tipo: "AGENTE_STOCK", titulo, texto, ruta: "/agentes?a=stock", roles });
-      if (aNotificar.length <= 3) for (const h of aNotificar) await aviso(`Nati: ${h.titulo}`, h.texto);
-      else await aviso(`Nati encontró ${aNotificar.length} cosas para atender en el stock`, aNotificar.slice(0, 3).map((h) => h.titulo).join(" · ") + ` · y ${aNotificar.length - 3} más`);
+      const aviso = (titulo, texto, push = false) => crearNotificacion(db, { tipo: "AGENTE_STOCK", titulo, texto, ruta: "/agentes?a=stock", roles, push });
+      if (aNotificar.length <= 3) for (const h of aNotificar) await aviso(`Nati: ${h.titulo}`, h.texto, h.severidad === "ALTA");
+      else await aviso(`Nati encontró ${aNotificar.length} cosas para atender en el stock`, aNotificar.slice(0, 3).map((h) => h.titulo).join(" · ") + ` · y ${aNotificar.length - 3} más`, aNotificar.some((h) => h.severidad === "ALTA"));
     }
     if (nuevos.length) await registrarActividad(db, agente, "AVISO", `Detectó ${nuevos.length} ${nuevos.length === 1 ? "aviso nuevo" : "avisos nuevos"}`, nuevos.map((h) => `• ${h.titulo}`).join("\n"));
     if (resueltos.length) await registrarActividad(db, agente, "RESUELTO", `Cerró ${resueltos.length} ${resueltos.length === 1 ? "aviso que ya se resolvió" : "avisos que ya se resolvieron"}`);
@@ -283,9 +286,9 @@ async function revisarCompras({ pool, db }, { ahora = new Date() } = {}) {
     const aNotificar = nuevos.filter((h) => h.severidad !== "BAJA");
     if (aNotificar.length) {
       const roles = await rolesDelAgente(db, "agente:compras");
-      const aviso = (titulo, texto) => crearNotificacion(db, { tipo: "AGENTE_COMPRAS", titulo, texto, ruta: "/agentes?a=compras", roles });
-      if (aNotificar.length <= 3) for (const h of aNotificar) await aviso(`Vera: ${h.titulo}`, h.texto);
-      else await aviso(`Vera encontró ${aNotificar.length} cosas para atender en compras`, aNotificar.slice(0, 3).map((h) => h.titulo).join(" · ") + ` · y ${aNotificar.length - 3} más`);
+      const aviso = (titulo, texto, push = false) => crearNotificacion(db, { tipo: "AGENTE_COMPRAS", titulo, texto, ruta: "/agentes?a=compras", roles, push });
+      if (aNotificar.length <= 3) for (const h of aNotificar) await aviso(`Vera: ${h.titulo}`, h.texto, h.severidad === "ALTA");
+      else await aviso(`Vera encontró ${aNotificar.length} cosas para atender en compras`, aNotificar.slice(0, 3).map((h) => h.titulo).join(" · ") + ` · y ${aNotificar.length - 3} más`, aNotificar.some((h) => h.severidad === "ALTA"));
     }
     if (nuevos.length) await registrarActividad(db, agente, "AVISO", `Detectó ${nuevos.length} ${nuevos.length === 1 ? "aviso nuevo" : "avisos nuevos"}`, nuevos.map((h) => `• ${h.titulo}`).join("\n"));
     if (resueltos.length) await registrarActividad(db, agente, "RESUELTO", `Cerró ${resueltos.length} ${resueltos.length === 1 ? "aviso que ya se resolvió" : "avisos que ya se resolvieron"}`);
@@ -350,6 +353,40 @@ function registrarRutasAgentes(app, { db, pool, ai }) {
     } catch (e) {
       console.error("[agentes] lista:", e.message);
       res.status(500).json({ error: "No se pudieron cargar los agentes." });
+    }
+  });
+
+  // ---- Reunión de las 08:00 ----
+  const permisosDe = async (usuario) => {
+    const ok = [];
+    for (const a of AGENTES) if (await tienePermiso(usuario, a.permiso)) ok.push(a);
+    return ok;
+  };
+  app.get("/api/agentes/reunion", async (req, res) => {
+    try {
+      const usuario = await quien(req);
+      const mios = await permisosDe(usuario);
+      if (!mios.length) return res.status(403).json({ error: "Tu rol no tiene agentes habilitados." });
+      const r = await ultimaReunion(db);
+      const hoy = ahoraAR().hoy;
+      if (!r) return res.json({ hay: false, hoy: false });
+      const ids = new Set(mios.map((a) => a.id));
+      res.json({ hay: true, hoy: r.fecha === hoy, fecha: r.fecha, generada: r.generada, secciones: r.secciones.filter((x) => ids.has(x.agente)), urgentes: r.secciones.filter((x) => ids.has(x.agente) && x.urgente).length });
+    } catch (e) {
+      console.error("[agentes] reunión:", e.message);
+      res.status(500).json({ error: "No pude cargar la reunión." });
+    }
+  });
+  // Solo administración: rehace la reunión de hoy (sin avisar a nadie), para probarla o actualizarla.
+  app.post("/api/agentes/reunion/ahora", async (req, res) => {
+    try {
+      const usuario = await quien(req);
+      if (String(usuario?.rol || "").toUpperCase() !== "ADMIN") return res.status(403).json({ error: "Solo administración puede rehacer la reunión." });
+      await hacerReunion(depsReunion, { forzar: true });
+      res.json({ ok: true });
+    } catch (e) {
+      console.error("[agentes] reunión ahora:", e.message);
+      res.status(500).json({ error: "No pude armar la reunión." });
     }
   });
 
@@ -465,6 +502,28 @@ function registrarRutasAgentes(app, { db, pool, ai }) {
     e.enCurso = true;
     return { ok: true, liberar: () => (e.enCurso = false) };
   };
+  // ---- Preguntale a la oficina: una pregunta, el equipo se reparte la respuesta ----
+  app.post("/api/agentes/oficina/preguntar", async (req, res) => {
+    const mensaje = String(req.body?.mensaje || "").trim().slice(0, 1500);
+    if (!mensaje) return res.status(400).json({ error: "Escribí tu pregunta." });
+    const usuario = await quien(req).catch(() => null);
+    const disponibles = (await permisosDe(usuario)).filter((a) => chats[a.id]).map((a) => ({ id: a.id, nombre: a.nombre, puesto: a.puesto, descripcion: a.descripcion }));
+    if (!disponibles.length) return res.status(403).json({ error: "Tu rol no tiene agentes habilitados." });
+    const u = controlarUso(usuario.id);
+    if (!u.ok) return res.status(429).json({ error: u.error });
+    try {
+      const r = await preguntarOficina({ ai, chats, disponibles, mensaje, usuario: { id: usuario.id, nombre: usuario.nombre, rol: usuario.rol } });
+      await registrarActividad(db, r.respuestas[0]?.agente || disponibles[0].id, "CHAT", `Pregunta a la oficina: ${mensaje.slice(0, 120)}`, `Contestaron: ${r.respuestas.map((x) => x.nombre).join(", ") || "nadie"}`, usuario.nombre);
+      res.json({ success: true, ...r });
+    } catch (error) {
+      console.error("[oficina] Error:", error);
+      const saturado = error && (error.status === 503 || error.status === 429);
+      res.status(saturado ? 503 : 500).json({ error: saturado ? "El servicio de IA está saturado. Probá de nuevo en unos segundos." : "No pude procesar la pregunta." });
+    } finally {
+      u.liberar();
+    }
+  });
+
   app.post("/api/agentes/:id/chat", delAgente, async (req, res) => {
     const cerebro = chats[req.agente.id];
     if (!cerebro) return res.status(400).json({ error: "Este agente todavía no conversa." });
@@ -581,7 +640,23 @@ function registrarRutasAgentes(app, { db, pool, ai }) {
     }
   });
 
-  return { revisarRRHH: revisiones.rrhh, revisarStock: revisiones.stock, revisarCompras: revisiones.compras };
+  // La reunión de las 08:00 se avisa por la campanita y al celular a todos los roles que tengan algún agente.
+  const depsReunion = {
+    pool, db, agentes: AGENTES,
+    revisar: [revisiones.rrhh, revisiones.stock, revisiones.compras],
+    notificar: async (c) => {
+      const [rows] = await db.query("SELECT DISTINCT rol_nombre FROM permisos_roles WHERE modulo_id LIKE 'agente:%' OR modulo_id = '*'");
+      const roles = ["ADMIN", ...rows.map((r) => r.rol_nombre)];
+      const partes = c.secciones.filter((x) => x.urgente).map((x) => `${x.nombre}: ${x.resumen}`);
+      await crearNotificacion(db, {
+        tipo: "AGENTE_REUNION",
+        titulo: c.urgentes ? `Reunión de las 08:00: ${c.urgentes === 1 ? "1 cosa urgente" : `${c.urgentes} cosas urgentes`}` : "Reunión de las 08:00: todo en orden",
+        texto: partes.length ? partes.join(" · ") : "Nada urgente esta mañana.",
+        ruta: "/agentes", roles, push: true,
+      });
+    },
+  };
+  return { revisarRRHH: revisiones.rrhh, revisarStock: revisiones.stock, revisarCompras: revisiones.compras, iniciarReunion: () => iniciarReunion(depsReunion) };
 }
 
 /** Deja corriendo el vigilante: una revisión poco después de arrancar y luego cada N minutos (sin IA, solo consultas). */
@@ -593,6 +668,7 @@ function iniciarVigilantes(agentes, { intervaloMin = Number(process.env.AGENTES_
     setTimeout(() => agentes.revisarStock?.().catch((e) => console.error("[agentes] vigilante stock:", e.message)), 15000).unref?.();
     setTimeout(() => agentes.revisarCompras?.().catch((e) => console.error("[agentes] vigilante compras:", e.message)), 30000).unref?.();
   };
+  agentes.iniciarReunion?.();
   const t0 = setTimeout(correr, 20000);
   const t = setInterval(correr, Math.max(5, intervaloMin) * 60 * 1000);
   t0.unref?.();

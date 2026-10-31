@@ -82,7 +82,7 @@ export default function Agentes({ usuarioActual }) {
         ) : proximo ? (
           <Proximamente agente={proximo} onVolver={() => elegir("oficina")} />
         ) : (
-          <Mundo agentes={agentes} onElegir={elegir} modo={vivo.modo} abiertosVivo={vivo.abiertos} vivoId={null} />
+          <Mundo agentes={agentes} onElegir={elegir} modo={vivo.modo} abiertosVivo={vivo.abiertos} vivoId={null} esAdmin={String(usuarioActual?.rol || "").toUpperCase() === "ADMIN"} />
         )}
       </div>
     </div>
