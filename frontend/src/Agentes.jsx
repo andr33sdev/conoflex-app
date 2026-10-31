@@ -2,9 +2,11 @@ import { useEffect, useState } from "react";
 import { Loader2, Lock } from "lucide-react";
 import { api } from "./produccion/util";
 import LiaPantalla from "./agentes/LiaPantalla";
+import Roster, { Proximamente } from "./agentes/Roster";
+import { PROXIMOS } from "./agentes/proximos";
 
-/** Módulo Agentes IA: cada agente tiene su especialidad y se habilita por rol (permiso "agente:<id>"). */
-export default function Agentes() {
+/** Módulo Agentes IA: elegís con qué agente hablar. Cada uno se habilita por rol (permiso "agente:<id>"). */
+export default function Agentes({ usuarioActual }) {
   const [agentes, setAgentes] = useState(null);
   const [error, setError] = useState(null);
   const [elegido, setElegido] = useState(null);
@@ -19,10 +21,8 @@ export default function Agentes() {
     };
   }, []);
 
-  if (error)
-    return <div className="h-full grid place-items-center p-6 text-center text-rose-300 text-sm">{error}</div>;
-  if (!agentes)
-    return <div className="h-full grid place-items-center text-zinc-500"><Loader2 className="animate-spin" size={24} /></div>;
+  if (error) return <div className="h-full grid place-items-center p-6 text-center text-rose-300 text-sm">{error}</div>;
+  if (!agentes) return <div className="h-full grid place-items-center text-zinc-500"><Loader2 className="animate-spin" size={24} /></div>;
   if (agentes.length === 0)
     return (
       <div className="h-full grid place-items-center p-8 text-center">
@@ -34,24 +34,13 @@ export default function Agentes() {
       </div>
     );
 
-  const agente = agentes.find((a) => a.id === elegido) || agentes[0];
+  const proximo = PROXIMOS.find((p) => p.id === elegido);
+  const agente = agentes.find((a) => a.id === elegido) || (proximo ? null : agentes[0]);
   return (
     <div className="h-full min-h-0 flex flex-col">
-      {agentes.length > 1 && (
-        <div className="shrink-0 flex gap-2 overflow-x-auto px-3 py-2 border-b border-white/[0.06] bg-[#0e0e11]">
-          {agentes.map((a) => (
-            <button
-              key={a.id}
-              onClick={() => setElegido(a.id)}
-              className={`shrink-0 min-h-[44px] px-4 rounded-xl text-sm font-bold border ${a.id === agente.id ? "bg-[#FF5A00] border-[#FF5A00] text-black" : "border-white/10 text-zinc-300 hover:text-white"}`}
-            >
-              {a.nombre} · {a.puesto}
-            </button>
-          ))}
-        </div>
-      )}
+      <Roster agentes={agentes} elegido={agente?.id || proximo?.id} onElegir={setElegido} />
       <div className="flex-1 min-h-0">
-        <LiaPantalla key={agente.id} agente={agente} />
+        {agente ? <LiaPantalla key={agente.id} agente={agente} usuario={usuarioActual} /> : <Proximamente agente={proximo} />}
       </div>
     </div>
   );

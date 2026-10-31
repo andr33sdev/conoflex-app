@@ -159,3 +159,29 @@ test("las claves son estables (el mismo aviso no se repite entre revisiones)", (
   const f = conTarde("Beto", ["2026-10-05", "2026-10-13", "2026-10-21"]);
   assert.deepEqual(analizar(f).map((h) => h.clave), analizar(f).map((h) => h.clave));
 });
+
+test("voz: el WAV tiene cabecera válida y solo voces femeninas", () => {
+  const { pcmAWav, frecuenciaDe, VOCES_FEMENINAS, VOZ_DEFECTO } = require("../agentes/voz");
+  const pcm = Buffer.alloc(4800, 1);
+  const wav = pcmAWav(pcm, 24000);
+  assert.equal(wav.length, 44 + 4800);
+  assert.equal(wav.toString("ascii", 0, 4), "RIFF");
+  assert.equal(wav.toString("ascii", 8, 12), "WAVE");
+  assert.equal(wav.readUInt32LE(24), 24000);
+  assert.equal(wav.readUInt32LE(40), 4800);
+  assert.equal(frecuenciaDe("audio/L16;codec=pcm;rate=24000"), 24000);
+  assert.equal(frecuenciaDe("audio/L16;rate=16000"), 16000);
+  assert.ok(VOCES_FEMENINAS.includes(VOZ_DEFECTO));
+  assert.ok(!VOCES_FEMENINAS.some((v) => ["Puck", "Charon", "Fenrir", "Orus", "Enceladus", "Iapetus", "Algenib", "Rasalgethi", "Alnilam", "Schedar", "Gacrux", "Pulcherrima", "Achird", "Zubenelgenubi", "Sadachbia", "Sadaltager", "Umbriel", "Laomedeia", "Erinome Male"].includes(v)));
+});
+
+test("voz: pide audio al modelo con voz femenina y arma el WAV", async () => {
+  const { sintetizar } = require("../agentes/voz");
+  let pedido;
+  const ai = { models: { generateContent: async (p) => { pedido = p; return { candidates: [{ content: { parts: [{ inlineData: { mimeType: "audio/L16;codec=pcm;rate=24000", data: Buffer.alloc(960, 2).toString("base64") } }] } }] }; } } };
+  const wav = await sintetizar(ai, "Hola, soy Lía.");
+  assert.equal(wav.toString("ascii", 0, 4), "RIFF");
+  assert.deepEqual(pedido.config.responseModalities, ["AUDIO"]);
+  assert.equal(pedido.config.speechConfig.voiceConfig.prebuiltVoiceConfig.voiceName, "Leda");
+  await assert.rejects(() => sintetizar(ai, "   "), /Sin texto/);
+});

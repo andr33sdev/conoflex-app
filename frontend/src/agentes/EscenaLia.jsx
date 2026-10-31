@@ -1,25 +1,28 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
+import logoUrl from "../assets/logo.svg";
 
-/** Lía en 3D. `estado`: idle | listening | thinking | speaking. El padre puede llamar pulso() / saludar() por ref. */
-const EscenaLia = forwardRef(function EscenaLia({ estado, hablando, info }, ref) {
+/** Lía en 3D. `estado`: idle | listening | thinking | speaking. El padre puede mover la boca (nivel/pulso) y hacerla saludar por ref. */
+const EscenaLia = forwardRef(function EscenaLia({ estado, hablando, info, onActividad }, ref) {
   const caja = useRef(null);
   const escena = useRef(null);
-  const ultimo = useRef({ estado, hablando, info });
+  const ultimo = useRef({ estado, hablando, info, onActividad });
   const [carga, setCarga] = useState("cargando"); // cargando | lista | sinwebgl | error
 
   useEffect(() => {
-    ultimo.current = { estado, hablando, info };
+    ultimo.current = { estado, hablando, info, onActividad };
     const e = escena.current;
     if (e) {
       e.setEstado(estado);
       e.hablando(hablando);
       e.setInfo(info);
     }
-  }, [estado, hablando, info]);
+  }, [estado, hablando, info, onActividad]);
 
   useImperativeHandle(ref, () => ({
     pulso: () => escena.current?.pulso(),
+    nivel: (n) => escena.current?.nivelVoz(n),
     saludar: () => escena.current?.saludar(),
+    celebrar: () => escena.current?.celebrar(),
   }));
 
   useEffect(() => {
@@ -29,12 +32,13 @@ const EscenaLia = forwardRef(function EscenaLia({ estado, hablando, info }, ref)
       .then((m) => {
         if (!vivo) return;
         if (!m.soportaWebGL()) return setCarga("sinwebgl");
-        creada = m.crearEscena(caja.current);
+        creada = m.crearEscena(caja.current, { logoUrl, onActividad: (t) => ultimo.current.onActividad?.(t) });
         escena.current = creada;
+        if (window.__liaTest) window.__liaCtrl = creada; // solo para pruebas automáticas
         const u = ultimo.current;
+        creada.setInfo(u.info);
         creada.setEstado(u.estado);
         creada.hablando(u.hablando);
-        creada.setInfo(u.info);
         setCarga("lista");
       })
       .catch((err) => {
@@ -49,18 +53,13 @@ const EscenaLia = forwardRef(function EscenaLia({ estado, hablando, info }, ref)
   }, []);
 
   return (
-    <div
-      className="absolute inset-0"
-      style={{ background: "radial-gradient(120% 90% at 50% 15%, #2a2230 0%, #14141a 55%, #0a0a0c 100%)" }}
-    >
-      <div ref={caja} className="absolute inset-0" aria-label="Lía, agente de RRHH, en su oficina de LEGO" role="img" />
+    <div className="absolute inset-0" style={{ background: "radial-gradient(120% 90% at 50% 15%, #2a2230 0%, #14141a 55%, #0a0a0c 100%)" }}>
+      <div ref={caja} className="absolute inset-0" aria-label="Lía, agente de RRHH, trabajando en su escritorio de LEGO" role="img" />
       {carga === "cargando" && (
-        <div className="absolute inset-0 grid place-items-center text-zinc-400 text-sm">
-          <div className="flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-[#FF5A00] cf-punto" />
-            <span className="w-2 h-2 rounded-full bg-[#FF5A00] cf-punto" style={{ animationDelay: "0.15s" }} />
-            <span className="w-2 h-2 rounded-full bg-[#FF5A00] cf-punto" style={{ animationDelay: "0.3s" }} />
-            <span className="ml-1">Armando la oficina…</span>
+        <div className="absolute inset-0 grid place-items-center">
+          <div className="flex flex-col items-center gap-3 text-zinc-400 text-sm">
+            <img src={logoUrl} alt="" className="w-14 h-14 rounded-full" />
+            <span>Armando la oficina…</span>
           </div>
         </div>
       )}
