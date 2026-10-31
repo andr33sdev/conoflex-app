@@ -5,6 +5,7 @@ import Pantalla from "./agentes/Pantalla";
 import { Riel, Proximamente } from "./agentes/Equipo";
 import Mundo from "./agentes/Mundo";
 import { PROXIMOS } from "./agentes/proximos";
+import { setEquipo } from "./agentes/estados";
 
 /** Módulo Agentes IA: el equipo a la izquierda y la conversación con el agente elegido a la derecha. Cada agente se habilita por rol. */
 export default function Agentes({ usuarioActual }) {
@@ -23,7 +24,11 @@ export default function Agentes({ usuarioActual }) {
   useEffect(() => {
     let vivoOk = true;
     api("/api/agentes")
-      .then((r) => vivoOk && setAgentes(r))
+      .then((r) => {
+        if (!vivoOk) return;
+        setEquipo(r);
+        setAgentes(r);
+      })
       .catch((e) => vivoOk && setError(e.message));
     return () => {
       vivoOk = false;

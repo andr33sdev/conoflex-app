@@ -8,6 +8,7 @@ const { calcular } = require("../calculadora");
 const { feriadosEfectivos } = require("./vigilanteRRHH");
 const { REGLAS_CONNIE } = require("./reglasLiquidacion");
 const { HERRAMIENTAS_LIQUIDACION } = require("./herramientasLiquidacion");
+const { fichaOperario } = require("./fichaOperario");
 
 
 function hoyArgentina() {
@@ -27,7 +28,7 @@ HOY es ${hoy.largo} (${hoy.iso}).
 TU ESPECIALIDAD (única y exclusiva)
 - Solo atendés: liquidación de sueldos y de horas (normales y extra), valor de las horas, simulación de turnos, fichadas (ingresos y salidas que faltan), presentismo, llegadas tarde, feriados y faltas (y recordar justificarlas si corresponde), y consultas generales de la ley laboral argentina sobre estos temas.
 - Si te piden algo de otra área (ventas, stock, compras, producción, rentabilidad, gráficos de negocio, etc.), decí con amabilidad y en una línea que eso no es lo tuyo y que para eso está Connie o el agente de esa área. No lo resuelvas aunque sepas hacerlo. No uses ninguna herramienta para eso.
-- Para saber qué avisos tenés abiertos usá la herramienta avisos_abiertos; para los próximos feriados, proximos_feriados. Nunca inventes avisos ni feriados.
+- Para la historia de una persona (horas, extras, llegadas tarde y presentismo del año) usá ficha_operario. Para saber qué avisos tenés abiertos usá la herramienta avisos_abiertos; para los próximos feriados, proximos_feriados. Nunca inventes avisos ni feriados.
 - Todo número, nombre, día e importe sale textualmente del resultado de una herramienta.
 
 ${REGLAS_CONNIE.join("\n")}
@@ -61,6 +62,19 @@ const HERRAMIENTAS = [
         parameters: { type: "OBJECT", properties: {} },
       },
       {
+        name: "ficha_operario",
+        description:
+          "Ficha de UN operario en un año (por defecto el actual): mes por mes sus horas normales y extra, días trabajados, llegadas tarde y qué meses perdió el presentismo, más el total del año. Usala cuando pregunten por la historia de una persona (\"cómo viene Juan este año\", \"cuántas extras hizo\", \"llegó tarde seguido\").",
+        parameters: {
+          type: "OBJECT",
+          properties: {
+            operario: { type: "STRING", description: "Nombre (o parte) del operario." },
+            anio: { type: "INTEGER", description: "Año de la ficha, por ejemplo 2026. Por defecto el actual." },
+          },
+          required: ["operario"],
+        },
+      },
+      {
         name: "proximos_feriados",
         description: "Devuelve los feriados de los próximos N días (por defecto 60): los de la tabla de Control Asistencia y los nacionales de fecha fija.",
         parameters: { type: "OBJECT", properties: { dias: { type: "INTEGER", description: "Cantidad de días hacia adelante (1 a 365). Por defecto 60." } } },
@@ -75,6 +89,7 @@ const PALABRAS_HERRAMIENTA = {
   calculadora: "Hizo una cuenta",
   avisos_abiertos: "Revisó sus avisos",
   proximos_feriados: "Consultó los feriados",
+  ficha_operario: "Armó la ficha de un operario",
 };
 
 /** @param {{pool:any, db:any, ai:any}} deps  pool = el mismo pool de solo lectura de Connie. */
@@ -95,6 +110,7 @@ function crearLia({ pool, db, ai }) {
       );
       return { cantidad: rows.length, avisos: rows };
     }
+    if (llamada.name === "ficha_operario") return fichaOperario(pool, { operario: args.operario, anio: args.anio });
     if (llamada.name === "proximos_feriados") {
       const dias = Math.min(365, Math.max(1, Number(args.dias) || 60));
       const hoy = hoyArgentina().iso;

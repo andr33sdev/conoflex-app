@@ -1,301 +1,336 @@
-import { memo, useMemo } from "react";
+import { memo, useEffect, useMemo, useState } from "react";
 import { Lock } from "lucide-react";
-import { GRILLA, frameDe, rectas, useTick } from "./pixelMotor";
-import { estadoDe, useSlotEstado } from "./estados";
+import { rectasMini } from "./pixelMini";
+import { estadoDe, equipoIds, useSlotEstado } from "./estados";
+import { CAFE, H, REUNION, W, escena, geometria } from "./escena";
 import { PROXIMOS } from "./proximos";
 
-// El "mundillo": una oficina de pixel art por agente. Todo se dibuja con rectángulos en una grilla de 64×44 celdas.
-const W = 64;
-const Hh = 38;
+// El departamento visto desde arriba. Todo se dibuja con rectángulos en un mapa de 176×112 unidades;
+// las personas caminan por los pasillos según el reloj (ver escena.js).
 
-function lienzo() {
+const TINTES = {
+  rrhh: ["#4b3b35", "#45362f", "#FF5A00"],
+  stock: ["#34413a", "#2f3b34", "#22c55e"],
+  compras: ["#333d4d", "#2e3846", "#3b82f6"],
+  produccion: ["#3d3750", "#38324a", "#8b5cf6"],
+};
+const PARED = "#d6d2c6";
+const SOMBRA = "rgba(0,0,0,0.32)";
+const franja = (h) => (h >= 8 && h < 18 ? "dia" : (h >= 18 && h < 21) || (h >= 6 && h < 8) ? "tarde" : "noche");
+const CIELO = { dia: "#9cc3e0", tarde: "#dba46a", noche: "#1a2240" };
+
+function useReloj() {
+  const [ahora, setAhora] = useState(() => Date.now());
+  useEffect(() => {
+    const quieto = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    const id = setInterval(() => setAhora(Date.now()), quieto ? 1000 : 140);
+    return () => clearInterval(id);
+  }, []);
+  return ahora;
+}
+
+const lienzo = () => {
   const l = [];
-  const r = (x, y, w, h, c) => l.push({ x, y, w, h, c });
-  return { l, r };
+  return { l, r: (x, y, w, h, c) => l.push({ x, y, w, h, c }) };
+};
+
+// ---------- fondo (no cambia salvo la hora del día) ----------
+function pared(r, x, y, w, h) {
+  r(x, y, w, h, PARED);
+  r(x, y + h, w, 1, SOMBRA);
 }
-
-const franja = (h) => (h >= 8 && h < 18 ? "dia" : h >= 18 && h < 21 || h >= 6 && h < 8 ? "tarde" : "noche");
-const CIELO = { dia: "#8fb8d8", tarde: "#d9a066", noche: "#161d33" };
-
-function ventana(r, x, y, w, h, f) {
-  r(x - 1, y - 1, w + 2, h + 2, "#d9d4c8");
-  r(x, y, w, h, CIELO[f]);
-  if (f === "noche") {
-    r(x + 2, y + 2, 1, 1, "#f4f1d0");
-    r(x + w - 4, y + 4, 1, 1, "#f4f1d0");
-    r(x + 5, y + 1, 1, 1, "#9aa3c7");
-  } else {
-    r(x + 2, y + h - 3, w - 4, 1, f === "dia" ? "#b6d3e8" : "#e7bb85");
-    r(x + 1, y + 1, 3, 1, f === "dia" ? "#f4f8fb" : "#f0cf9f");
-  }
-  r(x + Math.floor(w / 2), y, 1, h, "#d9d4c8");
-  r(x, y + Math.floor(h / 2), w, 1, "#d9d4c8");
-  r(x - 2, y + h + 1, w + 4, 1, "#bdb6a8");
+function pisoSala(r, x, y, w, h, [a, b]) {
+  r(x, y, w, h, a);
+  for (let j = y + 3; j < y + h; j += 4) r(x, j, w, 1, b);
 }
-
-function reloj(r, cx, cy, ahora) {
-  r(cx - 2, cy - 3, 5, 7, "#e9e5da");
-  r(cx - 3, cy - 2, 7, 5, "#e9e5da");
-  r(cx - 1, cy - 4, 3, 1, "#2b2b34");
-  r(cx - 1, cy + 4, 3, 1, "#2b2b34");
-  const m = ahora.getMinutes();
-  const h = ahora.getHours() % 12;
-  r(cx, cy, 1, 1, "#2b2b34");
-  const aguja = (ang, largo, c) => {
-    for (let i = 1; i <= largo; i++) r(cx + Math.round(Math.sin(ang) * i), cy - Math.round(Math.cos(ang) * i), 1, 1, c);
-  };
-  aguja((m / 60) * 2 * Math.PI, 2, "#2b2b34");
-  aguja(((h + m / 60) / 12) * 2 * Math.PI, 1, "#8a3b1c");
-}
-
 function planta(r, x, y) {
-  r(x + 1, y + 7, 5, 4, "#7a4a32");
-  r(x + 1, y + 7, 5, 1, "#93593d");
-  r(x + 3, y + 3, 1, 4, "#3f7d46");
-  r(x, y + 2, 3, 2, "#4e9a56");
-  r(x + 4, y + 1, 3, 2, "#4e9a56");
-  r(x + 2, y, 3, 2, "#5cb064");
-  r(x + 1, y + 4, 2, 1, "#3f7d46");
-  r(x + 4, y + 4, 2, 1, "#3f7d46");
+  r(x + 1, y + 4, 4, 3, "#7a4a32");
+  r(x + 1, y + 4, 4, 1, "#93593d");
+  r(x, y + 1, 3, 3, "#4e9a56");
+  r(x + 3, y, 3, 3, "#5cb064");
+  r(x + 2, y + 2, 2, 2, "#3f7d46");
 }
-
-function escritorio(r) {
-  // respaldo de la silla, detrás del personaje
-  r(21, 18, 22, 13, "#2a2a33");
-  r(21, 18, 22, 1, "#3a3a46");
-  r(22, 19, 1, 11, "#34343f");
+function caja(r, x, y, w, h, c = "#a07a4f") {
+  r(x, y, w, h, c);
+  r(x, y, w, 1, "#ffffff2a");
+  r(x + Math.floor(w / 2), y + 1, 1, h - 1, "#00000030");
 }
-function mesada(r) {
-  r(10, 29, 44, 2, "#8a6a4a");
-  r(10, 29, 44, 1, "#a07d58");
-  r(10, 31, 44, 13, "#5a4330");
-  r(12, 32, 1, 12, "#4a3727");
-  r(51, 32, 1, 12, "#4a3727");
-  r(14, 34, 12, 8, "#4d3a2a");
-  r(14, 34, 12, 1, "#6a5039");
-  r(21, 37, 3, 1, "#c9a56a");
-  r(39, 34, 12, 8, "#4d3a2a");
-  r(39, 34, 12, 1, "#6a5039");
-  r(41, 37, 3, 1, "#c9a56a");
-}
-
-function teclado(r) {
-  r(24, 30, 16, 1, "#2e2e38");
-  for (let i = 0; i < 8; i++) r(25 + i * 2, 30, 1, 1, "#4a4a58");
-}
-
-function monitor(r, t, activo) {
-  r(44, 20, 11, 9, "#1c1c24");
-  r(45, 21, 9, 6, activo ? "#24415f" : "#1b2430");
-  if (activo) {
-    const o = Math.floor(t / 2) % 3;
-    r(46, 22, 4 + (o === 1 ? 1 : 0), 1, "#7fb4e6");
-    r(46, 24, 6 - o, 1, "#5d8fbf");
-    r(46, 26 - (o === 2 ? 1 : 0), 3, 1, "#7fb4e6");
+function estante(r, x, y, w) {
+  r(x, y, w, 7, "#5b5f68");
+  r(x, y, w, 1, "#7a808c");
+  r(x, y + 3, w, 1, "#4a4e56");
+  const cols = ["#a07a4f", "#8b6a44", "#4d6a7f", "#6c7f4d", "#a07a4f"];
+  for (let i = 0, cx = x + 1; cx < x + w - 3; i++, cx += 5) {
+    r(cx, y + 1, 4, 2, cols[i % cols.length]);
+    r(cx + 1, y + 4, 3, 2, cols[(i + 2) % cols.length]);
   }
-  r(48, 27, 3, 1, "#2b2b34");
-  r(47, 28, 5, 1, "#3a3a46");
 }
 
-function taza(r, t, x = 15) {
-  r(x, 26, 3, 3, "#ececf2");
-  r(x + 3, 27, 1, 1, "#ececf2");
-  r(x, 26, 3, 1, "#b9b9c6");
-  const a = Math.floor(t / 3) % 2;
-  r(x + 1, 24 - a, 1, 1, "#7a7a88");
-  r(x + 2 - a, 23 - a, 1, 1, "#5f5f6c");
-}
+function fondo(r, ids, f) {
+  // piso del pasillo (baldosas)
+  r(0, 48, W, 16, "#2b2b34");
+  for (let j = 48; j < 64; j += 8) for (let i = 0; i < W; i += 8) if (((i + j) / 8) % 2) r(i, j, 8, 8, "#30303a");
+  // alfombra del pasillo
+  r(72, 52, 32, 8, "#3a3550");
+  r(73, 53, 30, 6, "#433d5e");
 
-// ---------- cada oficina ----------
-function fondoRRHH(r, f, ahora) {
-  r(0, 0, W, 22, "#4a3d38");
-  r(0, 0, W, 1, "#3a2f2b");
-  r(0, 21, W, 1, "#38302c");
-  for (let y = 22; y < Hh; y += 4) for (let x = 0; x < W; x += 4) r(x, y, 4, 4, (x / 4 + y / 4) % 2 ? "#2e2623" : "#342b28");
-  ventana(r, 6, 4, 12, 10, f);
-  reloj(r, 30, 8, ahora);
-  // calendario de pared
-  r(46, 3, 11, 11, "#e8e4da");
-  r(46, 3, 11, 3, "#c8672f");
-  for (let j = 0; j < 3; j++) for (let i = 0; i < 4; i++) r(47 + i * 2 + (i > 1 ? 1 : 0), 8 + j * 2, 1, 1, "#8c8678");
-  r(51, 10, 1, 1, "#c8672f");
-  // archivero
-  r(2, 17, 8, 17, "#5b5f68");
-  r(2, 17, 8, 1, "#737883");
-  for (let i = 0; i < 3; i++) {
-    r(3, 19 + i * 5, 6, 4, "#6a6f79");
-    r(5, 20 + i * 5, 2, 1, "#c9ccd6");
+  // salas
+  for (const id of ["rrhh", "stock", "compras", "produccion"]) {
+    const g = geometria(id);
+    pisoSala(r, g.x, g.y, g.w, g.h, TINTES[id]);
+    r(g.escritorio.x - 2, g.escritorio.y - 4, g.escritorio.w + 4, g.escritorio.h + 12, TINTES[id][1]); // alfombra
+    r(g.escritorio.x - 1, g.escritorio.y - 3, g.escritorio.w + 2, g.escritorio.h + 10, TINTES[id][0]);
+    r(g.x + (g.izq ? 1 : 2), g.y + (g.arriba ? 0 : 1), 1, 1, TINTES[id][2]); // marca de color de la sala
   }
-  planta(r, 56, 24);
-}
-function fondoDeposito(r, f, ahora) {
-  r(0, 0, W, 22, "#36403a");
-  for (let x = 0; x < W; x += 2) r(x, 10, 1, 11, "#3b463f");
-  r(0, 0, W, 1, "#2b332e");
-  r(0, 20, W, 2, "#d8b53a");
-  for (let x = 0; x < W; x += 4) r(x, 20, 2, 2, "#23252a");
-  for (let y = 22; y < Hh; y += 4) for (let x = 0; x < W; x += 4) r(x, y, 4, 4, (x / 4 + y / 4) % 2 ? "#2c2e2d" : "#303231");
-  // portón enrollable
-  r(26, 3, 18, 16, "#4b5350");
-  for (let y = 4; y < 18; y += 2) r(26, y, 18, 1, "#5a635f");
-  r(26, 3, 18, 1, "#2b332e");
-  void ahora;
-  void f;
-  // estantería con cajas
-  r(1, 4, 22, 1, "#8a8f98");
-  r(1, 11, 22, 1, "#8a8f98");
-  r(1, 18, 22, 1, "#8a8f98");
-  r(1, 4, 1, 15, "#6b7079");
-  r(22, 4, 1, 15, "#6b7079");
-  const caja = (x, y, w, h, c) => {
-    r(x, y, w, h, c);
-    r(x, y, w, 1, "#ffffff22");
-    r(x + Math.floor(w / 2), y, 1, h, "#00000030");
+  // reunión y cocina
+  pisoSala(r, REUNION.x, REUNION.y, REUNION.w, REUNION.h, ["#3a3a42", "#34343c"]);
+  pisoSala(r, CAFE.x, CAFE.y, CAFE.w, CAFE.h, ["#3f3a33", "#39342d"]);
+
+  // decorado de cada sala
+  // RRHH: archiveros, planta
+  r(48, 3, 18, 6, "#5b5f68");
+  r(48, 3, 18, 1, "#7a808c");
+  for (let i = 0; i < 3; i++) r(50 + i * 6, 5, 4, 3, "#6a6f79");
+  r(5, 4, 9, 5, "#e8e4da");
+  r(5, 4, 9, 1, "#FF5A00");
+  planta(r, 58, 34);
+  r(4, 36, 14, 7, "#4a3d38");
+  r(5, 37, 12, 2, "#e8e4da");
+  // Depósito: estantes y pallet
+  estante(r, 110, 3, 26);
+  estante(r, 138, 3, 20);
+  r(146, 36, 24, 2, "#7a5a3e");
+  r(146, 38, 24, 1, "#4a3727");
+  caja(r, 148, 29, 8, 7);
+  caja(r, 157, 31, 7, 5, "#8b6a44");
+  caja(r, 150, 24, 6, 5);
+  caja(r, 112, 36, 9, 8, "#4d6a7f");
+  caja(r, 112, 30, 7, 6, "#a07a4f");
+  // Compras: biblioteca, pizarra
+  r(36, 103, 30, 7, "#4a4034");
+  ["#51709e", "#b4524a", "#8a8f98", "#6c8f5a", "#c9a56a", "#51709e", "#b4524a"].forEach((c, i) => r(38 + i * 4, 104, 3, 5, c));
+  r(4, 104, 22, 6, "#cfd2d9");
+  r(5, 105, 20, 4, "#e9ecf2");
+  r(7, 106, 8, 1, "#51709e");
+  r(7, 108, 12, 1, "#7a8090");
+  planta(r, 58, 69);
+  // Producción: inyectora y pizarra
+  r(110, 98, 30, 12, "#585d66");
+  r(110, 98, 30, 2, "#7a808c");
+  r(112, 101, 14, 6, "#3c4048");
+  r(128, 101, 10, 6, "#8b5cf6");
+  r(114, 109, 26, 1, SOMBRA);
+  r(146, 104, 26, 6, "#cfd2d9");
+  r(147, 105, 24, 4, "#f1f2f6");
+  r(149, 106, 10, 1, "#8b5cf6");
+  r(149, 108, 16, 1, "#9aa0ae");
+  caja(r, 160, 68, 8, 7, "#a07a4f");
+  caja(r, 168, 70, 6, 5, "#8b6a44");
+  // Sala de reuniones
+  r(76, 14, 24, 16, "#6b5238");
+  r(76, 14, 24, 1, "#8a6a4a");
+  r(77, 30, 22, 1, SOMBRA);
+  [[78, 10], [86, 10], [94, 10], [78, 32], [86, 32], [94, 32]].forEach(([x, y]) => r(x, y, 6, 4, "#2a2a33"));
+  r(78, 4, 20, 3, "#f1f2f6");
+  r(80, 5, 8, 1, "#8b5cf6");
+  planta(r, 98, 36);
+  // Cocina
+  r(70, 102, 36, 8, "#5b4a38");
+  r(70, 102, 36, 2, "#8a7458");
+  r(74, 98, 8, 5, "#2b2b34");
+  r(75, 99, 6, 2, "#ff5a00");
+  r(86, 98, 6, 5, "#e8e4da");
+  r(96, 104, 8, 4, "#9ca3af");
+  r(94, 70, 10, 10, "#6b5238");
+  r(95, 71, 8, 8, "#8a6a4a");
+  planta(r, 70, 70);
+  // pasillo
+  planta(r, 4, 54);
+  planta(r, 166, 54);
+
+  // paredes con puertas
+  const tramos = (y, h, puertas) => {
+    let x = 0;
+    puertas.forEach(([a, b]) => {
+      pared(r, x, y, a - x, h);
+      x = b;
+    });
+    pared(r, x, y, W - x, h);
   };
-  caja(3, 6, 5, 5, "#a07a4f");
-  caja(9, 7, 5, 4, "#8b6a44");
-  caja(15, 5, 6, 6, "#a07a4f");
-  caja(3, 13, 6, 5, "#4d6a7f");
-  caja(10, 14, 4, 4, "#a07a4f");
-  caja(15, 13, 6, 5, "#6c7f4d");
-  // pallet con cajas
-  r(50, 38, 13, 2, "#7a5a3e");
-  r(50, 40, 13, 1, "#4a3727");
-  caja(51, 31, 6, 7, "#a07a4f");
-  caja(57, 33, 5, 5, "#8b6a44");
-  caja(53, 27, 5, 4, "#a07a4f");
-}
-function fondoCompras(r, f, ahora) {
-  r(0, 0, W, 22, "#364050");
-  r(0, 0, W, 1, "#2a3340");
-  r(0, 21, W, 1, "#2b3340");
-  for (let y = 22; y < Hh; y += 4) for (let x = 0; x < W; x += 4) r(x, y, 4, 4, (x / 4 + y / 4) % 2 ? "#272b34" : "#2b303a");
-  ventana(r, 27, 4, 11, 10, f);
-  void ahora;
-  // pizarra con lista
-  r(3, 3, 20, 14, "#cfd2d9");
-  r(4, 4, 18, 12, "#e9ecf2");
-  for (let i = 0; i < 4; i++) {
-    r(6, 6 + i * 3, 2, 2, i < 2 ? "#51709e" : "#9aa0ae");
-    r(10, 6 + i * 3, 9 - (i % 2) * 3, 1, "#7a8090");
-  }
-  r(5, 17, 5, 1, "#51709e");
-  r(12, 17, 3, 1, "#b4524a");
-  // biblioteca con carpetas
-  r(44, 3, 18, 18, "#4a4034");
-  r(45, 4, 16, 7, "#2d2a27");
-  r(45, 12, 16, 8, "#2d2a27");
-  const cols = ["#51709e", "#b4524a", "#8a8f98", "#6c8f5a", "#c9a56a", "#51709e", "#8a8f98", "#b4524a"];
-  cols.forEach((c, i) => {
-    r(46 + i * 2, 5, 2, 6, c);
-    r(46 + i * 2, 13 - (i % 3 === 0 ? 1 : 0), 2, 7 + (i % 3 === 0 ? 1 : 0), cols[(i + 3) % 8]);
+  tramos(46, 2, [[49, 59], [83, 93], [117, 127]]);
+  tramos(64, 2, [[49, 59], [83, 93], [117, 127]]);
+  [0, 66].forEach((y) => {
+    pared(r, 67, y === 0 ? 0 : 66, 2, 46);
+    pared(r, 107, y === 0 ? 0 : 66, 2, 46);
   });
-  planta(r, 2, 24);
+  // perímetro con ventanas
+  pared(r, 0, 0, W, 2);
+  pared(r, 0, 110, W, 2);
+  pared(r, 0, 0, 2, H);
+  pared(r, 174, 0, 2, H);
+  [[8, 24], [112, 130], [140, 160], [72, 100]].forEach(([a, b]) => r(a, 0, b - a, 2, CIELO[f]));
+  [[8, 24], [40, 58], [112, 130], [144, 160], [74, 100]].forEach(([a, b]) => r(a, 110, b - a, 2, CIELO[f]));
+  [[10, 36], [74, 88]].forEach(([a, b]) => r(0, a, 2, b - a, CIELO[f]));
+  [[10, 36], [74, 88]].forEach(([a, b]) => r(174, a, 2, b - a, CIELO[f]));
+  // marcos de las puertas
+  [49, 59, 83, 93, 117, 127].forEach((x) => {
+    r(x - 1, 46, 1, 2, "#8a6a4a");
+    r(x - 1, 64, 1, 2, "#8a6a4a");
+  });
+  void ids;
 }
 
-const FONDOS = { rrhh: fondoRRHH, stock: fondoDeposito, compras: fondoCompras, ventas: fondoCompras };
+const Fondo = memo(function Fondo({ ids, f }) {
+  const l = useMemo(() => {
+    const { l, r } = lienzo();
+    fondo(r, ids, f);
+    return l;
+  }, [ids, f]);
+  return l.map((q, i) => <rect key={i} x={q.x} y={q.y} width={q.w} height={q.h} fill={q.c} />);
+});
 
-const Cuarto = memo(function Cuarto({ id, est, apagado = false }) {
-  const t = useTick();
-  const ahora = new Date();
-  const minuto = ahora.getMinutes();
-  const f = franja(ahora.getHours());
-  const estatico = useMemo(() => {
-    const { l, r } = lienzo();
-    FONDOS[id](r, f, ahora);
-    escritorio(r);
-    return l;
-    // el reloj de pared se refresca cuando cambia el minuto
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id, f, minuto]);
-  const frente = (() => {
-    const { l, r } = lienzo();
-    mesada(r);
-    teclado(r);
-    monitor(r, t, !apagado);
-    if (id === "rrhh") {
-      r(12, 27, 6, 2, "#e8e4da");
-      r(12, 26, 5, 1, "#f2efe6");
-      taza(r, t, 20);
-    } else if (id === "compras") {
-      r(13, 26, 5, 3, "#1c1c24");
-      r(14, 25, 3, 1, "#2b2b34");
-      r(19, 27, 4, 2, "#e8e4da");
-      const llama = est.icono === "telefono";
-      r(16, 27, 1, 1, llama && Math.floor(t / 2) % 2 ? "#ff5a00" : "#3a3a46");
-      taza(r, t, 46);
-    } else if (id === "stock") {
-      r(13, 26, 6, 3, "#d8c28a");
-      r(13, 26, 6, 1, "#e8d9a8");
-      r(21, 27, 4, 2, "#e8e4da");
-      taza(r, t, 46);
-    }
-    return l;
-  })();
-  const sprite = rectas(id, frameDe(est.modo, est.ojos, t, apagado));
+// ---------- muebles que van por delante de las personas ----------
+function Escritorio({ id, activo, ahora }) {
+  const g = geometria(id);
+  const d = g.escritorio;
+  const cx = d.x + Math.floor(d.w / 2);
+  const parpadeo = Math.floor(ahora / 600) % 3;
   return (
-    <svg viewBox={`0 0 ${W} ${Hh}`} className="w-full h-auto block" shapeRendering="crispEdges" role="img" aria-label={`Oficina de ${id}`}>
-      {estatico.map((q, i) => <rect key={i} x={q.x} y={q.y} width={q.w} height={q.h} fill={q.c} />)}
-      <svg x={20} y={6} width={GRILLA} height={GRILLA} viewBox={`0 0 ${GRILLA} ${GRILLA}`}>
-        {sprite.map((q) => <rect key={`${q.x},${q.y}`} x={q.x} y={q.y} width={q.w} height="1" fill={q.c} />)}
-      </svg>
-      {frente.map((q, i) => <rect key={i} x={q.x} y={q.y} width={q.w} height={q.h} fill={q.c} />)}
-      {apagado && <rect x="0" y="0" width={W} height={Hh} fill="#0b0b0d" opacity="0.72" />}
-    </svg>
+    <g>
+      <rect x={d.x} y={d.y} width={d.w} height={d.h} fill="#8a6a4a" />
+      <rect x={d.x} y={d.y} width={d.w} height="1" fill="#a98a63" />
+      <rect x={d.x} y={d.y + d.h} width={d.w} height="1" fill="#5a4330" />
+      <rect x={d.x} y={d.y + d.h + 1} width={d.w} height="1" fill={SOMBRA} />
+      <rect x={cx - 3} y={d.y + 1} width="6" height="2" fill="#d7d9e2" />
+      <rect x={cx - 4} y={d.y + 4} width="8" height="4" fill="#1c1c24" />
+      <rect x={cx - 3} y={d.y + 7} width="6" height="1" fill={activo ? (parpadeo === 1 ? "#5d8fbf" : "#7fb4e6") : "#2e3a4a"} />
+      <rect x={d.x + 2} y={d.y + 2} width="3" height="3" fill="#ececf2" />
+      <rect x={d.x + d.w - 7} y={d.y + 2} width="5" height="4" fill="#e8e4da" />
+      <rect x={d.x + d.w - 6} y={d.y + 3} width="3" height="1" fill="#b9b3a3" />
+    </g>
+  );
+}
+
+function Silla({ x, y }) {
+  return (
+    <g>
+      <rect x={x - 5} y={y - 8} width="10" height="7" fill="#2a2a33" />
+      <rect x={x - 5} y={y - 8} width="10" height="1" fill="#3a3a46" />
+    </g>
+  );
+}
+
+const Persona = memo(function Persona({ id, e }) {
+  const sentado = e.sentado && !e.camina;
+  const rs = rectasMini(id, e.dir, e.camina ? e.paso : 0);
+  return (
+    <g transform={`translate(${e.x - 5} ${e.y - 15})`}>
+      {!sentado && <rect x="1" y="15" width="8" height="1" fill="rgba(0,0,0,0.4)" />}
+      {rs.map((q) => <rect key={`${q.x},${q.y}`} x={q.x} y={q.y} width={q.w} height="1" fill={q.c} />)}
+      {e.fase === "cafe" && <rect x={e.dir === "left" ? 0 : 8} y="9" width="2" height="2" fill="#ececf2" />}
+    </g>
   );
 });
 
-function Tarjeta({ id, nombre, puesto, est, avisos, onClick, apagado }) {
+// ---------- charla de pasillo: qué se dicen (ambientación, no son datos reales) ----------
+const DICHOS = {
+  "rrhh>stock": "¿Cuánta gente necesitás en el depósito?",
+  "rrhh>compras": "Te paso los feriados que vienen",
+  "rrhh>produccion": "¿Quién cubre el turno noche?",
+  "stock>rrhh": "¿Quién está hoy en el depósito?",
+  "stock>compras": "Se me acaba una materia prima",
+  "stock>produccion": "Te aviso qué semielaborados faltan",
+  "compras>rrhh": "¿Tenés el calendario de feriados?",
+  "compras>stock": "¿Qué me falta pedir?",
+  "compras>produccion": "¿Para cuándo necesitás el material?",
+  "produccion>rrhh": "¿Quién ficha hoy en planta?",
+  "produccion>stock": "¿Alcanza el material para esta semana?",
+  "produccion>compras": "¿Cuándo llega lo que pedimos?",
+};
+
+function Globo({ e, texto, sub }) {
+  const x = Math.min(86, Math.max(14, (e.x / W) * 100));
+  const y = ((e.y - 17) / H) * 100;
   return (
-    <button onClick={onClick} className="group text-left rounded-2xl border border-white/[0.08] bg-[#111114] overflow-hidden hover:border-white/25 transition-colors">
-      <div className="relative">
-        <Cuarto id={id} est={est} apagado={apagado} />
-        {!apagado && (
-          <div className="absolute left-1/2 -translate-x-1/2 top-2 max-w-[92%]" key={est.texto}>
-            <span className="cf-estado block rounded-lg bg-[#f1f0f4] text-[#1b1b21] text-[11.5px] sm:text-[12px] font-semibold leading-tight px-2.5 py-1 shadow-lg truncate">{est.texto}</span>
-            <span className="block mx-auto w-2 h-2 -mt-1 rotate-45 bg-[#f1f0f4]" />
-          </div>
+    <div className="absolute pointer-events-none -translate-x-1/2 -translate-y-full z-10" style={{ left: `${x}%`, top: `${y}%` }}>
+      <span className={`block max-w-[190px] rounded-md px-2 py-[3px] text-[10.5px] sm:text-[11.5px] font-semibold leading-tight shadow-lg ${sub ? "bg-[#26262d] text-zinc-200 border border-white/[0.12]" : "bg-[#f1f0f4] text-[#1b1b21]"}`}>{texto}</span>
+    </div>
+  );
+}
+
+function Mapa({ agentes, onElegir, modo, vivoId, abiertosVivo }) {
+  const ahora = useReloj();
+  useSlotEstado();
+  const ids = equipoIds();
+  const clave = ids.join(",");
+  const ids2 = useMemo(() => clave.split(",").filter(Boolean), [clave]);
+  const esc = escena(ahora, ids2);
+  const hora = new Date(ahora).getHours();
+  const f = franja(hora);
+  const nombre = (id) => agentes.find((a) => a.id === id)?.nombre || id;
+  const lista = ids2.filter((id) => esc[id]).sort((a, b) => esc[a].y - esc[b].y);
+  return (
+    <div className="relative rounded-2xl overflow-hidden border border-white/[0.08] bg-[#14141a] select-none">
+      <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto block" shapeRendering="crispEdges" role="img" aria-label="Departamento visto desde arriba">
+        <Fondo ids={clave} f={f} />
+        {ids2.map((id) => { const g = geometria(id); return <Silla key={id} x={g.silla.x} y={g.silla.y} />; })}
+        {lista.map((id) => <Persona key={id} id={id} e={esc[id]} />)}
+        {ids2.map((id) => <Escritorio key={id} id={id} activo={esc[id].sentado} ahora={ahora} />)}
+        {ids2.some((id) => esc[id].fase === "cafe") && (
+          <g>
+            <rect x="77" y={Math.floor(ahora / 500) % 2 ? 94 : 95} width="1" height="2" fill="#ffffff66" />
+            <rect x="79" y={Math.floor(ahora / 500) % 2 ? 95 : 94} width="1" height="2" fill="#ffffff44" />
+          </g>
         )}
-        {apagado && (
-          <div className="absolute inset-0 grid place-items-center">
-            <span className="inline-flex items-center gap-1.5 rounded-lg bg-black/60 text-zinc-300 text-[12px] font-semibold px-3 py-1.5"><Lock size={12} /> Pronto</span>
-          </div>
-        )}
-      </div>
-      <div className="flex items-center gap-3 px-4 py-3">
-        <div className="min-w-0 flex-1">
-          <p className="text-[15.5px] font-bold text-white leading-tight">{nombre}</p>
-          <p className="text-[12.5px] text-zinc-500 leading-tight">{puesto}</p>
-        </div>
-        {!apagado && avisos > 0 && <span className="text-[12px] font-semibold text-zinc-500 tabular-nums">{avisos} {avisos === 1 ? "aviso" : "avisos"}</span>}
-        <span className="text-[12.5px] font-semibold text-zinc-400 group-hover:text-white">{apagado ? "Ver" : "Hablar →"}</span>
-      </div>
+      </svg>
+      {/* nombres de las salas */}
+      {["rrhh", "stock", "compras", "produccion"].map((id) => {
+        const g = geometria(id);
+        const a = agentes.find((x) => x.id === id);
+        if (!a) return null;
+        return (
+          <button key={id} onClick={() => onElegir(id)} className="group absolute rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-white/60" style={{ left: `${(g.x / W) * 100}%`, top: `${(g.y / H) * 100}%`, width: `${(g.w / W) * 100}%`, height: `${(g.h / H) * 100}%` }} aria-label={`Hablar con ${a.nombre}`}>
+            <span className="absolute inset-[3px] rounded-md ring-1 ring-transparent group-hover:ring-white/30 transition" />
+            <span className={`absolute left-1.5 ${g.arriba ? "top-1.5" : "bottom-1.5"} rounded bg-black/55 px-1.5 py-[1px] text-[10px] sm:text-[11px] font-bold text-white/90 leading-tight`}>{a.nombre} · {a.puesto.split(" ")[0]}</span>
+            <span className={`absolute right-1.5 ${g.arriba ? "top-1.5" : "bottom-1.5"} hidden group-hover:block rounded bg-white/90 px-1.5 py-[1px] text-[10px] font-bold text-black`}>Hablar →</span>
+          </button>
+        );
+      })}
+      <span className="absolute left-[40.5%] top-1.5 rounded bg-black/45 px-1.5 text-[10px] font-semibold text-zinc-300">Reunión</span>
+      <span className="absolute left-[40.5%] bottom-1.5 rounded bg-black/45 px-1.5 text-[10px] font-semibold text-zinc-300">Cocina</span>
+      {/* globos: solo para quien está yendo, charlando o recibiendo */}
+      {lista.map((id) => {
+        const e = esc[id];
+        if (e.fase === "escritorio") return null;
+        const est = estadoDe(id, nombre(id), { modo: id === vivoId ? modo : "idle", abiertos: id === vivoId ? abiertosVivo : 0, ahora });
+        if (e.fase === "visita") return <Globo key={id} e={e} texto={DICHOS[`${id}>${e.con}`] || est.texto} />;
+        if (e.fase === "recibe") return <Globo key={id} e={e} texto={est.texto} sub />;
+        return <Globo key={id} e={e} texto={est.texto} sub />;
+      })}
+    </div>
+  );
+}
+
+function Pendiente({ a, onClick }) {
+  return (
+    <button onClick={onClick} className="inline-flex items-center gap-2 rounded-lg border border-white/[0.08] px-3 py-2 text-[12.5px] text-zinc-400 hover:text-white">
+      <Lock size={12} /> {a.nombre} · {a.puesto} · pronto
     </button>
   );
 }
 
-/** Vista principal del módulo: las oficinas de cada agente, todas a la vista. */
+/** Vista principal del módulo: el departamento con todo el equipo a la vista. */
 export default function Mundo({ agentes, onElegir, modo, abiertosVivo, vivoId }) {
-  useSlotEstado();
   const total = agentes.reduce((a, x) => a + (x.id === vivoId && abiertosVivo != null ? abiertosVivo : x.abiertos || 0), 0);
   return (
     <div className="h-full overflow-y-auto custom-scrollbar bg-[#0b0b0d]">
       <div className="max-w-5xl mx-auto px-3 sm:px-6 py-5">
         <div className="mb-4">
           <h1 className="text-[20px] font-bold text-white leading-tight">Oficina</h1>
-          <p className="text-[13px] text-zinc-500 mt-0.5">{agentes.length} {agentes.length === 1 ? "agente trabajando" : "agentes trabajando"}{total > 0 ? ` · ${total} ${total === 1 ? "aviso abierto" : "avisos abiertos"} en total` : " · todo en orden"}</p>
+          <p className="text-[13px] text-zinc-500 mt-0.5">{agentes.length} {agentes.length === 1 ? "agente trabajando" : "agentes trabajando"}{total > 0 ? ` · ${total} ${total === 1 ? "aviso abierto" : "avisos abiertos"} en total` : " · todo en orden"} · tocá una sala para hablar</p>
         </div>
-        <div className="grid gap-4 md:grid-cols-2">
-          {agentes.map((a) => {
-            const propio = a.id === vivoId;
-            const avisos = propio && abiertosVivo != null ? abiertosVivo : a.abiertos || 0;
-            const est = estadoDe(a.id, a.nombre, { modo: propio ? modo : "idle", abiertos: avisos });
-            return <Tarjeta key={a.id} id={a.id} nombre={a.nombre} puesto={a.puesto} est={est} avisos={avisos} onClick={() => onElegir(a.id)} />;
-          })}
-          {PROXIMOS.map((a) => (
-            <Tarjeta key={a.id} id="ventas" nombre={a.nombre} puesto={a.puesto} est={{ texto: "", modo: "idle", ojos: "frente", icono: null }} avisos={0} apagado onClick={() => onElegir(a.id)} />
-          ))}
-        </div>
+        <Mapa agentes={agentes} onElegir={onElegir} modo={modo} vivoId={vivoId} abiertosVivo={abiertosVivo} />
+        {PROXIMOS.length > 0 && <div className="mt-3 flex flex-wrap gap-2">{PROXIMOS.map((a) => <Pendiente key={a.id} a={a} onClick={() => onElegir(a.id)} />)}</div>}
       </div>
     </div>
   );

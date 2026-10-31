@@ -8,6 +8,7 @@ export const PERFILES = {
     nombre: "Lía",
     claves: { chat: "lia_chat_v2", voz: "lia_voz_v1" },
     panorama: null,
+    personal: true,
     voz: { indice: 0, tono: 1.1, ritmo: 1 },
     presentacion: "Soy Lía, de RRHH.",
     reporte: "Armame un reporte de RRHH para pasar a PDF: estado de los avisos abiertos, fichadas y presentismo que haya que revisar, y qué atender primero. Con títulos y viñetas.",
@@ -47,6 +48,17 @@ export const PERFILES = {
           ? `Revisé las compras y hay ${aviso(abiertos, estado.altas)}.`
           : "Las compras están en orden."
         : "Todavía no hice mi primera revisión de compras.",
+  },
+  produccion: {
+    id: "produccion",
+    nombre: "Maru",
+    claves: { chat: "maru_chat_v1", voz: "maru_voz_v1" },
+    panorama: "produccion",
+    sinVigilante: true,
+    voz: { indice: 3, tono: 1.12, ritmo: 1.04 },
+    presentacion: "Soy Maru, de producción.",
+    reporte: "Armame un reporte de producción para pasar a PDF: qué conviene fabricar primero y por qué, pedidos abiertos más atrasados, avance del plan de la semana y gente en planta. Con títulos y una tabla.",
+    resumen: (estado, abiertos) => (abiertos > 0 ? `Tengo ${aviso(abiertos, estado?.altas)}.` : "Preguntame qué conviene fabricar primero."),
   },
 };
 export const perfilDe = (id) => PERFILES[id] || PERFILES.rrhh;

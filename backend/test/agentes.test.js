@@ -25,7 +25,7 @@ test("las herramientas de liquidación son las mismas que las de Connie", () => 
 
 test("Lía no tiene herramientas de otras áreas (SQL libre, demanda, rentabilidad, gráficos)", () => {
   const nombres = HERRAMIENTAS[0].functionDeclarations.map((f) => f.name).sort();
-  assert.deepEqual(nombres, ["avisos_abiertos", "calculadora", "liquidar_horas", "proximos_feriados", "simular_turno"]);
+  assert.deepEqual(nombres, ["avisos_abiertos", "calculadora", "ficha_operario", "liquidar_horas", "proximos_feriados", "simular_turno"]);
   const t = construirInstrucciones();
   assert.match(t, /única y exclusiva/);
   assert.match(t, /PRESENTISMO:/);

@@ -29,9 +29,10 @@ export const GRILLA = 24;
 
 // ---------- personajes ----------
 export const PERSONAJES = {
-  rrhh: { piel: "#ecc2a2", sombra: "#c99573", luz: "#f6d8bf", pelo: "#4a2a1b", peloLuz: "#6d4330", iris: "#5a3a28", ropa: "#c8672f", ropa2: "#a04e20", ropaLuz: "#dc8049", pelos: "rodete", lentes: false, extra: null, rubor: "#e2a899", labio: "#b8584c" },
-  stock: { piel: "#dba77f", sombra: "#b9805a", luz: "#e8bd99", pelo: "#1e1e24", peloLuz: "#3a3a44", iris: "#2e2a28", ropa: "#5d8a5c", ropa2: "#46704a", ropaLuz: "#78a577", pelos: "cola", lentes: false, extra: "casco", rubor: "#c98f74", labio: "#a45a48" },
-  compras: { piel: "#f1c9ac", sombra: "#d0a083", luz: "#f8dcc6", pelo: "#8d5a2b", peloLuz: "#ad7840", iris: "#3d5a7a", ropa: "#51709e", ropa2: "#3d5782", ropaLuz: "#6a8bb9", pelos: "corto", lentes: true, extra: "auricular", rubor: "#e8b0a0", labio: "#c0615a" },
+  rrhh: { pestanas: true, piel: "#ecc2a2", sombra: "#c99573", luz: "#f6d8bf", pelo: "#4a2a1b", peloLuz: "#6d4330", iris: "#5a3a28", ropa: "#c8672f", ropa2: "#a04e20", ropaLuz: "#dc8049", pelos: "rodete", lentes: false, extra: null, rubor: "#e2a899", labio: "#b8584c" },
+  stock: { pestanas: true, aros: "#e6bf48", piel: "#e0ae88", sombra: "#c58a64", luz: "#eec4a2", pelo: "#3b2418", peloLuz: "#5d3b28", iris: "#2e2a28", ropa: "#5d8a5c", ropa2: "#46704a", ropaLuz: "#78a577", pelos: "cola", lentes: false, extra: "casco", rubor: "#c98f74", labio: "#c25a5a" },
+  compras: { pestanas: true, piel: "#f1c9ac", sombra: "#d0a083", luz: "#f8dcc6", pelo: "#8d5a2b", peloLuz: "#ad7840", iris: "#3d5a7a", ropa: "#51709e", ropa2: "#3d5782", ropaLuz: "#6a8bb9", pelos: "corto", lentes: true, extra: "auricular", rubor: "#e8b0a0", labio: "#c0615a" },
+  produccion: { pestanas: true, aros: "#e6bf48", piel: "#c68a63", sombra: "#a56b48", luz: "#d9a07b", pelo: "#2a1a14", peloLuz: "#4a3126", iris: "#3a2418", ropa: "#5b5fa8", ropa2: "#464a8a", ropaLuz: "#7479c0", pelos: "rizos", lentes: false, extra: "chaqueta", rubor: "#b9785a", labio: "#8f3f45" },
   ventas: { piel: "#4a4a54", sombra: "#3c3c45", luz: "#555560", pelo: "#33333b", peloLuz: "#3f3f48", iris: "#2a2a30", ropa: "#3a3a44", ropa2: "#2d2d35", ropaLuz: "#464651", pelos: "corto", lentes: false, extra: null, rubor: "#4a4a54", labio: "#3c3c45", apagado: true },
 };
 
@@ -51,8 +52,20 @@ function pintar(p, f) {
 
   // pelo de atrás
   if (p.pelos === "cola") {
-    H(19 + (f.cola || 0), 9, 3, 8, p.pelo);
-    H(20 + (f.cola || 0), 10, 1, 5, p.peloLuz);
+    // la cola sale por detrás de la gorra y cae sobre el hombro
+    H(18 + (f.cola || 0), 6, 4, 3, p.pelo);
+    H(19 + (f.cola || 0), 9, 3, 9, p.pelo);
+    H(20 + (f.cola || 0), 10, 1, 6, p.peloLuz);
+  }
+  if (p.pelos === "rizos") {
+    H(3, 3, 18, 12, p.pelo);
+    H(4, 2, 5, 2, p.pelo);
+    H(15, 2, 5, 2, p.pelo);
+    H(8, 1, 8, 2, p.pelo);
+    H(2, 6, 2, 7, p.pelo);
+    H(20, 6, 2, 7, p.pelo);
+    H(3, 14, 3, 2, p.pelo);
+    H(18, 14, 3, 2, p.pelo);
   }
   if (p.pelos === "rodete") H(5, 6, 14, 9, p.pelo);
 
@@ -74,6 +87,13 @@ function pintar(p, f) {
     R(6, 20, 1, 4, "#d8d29a");
     R(17, 20, 1, 4, "#d8d29a");
     R(11, 21, 2, 3, p.ropa2);
+  } else if (p.extra === "chaqueta") {
+    R(10, 19, 4, 1, "#e8e9ef");
+    R(10, 20, 4, 1, p.piel);
+    R(11, 20, 2, 4, "#e8e9ef");
+    R(8, 20, 3, 4, p.ropa2);
+    R(13, 20, 3, 4, p.ropa2);
+    R(11, 21, 1, 3, "#c9c9d6");
   } else if (p.pelos === "corto" && !p.apagado) {
     // blazer con camisa blanca y solapas
     R(9, 19, 6, 1, "#e8e9ef");
@@ -104,6 +124,15 @@ function pintar(p, f) {
   H(18, 10, 1, 3, p.piel);
   H(5, 11, 1, 1, p.sombra);
   H(18, 11, 1, 1, p.sombra);
+  if (p.pestanas) {
+    // mentón más fino y sin la sombra dura del costado
+    H(7, 16, 1, 1, null);
+    H(16, 16, 1, 1, null);
+    H(7, 15, 1, 1, p.piel);
+    H(16, 15, 1, 1, p.sombra);
+    H(16, 8, 2, 7, p.piel);
+    H(17, 8, 1, 7, p.sombra);
+  }
 
   // pelo
   if (p.extra === "casco") {
@@ -113,9 +142,23 @@ function pintar(p, f) {
     H(4, 6, 16, 1, "#c29a2c");
     H(9, 2, 3, 1, "#f4de8c");
     H(11, 1, 2, 1, "#f4de8c");
-    H(5, 7, 2, 5, p.pelo);
-    H(17, 7, 2, 5, p.pelo);
-    H(5, 8, 1, 2, p.peloLuz);
+    H(5, 7, 2, 8, p.pelo);
+    H(17, 7, 2, 8, p.pelo);
+    H(6, 7, 1, 1, p.pelo);
+    H(17, 7, 1, 1, p.pelo);
+    H(5, 8, 1, 3, p.peloLuz);
+    H(7, 7, 3, 1, p.pelo); // flequillo que asoma bajo la gorra
+    H(14, 7, 3, 1, p.pelo);
+  } else if (p.pelos === "rizos") {
+    H(6, 3, 12, 3, p.pelo);
+    H(5, 5, 14, 2, p.pelo);
+    H(5, 7, 2, 7, p.pelo);
+    H(17, 7, 2, 7, p.pelo);
+    H(6, 7, 3, 1, p.pelo);
+    H(15, 7, 3, 1, p.pelo);
+    H(9, 6, 2, 1, p.pelo);
+    // rulos con luz
+    [[7, 3], [11, 2], [15, 3], [5, 6], [18, 6], [4, 10], [19, 10], [9, 5], [13, 5], [3, 8], [20, 8]].forEach(([x, y]) => H(x, y, 1, 1, p.peloLuz));
   } else if (p.pelos === "rodete") {
     H(10, 0, 5, 4, p.pelo);
     H(11, 0, 2, 1, p.peloLuz);
@@ -144,8 +187,15 @@ function pintar(p, f) {
   // cejas
   const ceja = p.pelo;
   const alz = f.ceja === "alta" ? -1 : 0;
-  H(8, 8 + alz, 3, 1, ceja);
-  H(13, 8 + alz - (f.ceja === "alta" ? 0 : 0), 3, 1, ceja);
+  if (p.pestanas) {
+    H(8, 8 + alz, 2, 1, ceja);
+    H(14, 8 + alz, 2, 1, ceja);
+    H(7, 9 + alz, 1, 1, ceja);
+    H(16, 9 + alz, 1, 1, ceja);
+  } else {
+    H(8, 8 + alz, 3, 1, ceja);
+    H(13, 8 + alz, 3, 1, ceja);
+  }
 
   // ojos: blanco 3×2 con iris de 1×2 (o cerrado)
   const mx = Math.max(-1, Math.min(1, f.mirada || 0));
@@ -166,7 +216,11 @@ function pintar(p, f) {
     } else {
       H(x, 11, 3, 1, NEGRO);
     }
-    H(x, 9, 3, 1, p.sombra); // párpado
+    H(x, 9, 3, 1, p.pestanas && ojos !== "cerrados" ? p.pelo : p.sombra); // párpado (con pestañas en ellas)
+    if (p.pestanas) {
+      H(idx === 0 ? x - 1 : x + 3, ojos === "cerrados" ? 11 : 10, 1, 1, NEGRO);
+      if (ojos === "cerrados") H(idx === 0 ? x - 1 : x + 3, 12, 1, 1, NEGRO);
+    }
   });
   if (p.lentes) {
     const M = "#3d3d4a";
@@ -190,7 +244,8 @@ function pintar(p, f) {
   const boca = f.boca || "neutra";
   if (boca === "neutra") {
     H(10, 15, 4, 1, p.labio);
-    H(11, 16, 2, 1, p.sombra);
+    H(11, 16, 2, 1, p.pestanas ? p.labio : p.sombra);
+    if (p.pestanas) H(9, 15, 1, 1, p.sombra);
   } else if (boca === "abierta") {
     H(10, 15, 4, 2, BOCA_ABIERTA);
     H(10, 15, 4, 1, BLANCO);
@@ -202,6 +257,10 @@ function pintar(p, f) {
     H(10, 15, 4, 1, p.labio);
     H(8, 13, 2, 1, p.rubor);
     H(14, 13, 2, 1, p.rubor);
+  }
+  if (p.aros) {
+    H(5, 15, 1, 2, p.aros);
+    H(18, 15, 1, 2, p.aros);
   }
   if (p.extra === "auricular") {
     const A = "#2b2b34";

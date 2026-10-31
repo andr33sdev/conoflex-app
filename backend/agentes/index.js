@@ -6,6 +6,9 @@ const { analizarRRHH, AUTORESOLVIBLES } = require("./vigilanteRRHH");
 const { crearLia } = require("./liaChat");
 const { crearNati } = require("./natiChat");
 const { crearVera } = require("./veraChat");
+const { crearMaru } = require("./maruChat");
+const { decisionProduccion } = require("./produccionDecision");
+const { listarOperarios, fichaOperario } = require("./fichaOperario");
 const { analizarCompras, rankingProveedores, AUTORESOLVIBLES: AUTO_COMPRAS } = require("./vigilanteCompras");
 const { asegurarTablaListas, leerLista } = require("./listaCompra");
 const { analizarStock, armarPanorama, cargarStock } = require("./vigilanteStock");
@@ -44,6 +47,16 @@ const AGENTES = [
     color: "#3b82f6",
     voz: "Sulafat",
     estilo: "mujer segura, profesional y serena, de voz más grave y ritmo pausado",
+  },
+  {
+    id: "produccion",
+    nombre: "Maru",
+    puesto: "Producción y pedidos",
+    descripcion: "Cruza pedidos abiertos, stock, plan de la semana y gente en planta para decirte qué conviene fabricar primero.",
+    permiso: "agente:produccion",
+    color: "#8b5cf6",
+    voz: "Aoede",
+    estilo: "mujer resuelta y práctica, de voz clara y firme, ritmo ágil pero ordenado",
   },
 ];
 const agentePorId = (id) => AGENTES.find((a) => a.id === id) || null;
@@ -292,7 +305,7 @@ async function revisarCompras({ pool, db }, { ahora = new Date() } = {}) {
 }
 
 function registrarRutasAgentes(app, { db, pool, ai }) {
-  const chats = { rrhh: crearLia({ pool, db, ai }), stock: crearNati({ pool, db, ai }), compras: crearVera({ pool, db, ai }) };
+  const chats = { rrhh: crearLia({ pool, db, ai }), stock: crearNati({ pool, db, ai }), compras: crearVera({ pool, db, ai }), produccion: crearMaru({ pool, db, ai }) };
   const revisiones = { rrhh: () => revisarRRHH({ pool, db }), stock: () => revisarStock({ pool, db }), compras: () => revisarCompras({ pool, db }) };
 
   const quien = async (req) => {
@@ -412,8 +425,9 @@ function registrarRutasAgentes(app, { db, pool, ai }) {
 
   // Panorama de stock (Nati): niveles reales de materias primas y semielaborados, para el tablero y el depósito 3D.
   app.get("/api/agentes/:id/panorama", delAgente, async (req, res) => {
-    if (req.agente.id !== "stock" && req.agente.id !== "compras") return res.status(400).json({ error: "Este agente no tiene panorama." });
+    if (!["stock", "compras", "produccion"].includes(req.agente.id)) return res.status(400).json({ error: "Este agente no tiene panorama." });
     try {
+      if (req.agente.id === "produccion") return res.json({ generado: new Date().toISOString(), ...(await decisionProduccion(pool, { limite: 12 })) });
       if (req.agente.id === "compras") {
         const d = await cargarCompras(pool, db);
         const lista = await leerLista(db, req.usuario.id);
@@ -477,6 +491,28 @@ function registrarRutasAgentes(app, { db, pool, ai }) {
       res.status(saturado ? 503 : 500).json({ error: saturado ? "El servicio de IA está saturado. Probá de nuevo en unos segundos." : "Error al procesar la consulta." });
     } finally {
       u.liberar();
+    }
+  });
+
+  // Ficha por operario (Lía): lista de personas y su historial de un año.
+  const soloRRHH = (req, res, next) => (req.agente.id === "rrhh" ? next() : res.status(400).json({ error: "Este agente no tiene fichas de personal." }));
+  app.get("/api/agentes/:id/personal", delAgente, soloRRHH, async (req, res) => {
+    try {
+      const anio = Number(req.query.anio) > 2000 ? Number(req.query.anio) : new Date().getFullYear();
+      res.json({ anio, operarios: await listarOperarios(pool, anio) });
+    } catch (e) {
+      console.error("[agentes] personal:", e.message);
+      res.status(500).json({ error: "No pude cargar el personal." });
+    }
+  });
+  app.get("/api/agentes/:id/personal/ficha", delAgente, soloRRHH, async (req, res) => {
+    try {
+      const f = await fichaOperario(pool, { operario: String(req.query.operario || "").slice(0, 80), anio: req.query.anio });
+      if (f.error) return res.status(400).json(f);
+      res.json(f);
+    } catch (e) {
+      console.error("[agentes] ficha:", e.message);
+      res.status(500).json({ error: "No pude armar la ficha." });
     }
   });
 
