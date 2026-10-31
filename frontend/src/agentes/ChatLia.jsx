@@ -1,19 +1,8 @@
 import { useEffect, useRef } from "react";
-import { ArrowUp, Mic, Square } from "lucide-react";
+import { ArrowUp, AudioLines, FileDown, Mic, Square } from "lucide-react";
+import Markdown from "./Markdown";
 
-/** **negrita** sin interpretar HTML. */
-function Texto({ texto }) {
-  const partes = String(texto ?? "").split(/(\*\*[^*]+\*\*)/g);
-  return partes.map((p, i) =>
-    p.startsWith("**") && p.endsWith("**") && p.length > 4 ? (
-      <strong key={i} className="font-bold text-white">{p.slice(2, -2)}</strong>
-    ) : (
-      <span key={i}>{p}</span>
-    ),
-  );
-}
-
-export default function ChatLia({ mensajes, enviando, texto, onTexto, onEnviar, dictando, onDictado, puedeDictar, estadoDictado, saludo, resumen, propuestas, onPropuesta }) {
+export default function ChatLia({ mensajes, enviando, texto, onTexto, onEnviar, dictando, onDictado, puedeDictar, estadoDictado, saludo, resumen, propuestas, onPropuesta, manos, onManos, onPdf, hablando }) {
   const fin = useRef(null);
   useEffect(() => {
     fin.current?.scrollIntoView({ behavior: "smooth", block: "end" });
@@ -53,14 +42,23 @@ export default function ChatLia({ mensajes, enviando, texto, onTexto, onEnviar, 
           ) : (
             <div key={i} className="flex gap-2.5 cf-msg">
               <div className="w-8 h-8 shrink-0 rounded-xl bg-[#FF5A00] grid place-items-center text-black font-black text-sm shadow-[0_3px_0_#b33f00]">L</div>
-              <div className="min-w-0 max-w-[calc(100%-2.5rem)] text-zinc-100 text-[15px] leading-relaxed bg-[#131317] border border-white/[0.07] px-4 py-3 rounded-2xl rounded-tl-md whitespace-pre-wrap break-words">
-                <Texto texto={m.texto} />
+              <div className="min-w-0 max-w-[calc(100%-2.5rem)] text-zinc-100 text-[15px] leading-relaxed bg-[#131317] border border-white/[0.07] px-4 py-3 rounded-2xl rounded-tl-md break-words">
+                <Markdown texto={m.texto} />
                 {m.herramientas?.length > 0 && (
-                  <div className="mt-2.5 pt-2.5 border-t border-white/[0.08] flex flex-wrap gap-1.5 whitespace-normal">
-                    {m.herramientas.map((h, k) => (
+                  <div className="mt-3 pt-2.5 border-t border-white/[0.08] flex flex-wrap items-center gap-1.5 whitespace-normal">
+                    {m.herramientas.filter((h) => h.nombre !== "derivar_a_agente").map((h, k) => (
                       <span key={k} className="text-[11px] font-bold text-zinc-400 bg-white/[0.05] border border-white/[0.07] rounded-full px-2.5 py-0.5">
                         {h.texto}{h.operario ? ` · ${h.operario}` : ""}{h.periodo ? ` · ${h.periodo}` : ""}
                       </span>
+                    ))}
+                    {m.herramientas.filter((h) => h.nombre === "liquidar_horas" && h.ok && h.args).slice(-1).map((h, k) => (
+                      <button
+                        key={`pdf${k}`}
+                        onClick={() => onPdf?.(h.args)}
+                        className="ml-auto inline-flex items-center gap-1.5 text-[12.5px] font-extrabold text-black bg-[#FFD60A] hover:bg-white transition-colors rounded-lg px-3 min-h-[36px]"
+                      >
+                        <FileDown size={15} /> Descargar PDF
+                      </button>
                     ))}
                   </div>
                 )}
@@ -83,6 +81,20 @@ export default function ChatLia({ mensajes, enviando, texto, onTexto, onEnviar, 
 
       <div className="shrink-0 px-3 sm:px-4 pt-2.5 pb-[max(0.75rem,env(safe-area-inset-bottom))] border-t border-white/[0.06] bg-[#0a0a0c]">
         {estadoDictado && <p className="text-xs text-amber-300/90 mb-1.5 px-1">{estadoDictado}</p>}
+        {manos && (
+          <div className="mb-2 flex items-center gap-3 rounded-xl border border-[#FF5A00]/40 bg-[#FF5A00]/[0.08] px-3 py-2" role="status">
+            <span className="flex items-end gap-[3px] h-5 shrink-0" aria-hidden="true">
+              {[0, 1, 2, 3, 4].map((n) => (
+                <span key={n} className={`w-[3px] rounded-full bg-[#FF5A00] ${hablando ? "cf-onda" : dictando ? "cf-onda" : ""}`} style={{ height: dictando || hablando ? undefined : 6, animationDelay: `${n * 0.12}s` }} />
+              ))}
+            </span>
+            <span className="flex-1 min-w-0 text-[13px] leading-tight text-zinc-200">
+              <b className="text-white">Manos libres</b> · {hablando ? "Lía te está hablando…" : enviando ? "Lía está pensando…" : dictando ? "te escucho…" : "preparando el micrófono…"}
+              <span className="block text-[11.5px] text-zinc-400">Decí “chau” o tocá el botón para terminar.</span>
+            </span>
+            <button onClick={onManos} className="shrink-0 min-h-[36px] px-3 rounded-lg bg-white/10 hover:bg-white/15 text-[12.5px] font-bold text-white">Terminar</button>
+          </div>
+        )}
         <div className={`flex items-center gap-1.5 bg-[#131317] border rounded-2xl pl-4 pr-1.5 h-14 transition-colors ${dictando ? "border-rose-400" : "border-white/10 focus-within:border-[#FF5A00]"}`}>
           <input
             type="text"
@@ -93,6 +105,17 @@ export default function ChatLia({ mensajes, enviando, texto, onTexto, onEnviar, 
             enterKeyHint="send"
             className="flex-1 min-w-0 bg-transparent text-base text-white placeholder-zinc-500 outline-none"
           />
+          {puedeDictar && (
+            <button
+              onClick={onManos}
+              aria-label={manos ? "Terminar el manos libres" : "Conversar con Lía sin tocar nada (manos libres)"}
+              aria-pressed={manos}
+              title="Manos libres"
+              className={`w-11 h-11 grid place-items-center rounded-xl shrink-0 transition-colors ${manos ? "bg-[#FF5A00] text-black" : "bg-white/[0.07] text-zinc-300 hover:text-white hover:bg-white/[0.12]"}`}
+            >
+              <AudioLines size={19} />
+            </button>
+          )}
           {puedeDictar && (
             <button
               onClick={onDictado}

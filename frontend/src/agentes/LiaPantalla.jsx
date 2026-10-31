@@ -10,6 +10,7 @@ import EstadoActual from "./EstadoActual";
 import { cuando } from "./formato";
 import { propuestasDesde, saludoSegunHora } from "./propuestas";
 import { dictar, prepararVoz, reproducirVoz, soportaDictado, textoParaVoz } from "./voz";
+import { getApiUrl } from "../apiConfig";
 
 const CLAVE_CHAT = "lia_chat_v2";
 const CLAVE_VOZ = "lia_voz_v1";
@@ -46,6 +47,9 @@ export default function LiaPantalla({ agente, usuario }) {
   const [texto, setTexto] = useState("");
   const [enviando, setEnviando] = useState(false);
   const [escribiendo, setEscribiendo] = useState(false);
+  const [manos, setManos] = useState(false);
+  const [notaVoz, setNotaVoz] = useState("");
+  const [dicho, setDicho] = useState("");
   const [dictando, setDictando] = useState(false);
   const [aviso, setAviso] = useState("");
   const [hablando, setHablando] = useState(false);
@@ -58,9 +62,11 @@ export default function LiaPantalla({ agente, usuario }) {
   const [revisando, setRevisando] = useState(false);
   const [actividad, setActividad] = useState("");
   const escena = useRef(null);
-  const timers = useRef({ escribir: null, hablar: null });
+  const timers = useRef({ escribir: null, hablar: null, nota: null });
   const lectura = useRef(null);
   const dictado = useRef(null);
+  const turno = useRef(0); // sube cada vez que el usuario corta o manda algo nuevo: lo que llega tarde se descarta
+  const manosRef = useRef({ activo: false, fallos: 0, timer: null });
   const enviarRef = useRef(null);
   const msgsRef = useRef(mensajes);
 
@@ -92,6 +98,9 @@ export default function LiaPantalla({ agente, usuario }) {
     return () => {
       clearTimeout(t.escribir);
       clearTimeout(t.hablar);
+      clearTimeout(t.nota);
+      clearTimeout(manosRef.current.timer);
+      manosRef.current.activo = false;
       lectura.current?.cortar();
       dictado.current?.parar();
     };
@@ -105,6 +114,7 @@ export default function LiaPantalla({ agente, usuario }) {
   };
 
   const cortarLectura = () => {
+    turno.current++;
     lectura.current?.cortar();
     lectura.current = null;
     clearTimeout(timers.current.hablar);
@@ -112,7 +122,7 @@ export default function LiaPantalla({ agente, usuario }) {
   };
 
   const empezarAHablar = (resp, prep) => {
-    cortarLectura();
+    setDicho(textoParaVoz(resp));
     if (prep) {
       lectura.current = reproducirVoz(prep, textoParaVoz(resp), {
         onInicio: () => setHablando(true),
@@ -122,7 +132,11 @@ export default function LiaPantalla({ agente, usuario }) {
         },
         onPulso: () => escena.current?.pulso(),
         onNivel: (n) => escena.current?.nivel(n),
-        onSinVoz: () => mostrar("No pude reproducir la voz en este dispositivo. Lía te responde por escrito.", "error"),
+        onSinVoz: () => {
+          setNotaVoz("Sin audio esta vez: te lo dejé por escrito.");
+          clearTimeout(timers.current.nota);
+          timers.current.nota = setTimeout(() => setNotaVoz(""), 5000);
+        },
       });
     } else {
       setHablando(true);
@@ -145,10 +159,23 @@ export default function LiaPantalla({ agente, usuario }) {
         method: "POST",
         body: { mensaje: t, historial: nuevos.slice(-20).map(({ rol, texto: x }) => ({ rol, texto: x })) },
       });
-      // Con voz: se prepara el audio mientras Lía "piensa", así el texto, la voz y la animación llegan juntos.
-      const prep = porVoz || vozActiva ? await prepararVoz(textoParaVoz(data.respuesta || ""), { base }) : null;
-      setMensajes([...nuevos, { rol: "assistant", texto: data.respuesta, herramientas: data.herramientas || [] }]);
-      empezarAHablar(data.respuesta || "", prep);
+      // Con voz: se prepara el audio mientras Lía "piensa" para que texto, voz y animación lleguen juntos.
+      // Como la voz es solo una introducción, suele estar lista enseguida; si tarda más de 3,5 s, no se hace esperar.
+      const resp = data.respuesta || "";
+      const mi = turno.current;
+      const conVoz = porVoz || vozActiva || manosRef.current.activo;
+      const promesa = conVoz ? prepararVoz(textoParaVoz(resp), { base }) : null;
+      const prep = promesa ? await Promise.race([promesa, new Promise((r) => setTimeout(() => r(null), 3500))]) : null;
+      if (turno.current !== mi) return;
+      setMensajes([...nuevos, { rol: "assistant", texto: resp, herramientas: data.herramientas || [] }]);
+      if (promesa && !prep) {
+        empezarAHablar(resp, null);
+        promesa.then((p) => {
+          if (turno.current !== mi) return;
+          clearTimeout(timers.current.hablar);
+          empezarAHablar(resp, p);
+        });
+      } else empezarAHablar(resp, prep);
       setVersion((v) => v + 1);
     } catch (e) {
       setMensajes([...nuevos, { rol: "assistant", texto: `No pude responderte: ${e.message}` }]);
@@ -178,6 +205,79 @@ export default function LiaPantalla({ agente, usuario }) {
         else if (err) setAviso("No pude usar el micrófono en este navegador. Escribile y listo.");
       },
     });
+  };
+
+  // ---------- manos libres: escucha → responde en voz alta → vuelve a escuchar ----------
+  const terminarManos = (aviso) => {
+    manosRef.current.activo = false;
+    clearTimeout(manosRef.current.timer);
+    setManos(false);
+    dictado.current?.parar();
+    if (aviso) setAviso(aviso);
+  };
+  const alternarManos = () => {
+    if (manosRef.current.activo) {
+      terminarManos();
+      cortarLectura();
+      return;
+    }
+    cortarLectura();
+    setAviso("");
+    manosRef.current = { activo: true, fallos: 0, timer: null };
+    setManos(true);
+  };
+  const escucharManos = () => {
+    setDictando(true);
+    dictado.current = dictar({
+      onTexto: (v) => setTexto(v),
+      onFin: (err, ultimo) => {
+        setDictando(false);
+        if (!manosRef.current.activo) return;
+        if (err === "not-allowed" || err === "service-not-allowed") return terminarManos("Tenés que permitir el micrófono en el navegador para usar el manos libres.");
+        if (ultimo) {
+          manosRef.current.fallos = 0;
+          if (/^\s*(chau|chao|listo|terminar|terminá|salir|gracias,? l[ií]a|pará|parar|basta)\b/i.test(ultimo)) {
+            setTexto("");
+            return terminarManos("Listo, terminé el manos libres.");
+          }
+          enviarRef.current?.(ultimo, true);
+        } else if (++manosRef.current.fallos >= 4) terminarManos("Pausé el manos libres porque no te escuché. Tocá el botón para retomarlo.");
+      },
+    });
+  };
+  // Mientras el manos libres está activo y nadie habla ni piensa, vuelve a abrir el micrófono.
+  useEffect(() => {
+    if (!manos || enviando || hablando || dictando) return undefined;
+    clearTimeout(manosRef.current.timer);
+    manosRef.current.timer = setTimeout(() => manosRef.current.activo && escucharManos(), 500);
+    return () => clearTimeout(manosRef.current.timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [manos, enviando, hablando, dictando]);
+
+  const descargarPdf = async (args) => {
+    try {
+      const qs = new URLSearchParams();
+      for (const [k, v] of Object.entries(args || {})) qs.set(k, Array.isArray(v) ? v.join(",") : v === true ? "1" : String(v));
+      const res = await fetch(getApiUrl(`${base}/liquidacion.pdf?${qs}`));
+      if (!res.ok) {
+        let msg = "No pude armar el PDF.";
+        try { msg = (await res.json()).error || msg; } catch { /* sin cuerpo */ }
+        throw new Error(msg);
+      }
+      const blob = await res.blob();
+      const nombre = /filename="([^"]+)"/.exec(res.headers.get("Content-Disposition") || "")?.[1] || "liquidacion.pdf";
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = nombre;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 4000);
+      mostrar("PDF descargado.");
+    } catch (e) {
+      mostrar(e.message, "error");
+    }
   };
 
   const alternarVoz = () => {
@@ -212,8 +312,7 @@ export default function LiaPantalla({ agente, usuario }) {
   };
 
   const estadoEscena = enviando ? "thinking" : hablando ? "speaking" : escribiendo || dictando ? "listening" : "idle";
-  const ultimoDicho = [...mensajes].reverse().find((m) => m.rol === "assistant")?.texto || "";
-  const subtitulo = hablando ? ultimoDicho.replace(/[*_`#]/g, "").slice(0, 150) + (ultimoDicho.length > 150 ? "…" : "") : "";
+  const subtitulo = hablando ? dicho.slice(0, 190) + (dicho.length > 190 ? "…" : "") : "";
   const abiertos = estado?.abiertos ?? agente.abiertos ?? 0;
   const feriadoAviso = hallazgos.find((h) => h.tipo === "FERIADO")?.titulo || "";
   const altas = estado?.altas || 0;
@@ -280,6 +379,7 @@ export default function LiaPantalla({ agente, usuario }) {
             </div>
           </div>
           <div className="absolute bottom-2.5 left-2.5 right-2.5 flex flex-col items-center gap-1.5 pointer-events-none">
+            {notaVoz && <div className="rounded-lg bg-black/60 backdrop-blur-md border border-white/10 text-zinc-300 text-[12px] px-3 py-1.5 cf-msg">{notaVoz}</div>}
             {subtitulo && <div className="max-w-[520px] rounded-2xl rounded-bl-md bg-white text-zinc-900 text-[13px] font-semibold leading-snug px-3.5 py-2 shadow-xl cf-msg">{subtitulo}</div>}
           </div>
         </div>
@@ -352,6 +452,10 @@ export default function LiaPantalla({ agente, usuario }) {
               resumen={resumen}
               propuestas={propuestas}
               onPropuesta={alPropuesta}
+              manos={manos}
+              onManos={alternarManos}
+              onPdf={descargarPdf}
+              hablando={hablando}
             />
           )}
           {tab === "avisos" && (

@@ -185,3 +185,23 @@ test("voz: pide audio al modelo con voz femenina y arma el WAV", async () => {
   assert.equal(pedido.config.speechConfig.voiceConfig.prebuiltVoiceConfig.voiceName, "Leda");
   await assert.rejects(() => sintetizar(ai, "   "), /Sin texto/);
 });
+
+test("pdf: la liquidación individual y la del plantel generan PDFs válidos (varias páginas si hace falta)", () => {
+  const { pdfLiquidacion, ancho } = require("../agentes/pdf");
+  const dias = Array.from({ length: 60 }, (_, i) => ({ fecha: `2026-10-${String(1 + (i % 28)).padStart(2, "0")}`, dia: "jueves", ingreso: "06:55", egreso: "15:05", horas_normales: 8, horas_extra: 0.17, importe: 81234.5 }));
+  const r = { operario: "Leonel Montoya", categoria: "Oficial", pago: { tipo: "por hora", valor_hora_ordinaria: 8500 }, resumen: { horas_normales: 180, horas_extra: 94.5, horas_totales: 274.5, valor_normales: 1530090, valor_extras: 1602889.18, total: 3132979.18 }, presentismo: { pierde_presentismo: false }, dias, liquidacion_de: "octubre de 2026", informe: "" };
+  const pdf = pdfLiquidacion(r);
+  assert.equal(pdf.toString("latin1", 0, 8), "%PDF-1.4");
+  assert.match(pdf.toString("latin1", pdf.length - 8), /%%EOF/);
+  assert.match(pdf.toString("latin1"), /\/Count [2-9]/);
+  const plantel = pdfLiquidacion({ liquidacion_de: "octubre", operarios: [{ operario: "Ana", categoria: "X", resumen: { horas_normales: 1, horas_extra: 2, total: 3 } }], informe: "" });
+  assert.match(plantel.toString("latin1"), /\/Count 1/);
+  assert.ok(ancho("Hola", 10) > 15 && ancho("Hola", 10) < 30);
+});
+
+test("lía: el prompt pide primera línea corta y markdown prolijo; la liquidación guarda los parámetros para el PDF", () => {
+  const { parametrosPDF } = require("../agentes/liaChat");
+  assert.match(construirInstrucciones(), /PRIMERA LÍNEA/);
+  assert.match(construirInstrucciones(), /tabla markdown/);
+  assert.deepEqual(parametrosPDF({ operario: "Juan", mes: "2026-10", quincena: 1, basura: "x", solo_extras: true }), { operario: "Juan", mes: "2026-10", quincena: 1, solo_extras: true });
+});
