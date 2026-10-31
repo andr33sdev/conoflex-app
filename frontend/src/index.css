@@ -204,3 +204,8 @@ button, a, select, summary, [role="button"] { touch-action: manipulation; }
 @keyframes cf-onda { 0%, 100% { height: 5px; } 50% { height: 20px; } }
 .cf-onda { animation: cf-onda 0.9s ease-in-out infinite; }
 @media (prefers-reduced-motion: reduce) { .cf-onda { animation: none; height: 12px; } }
+
+/* Agentes: el texto del estado entra de a poco cuando cambia */
+@keyframes cf-estado { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: none; } }
+.cf-estado { display: inline-block; animation: cf-estado 320ms ease-out both; }
+@media (prefers-reduced-motion: reduce) { .cf-estado { animation: none; } }

@@ -362,3 +362,15 @@ test("verificarRespuesta reemplaza la tabla inventada por la real y descarta Ojo
   const out = verificarRespuesta("Listo.\nTotal 254 horas, $ 3.766.173,06.\n\n| Operario | HE |\n|---|---|\n| Emiliano Giménez | 47 |\n\nOjo: Emiliano Giménez tiene fichadas faltantes.", [{ nombre: "liquidar_horas", args: {}, r }]);
   assert.ok(out.includes("Alan Borda") && !out.includes("Emiliano") && !out.includes("254") && !/Ojo/.test(out));
 });
+
+test("pdf: el reporte genérico arma un PDF válido con títulos, viñetas, tablas y varias páginas", () => {
+  const { pdfReporte } = require("../agentes/pdf");
+  const agente = { id: "stock", nombre: "Nati", puesto: "Depósito y stock" };
+  const texto = ["# Resumen", "Hay **3** materias críticas.", "- Resina ñandú (alcanza 4 días)", "1. Pedir hoy", "| Material | Días |", "|---|---|", "| Resina | 4 |", ...Array.from({ length: 140 }, (_, i) => `Línea ${i} con acentos áéíóú y (paréntesis) \\ barra`)].join("\n");
+  const pdf = pdfReporte({ agente, titulo: "Estado del depósito", texto, usuario: "Andrés" });
+  assert.equal(pdf.toString("latin1", 0, 8), "%PDF-1.4");
+  assert.match(pdf.toString("latin1", pdf.length - 8), /%%EOF/);
+  assert.match(pdf.toString("latin1"), /\/Count [2-9]/);
+  assert.match(pdf.toString("latin1"), /Reporte generado por Nati/);
+  assert.ok(pdfReporte({ agente, titulo: "", texto: "hola" }).length > 500);
+});
