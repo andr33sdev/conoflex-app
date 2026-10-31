@@ -54,7 +54,7 @@ function crearMotor({ ai, nombre, construirInstrucciones, herramientas, palabras
   }
 
   /** destinos: agentes a los que este usuario puede derivar [{id, nombre, puesto}] */
-  async function responder({ mensaje, historial, destinos = [] }) {
+  async function responder({ mensaje, historial, destinos = [], usuario = null }) {
     const inicio = Date.now();
     const instrucciones = construirInstrucciones(destinos);
     const tools = destinos.length ? [{ functionDeclarations: [...herramientas[0].functionDeclarations, herramientaDerivar(destinos)] }] : herramientas;
@@ -78,7 +78,13 @@ function crearMotor({ ai, nombre, construirInstrucciones, herramientas, palabras
           uso.texto = `Se lo pasó a ${d.nombre}`;
           return { ok: true, derivado_a: d.nombre, instruccion: `Ya se lo pasaste a ${d.nombre}. Decile al usuario en UNA línea que se lo pasás y que ${d.nombre} lo ve ahora. No respondas el contenido.` };
         }
-        return await ejecutar(llamada, uso);
+        const r = await ejecutar(llamada, uso, { usuario, destinos });
+        // Una herramienta puede dejar una derivación lista (ej: Nati le pasa materiales a Vera): la pantalla la muestra como tarjeta.
+        if (uso.derivacion) {
+          derivacion = uso.derivacion;
+          delete uso.derivacion;
+        }
+        return r;
       } catch (e) {
         console.error(`[${nombre} ${llamada.name}]`, e.message);
         uso.ok = false;

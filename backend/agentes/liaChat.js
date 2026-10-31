@@ -41,6 +41,7 @@ CÓMO RESPONDER (el formato importa: la persona lee en un chat y quiere poco tex
   - Comparaciones o desgloses: tabla markdown (máx. 8 filas, columnas cortas). Para importes, alineá con la columna de la derecha.
   - Enumeraciones: lista con "- ", una idea por línea.
   - Respuestas largas: secciones con "### Título" (máx. 3) y **negrita** solo para cifras o nombres clave.
+- DATOS REALES SIEMPRE: si una herramienta devuelve "tabla_markdown", copiala tal cual. Nunca inventes, repitas ni completes nombres, horas o importes: si no está en el resultado de la herramienta, no existe. Si el resultado no alcanza, decilo y volvé a consultar.
 - Si hay mucha información, mostrá lo más importante (los primeros 5 a 8 renglones) y ofrecé el resto en una pregunta corta ("¿Querés el detalle día por día?"). Nunca vuelques todo.
 - Cuando liquides horas, ofrecé en una línea final descargar el PDF ("Si querés te lo dejo en PDF"): la pantalla muestra el botón de descarga sola cuando liquidás.
 - Algo que RRHH deba saber (presentismo perdido, fichada faltante, falta por justificar) va en una línea final que empiece con "Ojo:".
@@ -84,7 +85,7 @@ function crearLia({ pool, db, ai }) {
       uso.args = parametrosPDF(args);
       const r = await liquidarDesdeBD(pool, args);
       if (r?.error) uso.ok = false;
-      return r;
+      return compactarPlantel(r, args);
     }
     if (llamada.name === "simular_turno") return simularTurno(pool, args);
     if (llamada.name === "calculadora") return calcular(args.expresion);
@@ -109,6 +110,40 @@ function crearLia({ pool, db, ai }) {
   return crearMotor({ ai, nombre: "Lía", construirInstrucciones, herramientas: HERRAMIENTAS, palabras: PALABRAS_HERRAMIENTA, ejecutar });
 }
 
+const pesos = (n) => `$ ${Number(n || 0).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const horas = (n) => Number(n || 0).toLocaleString("es-AR", { maximumFractionDigits: 2 });
+
+/**
+ * Liquidación de TODO el plantel: el modelo no tiene que "armar" una fila por operario (ahí inventaba nombres y cifras
+ * repetidas). Se le entrega la tabla ya hecha, con los datos reales, para que la copie tal cual, y sin el detalle diario.
+ */
+function compactarPlantel(r, args = {}) {
+  if (!r || r.error || args.operario || !Array.isArray(r.operarios)) return r;
+  const soloExtras = args.solo_extras === true;
+  const filas = r.operarios.map((o) => {
+    const x = o.resumen || {};
+    return soloExtras
+      ? `| ${o.operario} | ${horas(x.horas_extra)} | ${pesos(x.valor_extras)} |`
+      : `| ${o.operario} | ${horas(x.horas_normales)} | ${horas(x.horas_extra)} | ${pesos(x.valor_extras)} | ${pesos(x.total)} |`;
+  });
+  const cab = soloExtras ? "| Operario | Horas extra | Importe extra |\n|---|---:|---:|" : "| Operario | Horas normales | Horas extra | Importe extra | Total |\n|---|---:|---:|---:|---:|";
+  const total = soloExtras
+    ? `| **TOTAL** | **${horas(r.total_horas_extra)}** | **${pesos(r.total_importe_extras)}** |`
+    : `| **TOTAL** | **${horas(r.total_horas_normales)}** | **${horas(r.total_horas_extra)}** | **${pesos(r.total_importe_extras)}** | **${pesos(r.total_importe)}** |`;
+  const operarios = r.operarios.map(({ dias, ...o }) => o); // eslint-disable-line no-unused-vars
+  return {
+    liquidacion_de: r.liquidacion_de,
+    informe: r.informe,
+    cantidad_de_operarios: r.cantidad_de_operarios,
+    ...(r.avisos_presentismo ? { avisos_presentismo: r.avisos_presentismo } : {}),
+    ...(r.operarios_sin_categoria ? { operarios_sin_categoria: r.operarios_sin_categoria } : {}),
+    feriados_en_el_rango: r.feriados_en_el_rango,
+    INSTRUCCION: "Mostrá la tabla_markdown COPIADA TAL CUAL (todas las filas, mismos nombres y cifras; no agregues, quites ni cambies ninguna). Es la liquidación real de todo el plantel. Nunca completes filas por tu cuenta.",
+    tabla_markdown: `${cab}\n${filas.join("\n")}\n${total}`,
+    operarios,
+  };
+}
+
 /** Parámetros de una liquidación que alcanzan para volver a generarla en PDF (solo los conocidos y con tipos simples). */
 function parametrosPDF(a = {}) {
   const o = {};
@@ -120,4 +155,4 @@ function parametrosPDF(a = {}) {
   return o;
 }
 
-module.exports = { parametrosPDF, crearLia, construirInstrucciones, HERRAMIENTAS };
+module.exports = { compactarPlantel, parametrosPDF, crearLia, construirInstrucciones, HERRAMIENTAS };

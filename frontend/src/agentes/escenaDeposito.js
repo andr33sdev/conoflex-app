@@ -36,7 +36,7 @@ export function crearEscena(contenedor, { logoUrl, onActividad, onSaludo } = {})
   scene.environmentIntensity = 0.6;
 
   const camera = new THREE.PerspectiveCamera(32, 1, 0.1, 90);
-  const TARGET = new THREE.Vector3(0.6, 2.5, 0);
+  const TARGET = new THREE.Vector3(0.4, 2.85, 0);
   const DIR_CAM = new THREE.Vector3(-1.2, 1.9, 12).normalize();
   const controles = new OrbitControls(camera, renderer.domElement);
   controles.target.copy(TARGET);
@@ -128,10 +128,12 @@ export function crearEscena(contenedor, { logoUrl, onActividad, onSaludo } = {})
   conLogo(dibujarDisco);
   const aro = cilindro(0.95, 0.95, 0.18, plastico(COLOR.naranja), 56);
   aro.rotation.x = Math.PI / 2;
-  aro.position.set(-5.6, 6.1, -4.2);
+  aro.position.set(-6.0, 6.0, -4.2);
+  aro.scale.set(0.85, 1, 0.85);
   mundo.add(aro);
   const discoMesh = new THREE.Mesh(new THREE.CircleGeometry(0.84, 56), new THREE.MeshBasicMaterial({ map: disco.tex, transparent: true, toneMapped: false }));
-  discoMesh.position.set(-5.6, 6.1, -4.1);
+  discoMesh.position.set(-6.0, 6.0, -4.1);
+  discoMesh.scale.setScalar(0.85);
   mundo.add(discoMesh);
 
   // ---------- estantes con el stock real ----------
@@ -241,53 +243,127 @@ export function crearEscena(contenedor, { logoUrl, onActividad, onSaludo } = {})
   }
   pallet(-6.0, -0.6, 3);
   pallet(-6.0, 1.0, 2);
-  const palletMovil = pallet(5.2, -0.4, 2);
 
-  // ---------- autoelevador ----------
-  const elevador = new THREE.Group();
-  const matAmarillo = plastico(COLOR.amarillo);
-  const chasis = caja(1.5, 0.6, 2.0, matAmarillo, 0.12);
-  chasis.position.y = 0.55;
-  elevador.add(chasis);
-  const capot = caja(1.3, 0.5, 0.8, plastico(0x23252e), 0.1);
-  capot.position.set(0, 0.8, -0.65);
-  elevador.add(capot);
-  const mastil = caja(0.14, 2.2, 0.14, plastico(0x23252e), 0.03);
-  [-0.4, 0.4].forEach((dx) => {
-    const m = mastil.clone();
-    m.position.set(dx, 1.4, 1.1);
-    elevador.add(m);
+  // ---------- cinta transportadora con cajas que avanzan ----------
+  const cinta = new THREE.Group();
+  const bandaCinta = caja(5.2, 0.16, 1.1, plastico(0x23252e, { roughness: 0.8 }), 0.05);
+  bandaCinta.position.y = 0.9;
+  cinta.add(bandaCinta);
+  for (const dz of [-0.62, 0.62]) {
+    const borde = caja(5.3, 0.12, 0.1, plastico(COLOR.amarillo), 0.03);
+    borde.position.set(0, 1.02, dz);
+    cinta.add(borde);
+  }
+  for (const dx of [-2.3, -0.8, 0.8, 2.3]) {
+    const pata = caja(0.14, 0.82, 0.9, plastico(0x3a3f4d), 0.03);
+    pata.position.set(dx, 0.42, 0);
+    cinta.add(pata);
+  }
+  const rodillos = [];
+  for (let k = 0; k < 11; k++) {
+    const r = cilindro(0.08, 0.08, 1.0, plastico(0x8b93a1, { metalness: 0.6, roughness: 0.3 }), 12);
+    r.rotation.x = Math.PI / 2;
+    r.position.set(-2.4 + k * 0.48, 0.99, 0);
+    cinta.add(r);
+    rodillos.push(r);
+  }
+  const cajasCinta = [];
+  const coloresCaja = [0xe85c0d, 0xf4f1ea, 0x2e6bff, 0xffd60a];
+  for (let k = 0; k < 5; k++) {
+    const c = caja(0.7, 0.5, 0.7, plastico(coloresCaja[k % 4], { roughness: 0.4 }), 0.06);
+    c.userData.fase = k / 5;
+    cinta.add(c);
+    cajasCinta.push(c);
+  }
+  cinta.position.set(3.7, 0, 1.4);
+  mundo.add(cinta);
+
+  // ---------- barriles y bolsas de materia prima ----------
+  const barril = (x, z, color) => {
+    const g = new THREE.Group();
+    const cuerpo = cilindro(0.5, 0.5, 1.3, plastico(color, { roughness: 0.35 }), 32);
+    cuerpo.position.y = 0.65;
+    g.add(cuerpo);
+    for (const y of [0.35, 0.95]) {
+      const aro2 = cilindro(0.52, 0.52, 0.07, plastico(0x23252e), 32);
+      aro2.position.y = y;
+      g.add(aro2);
+    }
+    const tapa = cilindro(0.42, 0.42, 0.06, plastico(0x23252e), 32);
+    tapa.position.y = 1.31;
+    g.add(tapa);
+    g.position.set(x, 0, z);
+    mundo.add(g);
+  };
+  barril(-6.1, 0.2, 0x2e6bff);
+  barril(-5.1, 0.7, COLOR.naranja);
+  barril(-6.1, 1.4, 0x2e6bff);
+  barril(-5.2, -0.5, 0x3ecf6f);
+  const bolsa = (x, y, z, rotY, color) => {
+    const b = caja(1.1, 0.34, 0.7, plastico(color, { roughness: 0.55 }), 0.14);
+    b.position.set(x, y, z);
+    b.rotation.y = rotY;
+    mundo.add(b);
+  };
+  [0.2, 0.55, 0.9].forEach((y, k) => bolsa(-4.6 + (k % 2) * 0.08, y, 2.9, k * 0.1, [0xf4f1ea, 0xe0d9c8, 0xf4f1ea][k]));
+
+  // ---------- lámparas colgantes ----------
+  const matLuz = new THREE.MeshBasicMaterial({ color: 0xfff1c9, toneMapped: false });
+  [-2.8, 0, 2.8].forEach((x) => {
+    const cable = cilindro(0.025, 0.025, 1.5, plastico(0x23252e), 8);
+    cable.position.set(x, 7.2, -2.2);
+    mundo.add(cable);
+    const pantalla = cilindro(0.2, 0.75, 0.5, plastico(COLOR.naranja), 32);
+    pantalla.position.set(x, 6.2, -2.2);
+    mundo.add(pantalla);
+    const foco = new THREE.Mesh(new THREE.SphereGeometry(0.26, 16, 12), matLuz);
+    foco.position.set(x, 5.9, -2.2);
+    mundo.add(foco);
   });
-  const horquilla = new THREE.Group();
-  [-0.35, 0.35].forEach((dx) => {
-    const d = caja(0.14, 0.08, 1.2, plastico(0x8b93a1, { metalness: 0.6 }), 0.02);
-    d.position.set(dx, 0, 0.6);
-    horquilla.add(d);
+
+  // ---------- carteles de zona sobre los estantes ----------
+  ["A", "B", "C", "D"].forEach((letra, k) => {
+    const t = textura(256, 128, (ctx, W, H) => {
+      ctx.fillStyle = "#14151a";
+      ctx.fillRect(0, 0, W, H);
+      ctx.fillStyle = "#e85c0d";
+      ctx.fillRect(0, 0, W, 14);
+      ctx.fillStyle = "#fff";
+      ctx.font = "900 70px sans-serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText("ZONA " + letra, W / 2, H / 2 + 8);
+    });
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(1.7, 0.85), new THREE.MeshBasicMaterial({ map: t.tex, toneMapped: false }));
+    m.position.set(COL_X[k], 5.45, -3.05);
+    m.scale.setScalar(0.8);
+    mundo.add(m);
   });
-  horquilla.position.set(0, 0.3, 1.15);
-  elevador.add(horquilla);
-  const jaula = new THREE.Group();
-  [-0.55, 0.55].forEach((dx) => {
-    const p = caja(0.08, 1.0, 0.08, plastico(0x23252e), 0.02);
-    p.position.set(dx, 1.35, -0.2);
-    jaula.add(p);
-  });
-  const techo = caja(1.3, 0.08, 0.9, plastico(0x23252e), 0.02);
-  techo.position.set(0, 1.88, -0.2);
-  jaula.add(techo);
-  elevador.add(jaula);
-  [[-0.75, 0.9], [0.75, 0.9], [-0.75, -0.7], [0.75, -0.7]].forEach(([x, z]) => {
-    const r = cilindro(0.32, 0.32, 0.26, plastico(0x16171c, { roughness: 0.8 }), 24);
-    r.rotation.z = Math.PI / 2;
-    r.position.set(x, 0.32, z);
-    elevador.add(r);
-  });
-  const baliza = new THREE.Mesh(new THREE.SphereGeometry(0.12, 14, 10), new THREE.MeshBasicMaterial({ color: 0xff8a00, toneMapped: false }));
-  baliza.position.set(0, 2.0, -0.2);
-  elevador.add(baliza);
-  elevador.position.set(3.6, 0, 1.6);
-  elevador.rotation.y = -Math.PI / 2;
-  mundo.add(elevador);
+
+  // ---------- dron de inventario que recorre los estantes ----------
+  const dron = new THREE.Group();
+  const cuerpoDron = caja(0.5, 0.2, 0.5, plastico(0xf4f1ea), 0.08);
+  dron.add(cuerpoDron);
+  const ojoDron = new THREE.Mesh(new THREE.SphereGeometry(0.09, 12, 10), new THREE.MeshBasicMaterial({ color: 0x3ecf6f, toneMapped: false }));
+  ojoDron.position.set(0, -0.02, 0.26);
+  dron.add(ojoDron);
+  const helices = [];
+  for (const [dx, dz] of [[-0.34, -0.34], [0.34, -0.34], [-0.34, 0.34], [0.34, 0.34]]) {
+    const brazo = caja(0.34, 0.05, 0.05, plastico(0x23252e), 0.02);
+    brazo.position.set(dx / 2, 0.02, dz / 2);
+    brazo.rotation.y = Math.atan2(-dz, dx);
+    dron.add(brazo);
+    const h = caja(0.46, 0.025, 0.07, plastico(COLOR.naranja), 0.01);
+    h.position.set(dx, 0.1, dz);
+    dron.add(h);
+    helices.push(h);
+  }
+  const rayoDron = new THREE.Mesh(new THREE.ConeGeometry(0.28, 1.2, 16, 1, true), new THREE.MeshBasicMaterial({ color: 0x3ecf6f, transparent: true, opacity: 0.18, toneMapped: false, side: THREE.DoubleSide }));
+  rayoDron.position.set(0, -0.62, 0.25);
+  rayoDron.rotation.x = -Math.PI / 2.6;
+  dron.add(rayoDron);
+  dron.position.set(0, 6, -2.4);
+  mundo.add(dron);
 
   // ---------- TV del depósito (resumen en vivo) ----------
   const tv = textura(768, 432, () => {});
@@ -332,22 +408,25 @@ export function crearEscena(contenedor, { logoUrl, onActividad, onSaludo } = {})
   }
   dibujarTV();
   const marcoTV = caja(4.1, 2.45, 0.2, plastico(0x0b0c10), 0.1);
-  marcoTV.position.set(5.2, 6.1, -4.2);
+  marcoTV.position.set(6.1, 5.9, -4.2);
+  marcoTV.scale.setScalar(0.78);
   mundo.add(marcoTV);
   const pantTV = new THREE.Mesh(new THREE.PlaneGeometry(3.8, 2.14), new THREE.MeshBasicMaterial({ map: tv.tex, toneMapped: false }));
-  pantTV.position.set(5.2, 6.1, -4.09);
+  pantTV.position.set(6.1, 5.9, -4.09);
+  pantTV.scale.setScalar(0.78);
   mundo.add(pantTV);
 
   // ---------- Nati ----------
   const nati = new THREE.Group();
-  nati.position.set(-1.0, 0, 1.9);
+  nati.position.set(-0.9, 0, 2.3);
+  nati.scale.setScalar(1.18);
   mundo.add(nati);
-  const matPiel = plastico(COLOR.piel, { roughness: 0.3 });
+  const matPiel = plastico(0xd49a5a, { roughness: 0.32 });
   const matChaleco = plastico(0xff7a00, { roughness: 0.4 });
-  const matRemera = plastico(0x2b3a67);
+  const matRemera = plastico(0x1f7a4d);
   const matPant = plastico(0x23252e);
   const matCasco = plastico(0xf4f1ea, { roughness: 0.25 });
-  const matPelo = plastico(0x2a1a12, { roughness: 0.45 });
+  const matPelo = plastico(0x0d0d10, { roughness: 0.3 });
 
   const caderas = new THREE.Group();
   caderas.position.y = 1.15;
@@ -500,10 +579,20 @@ export function crearEscena(contenedor, { logoUrl, onActividad, onSaludo } = {})
   const nuca = caja(1.2, 0.95, 0.4, matPelo, 0.16);
   nuca.position.set(0, 0.28, -RH + 0.02);
   cabeza.add(nuca);
-  const colita = caja(0.3, 0.7, 0.26, matPelo, 0.12);
-  colita.position.set(0, 0.05, -RH - 0.3);
-  colita.rotation.x = 0.25;
-  cabeza.add(colita);
+  // trenza larga: tres tramos que bajan por la espalda y un lazo verde
+  [0, 1, 2].forEach((k) => {
+    const tramo = caja(0.36 - k * 0.05, 0.62, 0.3, matPelo, 0.14);
+    tramo.position.set(0, -0.35 - k * 0.55, -RH - 0.28 - k * 0.04);
+    tramo.rotation.x = 0.1;
+    cabeza.add(tramo);
+  });
+  const lazo = caja(0.42, 0.14, 0.36, plastico(0x3ecf6f), 0.05);
+  lazo.position.set(0, -0.2, -RH - 0.3);
+  cabeza.add(lazo);
+  // flequillo corto que asoma bajo el casco
+  const fleq = caja(1.0, 0.16, 0.22, matPelo, 0.07);
+  fleq.position.set(0, HH - 0.2, RH - 0.02);
+  cabeza.add(fleq);
   // casco
   const domo = new THREE.Mesh(new THREE.SphereGeometry(RH + 0.1, 48, 24, 0, Math.PI * 2, 0, Math.PI / 2), matCasco);
   sombra(domo);
@@ -672,16 +761,21 @@ export function crearEscena(contenedor, { logoUrl, onActividad, onSaludo } = {})
       if (o.userData?.alerta) o.visible = Math.floor(t * 3) % 2 === 0;
     });
 
-    // autoelevador: va y viene entre los pallets de la derecha y el centro
-    const ciclo = (t % 26) / 26;
-    const vaivén = ciclo < 0.5 ? ciclo * 2 : (1 - ciclo) * 2;
-    const f = vaivén < 0.5 ? vaivén * 2 : (1 - vaivén) * 2 + 0;
-    elevador.position.x = 5.2 - (ciclo < 0.5 ? ciclo * 2 : (1 - ciclo) * 2) * 3.0;
-    elevador.rotation.y = ciclo < 0.5 ? Math.PI / 2 : -Math.PI / 2;
-    void f;
-    horquilla.position.y = 0.3 + Math.max(0, Math.sin(t * 0.6)) * 0.7;
-    baliza.material.color.setHex(Math.floor(t * 4) % 2 ? 0xff8a00 : 0x7a3f00);
-    palletMovil.visible = ciclo > 0.5 || ciclo < 0.03;
+    // cinta: las cajas avanzan y vuelven a salir por el otro lado
+    cajasCinta.forEach((c) => {
+      const f = (c.userData.fase + t * 0.06) % 1;
+      c.position.set(-2.5 + f * 5, 1.4, Math.sin(c.userData.fase * 9) * 0.12);
+      c.rotation.y = Math.sin(c.userData.fase * 7) * 0.2;
+      c.scale.setScalar(f < 0.04 ? f / 0.04 : f > 0.96 ? (1 - f) / 0.04 : 1);
+    });
+    rodillos.forEach((r) => (r.rotation.z += dt * 2.5));
+    // dron: patrulla los estantes y se detiene sobre las zonas críticas
+    const rec = (t * 0.07) % 1;
+    const vai = rec < 0.5 ? rec * 2 : (1 - rec) * 2;
+    dron.position.set(-5.6 + vai * 11.2 + 0.6, 5.0 + Math.sin(t * 1.7) * 0.15 - (Math.floor(t / 7) % 3) * 1.55, -2.55);
+    dron.rotation.y = (rec < 0.5 ? 1 : -1) * 0.25 + Math.sin(t * 0.9) * 0.1;
+    helices.forEach((h, i) => (h.rotation.y += dt * 40 * (i % 2 ? 1 : -1)));
+    rayoDron.material.opacity = 0.14 + Math.sin(t * 6) * 0.05;
 
     // cara
     parp = Math.max(0, parp - dt * 7);
@@ -745,7 +839,7 @@ export function crearEscena(contenedor, { logoUrl, onActividad, onSaludo } = {})
     camera.fov = camera.aspect >= 1.3 ? 32 : Math.min(54, 32 + (1.3 - camera.aspect) * 28);
     const tanV = Math.tan((camera.fov * Math.PI) / 360);
     // entran los estantes (ancho ~12) y Nati (alto ~4.5)
-    const dist = Math.max(3.1 / tanV, 6.2 / (tanV * camera.aspect)) * 1.04 + 1.0;
+    const dist = Math.max(3.4 / tanV, 6.0 / (tanV * camera.aspect)) * 1.04 + 1.0;
     controles.minDistance = dist * 0.55;
     controles.maxDistance = dist * 1.3;
     camera.position.copy(controles.target).addScaledVector(DIR_CAM, dist);

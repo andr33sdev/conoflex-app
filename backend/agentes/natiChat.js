@@ -5,6 +5,8 @@
 const { crearMotor, textoDerivacion } = require("./motorChat");
 const { calcular } = require("../calculadora");
 const { cargarStock, armarPanorama, nivelDe, UMBRALES } = require("./vigilanteStock");
+const { faltantes, prioridadDe } = require("./veraChat");
+const L = require("./listaCompra");
 
 function hoyArgentina() {
   const ahora = new Date();
@@ -23,7 +25,7 @@ HOY es ${hoy.largo} (${hoy.iso}).
 TU ESPECIALIDAD (única y exclusiva)
 - Solo atendés: stock de materias primas y de semielaborados (por depósito: 33, 26, Ayolas y 37), cuántos días de producción alcanzan, qué se acaba primero, qué conviene comprar y qué conviene fabricar, compras en curso, pedidos internos de producción y movimientos de stock.
 - Si te piden algo de otra área (sueldos, horas, fichadas, ventas, precios, rentabilidad), decilo con amabilidad en una línea. No lo resuelvas.
-- SOLO LEÉS: nunca digas que cargaste, descontaste o compraste algo. Proponés y la persona lo hace.
+- SOLO LEÉS el stock: nunca digas que cargaste, descontaste o compraste algo. Proponés y la persona lo hace. Lo único que podés hacer es pasarle materiales a Vera con pasar_a_vera (ella arma la solicitud de compra; vos no comprás ni firmás).
 - Todo número, nombre, fecha y cantidad sale textualmente del resultado de una herramienta. Nunca inventes stock, consumos ni proveedores. Si una herramienta no devuelve algo, decí que no lo tenés.
 - "Días de stock" es una estimación: demanda mensual según las ventas de los últimos meses y las ingenierías activas. Aclaralo si la decisión depende de eso.
 - Para el estado general usá panorama_stock; para un material puntual consultar_materia_prima; para un semielaborado consultar_semielaborado; para decisiones, que_comprar y que_producir.
@@ -61,6 +63,19 @@ const HERRAMIENTAS = [
       { name: "compras_en_curso", description: "Renglones de solicitudes de compra abiertos: artículo, proveedor, cuánto se pidió, cuánto llegó y hace cuántos días.", parameters: { type: "OBJECT", properties: {} } },
       { name: "pedidos_internos", description: "Pedidos internos de producción al depósito que siguen abiertos (solicitados, atendidos o disponibles) y hace cuánto esperan.", parameters: { type: "OBJECT", properties: {} } },
       { name: "avisos_abiertos", description: "Los avisos que tu vigilante detectó y siguen abiertos (materias primas críticas, stock negativo, pedidos demorados, compras sin recibir).", parameters: { type: "OBJECT", properties: {} } },
+      {
+        name: "pasar_a_vera",
+        description:
+          "Le pasa materiales a Vera (agente de compras) para que los sume a la solicitud de compra que ella tiene en armado. Sin 'items' pasa lo que recomienda que_comprar (materias críticas y bajas, con las cantidades faltantes calculadas por el sistema). Usala cuando la persona te pida pasarle materiales a Vera o 'armar la compra'.",
+        parameters: {
+          type: "OBJECT",
+          properties: {
+            items: { type: "ARRAY", description: "Materiales puntuales con cantidad (opcional).", items: { type: "OBJECT", properties: { materia_prima: { type: "STRING" }, cantidad: { type: "NUMBER" } }, required: ["materia_prima", "cantidad"] } },
+            meses: { type: "INTEGER", description: "Meses de cobertura para calcular lo que falta (1 a 3). Por defecto 1." },
+            solo_urgentes: { type: "BOOLEAN", description: "true (por defecto) pasa solo críticas y bajas." },
+          },
+        },
+      },
       { name: "calculadora", description: "Hace una cuenta exacta. Usala para cualquier operación aritmética.", parameters: { type: "OBJECT", properties: { expresion: { type: "STRING", description: "Expresión, ej: (1200 - 340) / 30" } }, required: ["expresion"] } },
     ],
   },
@@ -72,6 +87,7 @@ const PALABRAS_HERRAMIENTA = {
   consultar_semielaborado: "Consultó un semielaborado",
   que_comprar: "Calculó qué comprar",
   que_producir: "Calculó qué fabricar",
+  pasar_a_vera: "Le pasó materiales a Vera",
   compras_en_curso: "Revisó las compras en curso",
   pedidos_internos: "Revisó los pedidos internos",
   avisos_abiertos: "Revisó sus avisos",
@@ -90,7 +106,7 @@ function crearNati({ pool, db, ai }) {
     return v;
   };
 
-  const ejecutar = async (llamada) => {
+  const ejecutar = async (llamada, uso, ctx = {}) => {
     const args = llamada.args || {};
     if (llamada.name === "calculadora") return calcular(args.expresion);
     if (llamada.name === "avisos_abiertos") {
@@ -101,6 +117,29 @@ function crearNati({ pool, db, ai }) {
     }
     const d = await datos();
     const pano = armarPanorama(d);
+    if (llamada.name === "pasar_a_vera") {
+      const vera = (ctx.destinos || []).find((x) => x.id === "compras");
+      if (!vera || !ctx.usuario) return { error: "Vera no está habilitada para esta persona, así que no puedo pasarle materiales. Podés pedirle al administrador que le dé acceso a Vera." };
+      const meses = Math.min(3, Math.max(1, Number(args.meses) || 1));
+      let aPasar = [];
+      const noEncontrados = [];
+      if (Array.isArray(args.items) && args.items.length) {
+        for (const it of args.items.slice(0, 30)) {
+          const r = L.resolverMateria(pano.materias, it.materia_prima);
+          if (r.error) noEncontrados.push({ pedido: it.materia_prima, problema: r.error });
+          else aPasar.push({ materia: r.materia, cantidad: it.cantidad, prioridad: prioridadDe(r.materia.nivel) });
+        }
+      } else {
+        aPasar = faltantes(pano, meses, args.solo_urgentes !== false).slice(0, 20).map((f) => ({ materia: f, cantidad: f.faltante, prioridad: prioridadDe(f.nivel) }));
+      }
+      if (!aPasar.length) return { ok: true, mensaje: "No hay materiales para pasar: nada urgente que comprar ahora.", ...(noEncontrados.length ? { no_encontrados: noEncontrados } : {}) };
+      const res = await L.agregarALista(db, ctx.usuario, aPasar);
+      if (res.error) return res;
+      const n = res.agregados.length + res.actualizados.length;
+      uso.derivacion = { agente: "compras", nombre: vera.nombre, puesto: vera.puesto, pregunta: "Mostrame la lista de compra que tenés armada y decime qué falta definir.", motivo: `Nati le pasó ${n} ${n === 1 ? "material" : "materiales"} a la solicitud #${res.solicitud_id}` };
+      uso.texto = `Le pasó ${n} a Vera`;
+      return { ok: true, solicitud_id: res.solicitud_id, solicitud_nueva: res.solicitud_nueva, agregados: res.agregados, actualizados: res.actualizados, ...(noEncontrados.length ? { no_encontrados: noEncontrados } : {}), instruccion: "Decile a la persona en la primera línea que se los pasaste a Vera, mostrá en tabla lo que pasaste (material, cantidad) y que Vera lo ve en su lista. No digas que se compró ni que está firmada." };
+    }
     if (llamada.name === "panorama_stock") {
       return {
         resumen: pano.resumen,

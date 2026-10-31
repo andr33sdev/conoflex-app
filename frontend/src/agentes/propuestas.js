@@ -42,12 +42,50 @@ export function saludoSegunHora(nombre) {
   return nombre ? `${base}, ${String(nombre).split(" ")[0]}` : base;
 }
 
+export const IDEAS_COMPRAS = [
+  "Armame la lista con lo que hace falta comprar",
+  "¿Qué tengo en la lista de compra ahora?",
+  "¿Qué proveedores me están fallando?",
+  "¿Qué solicitudes esperan firma?",
+  "¿Qué pedidos a proveedores todavía no llegaron?",
+  "Dejá la lista lista para firmar",
+];
+
+/** Propuestas de Vera a partir de sus avisos abiertos (sin IA, sin tokens). */
+export function propuestasCompras(hallazgos = []) {
+  const out = [];
+  for (const h of hallazgos) {
+    if (out.length >= 4) break;
+    const base = { id: h.id, tipo: h.tipo, titulo: h.titulo };
+    switch (h.tipo) {
+      case "SOLICITUD_SIN_FIRMA":
+        out.push({ ...base, boton: "Ver firmas", pregunta: "¿Qué solicitudes de compra están esperando firma y hace cuánto?" });
+        break;
+      case "RENGLONES_DEMORADOS":
+        out.push({ ...base, boton: "Ver qué falta", pregunta: `${h.titulo}. Contame qué es lo que falta recibir de ese proveedor.` });
+        break;
+      case "PROVEEDOR_INCUMPLE":
+        out.push({ ...base, boton: "Ver proveedor", pregunta: `Contame la historia de ${h.operario}: qué se le compra y cuánto cumplió.` });
+        break;
+      case "LISTA_ABIERTA":
+        out.push({ ...base, boton: "Ver la lista", pregunta: "Mostrame la lista de compra que tengo en armado." });
+        break;
+      default:
+        out.push({ ...base, boton: "Verlo", abrirAvisos: true });
+    }
+  }
+  return out;
+}
+
 export const IDEAS_RRHH = [
   "¿Quién hizo más horas extra este mes?",
   "Liquidame la quincena en curso de todo el plantel",
   "¿Qué operarios llegaron tarde esta semana?",
   "¿Cuántas horas me cuesta un turno de noche en fin de semana?",
   "¿Cuándo es el próximo feriado y cómo se paga?",
+  "¿Quién tiene más faltas o llegadas tarde este mes?",
+  "Mostrame solo las horas extra de toda la plantilla de este mes",
+  "Simulá un turno de sábado de 22 a 6 para un operario",
 ];
 export const IDEAS_STOCK = [
   "¿Qué materias primas se me acaban antes de que llegue la próxima compra?",
@@ -55,6 +93,9 @@ export const IDEAS_STOCK = [
   "¿Qué tengo de más y está parado?",
   "Armame un plan de compra para el próximo mes",
   "¿Qué compras pedidas todavía no llegaron?",
+  "Pasale a Vera lo que hay que comprar",
+  "¿Qué pedidos internos esperan hace más tiempo?",
+  "¿Cuál es el semielaborado con menos días de stock?",
 ];
 
 /** Propuestas de Nati a partir de sus hallazgos abiertos (sin IA, sin tokens). */

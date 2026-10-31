@@ -32,6 +32,7 @@ const MODULOS_SISTEMA = [
   { id: "control-asistencia", nombre: "Control Asistencia" },
   { id: "agente:rrhh", nombre: "Agente · RRHH y liquidaciones (Lía)" },
   { id: "agente:stock", nombre: "Agente · Stock y depósito (Nati)" },
+  { id: "agente:compras", nombre: "Agente · Compras y proveedores (Vera)" },
 ];
 
 export default function AdminUsuarios() {

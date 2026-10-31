@@ -30,13 +30,15 @@ function frecuenciaDe(mime) {
   return m ? Number(m[1]) : 24000;
 }
 
-async function sintetizar(ai, texto, { voz = VOZ_DEFECTO, modelo = MODELO_VOZ, timeoutMs = 25000 } = {}) {
+const ESTILO_DEFECTO = "mujer joven, cálida, natural y cercana";
+
+async function sintetizar(ai, texto, { voz = VOZ_DEFECTO, modelo = MODELO_VOZ, timeoutMs = 25000, estilo = ESTILO_DEFECTO } = {}) {
   const limpio = String(texto || "").replace(/\s+/g, " ").trim().slice(0, MAX_CARACTERES);
   if (!limpio) throw new Error("Sin texto para leer.");
   const pedir = () =>
     ai.models.generateContent({
       model: modelo,
-      contents: [{ role: "user", parts: [{ text: `Decilo con voz de mujer joven, cálida, natural y cercana, con acento rioplatense argentino y ritmo de conversación, sin sonar robótica: ${limpio}` }] }],
+      contents: [{ role: "user", parts: [{ text: `Decilo con voz de ${String(estilo || ESTILO_DEFECTO).slice(0, 200)}, con acento rioplatense argentino y ritmo de conversación, sin sonar robótica: ${limpio}` }] }],
       config: {
         responseModalities: ["AUDIO"],
         speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: VOCES_FEMENINAS.includes(voz) ? voz : VOZ_DEFECTO } } },

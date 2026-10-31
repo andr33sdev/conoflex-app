@@ -28,7 +28,7 @@ const EscenaLia = forwardRef(function EscenaLia({ estado, hablando, info, onActi
   useEffect(() => {
     let vivo = true;
     let creada = null;
-    (tipo === "deposito" ? import("./escenaDeposito") : import("./escenaLego"))
+    (tipo === "deposito" ? import("./escenaDeposito") : tipo === "compras" ? import("./escenaCompras") : import("./escenaLego"))
       .then((m) => {
         if (!vivo) return;
         if (!m.soportaWebGL()) return setCarga("sinwebgl");
@@ -55,12 +55,12 @@ const EscenaLia = forwardRef(function EscenaLia({ estado, hablando, info, onActi
 
   return (
     <div className="absolute inset-0" style={{ background: "radial-gradient(120% 90% at 50% 15%, #2a2230 0%, #14141a 55%, #0a0a0c 100%)" }}>
-      <div ref={caja} className="absolute inset-0" aria-label={tipo === "deposito" ? "Nati, agente de stock, recorriendo el depósito de LEGO" : "Lía, agente de RRHH, trabajando en su escritorio de LEGO"} role="img" />
+      <div ref={caja} className="absolute inset-0" aria-label={`${nombre}, agente de IA, en su lugar de trabajo de LEGO`} role="img" />
       {carga === "cargando" && (
         <div className="absolute inset-0 grid place-items-center">
           <div className="flex flex-col items-center gap-3 text-zinc-400 text-sm">
             <img src={logoUrl} alt="" className="w-14 h-14 rounded-full" />
-            <span>{tipo === "deposito" ? "Armando el depósito…" : "Armando la oficina…"}</span>
+            <span>{tipo === "deposito" ? "Armando el depósito…" : tipo === "compras" ? "Armando la oficina de compras…" : "Armando la oficina…"}</span>
           </div>
         </div>
       )}

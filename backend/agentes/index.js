@@ -5,6 +5,9 @@
 const { analizarRRHH, AUTORESOLVIBLES } = require("./vigilanteRRHH");
 const { crearLia } = require("./liaChat");
 const { crearNati } = require("./natiChat");
+const { crearVera } = require("./veraChat");
+const { analizarCompras, rankingProveedores, AUTORESOLVIBLES: AUTO_COMPRAS } = require("./vigilanteCompras");
+const { asegurarTablaListas, leerLista } = require("./listaCompra");
 const { analizarStock, armarPanorama, cargarStock } = require("./vigilanteStock");
 const { sintetizar } = require("./voz");
 const { pdfLiquidacion } = require("./pdf");
@@ -19,6 +22,8 @@ const AGENTES = [
     descripcion: "Liquida horas y sueldos igual que Connie, y vigila presentismo, feriados, fichadas y faltas.",
     permiso: "agente:rrhh",
     color: "#FF5A00",
+    voz: "Leda",
+    estilo: "mujer joven, cálida, simpática y cercana, de ritmo tranquilo",
   },
   {
     id: "stock",
@@ -27,11 +32,24 @@ const AGENTES = [
     descripcion: "Vigila materias primas y semielaborados, anticipa quiebres de stock y te propone qué comprar y qué fabricar.",
     permiso: "agente:stock",
     color: "#22c55e",
+    voz: "Zephyr",
+    estilo: "mujer enérgica, canchera y alegre, de ritmo ágil y tono más agudo",
+  },
+  {
+    id: "compras",
+    nombre: "Vera",
+    puesto: "Compras y proveedores",
+    descripcion: "Arma las solicitudes de compra con lo que le pedís a ella o le pasa Nati, y sigue proveedores, demoras y firmas pendientes.",
+    permiso: "agente:compras",
+    color: "#3b82f6",
+    voz: "Sulafat",
+    estilo: "mujer segura, profesional y serena, de voz más grave y ritmo pausado",
   },
 ];
 const agentePorId = (id) => AGENTES.find((a) => a.id === id) || null;
 
 async function asegurarTablasAgentes(db) {
+  await asegurarTablaListas(db).catch((e) => console.error("[agentes] tabla de listas:", e.message));
   await db.query(`
     CREATE TABLE IF NOT EXISTS agentes_estado (
       agente VARCHAR(30) PRIMARY KEY,
@@ -215,9 +233,67 @@ async function revisarStock({ pool, db }, { ahora = new Date() } = {}) {
   }
 }
 
+async function cargarCompras(pool, db) {
+  const [solicitudes] = await pool.query("SELECT id, fecha, estado, firma_jefe IS NOT NULL AS firma_jefe, firma_gerente IS NOT NULL AS firma_gerente, created_at FROM solicitudes_compra");
+  const [renglones] = await pool.query(
+    "SELECT i.solicitud_id, i.articulo, i.proveedor, i.cantidad_solicitada, i.cantidad_recibida, s.created_at AS creada FROM solicitudes_compra_items i JOIN solicitudes_compra s ON s.id = i.solicitud_id WHERE UPPER(COALESCE(s.estado,'')) NOT IN ('CANCELADA','ANULADA')",
+  );
+  const [listas] = await db.query(
+    `SELECT l.solicitud_id, u.nombre AS usuario, l.created_at AS desde, (SELECT COUNT(*) FROM solicitudes_compra_items i WHERE i.solicitud_id = l.solicitud_id) AS renglones
+       FROM agentes_compras_listas l LEFT JOIN usuarios u ON u.id = l.usuario_id WHERE l.cerrada = 0`,
+  ).then((r) => r).catch(() => [[]]);
+  return { solicitudes, renglones, listas: listas.map((l) => ({ ...l, renglones: Number(l.renglones), usuario: l.usuario || "alguien" })) };
+}
+
+/** Revisión del vigilante de compras (Vera): firmas pendientes, renglones demorados, proveedores que incumplen y listas a medias. */
+async function revisarCompras({ pool, db }, { ahora = new Date() } = {}) {
+  const agente = "compras";
+  try {
+    const datos = await cargarCompras(pool, db);
+    const encontrados = analizarCompras({ ...datos, ahoraMs: ahora.getTime() });
+    const [previos] = await db.query("SELECT id, clave, tipo, estado FROM agentes_hallazgos WHERE agente = ?", [agente]);
+    const porClave = new Map(previos.map((p) => [p.clave, p]));
+    const claves = new Set(encontrados.map((h) => h.clave));
+    const nuevos = [];
+    for (const h of encontrados) {
+      const previo = porClave.get(h.clave);
+      if (!previo) {
+        await db.query("INSERT INTO agentes_hallazgos (agente, clave, tipo, severidad, titulo, texto, operario, fecha) VALUES (?,?,?,?,?,?,?,?)", [agente, h.clave, h.tipo, h.severidad, h.titulo, h.texto, h.operario, h.fecha]);
+        nuevos.push(h);
+      } else if (previo.estado === "ABIERTO") {
+        await db.query("UPDATE agentes_hallazgos SET severidad = ?, titulo = ?, texto = ?, fecha = ? WHERE id = ?", [h.severidad, h.titulo, h.texto, h.fecha, previo.id]);
+      }
+    }
+    const resueltos = previos.filter((p) => p.estado === "ABIERTO" && AUTO_COMPRAS.has(p.tipo) && !claves.has(p.clave));
+    for (const r of resueltos) await db.query("UPDATE agentes_hallazgos SET estado = 'RESUELTO', resuelto_por = 'Vera (automático)', resuelto_en = NOW() WHERE id = ?", [r.id]);
+
+    const aNotificar = nuevos.filter((h) => h.severidad !== "BAJA");
+    if (aNotificar.length) {
+      const roles = await rolesDelAgente(db, "agente:compras");
+      const aviso = (titulo, texto) => crearNotificacion(db, { tipo: "AGENTE_COMPRAS", titulo, texto, ruta: "/agentes?a=compras", roles });
+      if (aNotificar.length <= 3) for (const h of aNotificar) await aviso(`Vera: ${h.titulo}`, h.texto);
+      else await aviso(`Vera encontró ${aNotificar.length} cosas para atender en compras`, aNotificar.slice(0, 3).map((h) => h.titulo).join(" · ") + ` · y ${aNotificar.length - 3} más`);
+    }
+    if (nuevos.length) await registrarActividad(db, agente, "AVISO", `Detectó ${nuevos.length} ${nuevos.length === 1 ? "aviso nuevo" : "avisos nuevos"}`, nuevos.map((h) => `• ${h.titulo}`).join("\n"));
+    if (resueltos.length) await registrarActividad(db, agente, "RESUELTO", `Cerró ${resueltos.length} ${resueltos.length === 1 ? "aviso que ya se resolvió" : "avisos que ya se resolvieron"}`);
+    const abiertos = Number((await db.query("SELECT COUNT(*) AS n FROM agentes_hallazgos WHERE agente = ? AND estado = 'ABIERTO'", [agente]))[0][0].n);
+    const items = datos.solicitudes.length;
+    const resumen = abiertos ? `Revisé ${items} solicitudes de compra: hay ${abiertos} ${abiertos === 1 ? "aviso abierto" : "avisos abiertos"}.` : `Revisé ${items} solicitudes de compra: todo en orden.`;
+    await db.query(
+      "INSERT INTO agentes_estado (agente, ultima_revision, resumen, operarios_revisados, ultimo_error) VALUES (?, NOW(), ?, ?, NULL) ON DUPLICATE KEY UPDATE ultima_revision = NOW(), resumen = VALUES(resumen), operarios_revisados = VALUES(operarios_revisados), ultimo_error = NULL",
+      [agente, resumen, items],
+    );
+    return { ok: true, operarios: items, nuevos: nuevos.length, resueltos: resueltos.length, abiertos, resumen };
+  } catch (e) {
+    console.error("[agentes] revisión de compras falló:", e.message);
+    await db.query("INSERT INTO agentes_estado (agente, ultimo_error) VALUES (?, ?) ON DUPLICATE KEY UPDATE ultimo_error = VALUES(ultimo_error)", [agente, String(e.message).slice(0, 300)]).catch(() => {});
+    return { ok: false, error: "No pude revisar las compras en este momento." };
+  }
+}
+
 function registrarRutasAgentes(app, { db, pool, ai }) {
-  const chats = { rrhh: crearLia({ pool, db, ai }), stock: crearNati({ pool, db, ai }) };
-  const revisiones = { rrhh: () => revisarRRHH({ pool, db }), stock: () => revisarStock({ pool, db }) };
+  const chats = { rrhh: crearLia({ pool, db, ai }), stock: crearNati({ pool, db, ai }), compras: crearVera({ pool, db, ai }) };
+  const revisiones = { rrhh: () => revisarRRHH({ pool, db }), stock: () => revisarStock({ pool, db }), compras: () => revisarCompras({ pool, db }) };
 
   const quien = async (req) => {
     const [r] = await db.query("SELECT id, nombre, rol FROM usuarios WHERE id = ?", [req.user?.id]);
@@ -336,8 +412,23 @@ function registrarRutasAgentes(app, { db, pool, ai }) {
 
   // Panorama de stock (Nati): niveles reales de materias primas y semielaborados, para el tablero y el depósito 3D.
   app.get("/api/agentes/:id/panorama", delAgente, async (req, res) => {
-    if (req.agente.id !== "stock") return res.status(400).json({ error: "Este agente no tiene panorama." });
+    if (req.agente.id !== "stock" && req.agente.id !== "compras") return res.status(400).json({ error: "Este agente no tiene panorama." });
     try {
+      if (req.agente.id === "compras") {
+        const d = await cargarCompras(pool, db);
+        const lista = await leerLista(db, req.usuario.id);
+        const ahoraMs = Date.now();
+        const sinRecibir = d.renglones.filter((r) => Number(r.cantidad_recibida || 0) < Number(r.cantidad_solicitada || 0) && !d.listas.some((l) => l.solicitud_id === r.solicitud_id));
+        const porFirmar = d.solicitudes.filter((s) => String(s.estado).toUpperCase() === "ABIERTA" && !d.listas.some((l) => l.solicitud_id === s.id) && (!s.firma_jefe || !s.firma_gerente));
+        return res.json({
+          generado: new Date().toISOString(),
+          lista,
+          resumen: { en_armado: lista.total_renglones, por_firmar: porFirmar.length, sin_recibir: sinRecibir.length, proveedores: new Set(d.renglones.map((r) => r.proveedor)).size },
+          por_firmar: porFirmar.slice(0, 12).map((s) => ({ id: s.id, fecha: String(s.fecha || "").slice(0, 10), firmo_jefe: !!s.firma_jefe, firmo_gerente: !!s.firma_gerente, dias: Math.floor((ahoraMs - new Date(String(s.created_at).replace(" ", "T")).getTime()) / 86400000) })),
+          sin_recibir: sinRecibir.slice(0, 40).map((r) => ({ solicitud_id: r.solicitud_id, articulo: r.articulo, proveedor: r.proveedor, pedido: r.cantidad_solicitada, recibido: r.cantidad_recibida, dias: Math.floor((ahoraMs - new Date(String(r.creada).replace(" ", "T")).getTime()) / 86400000) })),
+          proveedores: rankingProveedores(d.renglones).slice(0, 12),
+        });
+      }
       const p = armarPanorama(await cargarStock(pool));
       res.json(p);
     } catch (e) {
@@ -371,7 +462,7 @@ function registrarRutasAgentes(app, { db, pool, ai }) {
       // A quién puede derivar: los otros agentes que este usuario tiene habilitados y que ya conversan.
       const destinos = [];
       for (const a of AGENTES) if (a.id !== req.agente.id && chats[a.id] && (await tienePermiso(req.usuario, a.permiso))) destinos.push({ id: a.id, nombre: a.nombre, puesto: a.puesto });
-      const r = await cerebro.responder({ mensaje, historial: req.body?.historial, destinos });
+      const r = await cerebro.responder({ mensaje, historial: req.body?.historial, destinos, usuario: { id: req.usuario.id, nombre: req.usuario.nombre, rol: req.usuario.rol } });
       const hechas = r.herramientas.filter((h) => h.nombre !== "calculadora" && h.nombre !== "derivar_a_agente");
       const tipo = hechas.some((h) => h.nombre === "liquidar_horas") ? "LIQUIDACION" : r.derivacion ? "DERIVACION" : "CHAT";
       await registrarActividad(
@@ -428,7 +519,7 @@ function registrarRutasAgentes(app, { db, pool, ai }) {
     marcas.push(ahora);
     usoVoz.set(req.usuario.id, marcas);
     try {
-      const wav = await sintetizar(ai, texto);
+      const wav = await sintetizar(ai, texto, { voz: req.agente.voz, estilo: req.agente.estilo });
       res.set({ "Content-Type": "audio/wav", "Content-Length": wav.length, "Cache-Control": "no-store" });
       res.send(wav);
     } catch (e) {
@@ -437,7 +528,7 @@ function registrarRutasAgentes(app, { db, pool, ai }) {
     }
   });
 
-  return { revisarRRHH: revisiones.rrhh, revisarStock: revisiones.stock };
+  return { revisarRRHH: revisiones.rrhh, revisarStock: revisiones.stock, revisarCompras: revisiones.compras };
 }
 
 /** Deja corriendo el vigilante: una revisión poco después de arrancar y luego cada N minutos (sin IA, solo consultas). */
@@ -447,6 +538,7 @@ function iniciarVigilantes(agentes, { intervaloMin = Number(process.env.AGENTES_
     agentes.revisarRRHH().catch((e) => console.error("[agentes] vigilante RRHH:", e.message));
     // Nati revisa un poco después para no pisar la revisión de Lía.
     setTimeout(() => agentes.revisarStock?.().catch((e) => console.error("[agentes] vigilante stock:", e.message)), 15000).unref?.();
+    setTimeout(() => agentes.revisarCompras?.().catch((e) => console.error("[agentes] vigilante compras:", e.message)), 30000).unref?.();
   };
   const t0 = setTimeout(correr, 20000);
   const t = setInterval(correr, Math.max(5, intervaloMin) * 60 * 1000);
@@ -458,4 +550,4 @@ function iniciarVigilantes(agentes, { intervaloMin = Number(process.env.AGENTES_
   };
 }
 
-module.exports = { AGENTES, agentePorId, asegurarTablasAgentes, registrarRutasAgentes, iniciarVigilantes, revisarRRHH, revisarStock, ahoraArgentina };
+module.exports = { revisarCompras, AGENTES, agentePorId, asegurarTablasAgentes, registrarRutasAgentes, iniciarVigilantes, revisarRRHH, revisarStock, ahoraArgentina };

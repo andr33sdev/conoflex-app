@@ -151,11 +151,17 @@ async function cargarStock(pool, { ahoraMs = Date.now() } = {}) {
   const porDep = new Map(filas.map((f) => [f.codigo, { "33": Number(f.stock_33) || 0, "26": Number(f.stock_26) || 0, ayolas: Number(f.stock_ayolas) || 0, "37": Number(f.stock_37) || 0 }]));
   const semis = (ds.semielaborados || []).map((s) => ({ ...s, por_deposito: porDep.get(s.codigo) || null }));
   const [internas] = await pool.query("SELECT id, semielaborado_nombre, cantidad_solicitada, urgencia, estado, solicitado_at FROM solicitudes_internas WHERE estado IN ('SOLICITADO','ATENDIDO','DISPONIBLE')");
-  const [compras] = await pool.query(
-    `SELECT i.id, i.materia_prima_id, i.articulo, i.proveedor, i.cantidad_solicitada, i.cantidad_recibida, s.created_at AS creada
+  // Las listas que Vera todavía está armando no son compras: recién cuentan cuando las cierra.
+  const SQL_COMPRAS = (excluirBorradores) => `SELECT i.id, i.materia_prima_id, i.articulo, i.proveedor, i.cantidad_solicitada, i.cantidad_recibida, s.created_at AS creada
        FROM solicitudes_compra_items i JOIN solicitudes_compra s ON s.id = i.solicitud_id
-      WHERE UPPER(COALESCE(s.estado,'')) NOT IN ('COMPLETADA','CANCELADA','ANULADA') AND COALESCE(i.cantidad_recibida,0) < COALESCE(i.cantidad_solicitada,0)`,
-  );
+      WHERE UPPER(COALESCE(s.estado,'')) NOT IN ('COMPLETADA','CANCELADA','ANULADA') AND COALESCE(i.cantidad_recibida,0) < COALESCE(i.cantidad_solicitada,0)
+      ${excluirBorradores ? "AND s.id NOT IN (SELECT solicitud_id FROM agentes_compras_listas WHERE cerrada = 0)" : ""}`;
+  let compras;
+  try {
+    [compras] = await pool.query(SQL_COMPRAS(true));
+  } catch {
+    [compras] = await pool.query(SQL_COMPRAS(false)); // todavía no existe la tabla de listas
+  }
   // Consumo diario (30 días) para dibujar la tendencia de cada materia prima.
   const series = new Map();
   try {
