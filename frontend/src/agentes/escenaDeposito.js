@@ -38,7 +38,7 @@ export function crearEscena(contenedor, { logoUrl, onActividad, onSaludo } = {})
   scene.environmentIntensity = 0.6;
 
   const camera = new THREE.PerspectiveCamera(32, 1, 0.1, 90);
-  const TARGET = new THREE.Vector3(0.4, 3.2, 0);
+  const TARGET = new THREE.Vector3(-0.3, 2.5, 0);
   const DIR_CAM = new THREE.Vector3(-1.2, 1.9, 12).normalize();
   const controles = new OrbitControls(camera, renderer.domElement);
   controles.target.copy(TARGET);
@@ -498,7 +498,7 @@ export function crearEscena(contenedor, { logoUrl, onActividad, onSaludo } = {})
   luzCasco.position.set(0, ALTO_CABEZA + Rc * 0.96 * Math.cos(0.75) + 0.05, Rc * Math.sin(0.75) + 0.12);
   cabeza.add(luzCasco);
 
-  vestirConFBX(pj, { carpeta: `${import.meta.env.BASE_URL}modelos/agentes/business3`, prefijo: "f016", sentada: false, altura: 4.0 }).catch((e) => console.warn("[agentes] modelo 3D no disponible, se usa el de respaldo:", e.message));
+  vestirConFBX(pj, { carpeta: `${import.meta.env.BASE_URL}modelos/agentes/business3`, prefijo: "f016", sentada: false, altura: 4.4 }).catch((e) => console.warn("[agentes] modelo 3D no disponible, se usa el de respaldo:", e.message));
 
   // ---------- estado y animación ----------
   const ctrl = { estado: "idle", hablando: false, nivelExterno: -1, pulso: 0 };
@@ -750,7 +750,7 @@ export function crearEscena(contenedor, { logoUrl, onActividad, onSaludo } = {})
     }
 
     zoom = amortiguar(zoom, ctrl.hablando ? 1.1 : atiende ? 1.05 : 1, 2.5, dt);
-    camera.zoom = zoom;
+    camera.zoom = zoom * (window.__liaZoomBase || 1.95) * (camera.aspect > 1.2 ? 0.78 : 1); // en el recuadro bajo y ancho (celular) no se acerca tanto
     camera.updateProjectionMatrix();
     if (performance.now() / 1000 - ultimoToque > 6) controles.target.x = TARGET.x + Math.sin(t * 0.25) * 0.15;
     controles.update();

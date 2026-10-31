@@ -307,7 +307,7 @@ export function crearEscena(contenedor, { logoUrl, onActividad, onSaludo } = {})
   scene.environmentIntensity = 0.6;
 
   const camera = new THREE.PerspectiveCamera(32, 1, 0.1, 80);
-  const TARGET = new THREE.Vector3(1.3, 2.9, 0.6);
+  const TARGET = new THREE.Vector3(1.5, 2.6, 0.9);
   const DIR_CAM = new THREE.Vector3(-2.3, 2.3, 12.0).normalize();
   camera.position.copy(TARGET).addScaledVector(DIR_CAM, 12);
   const controles = new OrbitControls(camera, renderer.domElement);
@@ -652,6 +652,7 @@ export function crearEscena(contenedor, { logoUrl, onActividad, onSaludo } = {})
   logoEspalda.position.set(0, 0.95, -0.08);
   monitor.add(logoEspalda);
   let escribiendoPantalla = 0;
+  const manoTecla = { w: 0 };
   const dibujarPantalla = (t) => {
     const { ctx } = pantalla;
     ctx.fillStyle = "#0e1117";
@@ -1352,6 +1353,18 @@ export function crearEscena(contenedor, { logoUrl, onActividad, onSaludo } = {})
     ec.mirarX = pose.mirarX;
     ec.mirarY = pose.mirarY;
     ec.guiño = pose.guiño;
+    // al teclear, las manos van de verdad sobre el teclado (con el golpeteo de los dedos)
+    {
+      const w = amortiguar(manoTecla.w, escribiendoPantalla > 0 ? 1 : 0, 8, dt);
+      manoTecla.w = w;
+      const izq = new THREE.Vector3(Math.cos(lia.rotation.y), 0, -Math.sin(lia.rotation.y)); // hacia la izquierda de Lía
+      const pa = new THREE.Vector3(-0.36, 0.14 + Math.max(0, Math.sin(t * 17)) * 0.03, 0.02);
+      const pb = new THREE.Vector3(0.36, 0.14 + Math.max(0, Math.sin(t * 17 + 2.1)) * 0.03, 0.02);
+      const A = teclado.localToWorld(pa);
+      const B = teclado.localToWorld(pb);
+      const aEsIzq = A.dot(izq) > B.dot(izq);
+      pj.manoMeta = { L: { p: aEsIzq ? A : B, w }, R: { p: aEsIzq ? B : A, w } };
+    }
     pj.actualizar?.(dt);
     refrescarCara(false);
 
@@ -1391,7 +1404,7 @@ export function crearEscena(contenedor, { logoUrl, onActividad, onSaludo } = {})
 
     // cámara: acercamiento suave cuando habla y un balanceo sutil si nadie la mueve
     zoom = amortiguar(zoom, ctrl.hablando ? 1.1 : atiende ? 1.05 : 1, 2.5, dt);
-    camera.zoom = zoom * (window.__liaZoomBase || 1.5);
+    camera.zoom = zoom * (window.__liaZoomBase || 2.0) * (camera.aspect > 1.2 ? 0.78 : 1); // en el recuadro bajo y ancho (celular) no se acerca tanto
     camera.updateProjectionMatrix();
     if (performance.now() / 1000 - ultimoToque > 6) controles.target.x = TARGET.x + Math.sin(t * 0.25) * 0.15;
     controles.update();

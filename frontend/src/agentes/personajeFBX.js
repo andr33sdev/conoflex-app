@@ -223,6 +223,8 @@ export async function vestirConFBX(pj, { carpeta, prefijo, sentada = false, altu
       const hombroRig = a.rig.pivote.getWorldPosition(new THREE.Vector3());
       const manoRig = a.punta.getWorldPosition(new THREE.Vector3());
       const meta = manoRig.sub(hombroRig).applyQuaternion(qHojaInv).multiplyScalar(((l1 + l2) / a.largoRig) * 0.98).add(hombro);
+      const ov = pj.manoMeta?.[lado];
+      if (ov && ov.w > 0.001) meta.lerp(ov.p.clone().sub(hojaPos).applyQuaternion(qHojaInv), ov.w); // la escena puede fijar adónde va la mano (p. ej. el teclado)
       // el codo cae hacia abajo y un poco hacia afuera y atrás
       const eje = meta.clone().sub(hombro);
       const d = clamp(eje.length(), 0.05, (l1 + l2) * 0.995);
