@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Bell, FileDown, History, LayoutGrid, ClipboardList, Loader2, MessageCircle, ScanSearch, Volume2, VolumeX } from "lucide-react";
+import { Bell, FileDown, History, LayoutGrid, ClipboardList, Loader2, Users, MessageCircle, ScanSearch, Volume2, VolumeX } from "lucide-react";
 import { api } from "../produccion/util";
 import { useToast } from "../produccion/useToast";
 import Chat from "./Chat";
@@ -12,6 +12,8 @@ import { estadoDe, useSlotEstado } from "./estados";
 import { Avatar8 } from "./pixel";
 import Panorama from "./Panorama";
 import PanoramaCompras from "./PanoramaCompras";
+import PanoramaProduccion from "./PanoramaProduccion";
+import Ficha from "./Ficha";
 import { dictar, fijarVozAgente, prepararVoz, reproducirVoz, soportaDictado, textoParaVoz } from "./voz";
 import { getApiUrl } from "../apiConfig";
 
@@ -381,7 +383,9 @@ export default function Pantalla({ agente, usuario, pregunta, onPreguntaUsada, o
     { id: "chat", texto: "Chat", icono: MessageCircle },
     ...(perfil.panorama === "stock" ? [{ id: "panorama", texto: "Panorama", icono: LayoutGrid }] : []),
     ...(perfil.panorama === "compras" ? [{ id: "panorama", texto: "Mi lista", icono: ClipboardList }] : []),
-    { id: "avisos", texto: "Avisos", icono: Bell, n: abiertos },
+    ...(perfil.panorama === "produccion" ? [{ id: "panorama", texto: "Prioridades", icono: LayoutGrid }] : []),
+    ...(perfil.personal ? [{ id: "personal", texto: "Personal", icono: Users }] : []),
+    ...(perfil.sinVigilante ? [] : [{ id: "avisos", texto: "Avisos", icono: Bell, n: abiertos }]),
     { id: "actividad", texto: "Actividad", icono: History },
   ];
 
@@ -399,9 +403,11 @@ export default function Pantalla({ agente, usuario, pregunta, onPreguntaUsada, o
           <button onClick={pedirReporte} disabled={enviando} className={boton} aria-label="Pedir un reporte en PDF" title="Pedir un reporte en PDF">
             <FileDown size={17} /> <span className="hidden md:inline">Reporte</span>
           </button>
-          <button onClick={revisar} disabled={revisando} className={boton} aria-label="Revisar ahora" title="Revisar ahora">
-            {revisando ? <Loader2 size={17} className="animate-spin" /> : <ScanSearch size={17} />} <span className="hidden md:inline">Revisar</span>
-          </button>
+          {!perfil.sinVigilante && (
+            <button onClick={revisar} disabled={revisando} className={boton} aria-label="Revisar ahora" title="Revisar ahora">
+              {revisando ? <Loader2 size={17} className="animate-spin" /> : <ScanSearch size={17} />} <span className="hidden md:inline">Revisar</span>
+            </button>
+          )}
           <button onClick={alternarVoz} aria-pressed={vozActiva} aria-label={vozActiva ? `Silenciar la voz de ${perfil.nombre}` : `Activar la voz de ${perfil.nombre}`} title={vozActiva ? "Voz activada" : "Voz desactivada"} className={`${boton} ${vozActiva ? "text-white bg-white/[0.09]" : ""}`}>
             {vozActiva ? <Volume2 size={17} /> : <VolumeX size={17} />}
           </button>
@@ -464,7 +470,12 @@ export default function Pantalla({ agente, usuario, pregunta, onPreguntaUsada, o
         )}
         {tab === "panorama" && (
           <div className="h-full overflow-y-auto custom-scrollbar">
-            {perfil.panorama === "compras" ? <PanoramaCompras datos={pano} error={errPano} onPreguntar={alPropuesta2} /> : <Panorama datos={pano} error={errPano} onPreguntar={alPropuesta2} />}
+            {perfil.panorama === "compras" ? <PanoramaCompras datos={pano} error={errPano} onPreguntar={alPropuesta2} /> : perfil.panorama === "produccion" ? <PanoramaProduccion datos={pano} error={errPano} onPreguntar={alPropuesta2} /> : <Panorama datos={pano} error={errPano} onPreguntar={alPropuesta2} />}
+          </div>
+        )}
+        {tab === "personal" && (
+          <div className="h-full overflow-y-auto custom-scrollbar">
+            <Ficha base={base} onReporte={descargarReporte} onPreguntar={alPropuesta2} />
           </div>
         )}
         {tab === "avisos" && (

@@ -33,6 +33,7 @@ const MODULOS_SISTEMA = [
   { id: "agente:rrhh", nombre: "Agente · RRHH y liquidaciones (Lía)" },
   { id: "agente:stock", nombre: "Agente · Stock y depósito (Nati)" },
   { id: "agente:compras", nombre: "Agente · Compras y proveedores (Vera)" },
+  { id: "agente:produccion", nombre: "Agente · Producción y pedidos (Maru)" },
 ];
 
 export default function AdminUsuarios() {
