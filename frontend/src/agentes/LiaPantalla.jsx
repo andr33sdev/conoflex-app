@@ -232,15 +232,23 @@ export default function LiaPantalla({ agente, usuario, pregunta, onPreguntaUsada
     setAviso("");
     manosRef.current = { activo: true, fallos: 0, timer: null };
     setManos(true);
+    // Se abre el micrófono ya, dentro del toque (Safari/iOS y algunos Chrome lo exigen) y no recién medio segundo después.
+    escucharManos();
   };
   const escucharManos = () => {
+    if (manosRef.current.escuchando) return;
+    manosRef.current.escuchando = true;
     setDictando(true);
     dictado.current = dictar({
       onTexto: (v) => setTexto(v),
       onFin: (err, ultimo) => {
+        manosRef.current.escuchando = false;
         setDictando(false);
         if (!manosRef.current.activo) return;
         if (err === "not-allowed" || err === "service-not-allowed") return terminarManos("Tenés que permitir el micrófono en el navegador para usar el manos libres.");
+        if (err === "audio-capture") return terminarManos("No encuentro un micrófono disponible. Revisá que esté conectado y que ninguna otra aplicación lo esté usando.");
+        if (err === "network") return terminarManos("El reconocimiento de voz del navegador no pudo conectarse a internet. Probá de nuevo o escribile.");
+        if (err === "language-not-supported" || err === "no-soportado") return terminarManos("Este navegador no puede reconocer la voz. Usá Chrome o Edge, o escribile.");
         if (ultimo) {
           manosRef.current.fallos = 0;
           if (/^\s*(chau|chao|listo|terminar|terminá|salir|gracias|pará|parar|basta)\b/i.test(ultimo)) {
@@ -248,7 +256,7 @@ export default function LiaPantalla({ agente, usuario, pregunta, onPreguntaUsada
             return terminarManos("Listo, terminé el manos libres.");
           }
           enviarRef.current?.(ultimo, true);
-        } else if (++manosRef.current.fallos >= 4) terminarManos("Pausé el manos libres porque no te escuché. Tocá el botón para retomarlo.");
+        } else if (++manosRef.current.fallos >= 4) terminarManos("Pausé el manos libres porque no te escuché. Revisá que el micrófono correcto esté elegido en el navegador y tocá el botón para retomarlo.");
       },
     });
   };
