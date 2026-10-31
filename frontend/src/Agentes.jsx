@@ -9,7 +9,14 @@ import { PROXIMOS } from "./agentes/proximos";
 export default function Agentes({ usuarioActual }) {
   const [agentes, setAgentes] = useState(null);
   const [error, setError] = useState(null);
-  const [elegido, setElegido] = useState(null);
+  const [elegido, setElegido] = useState(() => {
+    try {
+      return new URLSearchParams(window.location.search).get("a");
+    } catch {
+      return null;
+    }
+  });
+  const [pendiente, setPendiente] = useState(null); // { agente, pregunta } derivada desde otro agente
 
   useEffect(() => {
     let vivo = true;
@@ -40,7 +47,19 @@ export default function Agentes({ usuarioActual }) {
     <div className="h-full min-h-0 flex flex-col">
       <Roster agentes={agentes} elegido={agente?.id || proximo?.id} onElegir={setElegido} />
       <div className="flex-1 min-h-0">
-        {agente ? <LiaPantalla key={agente.id} agente={agente} usuario={usuarioActual} /> : <Proximamente agente={proximo} />}
+        {agente ? (
+          <LiaPantalla
+            key={agente.id}
+            agente={agente}
+            usuario={usuarioActual}
+            pregunta={pendiente?.agente === agente.id ? pendiente.pregunta : null}
+            onPreguntaUsada={() => setPendiente(null)}
+            onDerivar={(d) => {
+              setPendiente({ agente: d.agente, pregunta: d.pregunta });
+              setElegido(d.agente);
+            }}
+          />
+        ) : <Proximamente agente={proximo} />}
       </div>
     </div>
   );

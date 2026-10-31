@@ -2,17 +2,13 @@
 // Chat de Lía, la agente de RRHH y liquidaciones. Usa el MISMO motor de IA que Connie (mismo cliente Gemini, mismo
 // modelo y configuración de CONFIG de connie.js) y las MISMAS funciones de liquidación (liquidarDesdeBD / simularTurno),
 // pero con un perfil acotado: solo liquidaciones, horas extra, fichadas, presentismo, feriados y faltas.
-const { CONFIG, normalizarHistorial } = require("../connie");
+const { crearMotor, textoDerivacion } = require("./motorChat");
 const { liquidarDesdeBD, simularTurno } = require("../liquidacionDb");
 const { calcular } = require("../calculadora");
 const { feriadosEfectivos } = require("./vigilanteRRHH");
 const { REGLAS_CONNIE } = require("./reglasLiquidacion");
 const { HERRAMIENTAS_LIQUIDACION } = require("./herramientasLiquidacion");
 
-// Lía responde con herramientas que ya hacen las cuentas: no necesita pensar tanto como Connie (más rápido).
-const PENSAMIENTO = Number.isFinite(Number(process.env.AGENTES_PENSAMIENTO)) && process.env.AGENTES_PENSAMIENTO !== undefined && process.env.AGENTES_PENSAMIENTO !== "" ? Number(process.env.AGENTES_PENSAMIENTO) : 256;
-
-const esperar = (ms) => new Promise((r) => setTimeout(r, ms));
 
 function hoyArgentina() {
   const ahora = new Date();
@@ -22,7 +18,7 @@ function hoyArgentina() {
   };
 }
 
-function construirInstrucciones() {
+function construirInstrucciones(destinos = []) {
   const hoy = hoyArgentina();
   return `Sos Lía, la agente de RRHH y liquidaciones de Conoflex Argentina, una fábrica de productos plásticos de seguridad vial. Trabajás en la oficina de personas: liquidás sueldos y horas, vigilás las fichadas y avisás lo que hay que atender. Hablás con alguien de RRHH o de la dirección de la planta.
 
@@ -35,6 +31,8 @@ TU ESPECIALIDAD (única y exclusiva)
 - Todo número, nombre, día e importe sale textualmente del resultado de una herramienta.
 
 ${REGLAS_CONNIE.join("\n")}
+
+${textoDerivacion(destinos)}
 
 CÓMO RESPONDER (el formato importa: la persona lee en un chat y quiere poco texto, muy prolijo)
 - Español rioplatense, cálido, directo. Primero la respuesta, después el detalle. Nada de relleno ni repetir lo que ya dijiste.
@@ -80,90 +78,35 @@ const PALABRAS_HERRAMIENTA = {
 
 /** @param {{pool:any, db:any, ai:any}} deps  pool = el mismo pool de solo lectura de Connie. */
 function crearLia({ pool, db, ai }) {
-  async function llamarModelo(contents, instrucciones, { conHerramientas }) {
-    const config = {
-      systemInstruction: instrucciones,
-      temperature: 0.2,
-      httpOptions: { timeout: CONFIG.tiempoLlamadaModeloMs },
-      tools: HERRAMIENTAS,
-      thinkingConfig: { thinkingBudget: PENSAMIENTO },
-    };
-    if (!conHerramientas) config.toolConfig = { functionCallingConfig: { mode: "NONE" } };
-    const intentar = () => ai.models.generateContent({ model: CONFIG.modelo, contents, config });
-    try {
-      return await intentar();
-    } catch (error) {
-      if (error && (error.status === 503 || error.status === 429)) {
-        await esperar(1500);
-        return intentar();
-      }
-      throw error;
+  const ejecutar = async (llamada, uso) => {
+    const args = llamada.args || {};
+    if (llamada.name === "liquidar_horas") {
+      uso.args = parametrosPDF(args);
+      const r = await liquidarDesdeBD(pool, args);
+      if (r?.error) uso.ok = false;
+      return r;
     }
-  }
-
-  async function responder({ mensaje, historial }) {
-    const inicio = Date.now();
-    const instrucciones = construirInstrucciones();
-    const contents = [...normalizarHistorial(historial, mensaje), { role: "user", parts: [{ text: mensaje }] }];
-    const usadas = [];
-
-    const ejecutar = async (llamada) => {
-      const args = llamada.args || {};
-      const uso = { nombre: llamada.name, texto: PALABRAS_HERRAMIENTA[llamada.name] || llamada.name, periodo: args.mes || args.desde || (args.fechas ? args.fechas.join(", ") : null), operario: args.operario || null, ok: true };
-      if (llamada.name === "liquidar_horas") uso.args = parametrosPDF(args);
-      usadas.push(uso);
-      try {
-        if (llamada.name === "liquidar_horas") {
-          const r = await liquidarDesdeBD(pool, args);
-          if (r?.error) uso.ok = false;
-          return r;
-        }
-        if (llamada.name === "simular_turno") return await simularTurno(pool, args);
-        if (llamada.name === "calculadora") return calcular(args.expresion);
-        if (llamada.name === "avisos_abiertos") {
-          const [rows] = await db.query(
-            "SELECT tipo, severidad, titulo, texto, operario, DATE_FORMAT(fecha, '%Y-%m-%d') AS fecha, estado FROM agentes_hallazgos WHERE agente = 'rrhh' AND estado = 'ABIERTO' ORDER BY FIELD(severidad,'ALTA','MEDIA','BAJA'), id DESC LIMIT 60",
-          );
-          return { cantidad: rows.length, avisos: rows };
-        }
-        if (llamada.name === "proximos_feriados") {
-          const dias = Math.min(365, Math.max(1, Number(args.dias) || 60));
-          const hoy = hoyArgentina().iso;
-          const hasta = new Date(new Date(`${hoy}T00:00:00`).getTime() + dias * 86400000);
-          const hastaIso = `${hasta.getFullYear()}-${String(hasta.getMonth() + 1).padStart(2, "0")}-${String(hasta.getDate()).padStart(2, "0")}`;
-          const [rows] = await db.query("SELECT DATE_FORMAT(fecha, '%Y-%m-%d') AS fecha, descripcion FROM fichero_feriados");
-          const mapa = feriadosEfectivos(new Map(rows.map((r) => [r.fecha, r.descripcion || ""])), hoy, hastaIso);
-          const lista = [...mapa.entries()].filter(([f]) => f >= hoy && f <= hastaIso).sort().map(([fecha, descripcion]) => ({ fecha, descripcion }));
-          return { desde: hoy, hasta: hastaIso, feriados: lista, nota: "Incluye los de la tabla de Control Asistencia y los nacionales de fecha fija; los trasladables o puentes solo aparecen si están cargados en la tabla." };
-        }
-        return { error: `Herramienta desconocida: ${llamada.name}` };
-      } catch (e) {
-        console.error(`[Lía ${llamada.name}]`, e.message);
-        return { error: "No pude leer los datos para eso." };
-      }
-    };
-
-    let respuesta;
-    let rondas = 0;
-    for (; rondas < CONFIG.maxRondas; rondas++) {
-      if (Date.now() - inicio > CONFIG.tiempoTotalMs) break;
-      respuesta = await llamarModelo(contents, instrucciones, { conHerramientas: true });
-      const llamadas = respuesta.functionCalls;
-      if (!llamadas || !llamadas.length) return finalizar(respuesta);
-      contents.push(respuesta.candidates[0].content);
-      const resultados = await Promise.all(llamadas.map(ejecutar));
-      contents.push({ role: "user", parts: llamadas.map((l, i) => ({ functionResponse: { name: l.name, response: { resultado: resultados[i] } } })) });
+    if (llamada.name === "simular_turno") return simularTurno(pool, args);
+    if (llamada.name === "calculadora") return calcular(args.expresion);
+    if (llamada.name === "avisos_abiertos") {
+      const [rows] = await db.query(
+        "SELECT tipo, severidad, titulo, texto, operario, DATE_FORMAT(fecha, '%Y-%m-%d') AS fecha, estado FROM agentes_hallazgos WHERE agente = 'rrhh' AND estado = 'ABIERTO' ORDER BY FIELD(severidad,'ALTA','MEDIA','BAJA'), id DESC LIMIT 60",
+      );
+      return { cantidad: rows.length, avisos: rows };
     }
-    respuesta = await llamarModelo(contents, instrucciones, { conHerramientas: false });
-    return finalizar(respuesta);
-
-    function finalizar(resp) {
-      const texto = String(resp.text || "").replace(/\n{3,}/g, "\n\n").trim();
-      return { respuesta: texto || "No pude armar una respuesta con los datos que tengo. ¿Me la repetís de otra forma?", herramientas: usadas, ms: Date.now() - inicio };
+    if (llamada.name === "proximos_feriados") {
+      const dias = Math.min(365, Math.max(1, Number(args.dias) || 60));
+      const hoy = hoyArgentina().iso;
+      const hasta = new Date(new Date(`${hoy}T00:00:00`).getTime() + dias * 86400000);
+      const hastaIso = `${hasta.getFullYear()}-${String(hasta.getMonth() + 1).padStart(2, "0")}-${String(hasta.getDate()).padStart(2, "0")}`;
+      const [rows] = await db.query("SELECT DATE_FORMAT(fecha, '%Y-%m-%d') AS fecha, descripcion FROM fichero_feriados");
+      const mapa = feriadosEfectivos(new Map(rows.map((r) => [r.fecha, r.descripcion || ""])), hoy, hastaIso);
+      const lista = [...mapa.entries()].filter(([f]) => f >= hoy && f <= hastaIso).sort().map(([fecha, descripcion]) => ({ fecha, descripcion }));
+      return { desde: hoy, hasta: hastaIso, feriados: lista, nota: "Incluye los de la tabla de Control Asistencia y los nacionales de fecha fija; los trasladables o puentes solo aparecen si están cargados en la tabla." };
     }
-  }
-
-  return { responder };
+    return { error: `Herramienta desconocida: ${llamada.name}` };
+  };
+  return crearMotor({ ai, nombre: "Lía", construirInstrucciones, herramientas: HERRAMIENTAS, palabras: PALABRAS_HERRAMIENTA, ejecutar });
 }
 
 /** Parámetros de una liquidación que alcanzan para volver a generarla en PDF (solo los conocidos y con tipos simples). */

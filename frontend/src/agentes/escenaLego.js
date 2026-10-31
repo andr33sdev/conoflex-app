@@ -18,7 +18,7 @@ export function soportaWebGL() {
   }
 }
 
-const COLOR = {
+export const COLOR = {
   piel: 0xf2cd37,
   pelo: 0x5b2f1b,
   saco: 0x2b2e3b,
@@ -30,23 +30,23 @@ const COLOR = {
   pared: 0x1c1e26,
 };
 
-const plastico = (color, extra = {}) =>
+export const plastico = (color, extra = {}) =>
   new THREE.MeshPhysicalMaterial({ color, roughness: 0.3, metalness: 0, clearcoat: 0.55, clearcoatRoughness: 0.22, ...extra });
-const sombra = (m) => {
+export const sombra = (m) => {
   m.castShadow = true;
   m.receiveShadow = true;
   return m;
 };
-const caja = (w, h, d, mat, r = 0.06) => sombra(new THREE.Mesh(new RoundedBoxGeometry(w, h, d, 4, Math.min(r, w / 2.2, h / 2.2, d / 2.2)), mat));
-const cilindro = (rt, rb, h, mat, seg = 40) => sombra(new THREE.Mesh(new THREE.CylinderGeometry(rt, rb, h, seg), mat));
-const amortiguar = (a, b, k, dt) => a + (b - a) * (1 - Math.exp(-k * dt));
-const difAngulo = (a, b) => Math.atan2(Math.sin(b - a), Math.cos(b - a));
-const rnd = (a, b) => a + Math.random() * (b - a);
-const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
-const suavizar = (x) => x * x * (3 - 2 * x);
-const pulso = (u, a, b) => suavizar(clamp((u - a) / (b - a), 0, 1)); // 0→1 entre a y b
+export const caja = (w, h, d, mat, r = 0.06) => sombra(new THREE.Mesh(new RoundedBoxGeometry(w, h, d, 4, Math.min(r, w / 2.2, h / 2.2, d / 2.2)), mat));
+export const cilindro = (rt, rb, h, mat, seg = 40) => sombra(new THREE.Mesh(new THREE.CylinderGeometry(rt, rb, h, seg), mat));
+export const amortiguar = (a, b, k, dt) => a + (b - a) * (1 - Math.exp(-k * dt));
+export const difAngulo = (a, b) => Math.atan2(Math.sin(b - a), Math.cos(b - a));
+export const rnd = (a, b) => a + Math.random() * (b - a);
+export const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+export const suavizar = (x) => x * x * (3 - 2 * x);
+export const pulso = (u, a, b) => suavizar(clamp((u - a) / (b - a), 0, 1)); // 0→1 entre a y b
 
-function textura(w, h, dibujar) {
+export function textura(w, h, dibujar) {
   const canvas = document.createElement("canvas");
   canvas.width = w;
   canvas.height = h;
@@ -57,14 +57,14 @@ function textura(w, h, dibujar) {
   tex.anisotropy = 8;
   return { canvas, ctx, tex, w, h };
 }
-const elipse = (ctx, x, y, rx, ry) => {
+export const elipse = (ctx, x, y, rx, ry) => {
   ctx.beginPath();
   ctx.ellipse(x, y, rx, ry, 0, 0, Math.PI * 2);
 };
 
 // ---------- cara ----------
 // e: parp (0-1), boca (0-1), forma (0 ancha, 1 redonda), sonrisa (-1..1), ceja (-1..1), mirarX/Y, guiño (0-1)
-function dibujarCara(ctx, W, H, e) {
+export function dibujarCara(ctx, W, H, e) {
   ctx.clearRect(0, 0, W, H);
   ctx.lineCap = "round";
   ctx.lineJoin = "round";
@@ -253,7 +253,7 @@ function dibujarTorso(ctx, W, H, logo) {
   ctx.fillText("LÍA", W * 0.66, H * 0.73);
 }
 
-const HORA_ARG = () => {
+export const HORA_ARG = () => {
   try {
     const p = new Intl.DateTimeFormat("es-AR", { timeZone: "America/Argentina/Buenos_Aires", hour: "numeric", minute: "numeric", hour12: false }).formatToParts(new Date());
     return { h: Number(p.find((x) => x.type === "hour").value) % 24, m: Number(p.find((x) => x.type === "minute").value) };

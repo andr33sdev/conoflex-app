@@ -14,20 +14,35 @@ const CADA_MS = 45000;
 export default function Campanita({ usuarioActual }) {
   const rol = String(usuarioActual?.rol || "").trim().toUpperCase();
   const admin = rol === "ADMIN";
-  const puede = admin || rol === "PRODUCCION";
+  const conAgente = (usuarioActual?.permisos || []).some((p) => String(p).startsWith("agente:"));
+  const puede = admin || rol === "PRODUCCION" || conAgente;
   const [n, setN] = useState(0);
   const [abierta, setAbierta] = useState(false);
   const [lista, setLista] = useState(null);
   const [error, setError] = useState("");
   const [sacudir, setSacudir] = useState(0);
   const previo = useRef(0);
+  const primera = useRef(true);
+  const [aviso, setAviso] = useState(null); // cartel emergente cuando un agente te avisa de algo nuevo
   const caja = useRef(null);
 
   const contar = useCallback(async () => {
     try {
       const [a, nt] = await Promise.all([admin ? api("/api/ingenierias/alertas/contador") : { abiertas: 0 }, api("/api/notificaciones/contador")]);
       const total = a.abiertas + nt.sin_leer;
-      if (total > previo.current) setSacudir((k) => k + 1);
+      if (total > previo.current) {
+        setSacudir((k) => k + 1);
+        // No es la primera carga: busca qué llegó y, si es de un agente, lo muestra aunque no estés en su módulo.
+        if (!primera.current && nt.sin_leer > 0) {
+          api("/api/notificaciones")
+            .then((l) => {
+              const nueva = l.find((x) => x.sin_leer && String(x.tipo).startsWith("AGENTE_"));
+              if (nueva) setAviso((v) => (v?.id === nueva.id ? v : nueva));
+            })
+            .catch(() => {});
+        }
+      }
+      primera.current = false;
       previo.current = total;
       setN(total);
     } catch {
@@ -48,6 +63,12 @@ export default function Campanita({ usuarioActual }) {
       window.removeEventListener("cf:alertas", contar);
     };
   }, [puede, contar]);
+
+  useEffect(() => {
+    if (!aviso) return undefined;
+    const t = setTimeout(() => setAviso(null), 9000);
+    return () => clearTimeout(t);
+  }, [aviso]);
 
   useEffect(() => {
     if (!abierta) return undefined;
@@ -105,6 +126,11 @@ export default function Campanita({ usuarioActual }) {
       /* se reintenta al tocar de nuevo */
     }
   };
+  const verAviso = async () => {
+    const x = aviso;
+    setAviso(null);
+    if (x) await abrirNotif(x);
+  };
   const haySinLeer = !!lista?.some((i) => i.tipo === "NOTIF" && i.sin_leer);
 
   return (
@@ -117,6 +143,26 @@ export default function Campanita({ usuarioActual }) {
       </button>
 
       <AnimatePresence>
+        {aviso && !abierta && (
+          <motion.div
+            key={`aviso${aviso.id}`}
+            initial={{ opacity: 0, y: -14, scale: 0.97 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -8 }}
+            role="status"
+            className="fixed sm:absolute left-3 right-3 sm:left-auto sm:right-0 top-[calc(3.5rem+env(safe-area-inset-top)+0.5rem)] sm:top-full sm:mt-2 sm:w-[380px] z-[95] rounded-2xl border border-[#FFD60A]/40 bg-[#17171b] shadow-[0_20px_60px_rgba(0,0,0,0.7)] overflow-hidden"
+          >
+            <button onClick={verAviso} className="w-full text-left flex items-start gap-3 p-3.5 cursor-pointer hover:bg-white/[0.04]">
+              <span className="shrink-0 w-10 h-10 rounded-xl grid place-items-center text-black font-black" style={{ background: aviso.tipo === "AGENTE_STOCK" ? "#22c55e" : "#FF5A00" }}>{aviso.tipo === "AGENTE_STOCK" ? "N" : "L"}</span>
+              <span className="min-w-0 flex-1">
+                <span className="block text-[10.5px] font-bold uppercase tracking-[0.12em] text-[#FFD60A]">{aviso.tipo === "AGENTE_STOCK" ? "Nati te avisa" : "Lía te avisa"}</span>
+                <span className="block text-sm font-extrabold text-white leading-snug mt-0.5">{aviso.titulo}</span>
+                {aviso.texto && <span className="block text-xs text-zinc-400 mt-0.5 leading-snug line-clamp-2">{aviso.texto}</span>}
+              </span>
+            </button>
+            <button onClick={() => setAviso(null)} aria-label="Cerrar aviso" className="absolute top-1.5 right-1.5 w-8 h-8 grid place-items-center rounded-lg text-zinc-500 hover:text-white cursor-pointer"><X size={15} /></button>
+          </motion.div>
+        )}
         {abierta && (
           <motion.div initial={{ opacity: 0, y: -8, scale: 0.98 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: -6 }} transition={{ duration: 0.18 }} role="dialog" aria-label="Notificaciones" className="fixed sm:absolute left-3 right-3 sm:left-auto sm:right-0 top-[calc(3.5rem+env(safe-area-inset-top)+0.5rem)] sm:top-full sm:mt-2 sm:w-[400px] z-[90] rounded-3xl border border-white/[0.1] bg-[#111114] shadow-[0_24px_70px_rgba(0,0,0,0.65)] overflow-hidden">
             <div className="flex items-center gap-2 px-4 py-3 border-b border-white/[0.07]">
@@ -143,7 +189,11 @@ export default function Campanita({ usuarioActual }) {
                       return (
                         <li key={it.clave}>
                           <button onClick={() => abrirNotif(x)} className={`w-full text-left flex items-center gap-3 rounded-2xl px-3 py-3 hover:bg-white/[0.06] transition-colors cursor-pointer ${x.sin_leer ? "bg-white/[0.04]" : "opacity-70"}`}>
-                            <span className="shrink-0 w-10 h-10 rounded-xl bg-[#FF5A00]/12 border border-[#FF5A00]/25 grid place-items-center text-[#ff9a63]"><PackageSearch size={17} /></span>
+                            {String(x.tipo).startsWith("AGENTE_") ? (
+                              <span className="shrink-0 w-10 h-10 rounded-xl grid place-items-center text-black font-black" style={{ background: x.tipo === "AGENTE_STOCK" ? "#22c55e" : "#FF5A00" }}>{x.tipo === "AGENTE_STOCK" ? "N" : "L"}</span>
+                            ) : (
+                              <span className="shrink-0 w-10 h-10 rounded-xl bg-[#FF5A00]/12 border border-[#FF5A00]/25 grid place-items-center text-[#ff9a63]"><PackageSearch size={17} /></span>
+                            )}
                             <span className="min-w-0 flex-1">
                               <span className="block text-sm font-extrabold text-white leading-snug">{x.titulo}</span>
                               {x.texto && <span className="block text-xs text-zinc-400 mt-0.5 leading-snug">{x.texto}</span>}
