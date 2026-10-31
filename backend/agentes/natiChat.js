@@ -7,6 +7,7 @@ const { calcular } = require("../calculadora");
 const { cargarStock, armarPanorama, nivelDe, UMBRALES } = require("./vigilanteStock");
 const { faltantes, prioridadDe } = require("./veraChat");
 const L = require("./listaCompra");
+const { armarPropuesta } = require("./ajusteStock");
 
 function hoyArgentina() {
   const ahora = new Date();
@@ -25,7 +26,8 @@ HOY es ${hoy.largo} (${hoy.iso}).
 TU ESPECIALIDAD (única y exclusiva)
 - Solo atendés: stock de materias primas y de semielaborados (por depósito: 33, 26, Ayolas y 37), cuántos días de producción alcanzan, qué se acaba primero, qué conviene comprar y qué conviene fabricar, compras en curso, pedidos internos de producción y movimientos de stock.
 - Si te piden algo de otra área (sueldos, horas, fichadas, ventas, precios, rentabilidad), decilo con amabilidad en una línea. No lo resuelvas.
-- SOLO LEÉS el stock: nunca digas que cargaste, descontaste o compraste algo. Proponés y la persona lo hace. Lo único que podés hacer es pasarle materiales a Vera con pasar_a_vera (ella arma la solicitud de compra; vos no comprás ni firmás).
+- Por tu cuenta SOLO LEÉS el stock: nunca digas que cargaste, descontaste o compraste algo. Lo único que podés hacer es pasarle materiales a Vera con pasar_a_vera (ella arma la solicitud de compra; vos no comprás ni firmás).
+- MODIFICAR STOCK DE MATERIAS PRIMAS: si la persona te pide sumar, restar o dejar en cierta cantidad el stock de una materia prima, usá proponer_ajuste_stock con exactamente lo que pidió. Eso NO modifica nada: arma una propuesta y en el chat aparece un botón para que la persona confirme. Después de usarla decí en una o dos frases qué entendiste (material, operación y cantidad con su unidad, stock actual y stock que quedaría) y que lo confirme con el botón. Nunca digas que ya quedó cargado: recién queda cuando toca el botón. Si falta el material o la cantidad, preguntá antes de usar la herramienta; no adivines. Si la herramienta devuelve un error (por ejemplo, que solo un administrador puede hacerlo), explicáselo tal cual. Solo materias primas: el stock de semielaborados no lo modificás.
 - Todo número, nombre, fecha y cantidad sale textualmente del resultado de una herramienta. Nunca inventes stock, consumos ni proveedores. Si una herramienta no devuelve algo, decí que no lo tenés.
 - "Días de stock" es una estimación: demanda mensual según las ventas de los últimos meses y las ingenierías activas. Aclaralo si la decisión depende de eso.
 - Para el estado general usá panorama_stock; para un material puntual consultar_materia_prima; para un semielaborado consultar_semielaborado; para decisiones, que_comprar y que_producir.
@@ -76,6 +78,20 @@ const HERRAMIENTAS = [
           },
         },
       },
+      {
+        name: "proponer_ajuste_stock",
+        description: "Arma la PROPUESTA de modificar el stock de UNA materia prima (no lo modifica: la persona lo confirma con un botón en el chat). Usala solo cuando la persona pide expresamente sumar, restar o dejar el stock en una cantidad.",
+        parameters: {
+          type: "OBJECT",
+          properties: {
+            materia_prima: { type: "STRING", description: "Nombre o código de la materia prima." },
+            operacion: { type: "STRING", description: "sumar (ingresó material), restar (salió o se descuenta) o fijar (dejar el stock exactamente en esa cantidad)." },
+            cantidad: { type: "NUMBER", description: "Cantidad en la unidad de la materia prima (kg, etc.), tal cual la dijo la persona." },
+            motivo: { type: "STRING", description: "Motivo si la persona lo dijo (opcional)." },
+          },
+          required: ["materia_prima", "operacion", "cantidad"],
+        },
+      },
       { name: "calculadora", description: "Hace una cuenta exacta. Usala para cualquier operación aritmética.", parameters: { type: "OBJECT", properties: { expresion: { type: "STRING", description: "Expresión, ej: (1200 - 340) / 30" } }, required: ["expresion"] } },
     ],
   },
@@ -88,6 +104,7 @@ const PALABRAS_HERRAMIENTA = {
   que_comprar: "Calculó qué comprar",
   que_producir: "Calculó qué fabricar",
   pasar_a_vera: "Le pasó materiales a Vera",
+  proponer_ajuste_stock: "Preparó un ajuste de stock para confirmar",
   compras_en_curso: "Revisó las compras en curso",
   pedidos_internos: "Revisó los pedidos internos",
   avisos_abiertos: "Revisó sus avisos",
@@ -139,6 +156,18 @@ function crearNati({ pool, db, ai }) {
       uso.derivacion = { agente: "compras", nombre: vera.nombre, puesto: vera.puesto, pregunta: "Mostrame la lista de compra que tenés armada y decime qué falta definir.", motivo: `Nati le pasó ${n} ${n === 1 ? "material" : "materiales"} a la solicitud #${res.solicitud_id}` };
       uso.texto = `Le pasó ${n} a Vera`;
       return { ok: true, solicitud_id: res.solicitud_id, solicitud_nueva: res.solicitud_nueva, agregados: res.agregados, actualizados: res.actualizados, ...(noEncontrados.length ? { no_encontrados: noEncontrados } : {}), instruccion: "Decile a la persona en la primera línea que se los pasaste a Vera, mostrá en tabla lo que pasaste (material, cantidad) y que Vera lo ve en su lista. No digas que se compró ni que está firmada." };
+    }
+    if (llamada.name === "proponer_ajuste_stock") {
+      if (ctx.modo === "oficina") return { error: "Los ajustes de stock se piden hablando directo con Nati, para poder confirmarlos con el botón." };
+      const r = L.resolverMateria(pano.materias, args.materia_prima);
+      if (r.error) return r;
+      // Se lee el stock de la base en este momento (no el de la memoria de 45 s) para que el número que ve la persona sea el real.
+      const [[fila]] = await pool.query("SELECT stock_actual FROM materias_primas WHERE id = ?", [r.materia.id]);
+      const prop = armarPropuesta({ usuario: ctx.usuario, materia: { id: r.materia.id, nombre: r.materia.nombre, unidad: r.materia.unidad }, stockActual: fila?.stock_actual ?? 0, operacion: args.operacion, cantidad: args.cantidad, motivo: args.motivo });
+      if (prop.error) return { error: prop.error };
+      uso.confirmacion = prop.propuesta;
+      uso.texto = `Preparó el ajuste de ${prop.propuesta.nombre}`;
+      return { ok: true, pendiente_de_confirmacion: true, material: prop.propuesta.nombre, unidad: prop.propuesta.unidad, operacion: prop.propuesta.operacion, cantidad: prop.propuesta.cantidad, stock_actual: prop.propuesta.stockBase, stock_que_quedaria: prop.propuesta.stockNuevo, instruccion: "NO está aplicado. Decile a la persona qué entendiste (material, operación, cantidad y unidad, stock actual y stock que quedaría) y que lo confirme con el botón de abajo." };
     }
     if (llamada.name === "panorama_stock") {
       return {

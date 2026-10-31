@@ -7,7 +7,7 @@ import Liquidar from "./Liquidar";
 import Avisos from "./Avisos";
 import Actividad from "./Actividad";
 import { cuando, saludoSegunHora } from "./formato";
-import { perfilDe } from "./perfiles";
+import { PERFILES, perfilDe } from "./perfiles";
 import { estadoDe, useSlotEstado } from "./estados";
 import { Avatar8 } from "./pixel";
 import Panorama from "./Panorama";
@@ -20,7 +20,7 @@ import { getApiUrl } from "../apiConfig";
 const leerChat = (clave) => {
   try {
     const g = JSON.parse(sessionStorage.getItem(clave) || "null");
-    if (Array.isArray(g)) return g;
+    if (Array.isArray(g)) return g.map((m) => (m?.confirmacion?.estado === "enviando" ? { ...m, confirmacion: { ...m.confirmacion, estado: "pendiente" } } : m));
   } catch {
     /* sin almacenamiento */
   }
@@ -50,7 +50,8 @@ const tituloDe = (texto, defecto) => {
 export default function Pantalla({ agente, usuario, pregunta, onPreguntaUsada, onDerivar, onModo, onAbiertos }) {
   const perfil = perfilDe(agente.id);
   const CLAVE_CHAT = perfil.claves.chat;
-  const CLAVE_VOZ = perfil.claves.voz;
+  // La voz se activa o se silencia para todos los agentes a la vez (si antes la habías activado en alguno, sigue activa).
+  const CLAVE_VOZ = "agentes_voz_v2";
   const base = `/api/agentes/${agente.id}`;
   const { mostrar, nodo } = useToast();
   const [mensajes, setMensajes] = useState(() => leerChat(CLAVE_CHAT));
@@ -62,7 +63,7 @@ export default function Pantalla({ agente, usuario, pregunta, onPreguntaUsada, o
   const [dictando, setDictando] = useState(false);
   const [aviso, setAviso] = useState("");
   const [hablando, setHablando] = useState(false);
-  const [vozActiva, setVozActiva] = useState(() => leerFlag(CLAVE_VOZ, false));
+  const [vozActiva, setVozActiva] = useState(() => leerFlag(CLAVE_VOZ, null) ?? Object.values(PERFILES).some((p) => leerFlag(p.claves.voz, false)));
   const [tab, setTab] = useState("chat");
   const [estado, setEstado] = useState(null);
   const [version, setVersion] = useState(0);
@@ -173,6 +174,22 @@ export default function Pantalla({ agente, usuario, pregunta, onPreguntaUsada, o
     }
   };
 
+  // Botón de confirmación de un ajuste de stock que propuso el agente (o cancelación).
+  const resolverConfirmacion = async (indice, aceptar) => {
+    const m = msgsRef.current[indice];
+    const c = m?.confirmacion;
+    if (!c || c.estado !== "pendiente") return;
+    const poner = (nuevo) => setMensajes((prev) => prev.map((x, i) => (i === indice ? { ...x, confirmacion: { ...x.confirmacion, ...nuevo } } : x)));
+    poner({ estado: "enviando" });
+    try {
+      const r = await api("/api/agentes/stock/confirmar", { method: "POST", body: { token: c.token, cancelar: !aceptar } });
+      poner(aceptar ? { estado: "hecho", stockFinal: r.stock_actual } : { estado: "cancelado" });
+      if (aceptar) setVersion((v) => v + 1);
+    } catch (e) {
+      poner({ estado: "error", error: e.message });
+    }
+  };
+
   const enviar = async (forzado, porVoz = false) => {
     const t = (typeof forzado === "string" ? forzado : texto).trim();
     if (!t || enviando) return;
@@ -195,7 +212,7 @@ export default function Pantalla({ agente, usuario, pregunta, onPreguntaUsada, o
       const conVoz = porVoz || vozActiva || manosRef.current.activo;
       const prep = conVoz ? await Promise.race([prepararVoz(textoParaVoz(resp), { base }), new Promise((r) => setTimeout(() => r(null), 16000))]) : null;
       if (turno.current !== mi) return;
-      setMensajes([...nuevos, { rol: "assistant", texto: resp, herramientas: data.herramientas || [], derivacion: data.derivacion || null }]);
+      setMensajes([...nuevos, { rol: "assistant", texto: resp, herramientas: data.herramientas || [], derivacion: data.derivacion || null, confirmacion: data.confirmacion ? { ...data.confirmacion, estado: "pendiente" } : null }]);
       empezarAHablar(resp, prep);
       setVersion((v) => v + 1);
       if (reporteAuto.current) {
@@ -458,6 +475,7 @@ export default function Pantalla({ agente, usuario, pregunta, onPreguntaUsada, o
             onPdf={descargarPdf}
             onReporte={(t) => descargarReporte(t, tituloDe(t, `Respuesta de ${perfil.nombre}`))}
             onDerivar={onDerivar}
+            onConfirmar={resolverConfirmacion}
           />
         )}
         {tab === "panorama" && (

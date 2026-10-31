@@ -9,6 +9,7 @@ const { crearVera } = require("./veraChat");
 const { crearRomi } = require("./maruChat");
 const { decisionProduccion } = require("./produccionDecision");
 const { listarOperarios, fichaOperario } = require("./fichaOperario");
+const { confirmarPropuesta, cancelarPropuesta } = require("./ajusteStock");
 const { armarTemario, olvidarTemario } = require("./temario");
 const { asegurarTablaReuniones, hacerReunion, ultimaReunion, iniciarReunion, ahoraAR } = require("./reunion");
 const { preguntarOficina } = require("./oficina");
@@ -541,6 +542,22 @@ function registrarRutasAgentes(app, { db, pool, ai }) {
     }
   });
 
+  // Confirmación (o cancelación) de un ajuste de stock que Nati propuso en el chat.
+  app.post("/api/agentes/stock/confirmar", async (req, res) => {
+    try {
+      const usuario = await quien(req);
+      if (!usuario || !(await tienePermiso(usuario, "agente:stock"))) return res.status(403).json({ error: "No tenés acceso a Nati." });
+      if (req.body?.cancelar) return res.json(cancelarPropuesta({ usuario, token: req.body?.token }));
+      const r = await confirmarPropuesta({ db, usuario, token: req.body?.token });
+      if (r.error) return res.status(r.status || 400).json({ error: r.error });
+      await registrarActividad(db, "stock", "AJUSTE_STOCK", `Ajuste de stock confirmado: ${r.materia}`, `${r.stock_anterior} → ${r.stock_actual} ${r.unidad} (${r.delta > 0 ? "+" : ""}${r.delta})`, usuario.nombre).catch(() => {});
+      res.json({ success: true, ...r });
+    } catch (e) {
+      console.error("[agentes] confirmar ajuste de stock:", e.message);
+      res.status(500).json({ error: "No pude aplicar el ajuste." });
+    }
+  });
+
   app.post("/api/agentes/:id/chat", delAgente, async (req, res) => {
     const cerebro = chats[req.agente.id];
     if (!cerebro) return res.status(400).json({ error: "Este agente todavía no conversa." });
@@ -560,7 +577,7 @@ function registrarRutasAgentes(app, { db, pool, ai }) {
         r.derivacion ? `Le pasó una consulta a ${r.derivacion.nombre}` : hechas.length ? `${hechas[0].texto}${hechas[0].operario ? " · " + hechas[0].operario : ""}${hechas[0].periodo ? " (" + hechas[0].periodo + ")" : ""}` : "Respondió una consulta",
         `Consulta de ${req.usuario.nombre}: ${mensaje.slice(0, 200)}`, req.usuario.nombre,
       );
-      res.json({ success: true, respuesta: r.respuesta, herramientas: r.herramientas, derivacion: r.derivacion || null, ms: r.ms });
+      res.json({ success: true, respuesta: r.respuesta, herramientas: r.herramientas, derivacion: r.derivacion || null, confirmacion: r.confirmacion || null, ms: r.ms });
     } catch (error) {
       console.error(`[${req.agente.nombre}] Error:`, error);
       const saturado = error && (error.status === 503 || error.status === 429);
