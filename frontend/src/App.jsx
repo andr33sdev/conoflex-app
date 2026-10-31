@@ -1,31 +1,60 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, lazy, Suspense } from "react";
+import { AnimatePresence } from "framer-motion";
 import Layout from "./Layout";
 import Login from "./Login";
-import AdminUsuarios from "./AdminUsuarios";
-import Inventory from "./Inventory";
-import Proveedores from "./Proveedores";
-import Semielaborados from "./Semielaborados";
-import Reflectivas from "./Reflectivas";
-import Metricas from "./Metricas";
-import Connie from "./Connie";
+const AdminUsuarios = lazy(() => import("./AdminUsuarios"));
+const Inventory = lazy(() => import("./Inventory"));
+const Proveedores = lazy(() => import("./Proveedores"));
+const Semielaborados = lazy(() => import("./Semielaborados"));
+const Reflectivas = lazy(() => import("./Reflectivas"));
+const Metricas = lazy(() => import("./Metricas"));
+const Connie = lazy(() => import("./Connie"));
 import Home from "./Home";
-import Ingenieria from "./Ingenieria";
-import PlanificacionProduccion from "./PlanificacionProduccion";
-import CargaProduccion from "./CargaProduccion";
-import ComercialIA from "./ComercialIA";
-import ProduccionPlanta from "./ProduccionPlanta";
-import SolicitudesInternas from "./SolicitudesInternas";
-import DespacharPedidos from "./DespacharPedidos";
-import Pedidos from "./Pedidos";
-import FicheroModule from "./FicheroModule";
-import SimuladorLogistica from "./SimuladorLogistica";
-import LaboratorioEnsamblaje from "./LaboratorioEnsamblaje";
-import LaboratorioAR from "./LaboratorioAR";
-import VisorAR from "./VisorAR";
-import SolicitudesCompraModule from "./SolicitudesCompraModule";
-import FirmaSolicitudPublica from "./FirmaSolicitudPublica";
-import Agentes from "./Agentes";
+const Ingenieria = lazy(() => import("./Ingenieria"));
+const PlanificacionProduccion = lazy(() => import("./PlanificacionProduccion"));
+const CargaProduccion = lazy(() => import("./CargaProduccion"));
+const ComercialIA = lazy(() => import("./ComercialIA"));
+const ProduccionPlanta = lazy(() => import("./ProduccionPlanta"));
+const SolicitudesInternas = lazy(() => import("./SolicitudesInternas"));
+const DespacharPedidos = lazy(() => import("./DespacharPedidos"));
+const Pedidos = lazy(() => import("./Pedidos"));
+const FicheroModule = lazy(() => import("./FicheroModule"));
+const SimuladorLogistica = lazy(() => import("./SimuladorLogistica"));
+const LaboratorioEnsamblaje = lazy(() => import("./LaboratorioEnsamblaje"));
+const LaboratorioAR = lazy(() => import("./LaboratorioAR"));
+const VisorAR = lazy(() => import("./VisorAR"));
+const SolicitudesCompraModule = lazy(() => import("./SolicitudesCompraModule"));
+const FirmaSolicitudPublica = lazy(() => import("./FirmaSolicitudPublica"));
+const Agentes = lazy(() => import("./Agentes"));
 import { itemPorId, veLaboratorio, tieneAlgunAgente } from "./menu";
+import PantallaCarga, { CargandoModulo } from "./PantallaCarga";
+
+// Cada módulo se descarga cuando se lo abre; mientras tanto se muestra el logo de carga.
+// El módulo de la dirección actual se precarga durante la pantalla de inicio.
+const PRECARGA = {
+  "admin-usuarios": () => import("./AdminUsuarios"),
+  "materias-primas": () => import("./Inventory"),
+  proveedores: () => import("./Proveedores"),
+  semielaborados: () => import("./Semielaborados"),
+  reflectivas: () => import("./Reflectivas"),
+  metricas: () => import("./Metricas"),
+  connie: () => import("./Connie"),
+  ingenieria: () => import("./Ingenieria"),
+  planificacion: () => import("./PlanificacionProduccion"),
+  "carga-produccion": () => import("./CargaProduccion"),
+  comercial: () => import("./ComercialIA"),
+  "planta-online": () => import("./ProduccionPlanta"),
+  "solicitudes-internas": () => import("./SolicitudesInternas"),
+  "despachar-pedidos": () => import("./DespacharPedidos"),
+  pedidos: () => import("./Pedidos"),
+  "control-asistencia": () => import("./FicheroModule"),
+  "simulador-carga": () => import("./SimuladorLogistica"),
+  "lab-ensamblaje": () => import("./LaboratorioEnsamblaje"),
+  "lab-ar": () => import("./LaboratorioAR"),
+  "visor-ar": () => import("./VisorAR"),
+  "solicitudes-compra": () => import("./SolicitudesCompraModule"),
+  agentes: () => import("./Agentes"),
+};
 
 // Cada módulo tiene su propia ruta: /<id-del-módulo> (el inicio es "/").
 // Se usa la History API directamente, así que no cambia nada de cómo se renderiza la app.
@@ -42,7 +71,7 @@ function moduloDesdeUrl() {
   return "inicio";
 }
 
-function App() {
+function AppInterna() {
   const [usuarioActual, setUsuarioActual] = useState(() => {
     const savedUser = localStorage.getItem("usuario_conoflex");
     if (savedUser) {
@@ -143,11 +172,13 @@ function App() {
 
   if (firmarScId) {
     return (
-      <FirmaSolicitudPublica
-        id={firmarScId}
-        rol={firmarRol}
-        onVolver={() => (window.location.href = "/")}
-      />
+      <Suspense fallback={<CargandoModulo />}>
+        <FirmaSolicitudPublica
+          id={firmarScId}
+          rol={firmarRol}
+          onVolver={() => (window.location.href = "/")}
+        />
+      </Suspense>
     );
   }
 
@@ -176,6 +207,8 @@ function App() {
       {activeModule === "inicio" && (
         <Home usuarioActual={usuarioActual} onIr={irA} />
       )}
+
+      <Suspense fallback={<CargandoModulo />}>
 
       {usuarioActual.rol?.toUpperCase() === "ADMIN" &&
         activeModule === "admin-usuarios" && <AdminUsuarios />}
@@ -265,7 +298,29 @@ function App() {
       {hasAccess("planta-online") && activeModule === "planta-online" && (
         <ProduccionPlanta />
       )}
+      </Suspense>
     </Layout>
+  );
+}
+
+// Pantalla de carga con el logo: dura un mínimo (para que se vea completa) y espera a que el módulo actual esté descargado.
+function App() {
+  const [mostrarCarga, setMostrarCarga] = useState(true);
+  const [listo, setListo] = useState(false);
+  useEffect(() => {
+    let vivo = true;
+    const minimo = new Promise((r) => setTimeout(r, 1500));
+    const modulo = Promise.resolve(PRECARGA[moduloDesdeUrl()]?.()).catch(() => {});
+    Promise.all([minimo, modulo]).then(() => vivo && setListo(true));
+    return () => {
+      vivo = false;
+    };
+  }, []);
+  return (
+    <>
+      <AppInterna />
+      <AnimatePresence>{mostrarCarga && <PantallaCarga listo={listo} onTerminar={() => setMostrarCarga(false)} />}</AnimatePresence>
+    </>
   );
 }
 

@@ -1,8 +1,9 @@
-// Voz del navegador: dictado (SpeechRecognition) y lectura en voz alta (speechSynthesis).
-// No usa servicios pagos ni tokens: depende de lo que soporte el navegador/celular de cada persona.
+// Voz de los agentes. Primero intenta la voz natural del servidor (Gemini, siempre femenina);
+// si no está disponible, usa la voz del dispositivo pero SOLO si es femenina (si no hay ninguna, no habla).
+import { getApiUrl } from "../apiConfig";
 
 export const soportaDictado = () => typeof window !== "undefined" && !!(window.SpeechRecognition || window.webkitSpeechRecognition);
-export const soportaLectura = () => typeof window !== "undefined" && "speechSynthesis" in window && "SpeechSynthesisUtterance" in window;
+export const soportaAudio = () => typeof window !== "undefined" && typeof Audio !== "undefined";
 
 /** Texto apto para leer: sin markdown, sin símbolos de tablas ni emojis, y acotado (el detalle queda en pantalla). */
 export function textoParaVoz(texto, max = 420) {
@@ -26,40 +27,40 @@ export function textoParaVoz(texto, max = 420) {
   return t;
 }
 
-let vozElegida;
-function elegirVoz() {
-  if (vozElegida !== undefined) return vozElegida;
+// ---------- voz del dispositivo (solo femenina) ----------
+const FEMENINAS = /helena|paulina|sabina|m[oó]nica|monica|elena|laura|luc[ií]a|lucia|sof[ií]a|sofia|elsa|marisol|paloma|marina|carolina|valentina|camila|female|mujer|google espa[nñ]ol|google us espa|dalia|elvira|ximena|catalina|isabela|natalia|mia|luciana/i;
+const MASCULINAS = /jorge|diego|carlos|juan|pablo|ra[uú]l|raul|enrique|miguel|alvaro|[aá]lvaro|andr[eé]s|alberto|antonio|fernando|male|hombre|jaime|pedro|luis|ricardo|alex\b|tom\b|daniel|david|jorge/i;
+let cache;
+export function vozFemenina() {
+  if (typeof window === "undefined" || !("speechSynthesis" in window)) return null;
   const voces = window.speechSynthesis.getVoices();
-  if (!voces.length) return null; // todavía no cargaron: se reintenta en la próxima
-  const es = voces.filter((v) => /^es/i.test(v.lang));
-  const femenina = /helena|paulina|sabina|m[oó]nica|elena|laura|luc[ií]a|sof[ií]a|elsa|marisol|paloma|female|mujer|google espa/i;
+  if (!voces.length) return undefined; // aún no cargaron
+  if (cache) return cache;
+  const es = voces.filter((v) => /^es/i.test(v.lang) && !MASCULINAS.test(v.name));
+  const fem = es.filter((v) => FEMENINAS.test(v.name));
   const orden = [
-    es.find((v) => /es[-_]AR/i.test(v.lang) && femenina.test(v.name)),
-    es.find((v) => /es[-_](AR|419|MX|US|UY|CL)/i.test(v.lang) && femenina.test(v.name)),
-    es.find((v) => femenina.test(v.name)),
-    es.find((v) => /es[-_]AR/i.test(v.lang)),
-    es[0],
+    fem.find((v) => /es[-_]AR/i.test(v.lang)),
+    fem.find((v) => /es[-_](419|MX|US|UY|CL|CO)/i.test(v.lang)),
+    fem[0],
   ];
-  vozElegida = orden.find(Boolean) || null;
-  return vozElegida;
+  cache = orden.find(Boolean) || null;
+  return cache;
 }
+export const hayVozFemenina = () => !!vozFemenina();
 
-/** Lee `texto` en voz alta. Devuelve una función para cortar. onPulso se llama en cada palabra (sincroniza la boca). */
-export function hablar(texto, { onInicio, onFin, onPulso } = {}) {
-  if (!soportaLectura() || !texto) {
+function hablarDispositivo(texto, { onInicio, onFin, onPulso }) {
+  const v = vozFemenina();
+  if (!v) {
     onFin?.();
     return () => {};
   }
   const synth = window.speechSynthesis;
   synth.cancel();
   const u = new SpeechSynthesisUtterance(texto);
-  const v = elegirVoz();
-  if (v) {
-    u.voice = v;
-    u.lang = v.lang;
-  } else u.lang = "es-AR";
-  u.rate = 1.04;
-  u.pitch = 1.12;
+  u.voice = v;
+  u.lang = v.lang;
+  u.rate = 1;
+  u.pitch = 1.08;
   let terminado = false;
   const fin = () => {
     if (terminado) return;
@@ -77,11 +78,98 @@ export function hablar(texto, { onInicio, onFin, onPulso } = {}) {
   };
 }
 
-export function cortarVoz() {
-  if (soportaLectura()) window.speechSynthesis.cancel();
+// ---------- voz natural (servidor) con análisis del volumen para mover la boca ----------
+let audioCtx = null;
+function hablarNatural(blob, { onInicio, onFin, onNivel }) {
+  const url = URL.createObjectURL(blob);
+  const audio = new Audio(url);
+  let raf = 0;
+  let terminado = false;
+  let analizador = null;
+  const limpiar = () => {
+    cancelAnimationFrame(raf);
+    audio.pause();
+    URL.revokeObjectURL(url);
+  };
+  const fin = () => {
+    if (terminado) return;
+    terminado = true;
+    limpiar();
+    onFin?.();
+  };
+  try {
+    audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+    const fuente = audioCtx.createMediaElementSource(audio);
+    analizador = audioCtx.createAnalyser();
+    analizador.fftSize = 512;
+    fuente.connect(analizador);
+    analizador.connect(audioCtx.destination);
+    audioCtx.resume?.();
+  } catch {
+    analizador = null; // sin análisis: la boca sigue un ritmo propio
+  }
+  const datos = analizador ? new Uint8Array(analizador.fftSize) : null;
+  const medir = () => {
+    if (analizador) {
+      analizador.getByteTimeDomainData(datos);
+      let suma = 0;
+      for (let i = 0; i < datos.length; i++) {
+        const x = (datos[i] - 128) / 128;
+        suma += x * x;
+      }
+      onNivel?.(Math.min(1, Math.sqrt(suma / datos.length) * 3.2));
+    }
+    raf = requestAnimationFrame(medir);
+  };
+  audio.onended = fin;
+  audio.onerror = fin;
+  const listo = audio.play().then(() => {
+    onInicio?.();
+    if (analizador) medir();
+    return true;
+  });
+  return { cortar: fin, listo };
 }
 
-/** Dictado. Devuelve { parar } y avisa por callbacks: onTexto(texto, esFinal), onFin(error?). */
+/**
+ * Lee `texto` con la voz de Lía. Devuelve { cortar } y avisa por callbacks.
+ * Orden: voz natural del servidor → voz femenina del dispositivo → nada (y onSinVoz).
+ */
+export function hablar(texto, { base, onInicio, onFin, onPulso, onNivel, onSinVoz }) {
+  let cancelado = false;
+  let cortarActual = () => {};
+  const usarDispositivo = () => {
+    if (cancelado) return;
+    if (!hayVozFemenina()) {
+      onSinVoz?.();
+      onFin?.();
+      return;
+    }
+    cortarActual = hablarDispositivo(texto, { onInicio, onFin, onPulso });
+  };
+  (async () => {
+    try {
+      const res = await fetch(getApiUrl(`${base}/voz`), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ texto }) });
+      if (!res.ok) throw new Error("sin voz natural");
+      const blob = await res.blob();
+      if (cancelado) return;
+      const r = hablarNatural(blob, { onInicio, onFin, onNivel });
+      cortarActual = r.cortar;
+      await r.listo;
+    } catch {
+      usarDispositivo();
+    }
+  })();
+  return {
+    cortar: () => {
+      cancelado = true;
+      cortarActual();
+      if (typeof window !== "undefined" && "speechSynthesis" in window) window.speechSynthesis.cancel();
+    },
+  };
+}
+
+/** Dictado. Devuelve { parar } y avisa por callbacks: onTexto(texto, esFinal), onFin(error?, ultimo). */
 export function dictar({ onTexto, onFin }) {
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!SR) {
@@ -114,5 +202,13 @@ export function dictar({ onTexto, onFin }) {
   } catch {
     onFin?.("no-iniciado");
   }
-  return { parar: () => { try { r.stop(); } catch { /* ya estaba detenido */ } } };
+  return {
+    parar: () => {
+      try {
+        r.stop();
+      } catch {
+        /* ya estaba detenido */
+      }
+    },
+  };
 }

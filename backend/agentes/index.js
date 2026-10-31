@@ -4,6 +4,7 @@
 // Hoy: "rrhh" (Lía). No toca a Connie: solo reutiliza su motor de IA y sus funciones de liquidación.
 const { analizarRRHH, AUTORESOLVIBLES } = require("./vigilanteRRHH");
 const { crearLia } = require("./liaChat");
+const { sintetizar } = require("./voz");
 const { crearNotificacion } = require("../notificaciones");
 
 const AGENTES = [
@@ -306,6 +307,26 @@ function registrarRutasAgentes(app, { db, pool, ai }) {
       res.status(saturado ? 503 : 500).json({ error: saturado ? "El servicio de IA está saturado. Probá de nuevo en unos segundos." : "Error al procesar la consulta." });
     } finally {
       u.liberar();
+    }
+  });
+
+  // Voz natural (Gemini): devuelve un WAV. Tope por usuario para no gastar de más.
+  const usoVoz = new Map();
+  app.post("/api/agentes/:id/voz", delAgente, async (req, res) => {
+    const texto = String(req.body?.texto || "").trim();
+    if (!texto) return res.status(400).json({ error: "Falta el texto." });
+    const ahora = Date.now();
+    const marcas = (usoVoz.get(req.usuario.id) || []).filter((t) => ahora - t < 5 * 60 * 1000);
+    if (marcas.length >= 30) return res.status(429).json({ error: "Demasiadas lecturas seguidas." });
+    marcas.push(ahora);
+    usoVoz.set(req.usuario.id, marcas);
+    try {
+      const wav = await sintetizar(ai, texto);
+      res.set({ "Content-Type": "audio/wav", "Content-Length": wav.length, "Cache-Control": "no-store" });
+      res.send(wav);
+    } catch (e) {
+      console.error("[agentes] voz:", e.message);
+      res.status(502).json({ error: "No pude generar la voz." });
     }
   });
 

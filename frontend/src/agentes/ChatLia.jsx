@@ -13,23 +13,38 @@ function Texto({ texto }) {
   );
 }
 
-const SUGERENCIAS = [
-  "Liquidá la primera quincena de este mes",
-  "¿Quién perdió el presentismo este mes?",
-  "¿Cuándo es el próximo feriado?",
-  "¿Qué avisos tengo abiertos?",
-];
-
-export default function ChatLia({ mensajes, enviando, texto, onTexto, onEnviar, dictando, onDictado, puedeDictar, estadoDictado }) {
+export default function ChatLia({ mensajes, enviando, texto, onTexto, onEnviar, dictando, onDictado, puedeDictar, estadoDictado, saludo, resumen, propuestas, onPropuesta }) {
   const fin = useRef(null);
   useEffect(() => {
     fin.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [mensajes, enviando]);
-  const vacio = mensajes.length <= 1;
-
+  
   return (
     <div className="flex flex-col min-h-0 h-full">
       <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar px-3 sm:px-4 py-4 space-y-3.5">
+        <div className="flex gap-2.5 cf-msg">
+          <div className="w-8 h-8 shrink-0 rounded-xl bg-[#FF5A00] grid place-items-center text-black font-black text-sm shadow-[0_3px_0_#b33f00]">L</div>
+          <div className="min-w-0 max-w-[calc(100%-2.5rem)] text-zinc-100 text-[15px] leading-relaxed bg-[#131317] border border-white/[0.07] px-4 py-3 rounded-2xl rounded-tl-md">
+            <p className="font-bold text-white">{saludo}. Soy Lía, de RRHH.</p>
+            <p className="mt-1 text-zinc-300">{resumen}</p>
+          </div>
+        </div>
+        {propuestas.length > 0 && (
+          <div className="pl-[42px] space-y-2 cf-msg">
+            {propuestas.map((p) => (
+              <button
+                key={p.id}
+                onClick={() => onPropuesta(p)}
+                className="group w-full text-left rounded-2xl border border-white/[0.08] bg-gradient-to-br from-[#16161c] to-[#111116] hover:border-[#FF5A00]/60 transition-colors px-3.5 py-3 flex items-center gap-3"
+              >
+                <span className="min-w-0 flex-1">
+                  <span className="block text-[14px] font-bold text-white leading-snug break-words">{p.titulo}</span>
+                </span>
+                <span className="shrink-0 text-[12px] font-extrabold text-black bg-[#FFD60A] group-hover:bg-white transition-colors rounded-lg px-2.5 py-1.5">{p.boton}</span>
+              </button>
+            ))}
+          </div>
+        )}
         {mensajes.map((m, i) =>
           m.rol === "user" ? (
             <div key={i} className="flex justify-end cf-msg">
@@ -52,18 +67,6 @@ export default function ChatLia({ mensajes, enviando, texto, onTexto, onEnviar, 
               </div>
             </div>
           ),
-        )}
-        {vacio && !enviando && (
-          <div className="pt-1">
-            <p className="text-xs font-bold uppercase tracking-wider text-zinc-500 mb-2">Probá con</p>
-            <div className="flex flex-wrap gap-2">
-              {SUGERENCIAS.map((s) => (
-                <button key={s} onClick={() => onEnviar(s)} className="text-left text-[13.5px] min-h-[40px] px-3.5 py-2 rounded-xl border border-white/10 bg-white/[0.03] text-zinc-300 hover:border-[#FF5A00]/60 hover:text-white hover:bg-[#FF5A00]/[0.07]">
-                  {s}
-                </button>
-              ))}
-            </div>
-          </div>
         )}
         {enviando && (
           <div className="flex gap-2.5 cf-msg">
