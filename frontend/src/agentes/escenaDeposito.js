@@ -7,7 +7,7 @@ import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeom
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import { arcilla, crearPersonajeArcilla } from "./personajeArcilla.js";
 import { vestirConFBX } from "./personajeFBX.js";
-import { COLOR, plastico, pisoReal, paredReal, sombra, caja, cilindro, amortiguar, rnd, clamp, textura, elipse } from "./escenaLego.js";
+import { COLOR, pulso, plastico, pisoReal, paredReal, sombra, caja, cilindro, amortiguar, rnd, clamp, textura, elipse } from "./escenaLego.js";
 
 export { soportaWebGL } from "./escenaLego.js";
 
@@ -498,7 +498,7 @@ export function crearEscena(contenedor, { logoUrl, onActividad, onSaludo } = {})
   luzCasco.position.set(0, ALTO_CABEZA + Rc * 0.96 * Math.cos(0.75) + 0.05, Rc * Math.sin(0.75) + 0.12);
   cabeza.add(luzCasco);
 
-  vestirConFBX(pj, { carpeta: `${import.meta.env.BASE_URL}modelos/agentes/business3`, prefijo: "f016", sentada: false, altura: 6.2 }).catch((e) => console.warn("[agentes] modelo 3D no disponible, se usa el de respaldo:", e.message));
+  vestirConFBX(pj, { carpeta: `${import.meta.env.BASE_URL}modelos/agentes/business3`, prefijo: "f016", sentada: false, altura: 4.0 }).catch((e) => console.warn("[agentes] modelo 3D no disponible, se usa el de respaldo:", e.message));
 
   // ---------- estado y animación ----------
   const ctrl = { estado: "idle", hablando: false, nivelExterno: -1, pulso: 0 };
@@ -513,6 +513,10 @@ export function crearEscena(contenedor, { logoUrl, onActividad, onSaludo } = {})
     controlar: { dur: [6, 9], texto: () => "Controla el inventario con la tablet" },
     escanear: { dur: [5, 7], texto: () => (info.criticas ? "Escanea los estantes críticos" : "Escanea los estantes") },
     mirar: { dur: [4, 6], texto: () => "Recorre el depósito con la vista" },
+    explicar: { dur: [5, 8], texto: () => "Le explica un pendiente a alguien" },
+    estirar: { dur: [3, 4], texto: () => "Estira un poco la espalda" },
+    contar: { dur: [5, 7], texto: () => "Cuenta las cajas del estante" },
+    anotar: { dur: [5, 8], texto: () => "Anota en la tablet" },
     saludar: { dur: [2.2, 2.6], texto: () => "Saluda" },
     celebrar: { dur: [2.4, 3], texto: () => "¡Todo en orden en el depósito!" },
   };
@@ -535,7 +539,7 @@ export function crearEscena(contenedor, { logoUrl, onActividad, onSaludo } = {})
   let proxParp = 2;
   let tHabla = 0;
   let boca = 0;
-  const pose = { mirar: 0, tronco: 0, brazoI: 0, brazoD: 0, tabX: 0, cabX: 0, cabY: 0 };
+  const pose = { tY: 0, tX: 0, mirar: 0, tronco: 0, brazoI: 0, brazoD: 0, tabX: 0, cabX: 0, cabY: 0 };
   let proxCambio = 0;
   let confetiT = 0;
   const NCONF = 40;
@@ -566,7 +570,7 @@ export function crearEscena(contenedor, { logoUrl, onActividad, onSaludo } = {})
     const atiende = ctrl.estado !== "idle";
     // ritmo de actividades
     if (!atiende && t - act.t0 > act.dur) {
-      const opciones = info.criticas ? ["controlar", "escanear", "escanear", "mirar"] : ["controlar", "mirar", "escanear"];
+      const opciones = info.criticas ? ["controlar", "escanear", "contar", "explicar", "anotar", "mirar", "estirar"] : ["controlar", "mirar", "escanear", "contar", "anotar", "explicar", "estirar"];
       pasar(opciones[Math.floor(Math.random() * opciones.length)]);
     }
     const a = atiende ? "controlar" : act.id;
@@ -578,6 +582,8 @@ export function crearEscena(contenedor, { logoUrl, onActividad, onSaludo } = {})
     let objBrazoD = 0.1;
     let objCabY = 0;
     let objCabX = 0.05;
+    let objTY = 0;
+    let objTX = 0;
     let escanea = false;
     if (a === "controlar") {
       objCabX = 0.28;
@@ -593,6 +599,30 @@ export function crearEscena(contenedor, { logoUrl, onActividad, onSaludo } = {})
       objMirar = Math.sin(t * 0.7) * 0.7;
       objCabY = Math.sin(t * 0.7 + 0.5) * 0.6;
       objBrazoI = 0.5;
+    } else if (a === "explicar") {
+      objBrazoI = 0.9 + Math.sin(t * 1.7) * 0.45;
+      objBrazoD = 1.05 + Math.sin(t * 1.3 + 1) * 0.5;
+      objCabY = Math.sin(t * 0.9) * 0.25;
+      objCabX = 0.05 + Math.sin(t * 2.3) * 0.05;
+      objTY = Math.sin(t * 0.8) * 0.14;
+    } else if (a === "estirar") {
+      const s = pulso(u, 0.1, 0.35) * (1 - pulso(u, 0.7, 0.95));
+      objBrazoI = 0.9 + 1.9 * s;
+      objBrazoD = 0.1 + 2.5 * s;
+      objCabX = 0.05 - 0.3 * s;
+      objTX = -0.2 * s;
+    } else if (a === "contar") {
+      objMirar = -0.55;
+      objCabY = -0.5 + Math.sin(t * 1.1) * 0.15;
+      objBrazoD = 1.5 + Math.sin(t * 2.4) * 0.12;
+      objBrazoI = 1.0;
+      objTY = -0.2;
+      objTX = 0.06;
+    } else if (a === "anotar") {
+      objCabX = 0.35;
+      objBrazoI = 1.25;
+      objBrazoD = 0.9 + Math.sin(t * 7) * 0.1;
+      objTX = 0.1;
     } else if (a === "saludar") {
       objBrazoD = 2.7 + Math.sin(t * 9) * 0.35;
       objCabY = 0.15;
@@ -614,13 +644,16 @@ export function crearEscena(contenedor, { logoUrl, onActividad, onSaludo } = {})
     } else if (!atiende && puntero.dentro && a === "controlar") {
       objCabY = clamp(puntero.x * 0.45, -0.5, 0.5);
     }
+    pose.tY = amortiguar(pose.tY, objTY, 3, dt);
+    pose.tX = amortiguar(pose.tX, objTX, 4, dt);
     pose.mirar = amortiguar(pose.mirar, objMirar, 5, dt);
     pose.cabY = amortiguar(pose.cabY, objCabY, 6, dt);
     pose.cabX = amortiguar(pose.cabX, objCabX, 6, dt);
     pose.brazoI = amortiguar(pose.brazoI, objBrazoI, 6, dt);
     pose.brazoD = amortiguar(pose.brazoD, objBrazoD, 7, dt);
     nati.rotation.y = pose.mirar * 0.5 + Math.sin(t * 0.3) * 0.03;
-    tronco.rotation.x = 0.04 + Math.sin(t * 1.4) * 0.012;
+    tronco.rotation.x = 0.04 + pose.tX + Math.sin(t * 1.4) * 0.012;
+    tronco.rotation.y = pose.tY;
     cabeza.rotation.y = pose.cabY;
     cabeza.rotation.x = pose.cabX;
     brazoI.pivote.rotation.x = -pose.brazoI;
