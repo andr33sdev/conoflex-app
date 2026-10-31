@@ -60,9 +60,11 @@ export default function Chat({ perfil, estado, mensajes, enviando, texto, onText
                             <FileDown size={14} /> Liquidación PDF
                           </button>
                         ))}
+                        {/\b(pdf|reporte|informe)\b/i.test(mensajes[i - 1]?.texto || "") && (
                         <button onClick={() => onReporte?.(m.texto)} className="inline-flex items-center gap-1.5 min-h-[32px] px-2 rounded-lg text-[12px] font-semibold text-zinc-500 hover:text-white hover:bg-white/[0.06]" title="Descargar esta respuesta como PDF">
                           <FileDown size={14} /> PDF
                         </button>
+                        )}
                       </div>
                     )}
                   </div>

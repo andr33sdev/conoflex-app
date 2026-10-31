@@ -1,5 +1,5 @@
 "use strict";
-// Decisiones de producción de Maru: cruza lo que hay que entregar (pedidos abiertos), lo que hay en el depósito
+// Decisiones de producción de Romi: cruza lo que hay que entregar (pedidos abiertos), lo que hay en el depósito
 // (semielaborados), lo que ya está en el plan de la semana y la gente que está en planta, y ordena qué conviene
 // fabricar primero. Es aritmética y reglas simples: el modelo no calcula nada, solo lo cuenta.
 const { cargarStock, armarPanorama } = require("./vigilanteStock");
@@ -72,13 +72,22 @@ function priorizar({ semis = [], pedidos = [], plan = [], mpsCriticas = 0, limit
   };
 }
 
+/**
+ * Pedidos que todavía hay que fabricar o entregar. La fuente es la planilla de ventas (tabla estado_pedidos, la misma que
+ * usa Connie), no la tabla interna "pedidos": ahí no se marca la entrega. Un pedido cuenta como abierto si no está
+ * cancelado, no tiene despacho y todavía no figura como preparado (lo preparado ya está fabricado).
+ */
 async function cargarPedidosAbiertos(pool) {
+  const vacio = (c) => `(${c} IS NULL OR TRIM(${c}) = '' OR TRIM(${c}) = '-' OR UPPER(${c}) LIKE '%SIN %')`;
   const [rows] = await pool.query(
-    `SELECT p.id, p.op, p.cliente, p.articulo, p.cantidad_total AS total, p.cantidad_completada AS completada, p.estado, DATE_FORMAT(p.fecha, '%Y-%m-%d') AS fecha
-       FROM pedidos p WHERE UPPER(COALESCE(p.estado,'')) NOT LIKE 'COMPLET%' AND UPPER(COALESCE(p.estado,'')) NOT IN ('CANCELADO','ENTREGADO','ANULADO','FINALIZADO')
-      ORDER BY p.fecha ASC, p.id ASC LIMIT 300`,
+    `SELECT id, op, cliente, modelo AS articulo, cantidad AS total, estado, DATE_FORMAT(fecha, '%Y-%m-%d') AS fecha
+       FROM estado_pedidos
+      WHERE ${vacio("despacho")} AND ${vacio("preparado")}
+        AND UPPER(COALESCE(estado,'')) NOT LIKE '%CANCEL%' AND UPPER(COALESCE(estado,'')) NOT LIKE '%ENTREG%' AND UPPER(COALESCE(estado,'')) NOT LIKE '%DESPACH%'
+        AND fecha >= DATE_SUB(CURDATE(), INTERVAL 150 DAY)
+      ORDER BY fecha ASC, id ASC LIMIT 300`,
   );
-  return rows.map((r) => ({ ...r, total: Number(r.total) || 0, completada: Number(r.completada) || 0 }));
+  return rows.map((r) => ({ ...r, total: Number(r.total) || 0, completada: 0 }));
 }
 
 async function cargarPlanSemana(pool, ahora = new Date()) {
@@ -110,7 +119,7 @@ async function cargarPersonalEnPlanta(pool, ahora = new Date()) {
   }
 }
 
-/** Todo junto: es lo que usan el chat de Maru y su pestaña de prioridades. */
+/** Todo junto: es lo que usan el chat de Romi y su pestaña de prioridades. */
 async function decisionProduccion(pool, { limite = 10 } = {}) {
   const [stock, pedidos, plan, personal] = await Promise.all([cargarStock(pool), cargarPedidosAbiertos(pool).catch(() => []), cargarPlanSemana(pool), cargarPersonalEnPlanta(pool)]);
   const pano = armarPanorama(stock);

@@ -6,14 +6,14 @@ const { priorizar, usaSemi, lunesDe } = require("../agentes/produccionDecision")
 const { HERRAMIENTAS, construirInstrucciones } = require("../agentes/maruChat");
 const { AGENTES } = require("../agentes");
 
-test("Maru existe, tiene su permiso y una voz propia", () => {
+test("Romi existe, tiene su permiso y una voz propia", () => {
   const m = AGENTES.find((a) => a.id === "produccion");
-  assert.equal(m.nombre, "Maru");
+  assert.equal(m.nombre, "Romi");
   assert.equal(m.permiso, "agente:produccion");
   assert.equal(new Set(AGENTES.map((a) => a.voz)).size, AGENTES.length);
 });
 
-test("Maru solo tiene herramientas de producción", () => {
+test("Romi solo tiene herramientas de producción", () => {
   const nombres = HERRAMIENTAS[0].functionDeclarations.map((f) => f.name).sort();
   assert.deepEqual(nombres, ["calculadora", "pedidos_abiertos", "personal_en_planta", "panorama_produccion", "plan_semana", "que_fabricar_primero"].sort());
   assert.match(construirInstrucciones(), /única y exclusiva/);

@@ -6,7 +6,7 @@ const { analizarRRHH, AUTORESOLVIBLES } = require("./vigilanteRRHH");
 const { crearLia } = require("./liaChat");
 const { crearNati } = require("./natiChat");
 const { crearVera } = require("./veraChat");
-const { crearMaru } = require("./maruChat");
+const { crearRomi } = require("./maruChat");
 const { decisionProduccion } = require("./produccionDecision");
 const { listarOperarios, fichaOperario } = require("./fichaOperario");
 const { analizarCompras, rankingProveedores, AUTORESOLVIBLES: AUTO_COMPRAS } = require("./vigilanteCompras");
@@ -50,7 +50,7 @@ const AGENTES = [
   },
   {
     id: "produccion",
-    nombre: "Maru",
+    nombre: "Romi",
     puesto: "Producción y pedidos",
     descripcion: "Cruza pedidos abiertos, stock, plan de la semana y gente en planta para decirte qué conviene fabricar primero.",
     permiso: "agente:produccion",
@@ -305,7 +305,7 @@ async function revisarCompras({ pool, db }, { ahora = new Date() } = {}) {
 }
 
 function registrarRutasAgentes(app, { db, pool, ai }) {
-  const chats = { rrhh: crearLia({ pool, db, ai }), stock: crearNati({ pool, db, ai }), compras: crearVera({ pool, db, ai }), produccion: crearMaru({ pool, db, ai }) };
+  const chats = { rrhh: crearLia({ pool, db, ai }), stock: crearNati({ pool, db, ai }), compras: crearVera({ pool, db, ai }), produccion: crearRomi({ pool, db, ai }) };
   const revisiones = { rrhh: () => revisarRRHH({ pool, db }), stock: () => revisarStock({ pool, db }), compras: () => revisarCompras({ pool, db }) };
 
   const quien = async (req) => {

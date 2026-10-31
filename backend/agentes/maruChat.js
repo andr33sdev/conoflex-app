@@ -1,5 +1,5 @@
 "use strict";
-// Chat de Maru, la agente de producción y pedidos. Mismo motor de IA que Connie, Lía, Nati y Vera, con un perfil acotado:
+// Chat de Romi, la agente de producción y pedidos. Mismo motor de IA que Connie, Lía, Nati y Vera, con un perfil acotado:
 // pedidos abiertos, plan de la semana, gente en planta y la decisión de qué fabricar primero. Solo LEE: propone, no lanza ni cambia nada.
 const { crearMotor, textoDerivacion } = require("./motorChat");
 const { calcular } = require("../calculadora");
@@ -15,7 +15,7 @@ function hoyArgentina() {
 
 function construirInstrucciones(destinos = []) {
   const hoy = hoyArgentina();
-  return `Sos Maru, la agente de producción y pedidos de Conoflex Argentina, una fábrica de productos plásticos de seguridad vial (inyección: bases de conos, lomos de burro, topes de estacionamiento, delimitadores). Conocés la planta: qué hay que entregar, qué hay en el depósito y quién está trabajando. Tu especialidad es decidir qué conviene fabricar primero.
+  return `Sos Romi, la agente de producción y pedidos de Conoflex Argentina, una fábrica de productos plásticos de seguridad vial (inyección: bases de conos, lomos de burro, topes de estacionamiento, delimitadores). Conocés la planta: qué hay que entregar, qué hay en el depósito y quién está trabajando. Tu especialidad es decidir qué conviene fabricar primero.
 
 HOY es ${hoy.largo} (${hoy.iso}).
 
@@ -25,7 +25,7 @@ TU ESPECIALIDAD (única y exclusiva)
 - SOLO LEÉS: nunca digas que lanzaste, cargaste o cambiaste algo del plan. Proponés y la persona lo hace.
 - Todo número, nombre, cliente, OP y cantidad sale textualmente del resultado de una herramienta. Si no está, decí que no lo tenés. Nunca inventes pedidos ni cantidades.
 - Para "qué hago primero" usá SIEMPRE que_fabricar_primero: ya cruza pedidos, stock y plan. Explicá el porqué con los motivos que trae, en lenguaje simple. Para el estado general, panorama_produccion. Para ver pedidos, pedidos_abiertos; el plan, plan_semana; la gente, personal_en_planta.
-- El cruce de pedidos con semielaborados es por nombre de producto: si una herramienta lo aclara, decilo cuando importe. Si hay materias primas críticas, avisá que conviene confirmar con Nati que alcance el material.
+- Los pedidos salen de la planilla de ventas (la misma que usa Connie): un pedido está abierto si ahí no figura preparado ni despachado. Si te dicen que un pedido ya se entregó o no corresponde, NO inventes ni digas que "ya lo recalculaste": reconocé que tu dato viene de la planilla, que seguramente falta marcarlo como despachado ahí (o sincronizarla), y no lo vuelvas a nombrar como pendiente sin aclararlo. Nunca afirmes haber revisado algo que la herramienta no te devolvió.\n- El cruce de pedidos con semielaborados es por nombre de producto: si una herramienta lo aclara, decilo cuando importe. Si hay materias primas críticas, avisá que conviene confirmar con Nati que alcance el material.
 
 ${textoDerivacion(destinos)}
 CÓMO RESPONDER (el formato importa: la persona lee en un chat y quiere poco texto, muy prolijo)
@@ -33,7 +33,7 @@ CÓMO RESPONDER (el formato importa: la persona lee en un chat y quiere poco tex
 - PRIMERA LÍNEA = una frase corta y natural (máx. 25 palabras), como si la dijeras en voz alta: "Con lo que hay, esta semana conviene fabricar primero la base chica." Sin símbolos, listas ni números largos.
 - Después de una línea en blanco, los datos en MARKDOWN prolijo: tabla (máx. 8 filas, columnas cortas) o lista con "- ". Mostrá lo más importante primero y ofrecé el resto en una pregunta corta.
 - Lo que requiera acción va en una línea final que empiece con "Ojo:".
-- Si te saludan o preguntan quién sos, presentate en una o dos frases (sos Maru, de producción y pedidos) y preguntá en qué ayudar.
+- Si te saludan o preguntan quién sos, presentate en una o dos frases (sos Romi, de producción y pedidos) y preguntá en qué ayudar.
 - Formato argentino: miles con punto y decimales con coma. Aclará siempre la unidad.`;
 }
 
@@ -43,7 +43,7 @@ const HERRAMIENTAS = [
     functionDeclarations: [
       { name: "panorama_produccion", description: "Estado general de la producción: pedidos abiertos, avance del plan de la semana, gente en planta, semielaborados críticos y materias primas críticas.", parameters: vacio },
       { name: "que_fabricar_primero", description: "La decisión de producción: ordena qué semielaborados conviene fabricar primero cruzando pedidos abiertos, stock de cada semielaborado, lo que ya está en el plan de la semana y el estado de las materias primas. Trae la cantidad a fabricar y los motivos de cada uno.", parameters: { type: "OBJECT", properties: { cantidad: { type: "INTEGER", description: "Cuántas prioridades mostrar (1 a 15). Por defecto 8." } } } },
-      { name: "pedidos_abiertos", description: "Pedidos de clientes que siguen abiertos: OP, cliente, artículo, cantidad pedida, cantidad hecha, lo que falta y desde cuándo.", parameters: { type: "OBJECT", properties: { cliente: { type: "STRING", description: "Filtrar por cliente (o parte del nombre)." } } } },
+      { name: "pedidos_abiertos", description: "Pedidos de clientes que siguen sin preparar ni despachar según la planilla de ventas: OP, cliente, artículo, cantidad pedida, estado y fecha.", parameters: { type: "OBJECT", properties: { cliente: { type: "STRING", description: "Filtrar por cliente (o parte del nombre)." } } } },
       { name: "plan_semana", description: "El plan de producción de esta semana: cada lote con lo planificado y lo ya producido y aprobado.", parameters: vacio },
       { name: "personal_en_planta", description: "Quiénes están en planta ahora (marcaron entrada y no salida) y desde qué hora.", parameters: vacio },
       { name: "calculadora", description: "Hace una cuenta exacta. Usala para cualquier operación aritmética.", parameters: { type: "OBJECT", properties: { expresion: { type: "STRING", description: "Expresión, ej: (1200 - 340) / 30" } }, required: ["expresion"] } },
@@ -62,7 +62,7 @@ const PALABRAS_HERRAMIENTA = {
 
 const sinAcentos = (t) => String(t || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
 
-function crearMaru({ pool, db, ai }) {
+function crearRomi({ pool, db, ai }) {
   void db;
   let memo = { t: 0, v: null };
   const datos = async () => {
@@ -96,7 +96,7 @@ function crearMaru({ pool, db, ai }) {
       const lista = d.pedidos.filter((p) => !q || sinAcentos(p.cliente).includes(q));
       return {
         cantidad: lista.length,
-        pedidos: lista.slice(0, 25).map((p) => ({ op: p.op, cliente: p.cliente, articulo: p.articulo, pedido: p.total, hecho: p.completada, falta: Math.max(0, p.total - p.completada), estado: p.estado, desde: p.fecha })),
+        pedidos: lista.slice(0, 25).map((p) => ({ op: p.op, cliente: p.cliente, articulo: p.articulo, pedido: p.total, estado: p.estado, desde: p.fecha })),
       };
     }
     if (llamada.name === "plan_semana") {
@@ -105,7 +105,7 @@ function crearMaru({ pool, db, ai }) {
     if (llamada.name === "personal_en_planta") return d.personal;
     return { error: `Herramienta desconocida: ${llamada.name}` };
   };
-  return crearMotor({ ai, nombre: "Maru", construirInstrucciones, herramientas: HERRAMIENTAS, palabras: PALABRAS_HERRAMIENTA, ejecutar });
+  return crearMotor({ ai, nombre: "Romi", construirInstrucciones, herramientas: HERRAMIENTAS, palabras: PALABRAS_HERRAMIENTA, ejecutar });
 }
 
-module.exports = { crearMaru, construirInstrucciones, HERRAMIENTAS };
+module.exports = { crearRomi, construirInstrucciones, HERRAMIENTAS };
