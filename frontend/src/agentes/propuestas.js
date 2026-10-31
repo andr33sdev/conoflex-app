@@ -41,3 +41,50 @@ export function saludoSegunHora(nombre) {
   const base = h < 6 ? "Buenas noches" : h < 13 ? "Buen día" : h < 20 ? "Buenas tardes" : "Buenas noches";
   return nombre ? `${base}, ${String(nombre).split(" ")[0]}` : base;
 }
+
+export const IDEAS_RRHH = [
+  "¿Quién hizo más horas extra este mes?",
+  "Liquidame la quincena en curso de todo el plantel",
+  "¿Qué operarios llegaron tarde esta semana?",
+  "¿Cuántas horas me cuesta un turno de noche en fin de semana?",
+  "¿Cuándo es el próximo feriado y cómo se paga?",
+];
+export const IDEAS_STOCK = [
+  "¿Qué materias primas se me acaban antes de que llegue la próxima compra?",
+  "¿Qué tengo que fabricar esta semana?",
+  "¿Qué tengo de más y está parado?",
+  "Armame un plan de compra para el próximo mes",
+  "¿Qué compras pedidas todavía no llegaron?",
+];
+
+/** Propuestas de Nati a partir de sus hallazgos abiertos (sin IA, sin tokens). */
+export function propuestasStock(hallazgos = []) {
+  const out = [];
+  for (const h of hallazgos) {
+    if (out.length >= 4) break;
+    const base = { id: h.id, tipo: h.tipo, titulo: h.titulo };
+    switch (h.tipo) {
+      case "MP_CRITICA":
+      case "STOCK_NEGATIVO":
+        out.push({ ...base, boton: "Qué hago", pregunta: `${h.titulo}. ¿Cuánto me conviene pedir y qué productos se ven afectados?` });
+        break;
+      case "MP_BAJA":
+        out.push({ ...base, boton: "Cuánto pedir", pregunta: `${h.titulo}. ¿Cuánto debería comprar para cubrir el próximo mes?` });
+        break;
+      case "SEMI_CRITICO":
+      case "SEMI_BAJO":
+        out.push({ ...base, boton: "Qué fabricar", pregunta: `${h.titulo}. ¿Cuánto hay que fabricar y en qué depósito está?` });
+        break;
+      case "COMPRA_DEMORADA":
+      case "INTERNA_DEMORADA":
+        out.push({ ...base, boton: "Ver el detalle", pregunta: `${h.titulo}. Contame el detalle y qué conviene hacer.` });
+        break;
+      case "MP_EXCESO":
+        out.push({ ...base, boton: "Ver el exceso", pregunta: `${h.titulo}. ¿Cuánto capital tengo parado y qué conviene hacer?` });
+        break;
+      default:
+        out.push({ ...base, boton: "Verlo", abrirAvisos: true });
+    }
+  }
+  return out;
+}

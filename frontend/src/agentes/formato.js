@@ -39,4 +39,12 @@ export const TIPOS_AVISO = {
   SIN_CATEGORIA: { texto: "Sin categoría", tono: "azul" },
   FERIADO: { texto: "Feriado", tono: "azul" },
   CIERRE_QUINCENA: { texto: "Cierre de quincena", tono: "azul" },
+  MP_CRITICA: { texto: "Stock crítico", tono: "rojo" },
+  MP_BAJA: { texto: "Stock bajo", tono: "amarillo" },
+  MP_EXCESO: { texto: "Stock de más", tono: "azul" },
+  STOCK_NEGATIVO: { texto: "Stock negativo", tono: "rojo" },
+  SEMI_CRITICO: { texto: "Semielaborado crítico", tono: "rojo" },
+  SEMI_BAJO: { texto: "Semielaborado bajo", tono: "amarillo" },
+  COMPRA_DEMORADA: { texto: "Compra demorada", tono: "naranja" },
+  INTERNA_DEMORADA: { texto: "Pedido interno demorado", tono: "naranja" },
 };

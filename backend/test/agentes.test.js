@@ -205,3 +205,87 @@ test("lía: el prompt pide primera línea corta y markdown prolijo; la liquidaci
   assert.match(construirInstrucciones(), /tabla markdown/);
   assert.deepEqual(parametrosPDF({ operario: "Juan", mes: "2026-10", quincena: 1, basura: "x", solo_extras: true }), { operario: "Juan", mes: "2026-10", quincena: 1, solo_extras: true });
 });
+
+// ---------- Nati (stock) ----------
+const { analizarStock, armarPanorama } = require("../agentes/vigilanteStock");
+const AHORA_N = new Date("2026-10-30T12:00:00").getTime();
+const mp = (id, nombre, stock, demanda, dias) => ({ id, codigo: `C${id}`, nombre, unidad: "KILOS", stock_actual: stock, demanda_mensual: demanda, dias_de_stock: dias });
+
+test("nati: detecta críticas, bajas, exceso y stock negativo; ignora lo que no tiene demanda", () => {
+  const h = analizarStock({
+    ahoraMs: AHORA_N,
+    mps: [mp(1, "PEAD", 100, 600, 5), mp(2, "Masterbatch", 500, 1000, 15), mp(3, "Pigmento", 9000, 300, 900), mp(4, "Tinta", -20, 10, null), mp(5, "Sin uso", 50, 0, null), mp(6, "OK", 900, 600, 45)],
+  });
+  const por = Object.fromEntries(h.map((x) => [x.tipo, x]));
+  assert.equal(por.MP_CRITICA.severidad, "ALTA");
+  assert.match(por.MP_CRITICA.titulo, /PEAD: alcanza para 5 días/);
+  assert.equal(por.MP_CRITICA.fecha, "2026-11-04");
+  assert.match(por.MP_CRITICA.texto, /No hay ninguna compra en curso/);
+  assert.equal(por.MP_BAJA.severidad, "MEDIA");
+  assert.equal(por.MP_EXCESO.severidad, "BAJA");
+  assert.equal(por.STOCK_NEGATIVO.severidad, "ALTA");
+  assert.equal(h.length, 4);
+});
+
+test("nati: si hay una compra en curso lo dice, y las claves son estables", () => {
+  const datos = { ahoraMs: AHORA_N, mps: [mp(1, "PEAD", 100, 600, 5)], compras: [{ id: 7, materia_prima_id: 1, articulo: "PEAD", proveedor: "Dow", cantidad_solicitada: 2000, cantidad_recibida: 500, creada: "2026-10-20 10:00:00" }] };
+  const a = analizarStock(datos);
+  assert.match(a[0].texto, /compra en curso con Dow por 1\.500/);
+  assert.deepEqual(analizarStock(datos).map((x) => x.clave), a.map((x) => x.clave));
+});
+
+test("nati: pedidos internos demorados y compras sin recibir hace semanas", () => {
+  const h = analizarStock({
+    ahoraMs: AHORA_N,
+    internas: [
+      { id: "SI-1", semielaborado_nombre: "Base 33", cantidad_solicitada: 40, urgencia: "ALTA", estado: "SOLICITADO", solicitado_at: "2026-10-30 08:00:00" },
+      { id: "SI-2", semielaborado_nombre: "Base 26", cantidad_solicitada: 10, urgencia: "MEDIA", estado: "SOLICITADO", solicitado_at: "2026-10-30 11:00:00" },
+      { id: "SI-3", semielaborado_nombre: "Base 37", cantidad_solicitada: 10, urgencia: "ALTA", estado: "ENTREGADO", solicitado_at: "2026-10-01 11:00:00" },
+    ],
+    compras: [{ id: 9, materia_prima_id: null, articulo: "Caja", proveedor: "X", cantidad_solicitada: 100, cantidad_recibida: 0, creada: "2026-10-01 09:00:00" }],
+  });
+  assert.deepEqual(h.map((x) => x.tipo).sort(), ["COMPRA_DEMORADA", "INTERNA_DEMORADA"]);
+  assert.equal(h.find((x) => x.tipo === "INTERNA_DEMORADA").severidad, "ALTA");
+});
+
+test("nati: el panorama ordena lo más urgente primero y cuenta los niveles", () => {
+  const p = armarPanorama({
+    ahoraMs: AHORA_N,
+    mps: [mp(1, "OK", 900, 600, 45), mp(2, "Crítica", 50, 600, 2), mp(3, "Baja", 300, 600, 15)],
+    semis: [{ codigo: "S1", nombre: "Semi", stock_total: 10, demanda_mensual: 300, dias_de_stock: 1 }],
+    series: new Map([[2, [0, 1, 2]]]),
+  });
+  assert.deepEqual(p.materias.map((m) => m.nombre), ["Crítica", "Baja", "OK"]);
+  assert.equal(p.resumen.criticas, 1);
+  assert.equal(p.resumen.bajas, 1);
+  assert.equal(p.resumen.semis_criticos, 1);
+  assert.deepEqual(p.materias[0].serie, [0, 1, 2]);
+});
+
+test("nati: sus instrucciones la acotan al stock y las herramientas son solo de lectura", () => {
+  const { construirInstrucciones: instr, HERRAMIENTAS: H } = require("../agentes/natiChat");
+  assert.match(instr(), /SOLO LEÉS/);
+  assert.match(instr([{ id: "rrhh", nombre: "Lía", puesto: "RRHH" }]), /derivar_a_agente/);
+  const nombres = H[0].functionDeclarations.map((f) => f.name);
+  assert.ok(nombres.includes("que_comprar") && nombres.includes("panorama_stock"));
+  assert.ok(!nombres.some((n) => /^(crear|modificar|cargar|descontar|comprar)_/.test(n)));
+});
+
+test("derivaciones: el motor deriva solo a agentes habilitados", async () => {
+  const { crearMotor } = require("../agentes/motorChat");
+  let ronda = 0;
+  const ai = { models: { generateContent: async (p) => {
+    ronda++;
+    if (ronda === 1) { assert.ok(p.config.tools[0].functionDeclarations.some((f) => f.name === "derivar_a_agente")); return { functionCalls: [{ name: "derivar_a_agente", args: { agente: "stock", pregunta: "¿Cuánto PEAD queda?", motivo: "es de stock" } }], candidates: [{ content: { role: "model", parts: [{ functionCall: { name: "derivar_a_agente", args: {} } }] } }] }; }
+    return { text: "Se lo paso a Nati.", candidates: [{ content: { parts: [{ text: "Se lo paso a Nati." }] } }] };
+  } } };
+  const m = crearMotor({ ai, nombre: "T", construirInstrucciones: () => "x", herramientas: [{ functionDeclarations: [] }], ejecutar: async () => ({}) });
+  const r = await m.responder({ mensaje: "hola", historial: [], destinos: [{ id: "stock", nombre: "Nati", puesto: "Stock" }] });
+  assert.equal(r.derivacion.agente, "stock");
+  assert.equal(r.derivacion.pregunta, "¿Cuánto PEAD queda?");
+  // Sin destinos, la herramienta ni siquiera existe
+  ronda = 1;
+  const ai2 = { models: { generateContent: async (p) => { assert.ok(!p.config.tools[0].functionDeclarations.some((f) => f.name === "derivar_a_agente")); return { text: "ok", candidates: [{ content: { parts: [{ text: "ok" }] } }] }; } } };
+  const r2 = await crearMotor({ ai: ai2, nombre: "T", construirInstrucciones: () => "x", herramientas: [{ functionDeclarations: [] }], ejecutar: async () => ({}) }).responder({ mensaje: "hola", historial: [], destinos: [] });
+  assert.equal(r2.derivacion, null);
+});
