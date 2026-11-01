@@ -28,7 +28,7 @@ const { asegurarTablasFichasPdf, registrarRutasFichasPdf } = require("./comercia
 const importarFichas = require("./comercial/importarFichas");
 const { asegurarColumnasGestion, registrarRutasGestion } = require("./comprasGestion");
 const { asegurarSemis, registrarRutasSemis } = require("./semisGestion");
-const { asegurarMovimientos, registrarRutasMovimientos, conAjustesDeLaApp } = require("./semiMovimientos");
+const { asegurarMovimientos, registrarRutasMovimientos, conAjustesDeLaApp, sincronizarHojas } = require("./semiMovimientos");
 const { registrarRutasFotos } = require("./comercial/fotos");
 const { generarCotizacion } = require("./comercial/cotizador");
 const { crearCorreoCrudo } = require("./comercial/correo");
@@ -3045,6 +3045,8 @@ app.post("/api/semielaborados/recargar-sheets", async (req, res) => {
     }
 
     // La planilla pisa el stock: se le suma encima lo que se movió en la app (producción aprobada y transferencias).
+    // Las salidas/entradas que ya están en la planilla vienen reflejadas en este stock: se registran sin volver a descontar.
+    await sincronizarHojas(db, { aplicar: false }).catch(() => {});
     await conAjustesDeLaApp(db, updatesMap);
     const conn = await db.getConnection();
     try {
@@ -3113,6 +3115,7 @@ app.post("/api/semielaborados/previsualizar-sheets", async (req, res) => {
       }
     }
 
+    await sincronizarHojas(db, { aplicar: false }).catch(() => {});
     await conAjustesDeLaApp(db, updatesMap);
     const [currentSE] = await db.query("SELECT * FROM semielaborados");
     const currentMap = {};

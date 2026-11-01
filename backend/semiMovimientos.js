@@ -1,8 +1,9 @@
 "use strict";
 // Movimientos de stock de semielaborados:
 //  - Transferencias entre depósitos hechas en la app (suman en uno y restan en otro).
-//  - Lectura de las pestañas ENTRADA 33 y SALIDA 33 de la planilla (solo se guarda el registro con su OP; el stock del 33 sigue
-//    saliendo de la pestaña STOCK 33, así que no se resta dos veces). Si ENTRADA 33 viene de otro depósito, Nati avisa.
+//  - Lectura de las pestañas ENTRADA 33 y SALIDA 33 de la planilla. Cada salida nueva descuenta del 33 en el momento (igual que hace la
+//    planilla en STOCK 33); cuando la planilla se sincroniza ya la trae descontada, así que las filas leídas en ese momento no se restan de nuevo.
+//    Si ENTRADA 33 viene de otro depósito (26, 37 o Ayolas), Nati avisa.
 //  - La sincronización con la planilla pisa el stock, así que lo que se movió en la app (producción y transferencias) se vuelve a sumar encima.
 const crypto = require("crypto");
 
@@ -25,6 +26,7 @@ async function asegurarMovimientos(db) {
       cantidad DOUBLE NOT NULL,
       nota VARCHAR(255) NULL,
       usuario VARCHAR(255) NULL,
+      cubierta DOUBLE NOT NULL DEFAULT 0,
       anulada TINYINT NOT NULL DEFAULT 0,
       creado DATETIME DEFAULT CURRENT_TIMESTAMP,
       KEY idx_semi (semielaborado_id)
@@ -122,7 +124,7 @@ function parsearHoja(texto, tipo) {
 }
 
 /** Guarda las filas nuevas. La primera vez que se lee una pestaña, todo lo anterior queda como ya atendido (no avisa del pasado). */
-async function guardarHoja(db, tipo, movimientos) {
+async function guardarHoja(db, tipo, movimientos, { aplicar = true } = {}) {
   const [[{ n }]] = await db.query("SELECT COUNT(*) AS n FROM semi_hoja_movs WHERE tipo = ?", [tipo]);
   const primera = Number(n) === 0;
   const [semis] = await db.query("SELECT id, codigo FROM semielaborados");
@@ -134,17 +136,21 @@ async function guardarHoja(db, tipo, movimientos) {
       [m.clave, m.tipo, m.fecha, m.codigo, m.descripcion, m.cantidad, m.op || null, m.procedencia || null, porCodigo.get(m.codigo) || null, primera ? 1 : 0],
     );
     nuevas += r.affectedRows;
+    // Salida nueva del 33: se descuenta ya (la planilla lo hace en STOCK 33). Nunca baja de cero.
+    if (r.affectedRows && aplicar && !primera && tipo === "SALIDA" && porCodigo.get(m.codigo)) {
+      await db.query("UPDATE semielaborados SET stock_33 = GREATEST(0, COALESCE(stock_33,0) - ?) WHERE id = ?", [m.cantidad, porCodigo.get(m.codigo)]);
+    }
   }
   return { nuevas, primera };
 }
 
-async function sincronizarHojas(db, { traer = (u) => fetch(u).then((r) => (r.ok ? r.text() : Promise.reject(new Error(`HTTP ${r.status}`)))) } = {}) {
+async function sincronizarHojas(db, { aplicar = true, traer = (u) => fetch(u).then((r) => (r.ok ? r.text() : Promise.reject(new Error(`HTTP ${r.status}`)))) } = {}) {
   const resultado = {};
   for (const tipo of Object.keys(URLS_HOJA)) {
     try {
       const { movimientos, invalidas, error } = parsearHoja(await traer(URLS_HOJA[tipo]), tipo);
       if (error) { resultado[tipo] = { error }; continue; }
-      resultado[tipo] = { ...(await guardarHoja(db, tipo, movimientos)), filas: movimientos.length, invalidas };
+      resultado[tipo] = { ...(await guardarHoja(db, tipo, movimientos, { aplicar })), filas: movimientos.length, invalidas };
     } catch (e) {
       resultado[tipo] = { error: e.message };
     }
@@ -180,6 +186,7 @@ async function transferir(db, { semielaborado_id, desde, hasta, cantidad, nota, 
     const [r] = await conn.query("INSERT INTO semi_transferencias (semielaborado_id, desde, hasta, cantidad, nota, usuario) VALUES (?,?,?,?,?,?)", [s.id, desde, hasta, cant, (nota || "").slice(0, 255) || null, usuario || null]);
     // Si había entradas al 33 avisadas desde ese depósito, quedan atendidas (hasta cubrir lo transferido).
     let atendidas = 0;
+    let cubierta = 0;
     if (hasta === "33") {
       const [ents] = await conn.query("SELECT id, cantidad, procedencia FROM semi_hoja_movs WHERE tipo = 'ENTRADA' AND atendida = 0 AND semielaborado_id = ? ORDER BY fecha, id", [s.id]);
       let resta = cant;
@@ -187,8 +194,11 @@ async function transferir(db, { semielaborado_id, desde, hasta, cantidad, nota, 
         if (depositoDe(e.procedencia) !== desde || resta + 0.001 < e.cantidad) continue;
         await conn.query("UPDATE semi_hoja_movs SET atendida = 1 WHERE id = ?", [e.id]);
         resta -= e.cantidad;
+        cubierta += Number(e.cantidad);
         atendidas++;
       }
+      // La planilla suma esas entradas en STOCK 33: al sincronizar no hay que sumarlas otra vez.
+      if (cubierta) await conn.query("UPDATE semi_transferencias SET cubierta = ? WHERE id = ?", [cubierta, r.insertId]);
     }
     await conn.commit();
     return { id: r.insertId, semielaborado: s.nombre, desde, hasta, cantidad: cant, entradas_atendidas: atendidas, stock_desde: hay - cant };
@@ -236,10 +246,10 @@ async function ajustesDeLaApp(db) {
     for (const r of prod) if (Object.values(DEPOSITOS).includes(r.deposito)) sumar(r.codigo, r.deposito, Number(r.c));
   } catch { /* todavía sin producción aprobada */ }
   try {
-    const [tr] = await db.query("SELECT s.codigo, t.desde, t.hasta, SUM(t.cantidad) AS c FROM semi_transferencias t JOIN semielaborados s ON s.id = t.semielaborado_id WHERE t.anulada = 0 GROUP BY s.codigo, t.desde, t.hasta");
+    const [tr] = await db.query("SELECT s.codigo, t.desde, t.hasta, SUM(t.cantidad) AS c, SUM(t.cubierta) AS cub FROM semi_transferencias t JOIN semielaborados s ON s.id = t.semielaborado_id WHERE t.anulada = 0 GROUP BY s.codigo, t.desde, t.hasta");
     for (const r of tr) {
       if (DEPOSITOS[r.desde]) sumar(r.codigo, DEPOSITOS[r.desde], -Number(r.c));
-      if (DEPOSITOS[r.hasta]) sumar(r.codigo, DEPOSITOS[r.hasta], Number(r.c));
+      if (DEPOSITOS[r.hasta]) sumar(r.codigo, DEPOSITOS[r.hasta], Number(r.c) - Number(r.cub || 0));
     }
   } catch { /* todavía sin transferencias */ }
   return mapa;
