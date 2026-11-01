@@ -11,6 +11,7 @@ const btn = "min-h-[38px] px-3 rounded-lg text-[13px] font-semibold disabled:opa
 function Aviso({ h, onCambiar, ocupado }) {
   const [justificando, setJustificando] = useState(false);
   const [nota, setNota] = useState("");
+  const [verTexto, setVerTexto] = useState(false);
   const tipo = TIPOS_AVISO[h.tipo]?.texto || h.tipo;
   const abierto = h.estado === "ABIERTO";
   const meta = [tipo, h.fecha ? fechaCorta(h.fecha) : "", SEV[h.severidad]].filter(Boolean).join(" · ");
@@ -21,7 +22,8 @@ function Aviso({ h, onCambiar, ocupado }) {
         <div className="min-w-0 flex-1">
           <p className="text-[11.5px] font-semibold uppercase tracking-[0.1em] text-zinc-500">{meta}</p>
           <p className="mt-1 text-[15px] font-semibold text-white leading-snug break-words">{h.titulo}</p>
-          {h.texto && <p className="mt-1 text-[13.5px] text-zinc-400 leading-relaxed break-words">{h.texto}</p>}
+          {h.texto && (verTexto || !abierto) && <p className="mt-1 text-[13.5px] text-zinc-400 leading-relaxed break-words">{h.texto}</p>}
+          {h.texto && abierto && <button onClick={() => setVerTexto((v) => !v)} aria-expanded={verTexto} className="mt-1 text-[12.5px] font-semibold text-zinc-500 hover:text-white">{verTexto ? "Ocultar detalle" : "Ver detalle"}</button>}
           {!abierto && (
             <p className="mt-1.5 text-xs text-zinc-500">
               {ESTADO_TXT[h.estado] || h.estado}
