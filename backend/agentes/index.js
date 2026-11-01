@@ -23,6 +23,7 @@ const { analizarCompras, rankingProveedores, AUTORESOLVIBLES: AUTO_COMPRAS } = r
 const { asegurarTablaListas, leerLista, eliminarLista } = require("./listaCompra");
 const { eliminarSolicitud } = require("../comprasGestion");
 const { analizarStock, armarPanorama, cargarStock } = require("./vigilanteStock");
+const { sincronizarHojas } = require("../semiMovimientos");
 const { sintetizar } = require("./voz");
 const { pdfLiquidacion, pdfReporte } = require("./pdf");
 const { liquidarDesdeBD } = require("../liquidacionDb");
@@ -237,6 +238,7 @@ async function revisarRRHH({ pool, db }, { ahora = new Date() } = {}) {
 async function revisarStock({ pool, db }, { ahora = new Date() } = {}) {
   const agente = "stock";
   try {
+    await sincronizarHojas(db).catch((e) => console.error("[stock] leer ENTRADA/SALIDA 33:", e.message)); // trae lo que cargaron en la planilla
     const datos = await cargarStock(pool, { ahoraMs: ahora.getTime() });
     const encontrados = analizarStock(datos);
     const [previos] = await db.query("SELECT id, clave, tipo, estado FROM agentes_hallazgos WHERE agente = ?", [agente]);

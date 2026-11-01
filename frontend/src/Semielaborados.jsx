@@ -19,6 +19,7 @@ import {
 import { Truck } from "lucide-react";
 import { api } from "./produccion/util";
 import CamionParaguay from "./semielaborados/CamionParaguay";
+import Movimientos from "./semielaborados/Movimientos";
 
 export default function Semielaborados() {
   const [items, setItems] = useState([]);
@@ -100,6 +101,17 @@ export default function Semielaborados() {
       console.error("Error al cargar semielaborados:", err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Después de transferir: se actualizan los stocks sin recargar toda la pantalla.
+  const recargarStock = async () => {
+    try {
+      const data = await api(`/api/semielaborados?meses=${mesesHistorial}`);
+      setItems(data);
+      setDetailItem((d) => (d ? data.find((x) => x.id === d.id) || d : d));
+    } catch {
+      /* se ve igual con los números anteriores */
     }
   };
 
@@ -687,6 +699,8 @@ export default function Semielaborados() {
                 ))}
               </div>
             </div>
+
+            <Movimientos item={detailItem} alCambiar={recargarStock} />
 
             {/* ESPECIFICACIÓN TÉCNICA DEL PEGADO */}
             <div className="bg-black border border-zinc-800 p-4 space-y-3">
