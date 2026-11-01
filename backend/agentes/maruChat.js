@@ -4,6 +4,7 @@
 const { crearMotor, textoDerivacion } = require("./motorChat");
 const { calcular } = require("../calculadora");
 const { decisionProduccion } = require("./produccionDecision");
+const { cargarSemanaDetallada, cargarRendimientos, sugerirReparto, detalleDia } = require("./produccionDiaria");
 
 function hoyArgentina() {
   const ahora = new Date();
@@ -24,6 +25,8 @@ TU ESPECIALIDAD (única y exclusiva)
 - Si te piden algo de otra área (sueldos, horas, fichadas históricas, compras, precios, rentabilidad) decilo con amabilidad en una línea. Para el detalle del stock hablá de Nati; para sueldos, de Lía.
 - SOLO LEÉS: nunca digas que lanzaste, cargaste o cambiaste algo del plan. Proponés y la persona lo hace.
 - Todo número, nombre, cliente, OP y cantidad sale textualmente del resultado de una herramienta. Si no está, decí que no lo tenés. Nunca inventes pedidos ni cantidades.
+- DETALLE DIARIO: para "qué máquinas se usan hoy", "qué estaba planificado hoy/mañana/el martes", "qué se produjo cada día", "qué operario va en cada máquina" usá produccion_del_dia (con la fecha; si dicen "hoy" o "mañana" calculala desde HOY). Para ver toda la semana día por día usá produccion_semana_por_dia. Para "qué falta producir" usá faltante_semana. Para ayudar a planificar el resto de la semana usá proponer_reparto y ofrecé los días, turnos, máquinas y cantidades que trae; aclará que es una propuesta y que la carga la hace la persona. NUNCA digas que no tenés el detalle diario: tenés estas herramientas; si una asignación no tiene operario o máquina, decilo tal cual ("sin operario cargado").
+- En cada asignación distinguí lo planificado de lo producido: estado "aprobada" = producción ya aprobada; "pendiente_de_aprobar" = cargada por el operario y todavía sin aprobar; "sin_cargar" = aún no se cargó nada (si el día ya pasó, avisalo con "Ojo:").
 - Para "qué hago primero" usá SIEMPRE que_fabricar_primero: ya cruza pedidos, stock y plan. Explicá el porqué con los motivos que trae, en lenguaje simple. Para el estado general, panorama_produccion. Para ver pedidos, pedidos_abiertos; el plan, plan_semana; la gente, personal_en_planta.
 - Los pedidos salen de la planilla de ventas (la misma que usa Connie): un pedido está abierto si ahí no figura preparado ni despachado. Si te dicen que un pedido ya se entregó o no corresponde, NO inventes ni digas que "ya lo recalculaste": reconocé que tu dato viene de la planilla, que seguramente falta marcarlo como despachado ahí (o sincronizarla), y no lo vuelvas a nombrar como pendiente sin aclararlo. Nunca afirmes haber revisado algo que la herramienta no te devolvió.\n- El cruce de pedidos con semielaborados es por nombre de producto: si una herramienta lo aclara, decilo cuando importe. Si hay materias primas críticas, avisá que conviene confirmar con Nati que alcance el material.
 
@@ -44,6 +47,10 @@ const HERRAMIENTAS = [
       { name: "panorama_produccion", description: "Estado general de la producción: pedidos abiertos, avance del plan de la semana, gente en planta, semielaborados críticos y materias primas críticas.", parameters: vacio },
       { name: "que_fabricar_primero", description: "La decisión de producción: ordena qué semielaborados conviene fabricar primero cruzando pedidos abiertos, stock de cada semielaborado, lo que ya está en el plan de la semana y el estado de las materias primas. Trae la cantidad a fabricar y los motivos de cada uno.", parameters: { type: "OBJECT", properties: { cantidad: { type: "INTEGER", description: "Cuántas prioridades mostrar (1 a 15). Por defecto 8." } } } },
       { name: "pedidos_abiertos", description: "Pedidos de clientes que siguen sin preparar ni despachar según la planilla de ventas: OP, cliente, artículo, cantidad pedida, estado y fecha.", parameters: { type: "OBJECT", properties: { cliente: { type: "STRING", description: "Filtrar por cliente (o parte del nombre)." } } } },
+      { name: "produccion_del_dia", description: "Detalle de UN día: por turno (DIA/NOCHE), cada asignación con lote, producto, máquina, operario, cantidad planificada, estado y lo producido; si el turno se lanzó o está sin producción, y el comentario del turno.", parameters: { type: "OBJECT", properties: { fecha: { type: "STRING", description: "Fecha AAAA-MM-DD dentro de la semana actual. Si no se manda, es hoy." } } } },
+      { name: "produccion_semana_por_dia", description: "La semana actual día por día (lunes a domingo): qué se asignó y qué se produjo en cada turno, con máquina, operario y cantidades.", parameters: vacio },
+      { name: "faltante_semana", description: "Por cada lote del plan de la semana: planificado, producido aprobado, producido pendiente de aprobar, lo que falta, lo ya asignado de hoy en adelante y lo que todavía no tiene día asignado.", parameters: vacio },
+      { name: "proponer_reparto", description: "Propone en qué días, turnos y máquinas poner lo que falta producir y todavía no tiene día asignado, usando los turnos libres de hoy en adelante y el rendimiento histórico de cada máquina. Es solo una propuesta.", parameters: { type: "OBJECT", properties: { incluir_sabado: { type: "BOOLEAN", description: "Contar también el sábado como día de producción. Por defecto no." } } } },
       { name: "plan_semana", description: "El plan de producción de esta semana: cada lote con lo planificado y lo ya producido y aprobado.", parameters: vacio },
       { name: "personal_en_planta", description: "Quiénes están en planta ahora (marcaron entrada y no salida) y desde qué hora.", parameters: vacio },
       { name: "calculadora", description: "Hace una cuenta exacta. Usala para cualquier operación aritmética.", parameters: { type: "OBJECT", properties: { expresion: { type: "STRING", description: "Expresión, ej: (1200 - 340) / 30" } }, required: ["expresion"] } },
@@ -55,6 +62,10 @@ const PALABRAS_HERRAMIENTA = {
   panorama_produccion: "Revisó el panorama de producción",
   que_fabricar_primero: "Calculó qué fabricar primero",
   pedidos_abiertos: "Revisó los pedidos abiertos",
+  produccion_del_dia: "Revisó la producción del día",
+  produccion_semana_por_dia: "Revisó la semana día por día",
+  faltante_semana: "Calculó qué falta producir",
+  proponer_reparto: "Armó una propuesta de reparto",
   plan_semana: "Revisó el plan de la semana",
   personal_en_planta: "Vio quién está en planta",
   calculadora: "Hizo una cuenta",
@@ -74,6 +85,13 @@ function crearRomi({ pool, db, ai }) {
   const ejecutar = async (llamada) => {
     const args = llamada.args || {};
     if (llamada.name === "calculadora") return calcular(args.expresion);
+    if (["produccion_del_dia", "produccion_semana_por_dia", "faltante_semana", "proponer_reparto"].includes(llamada.name)) {
+      const semana = await cargarSemanaDetallada(pool);
+      if (llamada.name === "produccion_del_dia") return { hoy: semana.hoy, dia_hoy: semana.dia_hoy, ...detalleDia(semana, /^\d{4}-\d{2}-\d{2}$/.test(String(args.fecha || "")) ? args.fecha : semana.hoy) };
+      if (llamada.name === "produccion_semana_por_dia") return { hoy: semana.hoy, dia_hoy: semana.dia_hoy, desde: semana.lunes, hasta: semana.domingo, dias: semana.dias, ...(semana.lotes.length ? {} : { aviso: "Todavía no hay un plan cargado para esta semana." }) };
+      if (llamada.name === "faltante_semana") return { hoy: semana.hoy, lotes: semana.lotes, ...(semana.lotes.length ? {} : { aviso: "Todavía no hay un plan cargado para esta semana." }) };
+      return { hoy: semana.hoy, ...sugerirReparto(semana, await cargarRendimientos(pool), { incluirSabado: !!args.incluir_sabado }) };
+    }
     const d = await datos();
     if (llamada.name === "panorama_produccion") {
       const items = d.plan_semana.items;
