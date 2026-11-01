@@ -96,6 +96,9 @@ function Tarjeta({ c, pendiente, onResuelto, toast }) {
         </AnimatePresence>
       </div>
 
+      {pendiente && !eliminando && !rechazando && (
+        <p className="mt-3 text-xs text-zinc-500 leading-snug">Aprobar: se suma a las métricas y se descuenta la materia prima. Rechazar: el operario la ve en la tablet para corregirla; no se toca el stock.</p>
+      )}
       {pendiente && !eliminando && (
         <div className="mt-2">
           <AnimatePresence initial={false} mode="wait">
@@ -145,7 +148,7 @@ export default function Cargas({ abierto, onCerrar, onCambio, toast }) {
   const cargando = !error && (!dato || dato.clave !== clave);
 
   return (
-    <Modal abierto={abierto} onCerrar={onCerrar} titulo="Producción cargada desde la tablet" subtitulo="Al aprobar una carga se registra en métricas y se descuenta la materia prima según la receta." ancho="max-w-4xl">
+    <Modal abierto={abierto} onCerrar={onCerrar} titulo="Producción cargada desde la tablet" subtitulo="Revisá lo que cargaron los operarios antes de que cuente." ancho="max-w-4xl">
       <div role="tablist" className="inline-flex p-1 rounded-xl bg-white/[0.05] border border-white/[0.07] mb-5">
         {[["PENDIENTE", "Por aprobar"], ["APROBADA", "Aprobadas"], ["RECHAZADA", "Rechazadas"]].map(([id, t]) => (
           <button key={id} role="tab" aria-selected={estado === id} onClick={() => setEstado(id)} className={`min-h-[38px] px-4 rounded-lg text-sm font-bold transition-colors cursor-pointer ${estado === id ? "bg-[#FF5A00] text-black" : "text-zinc-400 hover:text-white"}`}>

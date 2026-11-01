@@ -30,10 +30,12 @@ function Celda({ fecha, turno, info, asigs, onAbrir, esHoy, ancha }) {
           <Icono size={13} className={turno === "NOCHE" ? "text-sky-300" : "text-[#FFD60A]"} />
           {ancha ? (turno === "NOCHE" ? "Noche" : "Día") : ""}
         </span>
-        <span className={`inline-flex items-center gap-1.5 text-[10.5px] font-bold ${TEXTO[est.tono]}`}>
-          <span className={`w-1.5 h-1.5 rounded-full ${PUNTO[est.tono]}`} />
-          <span className={ancha ? "" : "hidden 2xl:inline"}>{est.texto}</span>
-        </span>
+        {(asigs.length > 0 || info?.lanzado || sin) && (
+          <span className={`inline-flex items-center gap-1.5 text-[10.5px] font-bold ${TEXTO[est.tono]}`}>
+            <span className={`w-1.5 h-1.5 rounded-full ${PUNTO[est.tono]}`} />
+            <span className={ancha ? "" : "hidden 2xl:inline"}>{est.texto}</span>
+          </span>
+        )}
       </span>
 
       {sin ? (
@@ -53,8 +55,8 @@ function Celda({ fecha, turno, info, asigs, onAbrir, esHoy, ancha }) {
           {asigs.length > maxFilas && <span className="text-[11px] font-bold text-zinc-500">+{asigs.length - maxFilas} más</span>}
         </span>
       ) : (
-        <span className="mt-auto mb-auto self-center inline-flex items-center gap-1 text-[11px] text-zinc-600 group-hover:text-[#FF5A00] transition-colors">
-          <Plus size={13} /> Armar
+        <span className="mt-auto mb-auto self-center inline-flex items-center gap-1 text-[11px] text-zinc-700 group-hover:text-[#FF5A00] transition-colors">
+          <Plus size={14} /> <span className={ancha ? "" : "hidden group-hover:inline"}>Armar turno</span>
         </span>
       )}
 
@@ -79,6 +81,7 @@ export default function TableroSemana({ plan, onAbrir }) {
 
   return (
     <section aria-label="Turnos de la semana">
+      <p className="mb-2 text-[13px] text-zinc-500">Tocá un día y turno para armarlo o revisarlo.</p>
       {/* Escritorio: la semana entera en una sola grilla (días en columnas, Día y Noche en filas). */}
       <div className="hidden md:grid grid-cols-7 gap-2" style={{ gridTemplateRows: "auto 1fr 1fr" }}>
         {plan.dias.map((fecha) => {

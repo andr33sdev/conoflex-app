@@ -47,7 +47,7 @@ function Receta({ a, bloqueado, onCambio, toast }) {
           <span className={`block text-sm font-bold ${a.receta_confirmada ? "text-emerald-100" : "text-[#FFD60A]"}`}>
             {a.receta_confirmada ? `Receta confirmada · ${a.receta_version || ""}` : "Confirmar la receta antes de lanzar"}
           </span>
-          {!a.ingenieria_id && <span className="block text-xs text-rose-300">Este producto no tiene receta cargada.</span>}
+          {!a.ingenieria_id ? <span className="block text-xs text-rose-300">Este producto no tiene receta cargada.</span> : !a.receta_confirmada && <span className="block text-xs text-zinc-400">Define qué materias primas se descuentan del stock cuando apruebes la carga.</span>}
         </span>
         <ChevronDown size={16} className={`text-zinc-500 transition-transform ${abierta ? "rotate-180" : ""}`} />
       </button>
@@ -144,7 +144,7 @@ function Asignacion({ a, maquinas, operarios, bloqueado, choque, onCambio, toast
         {quitar && (
           <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
             <div className="mt-3 flex items-center gap-2 rounded-xl bg-rose-500/10 border border-rose-500/25 p-3">
-              <p className="text-sm text-rose-100 flex-1">¿Sacar este lote del turno?</p>
+              <p className="text-sm text-rose-100 flex-1">¿Sacar este lote del turno? Vuelve a la lista de la semana como pendiente de repartir.</p>
               <Boton variante="peligro" onClick={borrar}>Sacar</Boton>
               <Boton variante="fantasma" onClick={() => setQuitar(false)}>No</Boton>
             </div>
@@ -272,7 +272,7 @@ export default function PanelTurno({ turnoAbierto, plan, maquinas, operarios, on
       pie={abierto && !sin && (
         lanzado ? (
           <div className="flex items-center gap-3">
-            <p className="flex-1 flex items-center gap-2 text-sm text-emerald-200"><Lock size={15} /> Ya está en la tablet. Para cambiarlo, retiralo primero.</p>
+            <p className="flex-1 text-sm text-emerald-200 leading-snug"><Lock size={14} className="inline mr-1.5 -mt-0.5" />Ya está en la tablet. Para cambiarlo, retiralo: sale de la tablet, pero solo si todavía no se cargó producción.</p>
             <Boton variante="suave" icono={Undo2} onClick={retirar} disabled={ocupado}>Retirar de la tablet</Boton>
           </div>
         ) : (
@@ -288,17 +288,19 @@ export default function PanelTurno({ turnoAbierto, plan, maquinas, operarios, on
             <Boton variante="primario" grande className="w-full" icono={Rocket} onClick={lanzar} disabled={ocupado || asigs.length === 0 || problemas.length > 0}>
               Lanzar a la tablet
             </Boton>
+            {asigs.length > 0 && problemas.length === 0 && <p className="mt-2 text-xs text-zinc-400 text-center leading-snug">Aparece en la tablet de planta y los operarios pueden cargar lo producido. Mientras esté lanzado no se puede editar.</p>}
           </div>
         )
       )}
     >
       {abierto && (
         <div className="flex flex-col gap-4">
-          <div className={`rounded-2xl border p-3.5 ${sin ? "border-white/[0.15] bg-white/[0.04]" : "border-white/[0.07] bg-white/[0.02]"}`}>
+          <p className="text-[14px] text-zinc-300 leading-snug">{est.ayuda}</p>
+          {(sin || asigs.length === 0) && <div className={`rounded-2xl border p-3.5 ${sin ? "border-white/[0.15] bg-white/[0.04]" : "border-white/[0.07] bg-white/[0.02]"}`}>
             <div className="flex items-center gap-3">
               <div className="flex-1">
                 <p className="text-sm font-bold text-white">No hay producción en este turno</p>
-                <p className="text-xs text-zinc-500">La tablet va a mostrar que no se produce.</p>
+                <p className="text-xs text-zinc-500">Si lo activás, la tablet muestra que no se produce y el turno no se puede lanzar.</p>
               </div>
               <button
                 role="switch"
@@ -311,7 +313,6 @@ export default function PanelTurno({ turnoAbierto, plan, maquinas, operarios, on
                 <span className={`absolute top-1 left-1 w-6 h-6 rounded-full bg-white transition-transform ${sin ? "translate-x-6" : ""}`} />
               </button>
             </div>
-            {!sin && asigs.length > 0 && <p className="mt-2 text-xs text-zinc-500">Para marcarlo sin producción, primero sacá lo que tiene asignado.</p>}
             {sin && (
               <div className="mt-3">
                 <Etiqueta>Motivo (opcional)</Etiqueta>
@@ -324,7 +325,7 @@ export default function PanelTurno({ turnoAbierto, plan, maquinas, operarios, on
                 />
               </div>
             )}
-          </div>
+          </div>}
 
           {info?.comentario && (
             <div className="rounded-2xl border border-sky-500/30 bg-sky-500/[0.07] p-4">

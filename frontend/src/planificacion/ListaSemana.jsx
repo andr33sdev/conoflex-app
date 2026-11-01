@@ -44,18 +44,20 @@ function Renglon({ item, onCambio, toast }) {
       <div className="flex items-center gap-2 min-w-0">
         <span className="font-mono text-[10.5px] font-bold text-[#FFD60A] shrink-0">{item.lote}</span>
         <span className="min-w-0 flex-1 text-[13.5px] font-semibold text-white truncate" title={item.nombre}>{item.nombre}</span>
-        {item.origen === "SUGERIDO" && <span className="text-[9.5px] font-bold uppercase tracking-wider text-sky-300 shrink-0">Sug.</span>}
-        <span className="flex items-center shrink-0 md:opacity-0 md:group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
+                <span className="flex items-center shrink-0 md:opacity-0 md:group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
           <button onClick={() => setEditando((v) => !v)} aria-label="Cambiar cantidad" className="w-8 h-8 grid place-items-center rounded-lg text-zinc-500 hover:text-white hover:bg-white/[0.06] cursor-pointer"><Pencil size={14} /></button>
           <button onClick={() => setQuitar((v) => !v)} aria-label="Quitar de la lista" className="w-8 h-8 grid place-items-center rounded-lg text-zinc-500 hover:text-rose-300 hover:bg-rose-500/10 cursor-pointer"><Trash2 size={14} /></button>
         </span>
       </div>
 
       {editando ? (
-        <div className="mt-2 flex items-center gap-2">
+        <div className="mt-2">
+        <p className="mb-1.5 text-[11.5px] text-zinc-500 leading-snug">Cambia el total de la semana. Lo que ya repartiste en turnos no se modifica.</p>
+        <div className="flex items-center gap-2">
           <input type="number" inputMode="numeric" min="1" value={cant} onChange={(e) => setCant(e.target.value)} onKeyDown={(e) => e.key === "Enter" && guardar()} autoFocus className="w-28 min-h-[38px] rounded-lg bg-[#17171c] border border-white/[0.12] px-3 text-sm text-white focus:outline-none focus:border-[#FF5A00]/70" />
           <Boton variante="naranja" onClick={guardar} disabled={ocupado} icono={Check}>Guardar</Boton>
           <Boton variante="fantasma" onClick={() => { setEditando(false); setCant(String(item.cantidad_semana)); }} icono={X} aria-label="Cancelar" />
+        </div>
         </div>
       ) : (
         <div className="mt-1.5">
@@ -66,7 +68,7 @@ function Renglon({ item, onCambio, toast }) {
           <div className="mt-1 flex items-center justify-between gap-2 text-[11px] text-zinc-500 tabular-nums">
             <span><b className={item.producido > 0 ? "text-emerald-300" : "text-zinc-400"}>{num(item.producido)}</b> de <b className="text-zinc-300">{num(item.cantidad_semana)}</b></span>
             <span className="truncate">
-              {de_mas ? <b className="text-rose-300">asignado de más</b> : restante > 0 ? <>faltan asignar <b className="text-zinc-300">{num(restante)}</b></> : <b className="text-[#ff8a4d]">todo en turnos</b>}
+              {de_mas ? <b className="text-rose-300">repartido de más</b> : restante > 0 ? <>falta repartir <b className="text-zinc-300">{num(restante)}</b></> : <b className="text-[#ff8a4d]">todo repartido</b>}
               {item.por_aprobar > 0 && <> · <b className="text-[#FFD60A]">{num(item.por_aprobar)}</b> por aprobar</>}
             </span>
           </div>
@@ -78,7 +80,7 @@ function Renglon({ item, onCambio, toast }) {
         {quitar && (
           <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
             <div className="mt-2 flex items-center gap-2 rounded-lg bg-rose-500/10 border border-rose-500/25 p-2">
-              <p className="text-xs text-rose-100 flex-1">¿Quitar {item.lote}?</p>
+              <p className="text-xs text-rose-100 flex-1">¿Quitar {item.lote} de la lista? Solo se puede si no está repartido en ningún turno.</p>
               <Boton variante="peligro" onClick={borrar} disabled={ocupado} className="!min-h-[32px] !px-3 !text-xs">Quitar</Boton>
               <Boton variante="fantasma" onClick={() => setQuitar(false)} className="!min-h-[32px] !px-3 !text-xs">No</Boton>
             </div>
@@ -93,7 +95,7 @@ export default function ListaSemana({ items, onAgregar, onCambio, toast }) {
   return (
     <section aria-label="Lista de la semana" className="rounded-2xl border border-white/[0.07] bg-[#0f0f12] flex flex-col min-h-0 xl:max-h-full overflow-hidden">
       <div className="flex items-center justify-between gap-3 px-3 py-2.5 border-b border-white/[0.06] shrink-0">
-        <h2 className="text-[11px] font-extrabold uppercase tracking-[0.12em] text-zinc-400">Lista de la semana <span className="text-zinc-600 ml-1">{items.length}</span></h2>
+        <h2 className="text-[13px] font-bold text-zinc-200">Qué se produce esta semana <span className="text-zinc-600 ml-1 font-semibold">{items.length}</span></h2>
         <Boton variante="suave" icono={Plus} onClick={onAgregar} className="!min-h-[34px] !px-3 !text-[13px]">Agregar</Boton>
       </div>
       {items.length === 0 ? (

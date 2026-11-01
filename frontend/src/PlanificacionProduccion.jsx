@@ -5,13 +5,15 @@ import { motion } from "framer-motion";
 import { ChevronLeft, ChevronRight, ClipboardCheck, Loader2, Plus, RefreshCw, Settings2 } from "lucide-react";
 import { Boton } from "./produccion/ui";
 import { useToast } from "./produccion/useToast";
-import { api, hoyISO, lunesDe, num, rangoSemana, semanaISO, sumarDias } from "./produccion/util";
+import { api, hoyISO, lunesDe, rangoSemana, semanaISO, sumarDias } from "./produccion/util";
 import ListaSemana from "./planificacion/ListaSemana";
 import TableroSemana from "./planificacion/TableroSemana";
 import PanelTurno from "./planificacion/PanelTurno";
 import AgregarLote from "./planificacion/AgregarLote";
 import Maquinas from "./planificacion/Maquinas";
 import Cargas from "./planificacion/Cargas";
+import ProximoPaso from "./planificacion/ProximoPaso";
+import { proximoPaso } from "./planificacion/reglas";
 
 export default function PlanificacionProduccion() {
   const [semana, setSemana] = useState(() => lunesDe(hoyISO()));
@@ -69,16 +71,12 @@ export default function PlanificacionProduccion() {
 
   const tot = items.reduce((a, i) => ({ plan: a.plan + i.cantidad_semana, asig: a.asig + i.asignado, hecho: a.hecho + i.producido }), { plan: 0, asig: 0, hecho: 0 });
   const pctHecho = tot.plan > 0 ? Math.min(100, Math.round((tot.hecho / tot.plan) * 100)) : 0;
-  const pctAsig = tot.plan > 0 ? Math.min(100, (tot.asig / tot.plan) * 100) : 0;
 
   return (
     <div className="h-full overflow-y-auto custom-scrollbar">
       <div className="max-w-[1700px] mx-auto px-3 sm:px-5 lg:px-6 py-4 sm:py-5 pb-24 lg:pb-8">
-        <header className="flex flex-wrap items-center gap-x-4 gap-y-3 mb-4">
-          <div className="mr-auto min-w-0">
-            <h1 className="text-xl sm:text-2xl font-extrabold tracking-tight text-white leading-none">Planificación OT</h1>
-            <p className="mt-1 text-xs sm:text-[13px] text-zinc-500 truncate">Armá la semana, repartí los turnos y lanzalos a la tablet.</p>
-          </div>
+        <header className="flex flex-wrap items-center gap-x-3 gap-y-3 mb-4">
+          <div className="mr-auto hidden" />
           <div className="flex items-center rounded-xl border border-white/[0.08] bg-[#111114] p-0.5">
             <button onClick={() => setSemana(sumarDias(semana, -7))} aria-label="Semana anterior" className="w-10 h-10 grid place-items-center rounded-lg text-zinc-300 hover:bg-white/[0.07] cursor-pointer"><ChevronLeft size={18} /></button>
             <div className="px-2 text-center min-w-[150px]">
@@ -89,7 +87,7 @@ export default function PlanificacionProduccion() {
           </div>
           {semana !== hoySemana && <Boton variante="suave" onClick={() => setSemana(hoySemana)}>Hoy</Boton>}
           <div className="flex items-center gap-2">
-            <Boton variante="suave" icono={Settings2} onClick={() => setVerMaquinas(true)} aria-label="Máquinas"><span className="hidden sm:inline">Máquinas</span></Boton>
+            <Boton variante="fantasma" icono={Settings2} onClick={() => setVerMaquinas(true)} title="Máquinas de la planta">Máquinas</Boton>
             <Boton variante={plan?.cargas_pendientes ? "naranja" : "suave"} icono={ClipboardCheck} onClick={() => setVerCargas(true)}>
               <span className="hidden sm:inline">Cargas</span>
               {plan?.cargas_pendientes > 0 && <span className="min-w-[20px] h-[20px] px-1.5 rounded-full bg-black/80 text-[#FFD60A] text-xs font-extrabold grid place-items-center">{plan.cargas_pendientes}</span>}
@@ -107,23 +105,11 @@ export default function PlanificacionProduccion() {
           <div className="flex items-center justify-center gap-3 py-32 text-zinc-500"><Loader2 className="animate-spin" size={22} /> Cargando el plan…</div>
         ) : (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: cargando ? 0.55 : 1 }} transition={{ duration: 0.2 }}>
-            {/* Resumen de la semana en una sola línea */}
-            <div className="rounded-2xl border border-white/[0.07] bg-[#0f0f12] px-4 py-3 mb-4 flex flex-wrap items-center gap-x-6 gap-y-2">
-              <div className="flex items-baseline gap-2">
-                <span className="text-2xl font-extrabold tabular-nums text-white">{pctHecho}%</span>
-                <span className="text-xs text-zinc-500">de la semana producido</span>
-              </div>
-              <div className="flex-1 min-w-[140px] h-2 rounded-full bg-white/[0.07] overflow-hidden relative">
-                <div className="absolute inset-y-0 left-0 bg-[#FF5A00]/40" style={{ width: `${pctAsig}%` }} />
-                <div className="absolute inset-y-0 left-0 bg-emerald-400" style={{ width: `${pctHecho}%` }} />
-              </div>
-              <dl className="flex gap-x-5 text-xs text-zinc-500">
-                <div><dt className="inline">Lotes </dt><dd className="inline font-bold text-zinc-200 tabular-nums">{items.length}</dd></div>
-                <div><dt className="inline">Planificadas </dt><dd className="inline font-bold text-zinc-200 tabular-nums">{num(tot.plan)}</dd></div>
-                <div><dt className="inline">En turnos </dt><dd className="inline font-bold text-[#ff8a4d] tabular-nums">{num(tot.asig)}</dd></div>
-                <div><dt className="inline">Aprobadas </dt><dd className="inline font-bold text-emerald-300 tabular-nums">{num(tot.hecho)}</dd></div>
-              </dl>
-            </div>
+            <ProximoPaso
+              sugerencia={proximoPaso(plan.semana === semana ? plan : { items: [] }, semana < hoySemana ? "9999-12-31" : semana > hoySemana ? semana : hoyISO())}
+              pctHecho={pctHecho}
+              onAccion={(a) => (a.tipo === "agregar" ? setAgregando(true) : a.tipo === "cargas" ? setVerCargas(true) : setTurnoAbierto({ fecha: a.fecha, turno: a.turno }))}
+            />
 
             <div className="grid gap-4 grid-cols-[minmax(0,1fr)] xl:grid-cols-[minmax(0,1fr)_320px] items-start">
               <TableroSemana plan={plan} onAbrir={(fecha, turno) => setTurnoAbierto({ fecha, turno })} />
