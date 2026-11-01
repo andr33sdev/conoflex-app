@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ChevronDown, ExternalLink, FileText, Loader2 } from "lucide-react";
+import { ChevronDown, ExternalLink, FileText, Loader2, Trash2 } from "lucide-react";
 import { getApiUrl } from "../apiConfig";
 import { api } from "../produccion/util";
 import { Aviso, Boton, Chip, Modal, Vacio } from "./ui";
@@ -20,9 +20,24 @@ async function abrirPdf(id) {
   setTimeout(() => URL.revokeObjectURL(url), 60000);
 }
 
-function TarjetaPdf({ f, onAbrirProducto }) {
+function TarjetaPdf({ f, onAbrirProducto, onEliminado }) {
   const [abierta, setAbierta] = useState(false);
   const [error, setError] = useState("");
+  const [confirmando, setConfirmando] = useState(false);
+  const [eliminando, setEliminando] = useState(false);
+  const afectados = f.actualizados + f.nuevos;
+  const eliminar = async () => {
+    setEliminando(true);
+    setError("");
+    try {
+      const r = await api(`/api/comercial/fichas-pdf/${f.id}`, { method: "DELETE" });
+      onEliminado(r);
+    } catch (e) {
+      setError(e.message);
+      setEliminando(false);
+      setConfirmando(false);
+    }
+  };
   const total = f.productos.length;
   return (
     <li className="rounded-xl border border-zinc-800 bg-[#0d0d0e] overflow-hidden">
@@ -40,12 +55,24 @@ function TarjetaPdf({ f, onAbrirProducto }) {
         </div>
         <div className="flex gap-2 shrink-0">
           <Boton variante="suave" onClick={() => abrirPdf(f.id).catch((e) => setError(e.message))}><ExternalLink size={15} /> Ver PDF</Boton>
+          <Boton variante="suave" onClick={() => setConfirmando(true)} disabled={confirmando || eliminando} aria-label={`Eliminar ${f.nombre}`}><Trash2 size={15} /> Eliminar</Boton>
           {total > 0 && (
             <Boton variante="suave" onClick={() => setAbierta(!abierta)} aria-expanded={abierta}>Productos <ChevronDown size={15} className={`transition-transform ${abierta ? "rotate-180" : ""}`} /></Boton>
           )}
         </div>
       </div>
       {error && <div className="px-4 pb-3"><Aviso tono="rojo">{error}</Aviso></div>}
+      {confirmando && (
+        <div className="mx-4 mb-3 rounded-lg border border-red-500/30 bg-red-500/5 p-3 text-sm text-red-200 space-y-2.5">
+          <p>
+            ¿Eliminar <b>{f.nombre}</b>? {afectados > 0 ? <>Se van a quitar la descripción, los usos y las advertencias que este PDF cargó en <b>{afectados} {afectados === 1 ? "producto" : "productos"}</b>. Si un producto ya venía de otro PDF anterior, vuelve a como estaba. Las fichas que corregiste a mano no se tocan.</> : "No cargó datos en ningún producto."}
+          </p>
+          <div className="flex gap-2">
+            <Boton onClick={eliminar} cargando={eliminando} className="!bg-red-600 hover:!bg-red-500">Sí, eliminar</Boton>
+            <Boton variante="suave" onClick={() => setConfirmando(false)} disabled={eliminando}>Cancelar</Boton>
+          </div>
+        </div>
+      )}
       {abierta && (
         <ul className="border-t border-zinc-800 divide-y divide-zinc-800/70 max-h-72 overflow-y-auto">
           {f.productos.map((p, i) => (
@@ -63,20 +90,28 @@ function TarjetaPdf({ f, onAbrirProducto }) {
   );
 }
 
-export default function FichasPdf({ onCerrar, onAbrirProducto }) {
+export default function FichasPdf({ onCerrar, onAbrirProducto, onCambio }) {
   const [fichas, setFichas] = useState(null);
   const [error, setError] = useState("");
+  const [resultado, setResultado] = useState(null);
+  const cargar = () => api("/api/comercial/fichas-pdf").then((d) => setFichas(d.fichas)).catch((e) => setError(e.message));
   useEffect(() => {
-    api("/api/comercial/fichas-pdf").then((d) => setFichas(d.fichas)).catch((e) => setError(e.message));
+    cargar();
   }, []);
   return (
     <Modal titulo="PDFs de usos y fichas subidos" onCerrar={onCerrar} ancho="max-w-3xl">
       {error && <Aviso tono="rojo">{error}</Aviso>}
+      {resultado && (
+        <div className="mb-3"><Aviso tono="verde">
+          Eliminé <b>{resultado.nombre}</b>: {resultado.limpiados} {resultado.limpiados === 1 ? "producto quedó" : "productos quedaron"} sin descripción ni usos{resultado.restaurados ? `, ${resultado.restaurados} ${resultado.restaurados === 1 ? "volvió" : "volvieron"} a la ficha del PDF anterior` : ""}.
+          {resultado.sinTocar?.length > 0 && <span className="block mt-1 text-xs opacity-90">Sin tocar: {resultado.sinTocar.join("; ")}.</span>}
+        </Aviso></div>
+      )}
       {!fichas && !error && <div className="py-10 grid place-items-center text-zinc-500"><Loader2 className="animate-spin" /></div>}
       {fichas && fichas.length === 0 && <Vacio icono={FileText} titulo="Todavía no hay PDFs guardados" texto="Los PDF que importes desde “Importar fichas PDF” van a aparecer acá, con los productos que modificó cada uno." />}
       {fichas && fichas.length > 0 && (
         <ul className="space-y-3">
-          {fichas.map((f) => <TarjetaPdf key={f.id} f={f} onAbrirProducto={(id) => { onCerrar(); onAbrirProducto(id); }} />)}
+          {fichas.map((f) => <TarjetaPdf key={f.id} f={f} onAbrirProducto={(id) => { onCerrar(); onAbrirProducto(id); }} onEliminado={(r) => { setResultado(r); cargar(); onCambio?.(); }} />)}
         </ul>
       )}
     </Modal>
