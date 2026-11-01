@@ -2,7 +2,7 @@
 // Decisiones de producción de Romi: cruza lo que hay que entregar (pedidos abiertos), lo que hay en el depósito
 // (semielaborados), lo que ya está en el plan de la semana y la gente que está en planta, y ordena qué conviene
 // fabricar primero. Es aritmética y reglas simples: el modelo no calcula nada, solo lo cuenta.
-const { cargarStock, armarPanorama } = require("./vigilanteStock");
+const { cargarStock, armarPanorama, seFabricaYSeSigue } = require("./vigilanteStock");
 
 const sinAcentos = (t) => String(t || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().trim();
 const r0 = (n) => Math.round(Number(n) || 0);
@@ -32,6 +32,7 @@ function priorizar({ semis = [], pedidos = [], plan = [], mpsCriticas = 0, limit
   const abiertos = pedidos.map((p) => ({ ...p, falta: Math.max(0, Number(p.total || 0) - Number(p.completada || 0)) })).filter((p) => p.falta > 0);
   const enPlan = new Map(plan.map((p) => [sinAcentos(p.codigo), p]));
   const filas = semis
+    .filter(seFabricaYSeSigue) // solo lo que se fabrica acá y se sigue: lo comprado o de Paraguay no se manda a producir
     .filter((s) => s.nivel !== "sin_demanda" || abiertos.some((p) => usaSemi(s, p)))
     .map((s) => {
       const peds = abiertos.filter((p) => usaSemi(s, p));

@@ -18,6 +18,9 @@ import {
   Calendar,
   ChevronDown,
 } from "lucide-react";
+import { Truck } from "lucide-react";
+import { api } from "./produccion/util";
+import CamionParaguay from "./semielaborados/CamionParaguay";
 
 export default function Semielaborados() {
   const [items, setItems] = useState([]);
@@ -54,6 +57,18 @@ export default function Semielaborados() {
 
   // MODAL DE FICHA
   const [detailItem, setDetailItem] = useState(null);
+  const [verCamion, setVerCamion] = useState(false);
+
+  // Cómo se consigue (fábrica / proveedor / Paraguay) y si se le sigue la demanda.
+  const clasificar = async (item, cambios) => {
+    try {
+      await api(`/api/semielaborados/${item.id}/clasificacion`, { method: "PUT", body: cambios });
+      setItems((prev) => prev.map((x) => (x.id === item.id ? { ...x, ...cambios } : x)));
+      setDetailItem((d) => (d && d.id === item.id ? { ...d, ...cambios } : d));
+    } catch (e) {
+      alert(e.message);
+    }
+  };
 
   // DETECTOR DE CLIC AFUERA PARA CERRAR EL MENÚ DE MESES
   useEffect(() => {
@@ -254,6 +269,13 @@ export default function Semielaborados() {
           </p>
         </div>
 
+        <div className="flex flex-col sm:flex-row gap-3 z-10 w-full md:w-auto">
+        <button
+          onClick={() => setVerCamion(true)}
+          className="flex items-center justify-center gap-3 px-6 py-3 font-bold text-xs uppercase tracking-widest border border-zinc-700 text-white hover:border-[#FF5A00] hover:text-[#FF5A00] transition-all cursor-pointer"
+        >
+          <Truck size={16} /> Camión Paraguay
+        </button>
         <button
           onClick={handleStartSync}
           disabled={isSyncing}
@@ -266,6 +288,7 @@ export default function Semielaborados() {
           />
           SINCRONIZAR SHEETS
         </button>
+        </div>
       </div>
 
       {/* 2. PANEL DE FILTROS & BÚSQUEDA */}
@@ -476,8 +499,10 @@ export default function Semielaborados() {
                       </span>
                     </div>
 
-                    <div className="px-4 text-white font-bold text-xs truncate pr-2">
-                      {item.nombre}
+                    <div className="px-4 text-white font-bold text-xs truncate pr-2 flex items-center gap-2">
+                      <span className="truncate">{item.nombre}</span>
+                      {item.origen === "PARAGUAY" && <span className="shrink-0 text-[10px] font-bold text-cyan-400 border border-cyan-400/30 px-1.5 py-0.5">Paraguay</span>}
+                      {item.origen === "PROVEEDOR" && <span className="shrink-0 text-[10px] font-bold text-zinc-400 border border-zinc-700 px-1.5 py-0.5">Comprado</span>}
                     </div>
 
                     <div className="px-3 flex justify-center text-zinc-500 text-[11px]   truncate">
@@ -662,6 +687,8 @@ export default function Semielaborados() {
           MODALES
       ========================================================= */}
 
+      {verCamion && <CamionParaguay onClose={() => setVerCamion(false)} />}
+
       {/* MODAL FICHA DE SEMIELABORADO */}
       {detailItem && (
         <div className="fixed inset-0 bg-black/90 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
@@ -689,6 +716,36 @@ export default function Semielaborados() {
                   {detailItem.nombre}
                 </p>
               </div>
+            </div>
+
+            <div className="w-full h-px bg-zinc-800/80"></div>
+
+            {/* CÓMO SE CONSIGUE */}
+            <div className="space-y-3 text-xs">
+              <span className="text-zinc-500 text-[10px] font-bold tracking-widest uppercase block">¿Cómo se consigue?</span>
+              <div className="grid grid-cols-3 gap-2">
+                {[["FABRICA", "Se fabrica"], ["PROVEEDOR", "Se compra"], ["PARAGUAY", "De Paraguay"]].map(([v, t]) => (
+                  <button
+                    key={v}
+                    onClick={() => clasificar(detailItem, { origen: v })}
+                    className={`py-2.5 font-bold border cursor-pointer transition-colors ${(detailItem.origen || "FABRICA") === v ? "bg-[#FF5A00] text-black border-[#FF5A00]" : "border-zinc-800 text-zinc-400 hover:text-white"}`}
+                  >
+                    {t}
+                  </button>
+                ))}
+              </div>
+              <label className="flex items-start gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={detailItem.seguir_demanda !== 0}
+                  onChange={(e) => clasificar(detailItem, { seguir_demanda: e.target.checked ? 1 : 0 })}
+                  className="mt-0.5 accent-[#FF5A00]"
+                />
+                <span className="text-zinc-300">
+                  Seguir su stock contra la demanda
+                  <span className="block text-zinc-500 mt-0.5">Si lo apagás, solo se muestra la demanda promedio y no se avisa ni se prioriza.</span>
+                </span>
+              </label>
             </div>
 
             <div className="w-full h-px bg-zinc-800/80"></div>
