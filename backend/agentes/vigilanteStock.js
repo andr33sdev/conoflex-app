@@ -17,6 +17,9 @@ const fechaCorta = (isoStr) => {
   return m ? `${m[2]}/${m[1]}` : "";
 };
 
+/** Solo se alerta y se prioriza lo que se fabrica acá y al que se le sigue la demanda. */
+const seFabricaYSeSigue = (s) => String(s.origen || "FABRICA").toUpperCase() === "FABRICA" && (s.seguir_demanda == null || Number(s.seguir_demanda) !== 0);
+
 // Umbrales (días de cobertura). Se pueden ajustar sin tocar el resto.
 const UMBRALES = { critico: 7, bajo: 15, exceso: 240, semiCritico: 5, semiBajo: 12 };
 
@@ -69,6 +72,7 @@ function analizarStock({ mps = [], semis = [], internas = [], compras = [], ahor
   }
 
   for (const s of semis) {
+    if (!seFabricaYSeSigue(s)) continue; // lo comprado, lo de Paraguay y lo que no se sigue no genera alertas de producción
     const demanda = Number(s.demanda_mensual) || 0;
     if (!(demanda > 0) || s.dias_de_stock == null) continue;
     const dias = s.dias_de_stock;
@@ -125,17 +129,19 @@ function armarPanorama({ mps = [], semis = [], series = new Map(), internas = []
   const semielaborados = semis
     .map((s) => ({
       codigo: s.codigo, nombre: s.nombre, stock_total: num(s.stock_total, 0), por_deposito: s.por_deposito || null, demanda_mensual: num(s.demanda_mensual, 1), dias: s.dias_de_stock ?? null,
-      nivel: nivelDe({ stock: s.stock_total, dias: s.dias_de_stock, demanda: s.demanda_mensual }, { critico: UMBRALES.semiCritico, bajo: UMBRALES.semiBajo }),
+      origen: String(s.origen || "FABRICA").toUpperCase(), seguir_demanda: s.seguir_demanda == null ? 1 : Number(s.seguir_demanda),
+      nivel: s.seguir_demanda != null && Number(s.seguir_demanda) === 0 ? "sin_demanda" : nivelDe({ stock: s.stock_total, dias: s.dias_de_stock, demanda: s.demanda_mensual }, { critico: UMBRALES.semiCritico, bajo: UMBRALES.semiBajo }),
     }))
     .sort((a, b) => orden[a.nivel] - orden[b.nivel] || (a.dias ?? 1e9) - (b.dias ?? 1e9));
   const cuenta = (lista, n) => lista.filter((x) => x.nivel === n).length;
+  const cuentaFabrica = (n) => semielaborados.filter((x) => x.nivel === n && x.origen === "FABRICA").length;
   return {
     generado: new Date(ahoraMs).toISOString(),
     materias,
     semielaborados,
     resumen: {
       materias: materias.length, criticas: cuenta(materias, "critico") + cuenta(materias, "negativo"), bajas: cuenta(materias, "bajo"),
-      semis_criticos: cuenta(semielaborados, "critico"), semis_bajos: cuenta(semielaborados, "bajo"),
+      semis_criticos: cuentaFabrica("critico"), semis_bajos: cuentaFabrica("bajo"),
       internas_pendientes: internas.filter((r) => String(r.estado).toUpperCase() === "SOLICITADO").length,
       compras_abiertas: compras.length,
     },
@@ -147,9 +153,15 @@ async function cargarStock(pool, { ahoraMs = Date.now() } = {}) {
   const dm = await demandaMateriasPrimas(pool, { meses: 3, solo_con_demanda: false });
   const mps = dm.materias_primas || [];
   const ds = await demandaSemielaborados(pool, { meses: 3, solo_con_demanda: false });
-  const [filas] = await pool.query("SELECT codigo, stock_33, stock_26, stock_ayolas, stock_37 FROM semielaborados");
+  let filas;
+  try {
+    [filas] = await pool.query("SELECT codigo, origen, seguir_demanda, stock_33, stock_26, stock_ayolas, stock_37 FROM semielaborados");
+  } catch {
+    [filas] = await pool.query("SELECT codigo, stock_33, stock_26, stock_ayolas, stock_37 FROM semielaborados"); // todavía sin la clasificación
+  }
   const porDep = new Map(filas.map((f) => [f.codigo, { "33": Number(f.stock_33) || 0, "26": Number(f.stock_26) || 0, ayolas: Number(f.stock_ayolas) || 0, "37": Number(f.stock_37) || 0 }]));
-  const semis = (ds.semielaborados || []).map((s) => ({ ...s, por_deposito: porDep.get(s.codigo) || null }));
+  const clasif = new Map(filas.map((f) => [f.codigo, { origen: String(f.origen || "FABRICA").toUpperCase(), seguir_demanda: f.seguir_demanda == null ? 1 : Number(f.seguir_demanda) }]));
+  const semis = (ds.semielaborados || []).map((s) => ({ ...s, ...(clasif.get(s.codigo) || { origen: "FABRICA", seguir_demanda: 1 }), por_deposito: porDep.get(s.codigo) || null }));
   const [internas] = await pool.query("SELECT id, semielaborado_nombre, cantidad_solicitada, urgencia, estado, solicitado_at FROM solicitudes_internas WHERE estado IN ('SOLICITADO','ATENDIDO','DISPONIBLE')");
   // Las listas que Vera todavía está armando no son compras: recién cuentan cuando las cierra.
   const SQL_COMPRAS = (excluirBorradores) => `SELECT i.id, i.materia_prima_id, i.articulo, i.proveedor, i.cantidad_solicitada, i.cantidad_recibida, s.created_at AS creada
@@ -177,4 +189,4 @@ async function cargarStock(pool, { ahoraMs = Date.now() } = {}) {
   return { mps, semis, internas, compras, series, ahoraMs };
 }
 
-module.exports = { analizarStock, armarPanorama, cargarStock, nivelDe, UMBRALES };
+module.exports = { seFabricaYSeSigue, analizarStock, armarPanorama, cargarStock, nivelDe, UMBRALES };

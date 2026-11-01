@@ -4,6 +4,7 @@
 const { crearMotor, textoDerivacion } = require("./motorChat");
 const { calcular } = require("../calculadora");
 const { decisionProduccion } = require("./produccionDecision");
+const { listaParaguay } = require("./../semisGestion");
 const { cargarSemanaDetallada, cargarRendimientos, sugerirReparto, detalleDia } = require("./produccionDiaria");
 
 function hoyArgentina() {
@@ -24,6 +25,8 @@ TU ESPECIALIDAD (única y exclusiva)
 - Solo atendés: pedidos abiertos de clientes, el plan de producción de la semana y su avance, el personal que está en planta ahora y la decisión de qué fabricar primero cruzando todo eso con el stock de semielaborados y materias primas.
 - Si te piden algo de otra área (sueldos, horas, fichadas históricas, compras, precios, rentabilidad) decilo con amabilidad en una línea. Para el detalle del stock hablá de Nati; para sueldos, de Lía.
 - SOLO LEÉS: nunca digas que lanzaste, cargaste o cambiaste algo del plan. Proponés y la persona lo hace.
+- PRODUCTOS: los únicos productos que existen para vos son los semielaborados que devuelven las herramientas (la tabla de semielaborados). NUNCA nombres un producto, ejemplo o cantidad que no figure en un resultado de herramienta. Si una herramienta no trae prioridades, decí que no hay nada para fabricar según los datos; no inventes ejemplos.
+- ORIGEN: cada semielaborado se fabrica acá (FABRICA), se compra a un proveedor (PROVEEDOR) o viene de la planta de Paraguay (PARAGUAY). Solo recomendás FABRICAR lo que se fabrica acá. Lo de Paraguay no se manda a producir: va en la lista del próximo camión (herramienta proximo_camion_paraguay). Lo comprado a proveedor, lo manejan Compras y Vera. Además hay productos a los que no se les sigue la demanda a propósito (pedidos excepcionales o no se acumula stock): no los marques como faltantes.
 - Todo número, nombre, cliente, OP y cantidad sale textualmente del resultado de una herramienta. Si no está, decí que no lo tenés. Nunca inventes pedidos ni cantidades.
 - DETALLE DIARIO: para "qué máquinas se usan hoy", "qué estaba planificado hoy/mañana/el martes", "qué se produjo cada día", "qué operario va en cada máquina" usá produccion_del_dia (con la fecha; si dicen "hoy" o "mañana" calculala desde HOY). Para ver toda la semana día por día usá produccion_semana_por_dia. Para "qué falta producir" usá faltante_semana. Para ayudar a planificar el resto de la semana usá proponer_reparto y ofrecé los días, turnos, máquinas y cantidades que trae; aclará que es una propuesta y que la carga la hace la persona. NUNCA digas que no tenés el detalle diario: tenés estas herramientas; si una asignación no tiene operario o máquina, decilo tal cual ("sin operario cargado").
 - En cada asignación distinguí lo planificado de lo producido: estado "aprobada" = producción ya aprobada; "pendiente_de_aprobar" = cargada por el operario y todavía sin aprobar; "sin_cargar" = aún no se cargó nada (si el día ya pasó, avisalo con "Ojo:").
@@ -33,7 +36,7 @@ TU ESPECIALIDAD (única y exclusiva)
 ${textoDerivacion(destinos)}
 CÓMO RESPONDER (el formato importa: la persona lee en un chat y quiere poco texto, muy prolijo)
 - Español rioplatense, cálido, directo. Primero la respuesta, después el detalle. Nada de relleno.
-- PRIMERA LÍNEA = una frase corta y natural (máx. 25 palabras), como si la dijeras en voz alta: "Con lo que hay, esta semana conviene fabricar primero la base chica." Sin símbolos, listas ni números largos.
+- PRIMERA LÍNEA = una frase corta y natural (máx. 25 palabras), como si la dijeras en voz alta: una frase que resuma la respuesta usando SOLO nombres que te devolvió una herramienta. Sin símbolos, listas ni números largos.
 - Después de una línea en blanco, los datos en MARKDOWN prolijo: tabla (máx. 8 filas, columnas cortas) o lista con "- ". Mostrá lo más importante primero y ofrecé el resto en una pregunta corta.
 - Lo que requiera acción va en una línea final que empiece con "Ojo:".
 - Si te saludan o preguntan quién sos, presentate en una o dos frases (sos Romi, de producción y pedidos) y preguntá en qué ayudar.
@@ -51,6 +54,7 @@ const HERRAMIENTAS = [
       { name: "produccion_semana_por_dia", description: "La semana actual día por día (lunes a domingo): qué se asignó y qué se produjo en cada turno, con máquina, operario y cantidades.", parameters: vacio },
       { name: "faltante_semana", description: "Por cada lote del plan de la semana: planificado, producido aprobado, producido pendiente de aprobar, lo que falta, lo ya asignado de hoy en adelante y lo que todavía no tiene día asignado.", parameters: vacio },
       { name: "proponer_reparto", description: "Propone en qué días, turnos y máquinas poner lo que falta producir y todavía no tiene día asignado, usando los turnos libres de hoy en adelante y el rendimiento histórico de cada máquina. Es solo una propuesta.", parameters: { type: "OBJECT", properties: { incluir_sabado: { type: "BOOLEAN", description: "Contar también el sábado como día de producción. Por defecto no." } } } },
+      { name: "proximo_camion_paraguay", description: "La lista de lo que se está armando para el próximo camión de Paraguay: por cada semielaborado de Paraguay, stock, demanda mensual, días de stock, cantidad sugerida, cantidad elegida y el total contra la capacidad de referencia del camión.", parameters: vacio },
       { name: "plan_semana", description: "El plan de producción de esta semana: cada lote con lo planificado y lo ya producido y aprobado.", parameters: vacio },
       { name: "personal_en_planta", description: "Quiénes están en planta ahora (marcaron entrada y no salida) y desde qué hora.", parameters: vacio },
       { name: "calculadora", description: "Hace una cuenta exacta. Usala para cualquier operación aritmética.", parameters: { type: "OBJECT", properties: { expresion: { type: "STRING", description: "Expresión, ej: (1200 - 340) / 30" } }, required: ["expresion"] } },
@@ -66,6 +70,7 @@ const PALABRAS_HERRAMIENTA = {
   produccion_semana_por_dia: "Revisó la semana día por día",
   faltante_semana: "Calculó qué falta producir",
   proponer_reparto: "Armó una propuesta de reparto",
+  proximo_camion_paraguay: "Revisó la lista del camión de Paraguay",
   plan_semana: "Revisó el plan de la semana",
   personal_en_planta: "Vio quién está en planta",
   calculadora: "Hizo una cuenta",
@@ -92,6 +97,7 @@ function crearRomi({ pool, db, ai }) {
       if (llamada.name === "faltante_semana") return { hoy: semana.hoy, lotes: semana.lotes, ...(semana.lotes.length ? {} : { aviso: "Todavía no hay un plan cargado para esta semana." }) };
       return { hoy: semana.hoy, ...sugerirReparto(semana, await cargarRendimientos(pool), { incluirSabado: !!args.incluir_sabado }) };
     }
+    if (llamada.name === "proximo_camion_paraguay") return listaParaguay(pool);
     const d = await datos();
     if (llamada.name === "panorama_produccion") {
       const items = d.plan_semana.items;

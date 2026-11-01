@@ -15,7 +15,7 @@ test("Romi existe, tiene su permiso y una voz propia", () => {
 
 test("Romi solo tiene herramientas de producción", () => {
   const nombres = HERRAMIENTAS[0].functionDeclarations.map((f) => f.name).sort();
-  assert.deepEqual(nombres, ["calculadora", "pedidos_abiertos", "personal_en_planta", "panorama_produccion", "plan_semana", "que_fabricar_primero", "produccion_del_dia", "produccion_semana_por_dia", "faltante_semana", "proponer_reparto"].sort());
+  assert.deepEqual(nombres, ["calculadora", "pedidos_abiertos", "personal_en_planta", "panorama_produccion", "plan_semana", "que_fabricar_primero", "produccion_del_dia", "produccion_semana_por_dia", "faltante_semana", "proponer_reparto", "proximo_camion_paraguay"].sort());
   assert.match(construirInstrucciones(), /única y exclusiva/);
 });
 

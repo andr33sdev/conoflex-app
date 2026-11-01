@@ -27,6 +27,7 @@ const { asegurarColumnaTema, registrarRutasTema, normalizarTema } = require("./t
 const { asegurarTablasFichasPdf, registrarRutasFichasPdf } = require("./comercial/fichasPdf");
 const importarFichas = require("./comercial/importarFichas");
 const { asegurarColumnasGestion, registrarRutasGestion } = require("./comprasGestion");
+const { asegurarSemis, registrarRutasSemis } = require("./semisGestion");
 const { registrarRutasFotos } = require("./comercial/fotos");
 const { generarCotizacion } = require("./comercial/cotizador");
 const { crearCorreoCrudo } = require("./comercial/correo");
@@ -832,6 +833,7 @@ async function initDB() {
     await asegurarTablasFichasPdf(db);
     await asegurarColumnaTema(db);
     await asegurarComprasStock(db);
+    await asegurarSemis(db);
     await asegurarColumnasGestion(db);
 
     console.log("✅ Estructura MySQL inicializada correctamente.");
@@ -5481,6 +5483,7 @@ const nombreDeUsuario = async (req) => {
 
 // Eliminar una solicitud entera y corregir lo que realmente se pidió (proveedor / cantidad) en un renglón.
 registrarRutasGestion(app, { db, nombreDeUsuario });
+registrarRutasSemis(app, { db, nombreDeUsuario });
 
 // CREAR NUEVA SOLICITUD
 app.post("/api/compras/solicitudes", async (req, res) => {
