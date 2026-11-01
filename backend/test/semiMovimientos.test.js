@@ -55,9 +55,17 @@ test("transferir, deshacer, entradas avisadas y que la planilla no pise lo hecho
     const entrada1 = `Código,Descripción,Fecha,Cantidad,Procedencia\nAB1,Base,${f},5,Dep 26`;
     await M.sincronizarHojas(pool, { traer: async (u) => (u.includes("1040146436") ? SALIDA : entrada1) });
     assert.equal((await M.entradasPendientes(pool)).length, 0);
+    // una salida nueva descuenta del 33 al leerla, pero no si se lee durante la sincronización
+    const salida2 = `${SALIDA}\nAB1,Base,${f},3,OP9`;
+    const salida3 = `${salida2}\nAB1,Base,${f},2,OP10`;
+    await M.sincronizarHojas(pool, { traer: async (u) => (u.includes("1040146436") ? salida2 : entrada1) });
+    assert.equal(await st("stock_33"), 7);
+    await M.sincronizarHojas(pool, { aplicar: false, traer: async (u) => (u.includes("1040146436") ? salida3 : entrada1) });
+    assert.equal(await st("stock_33"), 7);
+    await pool.query("UPDATE semielaborados SET stock_33 = 10 WHERE id = 1");
     // segunda lectura con una entrada nueva: avisa; leer de nuevo no duplica
     const entrada2 = `${entrada1}\nAB1,Base,${f},40,Dep 26`;
-    const traer = async (u) => (u.includes("1040146436") ? SALIDA : entrada2);
+    const traer = async (u) => (u.includes("1040146436") ? salida3 : entrada2);
     await M.sincronizarHojas(pool, { traer });
     await M.sincronizarHojas(pool, { traer });
     let pend = await M.entradasPendientes(pool);
@@ -73,7 +81,8 @@ test("transferir, deshacer, entradas avisadas y que la planilla no pise lo hecho
     assert.equal((await M.entradasPendientes(pool)).length, 0, "la entrada se cierra con la transferencia");
 
     // la planilla trae 10/100 (lo viejo): la app vuelve a sumar la transferencia
-    const hoja = { AB1: { stock_33: 10, stock_26: 100, stock_ayolas: 0, stock_37: 0 } };
+    // la entrada de 40 ya está en STOCK 33 de la planilla: la transferencia no la suma otra vez
+    const hoja = { AB1: { stock_33: 50, stock_26: 100, stock_ayolas: 0, stock_37: 0 } };
     await M.conAjustesDeLaApp(pool, hoja);
     assert.equal(hoja.AB1.stock_33, 50);
     assert.equal(hoja.AB1.stock_26, 60);
