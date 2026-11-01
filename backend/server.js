@@ -21,6 +21,8 @@ const { asegurarTablasIngenieria, registrarRutasIngenieria } = require("./ingeni
 const { asegurarTablasNotificaciones, crearNotificacion, registrarRutasNotificaciones, alCrearNotificacion } = require("./notificaciones");
 const { asegurarPush, enviarPush, registrarRutasPush } = require("./push");
 const { mismoProducto, asegurarColumnasCatalogo, registrarRutasCatalogo } = require("./comercial/catalogo");
+const { asegurarTablasPrecios, registrarRutasPrecios } = require("./comercial/precios");
+const { registrarRutasFotos } = require("./comercial/fotos");
 const { generarCotizacion } = require("./comercial/cotizador");
 const { crearCorreoCrudo } = require("./comercial/correo");
 const { leerLista, registrarRutasListaPdf } = require("./comercial/listaPdf");
@@ -264,6 +266,8 @@ const oauth2Client = new google.auth.OAuth2(
   process.env.GOOGLE_REDIRECT_URI,
 );
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+registrarRutasPrecios(app, { db, ai, multer, autenticarToken, autorizarRoles, leerExcel: (p) => procesarExcelTarjetas(p).textoFormateado });
+registrarRutasFotos(app, { db, multer, autenticarToken, autorizarRoles, dirImagenes: IMAGENES_DIR, baseUrl: () => process.env.BASE_URL || `http://localhost:${PORT}` });
 const TOKEN_PATH = path.join(__dirname, "token.json");
 const TOKEN_PATH_WEB = path.join(__dirname, "tokens_web.json");
 
@@ -817,6 +821,7 @@ async function initDB() {
     await asegurarTablasNotificaciones(db);
     await asegurarTablaMovimientos(db);
     await asegurarColumnasCatalogo(db);
+    await asegurarTablasPrecios(db);
     await asegurarComprasStock(db);
 
     console.log("✅ Estructura MySQL inicializada correctamente.");
@@ -1486,10 +1491,11 @@ async function poblarDBDesdeCatalogoTXT() {
 
         if (existente && existente.length > 0) {
           await conn.query(
+            // La lista mensual SOLO actualiza el precio: nombre, medidas, usos y fichas no se tocan.
             `UPDATE productos 
-             SET nombre = ?, medidas = ?, precio_lista = ?, especificacion = ?, updated_at = NOW() 
-             WHERE codigo = ?`,
-            [nombre || "", medidas || "", precio || "", espec || "", cod],
+             SET precio_anterior = IF(precio_lista <> ?, precio_lista, precio_anterior), precio_actualizado = IF(precio_lista <> ?, NOW(), precio_actualizado), precio_lista = ?, updated_at = NOW() 
+             WHERE codigo = ? AND ? <> ''`,
+            [precio || "", precio || "", precio || "", cod, precio || ""],
           );
         } else {
           await conn.query(
@@ -1518,6 +1524,8 @@ async function poblarDBDesdeCatalogoTXT() {
 // ENDPOINT PARA PROCESAR PDF / EXCEL / CSV DE PRECIOS CON GEMINI
 app.post(
   "/api/catalogo/procesar",
+  autenticarToken,
+  autorizarRoles("ADMIN", "COMERCIAL"),
   uploadTemp.single("lista_precios"),
   async (req, res) => {
     try {
