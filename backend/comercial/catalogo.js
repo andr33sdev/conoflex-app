@@ -177,7 +177,7 @@ function registrarRutasCatalogo(app, { db, autenticarToken, autorizarRoles }) {
       const keys = Object.keys(c);
       if (!keys.length) return res.status(400).json({ error: "No hay nada para guardar." });
       const fichaCambia = keys.some((k) => ["descripcion", "usos_recomendados", "advertencias", "categoria"].includes(k));
-      const [r] = await db.query(`UPDATE productos SET ${keys.map((k) => `${k} = ?`).join(", ")}${fichaCambia ? ", ficha_editada = 1, ficha_actualizada = NOW()" : ""}, updated_at = NOW() WHERE id = ?`, [...keys.map((k) => c[k]), req.params.id]);
+      const [r] = await db.query(`UPDATE productos SET ${keys.map((k) => `${k} = ?`).join(", ")}${fichaCambia ? `, ficha_editada = ${req.body?.ficha_editada === false ? 0 : 1}, ficha_actualizada = NOW()` : ""}, updated_at = NOW() WHERE id = ?`, [...keys.map((k) => c[k]), req.params.id]);
       if (!r.affectedRows) return res.status(404).json({ error: "No encontré ese producto." });
       res.json({ success: true });
     } catch (e) {
