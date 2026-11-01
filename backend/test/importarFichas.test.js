@@ -16,18 +16,13 @@ async function conBase(fn) {
   try {
     await pool.query("DROP TABLE IF EXISTS fichas_pdf_productos");
     await pool.query("DROP TABLE IF EXISTS fichas_pdf");
-    await pool.query("CREATE TABLE IF NOT EXISTS productos (id INT AUTO_INCREMENT PRIMARY KEY, codigo VARCHAR(50), nombre VARCHAR(200))");
+    await pool.query("DROP TABLE IF EXISTS productos");
+    await pool.query("CREATE TABLE productos (id INT AUTO_INCREMENT PRIMARY KEY, codigo VARCHAR(50), nombre VARCHAR(200), descripcion TEXT, aplicacion TEXT, usos_recomendados TEXT, advertencias TEXT, medidas TEXT, categoria VARCHAR(100), ficha_editada TINYINT(1) NOT NULL DEFAULT 0, ficha_origen VARCHAR(200) NULL, ficha_actualizada DATETIME NULL)");
     await pool.query("CREATE TABLE IF NOT EXISTS categorias_pdf (nombre VARCHAR(100) PRIMARY KEY, pdf_filename VARCHAR(255), total_productos INT)");
-    const [cols] = await pool.query("SELECT COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'productos'");
-    const hay = new Set(cols.map((c) => c.COLUMN_NAME));
-    for (const [c, t] of [["descripcion", "TEXT"], ["aplicacion", "TEXT"], ["usos_recomendados", "TEXT"], ["advertencias", "TEXT"], ["medidas", "TEXT"], ["categoria", "VARCHAR(100)"], ["ficha_editada", "TINYINT(1) NOT NULL DEFAULT 0"], ["ficha_origen", "VARCHAR(200) NULL"], ["ficha_actualizada", "DATETIME NULL"]]) {
-      if (!hay.has(c)) await pool.query(`ALTER TABLE productos ADD COLUMN ${c} ${t}`);
-    }
     await F.asegurarTablasFichasPdf(pool);
-    await pool.query("DELETE FROM productos WHERE codigo LIKE 'ZT-%'");
     await fn(pool);
   } finally {
-    await pool.query("DELETE FROM productos WHERE codigo LIKE 'ZT-%'").catch(() => {});
+    await pool.query("DROP TABLE IF EXISTS productos").catch(() => {});
     await pool.query("DROP TABLE IF EXISTS fichas_pdf_productos").catch(() => {});
     await pool.query("DROP TABLE IF EXISTS fichas_pdf").catch(() => {});
     await pool.end();

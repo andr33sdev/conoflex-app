@@ -20,7 +20,8 @@ const { armarTemario, olvidarTemario } = require("./temario");
 const { asegurarTablaReuniones, hacerReunion, ultimaReunion, iniciarReunion, ahoraAR } = require("./reunion");
 const { preguntarOficina } = require("./oficina");
 const { analizarCompras, rankingProveedores, AUTORESOLVIBLES: AUTO_COMPRAS } = require("./vigilanteCompras");
-const { asegurarTablaListas, leerLista } = require("./listaCompra");
+const { asegurarTablaListas, leerLista, eliminarLista } = require("./listaCompra");
+const { eliminarSolicitud } = require("../comprasGestion");
 const { analizarStock, armarPanorama, cargarStock } = require("./vigilanteStock");
 const { sintetizar } = require("./voz");
 const { pdfLiquidacion, pdfReporte } = require("./pdf");
@@ -833,6 +834,20 @@ function registrarRutasAgentes(app, { db, pool, ai, mails = null, seguimiento = 
   accionHilo("reabrir", (req) => S.reabrir(db, { threadId: req.params.tid, usuario: req.usuario.nombre }), () => "volvió a seguir");
 
   // ---- Cami (ventas): borrador a pedido (siempre con el descuento definido), aprendizajes y notas comerciales ----
+  // Vera: eliminar la lista de compra en armado (queda sin ninguna).
+  app.post("/api/agentes/:id/lista/eliminar", delAgente, async (req, res) => {
+    if (req.agente.id !== "compras") return res.status(400).json({ error: "Esto es solo de Vera." });
+    try {
+      const r = await eliminarLista(db, req.usuario, { eliminarSolicitud });
+      if (r.error) return res.status(r.status || 400).json({ error: r.error });
+      await registrarActividad(db, "compras", "ACCION", `${req.usuario.nombre} eliminó la lista de compra en armado (${r.renglones} ${r.renglones === 1 ? "renglón" : "renglones"})`).catch(() => {});
+      res.json({ success: true, ...r });
+    } catch (e) {
+      console.error("[agentes] eliminar lista:", e.message);
+      res.status(500).json({ error: "No pude eliminar la lista." });
+    }
+  });
+
   const soloVentas = (req, res, next) => (req.agente.id === "ventas" ? next() : res.status(400).json({ error: "Esto es solo de Cami." }));
   const armando = new Set();
   app.post("/api/agentes/:id/mails/:mailId/borrador", delAgente, soloVentas, async (req, res) => {

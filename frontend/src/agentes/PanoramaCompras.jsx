@@ -1,4 +1,6 @@
-import { Loader2 } from "lucide-react";
+import { useState } from "react";
+import { Loader2, Trash2 } from "lucide-react";
+import { api } from "../produccion/util";
 
 const fmt = (n, d = 0) => (n == null || Number.isNaN(Number(n)) ? "—" : Number(n).toLocaleString("es-AR", { maximumFractionDigits: d }));
 const PRIO = { 5: "Urgente", 4: "Alta", 3: "Normal", 2: "Baja", 1: "Baja" };
@@ -16,7 +18,22 @@ function Dato({ titulo, valor, detalle }) {
 const Titulo = ({ children }) => <h4 className="text-[11.5px] font-semibold uppercase tracking-[0.1em] text-zinc-500 mb-2">{children}</h4>;
 
 /** Panel de Vera: la lista de compra que está armando (en vivo), lo que espera firma, lo que no llegó y cómo cumple cada proveedor. */
-export default function PanoramaCompras({ datos, error, onPreguntar }) {
+export default function PanoramaCompras({ datos, error, onPreguntar, base, alCambiar, mostrar }) {
+  const [confirmaBorrar, setConfirmaBorrar] = useState(false);
+  const [borrando, setBorrando] = useState(false);
+  const eliminar = async () => {
+    setBorrando(true);
+    try {
+      await api(`${base}/lista/eliminar`, { method: "POST" });
+      mostrar?.("Listo: eliminé la lista. Quedó sin ningún renglón.");
+      setConfirmaBorrar(false);
+      alCambiar?.();
+    } catch (e) {
+      mostrar?.(e.message, "error");
+    } finally {
+      setBorrando(false);
+    }
+  };
   if (error) return <div className="p-6 text-center text-sm text-zinc-400">{error}</div>;
   if (!datos) return <div className="h-full grid place-items-center text-zinc-500 py-16"><Loader2 className="animate-spin" size={22} /></div>;
   const { lista, resumen: r } = datos;
@@ -44,7 +61,17 @@ export default function PanoramaCompras({ datos, error, onPreguntar }) {
             <div className="flex flex-wrap gap-1.5 px-3 pb-3 pt-2">
               <button onClick={() => onPreguntar("Agregá a la lista lo que hace falta comprar")} className={`${accion} bg-white/[0.07] hover:bg-white/[0.12] text-zinc-100`}>Sumar lo que falta</button>
               <button onClick={() => onPreguntar("Dejá la lista lista para firmar")} className={`${accion} bg-white text-black hover:bg-zinc-200`}>Cerrar para firma</button>
+              <button onClick={() => setConfirmaBorrar(true)} className={`${accion} ml-auto text-rose-300 hover:bg-rose-500/10 inline-flex items-center gap-1.5`}><Trash2 size={14} /> Eliminar lista</button>
             </div>
+            {confirmaBorrar && (
+              <div className="mx-3 mb-3 rounded-lg border border-rose-500/30 bg-rose-500/[0.06] p-3 text-[13.5px] text-rose-100 leading-snug">
+                <p>¿Eliminar la solicitud #{lista.solicitud_id} con sus {lista.total_renglones} {lista.total_renglones === 1 ? "renglón" : "renglones"}? Queda sin ninguna lista en armado. Se guarda una copia por seguridad.</p>
+                <div className="mt-2.5 flex gap-1.5">
+                  <button onClick={eliminar} disabled={borrando} className={`${accion} bg-rose-600 hover:bg-rose-500 text-white disabled:opacity-60`}>{borrando ? "Eliminando…" : "Sí, eliminar"}</button>
+                  <button onClick={() => setConfirmaBorrar(false)} disabled={borrando} className={`${accion} bg-white/[0.07] hover:bg-white/[0.12] text-zinc-100`}>Cancelar</button>
+                </div>
+              </div>
+            )}
           </>
         ) : (
           <div className="px-4 pb-4">

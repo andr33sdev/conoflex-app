@@ -23,8 +23,8 @@ test("fichas PDF: guarda el archivo y qué productos afectó", async (t) => {
   try {
     await pool.query("DROP TABLE IF EXISTS fichas_pdf_productos");
     await pool.query("DROP TABLE IF EXISTS fichas_pdf");
-    await pool.query("CREATE TABLE IF NOT EXISTS productos (id INT AUTO_INCREMENT PRIMARY KEY, codigo VARCHAR(50), nombre VARCHAR(200))");
-    await pool.query("DELETE FROM productos WHERE id = 90001");
+    await pool.query("DROP TABLE IF EXISTS productos");
+    await pool.query("CREATE TABLE productos (id INT PRIMARY KEY, codigo VARCHAR(50), nombre VARCHAR(200), ficha_origen VARCHAR(200) NULL)");
     await pool.query("INSERT INTO productos (id, codigo, nombre) VALUES (90001, 'C-1', 'Cono uno')");
     const p = { insertId: 90001 };
     await F.asegurarTablasFichasPdf(pool);
@@ -39,7 +39,7 @@ test("fichas PDF: guarda el archivo y qué productos afectó", async (t) => {
     assert.strictEqual(f.productos[0].nombre, "Cono uno");
     assert.strictEqual(lista.find((x) => x.nombre === "roto.pdf").leido, 0);
   } finally {
-    await pool.query("DELETE FROM productos WHERE id = 90001").catch(() => {});
+    await pool.query("DROP TABLE IF EXISTS productos").catch(() => {});
     await pool.query("DROP TABLE IF EXISTS fichas_pdf_productos").catch(() => {});
     await pool.query("DROP TABLE IF EXISTS fichas_pdf").catch(() => {});
     await pool.end();

@@ -1,10 +1,22 @@
-import { Building2, Hash, PackagePlus, PenLine, Pencil, Printer } from "lucide-react";
+import { useState } from "react";
+import { Building2, Hash, PackagePlus, PenLine, Pencil, Printer, Trash2 } from "lucide-react";
 import { Drawer } from "../produccion/ui";
 import { ChipPrioridad } from "./PrioridadPills";
 import { BarraAvance, ChipEstado, ChipFirma, ChipUrgente } from "./Piezas";
 import { cerradaSC, formatFecha, nf, nroSC, num, resumenSC } from "./formato";
 
-function Item({ item }) {
+function Item({ item, proveedores, onCorregir }) {
+  const [editando, setEditando] = useState(false);
+  const [prov, setProv] = useState(item.proveedor || "");
+  const [cant, setCant] = useState(String(item.cantidad_solicitada ?? ""));
+  const [guardando, setGuardando] = useState(false);
+  const guardar = async () => {
+    setGuardando(true);
+    const ok = await onCorregir(item, { proveedor: prov.trim(), cantidad: Number(cant) });
+    setGuardando(false);
+    if (ok) setEditando(false);
+  };
+  const corregido = item.pedido_corregido_en && (item.proveedor_sugerido != null || item.cantidad_sugerida != null);
   const pedida = num(item.cantidad_solicitada);
   const recibida = num(item.cantidad_recibida);
   const completo = recibida >= pedida && pedida > 0;
@@ -16,7 +28,7 @@ function Item({ item }) {
         <ChipPrioridad valor={item.prioridad} />
       </div>
       <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-[13px] text-zinc-500">
-        <span className="inline-flex items-center gap-1.5 min-w-0"><Building2 size={13} className="shrink-0" /><span className="truncate">{item.proveedor || "Sin proveedor sugerido"}</span></span>
+        <span className="inline-flex items-center gap-1.5 min-w-0"><Building2 size={13} className="shrink-0" /><span className="truncate">{item.proveedor || "Sin proveedor"}</span></span>
         {item.numero_oc && <span className="inline-flex items-center gap-1"><Hash size={13} />O.C. {item.numero_oc}</span>}
       </div>
       <div className="mt-3 flex items-end justify-between gap-3 mb-2">
@@ -24,12 +36,39 @@ function Item({ item }) {
         <span className={`text-sm font-extrabold tabular-nums ${completo ? "text-emerald-300" : "text-zinc-300"}`}>{completo ? "Completo" : `${pct}%`}</span>
       </div>
       <BarraAvance pct={pct} />
+      {corregido && (
+        <p className="mt-2.5 text-[12px] text-amber-300/90 leading-snug">
+          Corregido al pedido real. Se había sugerido{item.proveedor_sugerido != null && item.proveedor_sugerido !== item.proveedor ? <> proveedor <b>{item.proveedor_sugerido || "(ninguno)"}</b></> : null}{item.cantidad_sugerida != null && Number(item.cantidad_sugerida) !== pedida ? <> · cantidad <b>{nf(Number(item.cantidad_sugerida), 3)}</b></> : null}.
+        </p>
+      )}
+      {editando ? (
+        <div className="mt-3 rounded-xl border border-white/[0.1] bg-black/20 p-3 space-y-2.5">
+          <p className="text-[12px] text-zinc-400">Poné lo que realmente se pidió. Vera y los informes usan estos datos.</p>
+          <label className="block text-[12px] text-zinc-400">Proveedor al que se pidió
+            <input list={`prov-${item.id}`} value={prov} onChange={(e) => setProv(e.target.value)} className="mt-1 w-full h-11 rounded-lg bg-[#15151a] border border-white/[0.12] px-3 text-[14px] text-white outline-none focus:border-[#FFD60A]" />
+            <datalist id={`prov-${item.id}`}>{proveedores.map((p) => <option key={p.id ?? p.nombre} value={p.nombre} />)}</datalist>
+          </label>
+          <label className="block text-[12px] text-zinc-400">Cantidad pedida
+            <input type="number" inputMode="decimal" step="0.01" min="0" value={cant} onChange={(e) => setCant(e.target.value)} className="mt-1 w-full h-11 rounded-lg bg-[#15151a] border border-white/[0.12] px-3 text-[14px] text-white outline-none focus:border-[#FFD60A]" />
+          </label>
+          {recibida > 0 && <p className="text-[12px] text-zinc-500">Ya se recibieron {nf(recibida, 3)}: la cantidad no puede ser menor.</p>}
+          <div className="flex gap-2">
+            <button type="button" onClick={guardar} disabled={guardando || !prov.trim() || !(Number(cant) > 0)} className="flex-1 min-h-[44px] rounded-xl bg-[#FFD60A] hover:bg-white text-black text-sm font-extrabold disabled:opacity-50 cursor-pointer">{guardando ? "Guardando…" : "Guardar pedido real"}</button>
+            <button type="button" onClick={() => { setEditando(false); setProv(item.proveedor || ""); setCant(String(item.cantidad_solicitada ?? "")); }} className="min-h-[44px] px-4 rounded-xl border border-white/[0.1] text-zinc-300 text-sm font-bold cursor-pointer">Cancelar</button>
+          </div>
+        </div>
+      ) : (
+        <button type="button" onClick={() => setEditando(true)} className="mt-3 text-[12.5px] font-bold text-[#FFD60A] hover:underline cursor-pointer inline-flex items-center gap-1.5"><Pencil size={12} /> Corregir proveedor o cantidad pedida</button>
+      )}
     </li>
   );
 }
 
-export default function DetalleSC({ sc, onCerrar, onRecibir, onEditar, onFirmas, onPDF }) {
+export default function DetalleSC({ sc, proveedores = [], onCerrar, onRecibir, onEditar, onFirmas, onPDF, onCorregir, onEliminar }) {
   const r = resumenSC(sc);
+  const [eliminando, setEliminando] = useState(false);
+  const [borrando, setBorrando] = useState(false);
+  const recibidos = sc.items.filter((i) => num(i.cantidad_recibida) > 0);
   const cerrada = cerradaSC(sc);
   const boton = "min-h-[48px] rounded-2xl border border-white/[0.1] bg-white/[0.05] hover:bg-white/[0.1] text-zinc-100 text-sm font-bold inline-flex items-center justify-center gap-2 cursor-pointer transition-colors";
   return (
@@ -68,8 +107,23 @@ export default function DetalleSC({ sc, onCerrar, onRecibir, onEditar, onFirmas,
 
       <h3 className="mt-6 mb-3 text-[13px] font-bold uppercase tracking-[0.09em] text-zinc-400">Artículos ({sc.items.length}) · por prioridad</h3>
       <ul className="space-y-3">
-        {r.porUrgencia.map((i) => <Item key={i.id} item={i} />)}
+        {r.porUrgencia.map((i) => <Item key={i.id} item={i} proveedores={proveedores} onCorregir={onCorregir} />)}
       </ul>
+
+      <div className="mt-8 rounded-2xl border border-rose-500/25 bg-rose-500/[0.04] p-4">
+        {!eliminando ? (
+          <button type="button" onClick={() => setEliminando(true)} className="text-sm font-bold text-rose-300 hover:text-rose-200 inline-flex items-center gap-2 cursor-pointer"><Trash2 size={15} /> Eliminar esta solicitud</button>
+        ) : (
+          <div className="space-y-3">
+            <p className="text-sm text-rose-100 leading-snug">¿Eliminar <b>{nroSC(sc.id)}</b> con sus {sc.items.length} {sc.items.length === 1 ? "artículo" : "artículos"}? Deja de contar para Vera y los informes. Se guarda una copia por seguridad.</p>
+            {recibidos.length > 0 && <p className="text-sm text-amber-200 leading-snug"><b>Ojo:</b> ya se recibió mercadería de {recibidos.map((i) => i.articulo).join(", ")}. Ese stock ya entró y <b>no se descuenta</b> al eliminar (queda en el historial de movimientos).</p>}
+            <div className="flex gap-2">
+              <button type="button" disabled={borrando} onClick={async () => { setBorrando(true); const ok = await onEliminar(sc, recibidos.length > 0); if (!ok) setBorrando(false); }} className="flex-1 min-h-[46px] rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-sm font-extrabold disabled:opacity-50 cursor-pointer">{borrando ? "Eliminando…" : "Sí, eliminar solicitud"}</button>
+              <button type="button" disabled={borrando} onClick={() => setEliminando(false)} className="min-h-[46px] px-4 rounded-xl border border-white/[0.1] text-zinc-300 text-sm font-bold cursor-pointer">Cancelar</button>
+            </div>
+          </div>
+        )}
+      </div>
     </Drawer>
   );
 }

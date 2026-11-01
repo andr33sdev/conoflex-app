@@ -232,6 +232,30 @@ export default function SolicitudesCompraModule() {
             onEditar={(s) => { setDetalleId(null); setForm({ k: Date.now(), solicitud: s }); }}
             onFirmas={(s) => { setDetalleId(null); setFirmasDe(s); }}
             onPDF={(s) => { setDetalleId(null); imprimir(s); }}
+            proveedores={proveedores}
+            onCorregir={async (item, datos) => {
+              try {
+                await api(`/api/compras/items/${item.id}/pedido`, { method: "PATCH", body: datos });
+                await cargar();
+                avisar("Pedido corregido", item.articulo);
+                return true;
+              } catch (e) {
+                toast(e.message, "error");
+                return false;
+              }
+            }}
+            onEliminar={async (s, forzar) => {
+              try {
+                await api(`/api/compras/solicitudes/${s.id}${forzar ? "?forzar=1" : ""}`, { method: "DELETE" });
+                setDetalleId(null);
+                await cargar();
+                avisar("Solicitud eliminada", nroSC(s.id));
+                return true;
+              } catch (e) {
+                toast(e.message, "error");
+                return false;
+              }
+            }}
           />
         )}
 
