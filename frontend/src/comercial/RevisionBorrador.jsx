@@ -13,7 +13,7 @@ export default function RevisionBorrador({ revision }) {
         Revisá el borrador antes de enviarlo
       </h4>
       <p className="text-[11px] text-zinc-400">
-        Los precios los calculó el sistema con tu lista{revision.descuento_pct ? `, aplicando ${revision.descuento_pct}% de descuento` : " (sin descuento)"}.
+        Los precios los calculó el sistema con tu lista{revision.descuento_pct ? `, aplicando el ${revision.descuento_pct}% de descuento que elegiste` : ", sin descuento (como elegiste)"}.
         {revision.adjunta_lista ? " La lista de precios en PDF quedó adjunta al borrador." : ""}
       </p>
       {revision.lineas?.length > 0 && (
@@ -48,6 +48,15 @@ export default function RevisionBorrador({ revision }) {
             <li key={i} className="flex gap-2 text-xs text-amber-300 leading-snug"><AlertTriangle size={13} className="shrink-0 mt-0.5" /> <span>{a}</span></li>
           ))}
         </ul>
+      )}
+      {revision.observaciones?.length > 0 && (
+        <div className="rounded-lg border border-zinc-800 p-3">
+          <p className="text-[11px] font-bold uppercase tracking-wider text-zinc-400">Cami anotó para entrenarse</p>
+          <ul className="mt-1.5 space-y-1">
+            {revision.observaciones.map((o, i) => <li key={i} className="text-xs text-zinc-300 leading-snug">• {o.titulo}</li>)}
+          </ul>
+          <p className="mt-1.5 text-[11px] text-zinc-500">Las ves y decidís qué hacer en el panel de Cami, sección «Para entrenar a Cami».</p>
+        </div>
       )}
       {!hayAvisos && <p className="text-xs text-emerald-400 flex items-center gap-1.5"><CheckCircle2 size={13} /> No detecté dudas: igual leelo completo en Gmail.</p>}
       {revision.adjunta_lista && <p className="text-[11px] text-zinc-500 flex items-center gap-1.5"><Paperclip size={12} /> Lista_de_Precios_Conoflex.pdf</p>}

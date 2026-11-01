@@ -63,6 +63,17 @@ export const ACTIVIDADES = {
     A("Tomando un café", "taza", "cafe"),
     A("Esperando tu consulta", "puntos"),
   ],
+  seguimiento: [
+    A("Revisando los mails enviados", "sobre", "scan"),
+    A("Buscando presupuestos sin respuesta", "lupa", "scan"),
+    A("Contando los días de espera", "calendario", "abajo"),
+    A("Pensando cómo retomar un mail", "doc", "abajo"),
+    A("Ordenando qué reclamar primero", "lista", "lado"),
+    A("Mirando quién ya respondió", "sobre", "lado"),
+    A("Preparando un borrador de seguimiento", "doc", "abajo"),
+    A("Tomando un té", "taza", "cafe"),
+    A("Esperando tu consulta", "puntos"),
+  ],
 };
 
 const MODOS = {
@@ -75,7 +86,7 @@ const MODOS = {
 const SEGUNDOS = 9;
 
 // Quiénes están en el equipo de esta persona (según sus permisos): el mapa y los estados hablan solo de ellos.
-let EQUIPO = { ids: ORDEN.slice(), nombres: { rrhh: "Lía", stock: "Nati", compras: "Vera", produccion: "Romi", ventas: "Cami" } };
+let EQUIPO = { ids: ORDEN.slice(), nombres: { rrhh: "Lía", stock: "Nati", compras: "Vera", produccion: "Romi", ventas: "Cami", seguimiento: "Sofi" } };
 export function setEquipo(agentes = []) {
   const ids = ORDEN.filter((id) => agentes.some((a) => a.id === id));
   EQUIPO = { ids, nombres: { ...EQUIPO.nombres, ...Object.fromEntries(agentes.map((a) => [a.id, a.nombre])) } };
@@ -108,7 +119,7 @@ export function estadoDe(id, nombre, { modo = "idle", abiertos = 0, ahora = Date
   const salida = estadoEscena(id, escena(ahora, EQUIPO.ids)[id]);
   if (salida) return { modo: "idle", ...salida };
   const lista = abiertos > 0 ? [...base.slice(0, 4), A(`Atendiendo ${abiertos} ${abiertos === 1 ? "aviso abierto" : "avisos abiertos"}`, "carpeta", "abajo"), ...base.slice(4)] : base;
-  const semilla = { rrhh: 0, stock: 3, compras: 5, produccion: 7, ventas: 2 }[id] ?? 0;
+  const semilla = { rrhh: 0, stock: 3, compras: 5, produccion: 7, ventas: 2, seguimiento: 4 }[id] ?? 0;
   const slot = Math.floor(ahora / (SEGUNDOS * 1000));
   const a = lista[(slot * 5 + semilla) % lista.length];
   return { ...a, modo: "idle" };

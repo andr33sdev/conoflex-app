@@ -67,13 +67,28 @@ export const PERFILES = {
     panorama: "ventas",
     voz: { indice: 4, tono: 1.18, ritmo: 1.06 },
     presentacion: "Soy Cami, de ventas.",
-    reporte: "Armame un reporte de ventas para pasar a PDF: mails de clientes sin responder, borradores listos para revisar, qué se corrigió en los últimos envíos y qué reglas comerciales tengo anotadas. Con títulos y viñetas.",
+    reporte: "Armame un reporte de ventas para pasar a PDF: mails de clientes sin responder, borradores listos para revisar, qué se corrigió en los últimos envíos, qué reglas comerciales tengo anotadas y qué cosas me falta definir para mejorar (preguntas que se repiten, características pedidas). Con títulos y viñetas.",
     resumen: (estado, abiertos) =>
       estado?.ultima_revision
         ? abiertos > 0
           ? `Revisé tus mails etiquetados y hay ${aviso(abiertos, estado.altas)}.`
           : "Revisé tus mails etiquetados y no hay nada esperándote."
         : "Todavía no hice mi primera revisión de mails.",
+  },
+  seguimiento: {
+    id: "seguimiento",
+    nombre: "Sofi",
+    claves: { chat: "sofi_chat_v1", voz: "sofi_voz_v1" },
+    panorama: "seguimiento",
+    voz: { indice: 6, tono: 1.1, ritmo: 1.0 },
+    presentacion: "Soy Sofi, de seguimiento de mails.",
+    reporte: "Armame un reporte de seguimiento para pasar a PDF: presupuestos y consultas enviados que siguen sin respuesta, cuántos días llevan, cuáles se enfriaron y cuáles rebotaron. Con títulos y una tabla.",
+    resumen: (estado, abiertos) =>
+      estado?.ultima_revision
+        ? abiertos > 0
+          ? `Revisé tus mails enviados y hay ${aviso(abiertos, estado.altas)}.`
+          : "Revisé tus mails enviados y nadie te debe una respuesta."
+        : "Todavía no hice mi primera revisión de enviados.",
   },
 };
 export const perfilDe = (id) => PERFILES[id] || PERFILES.rrhh;

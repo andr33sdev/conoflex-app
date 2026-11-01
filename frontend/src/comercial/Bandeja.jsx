@@ -2,6 +2,8 @@ import { useCallback, useEffect, useState } from "react";
 import { ExternalLink, Eye, Image as ImageIcon, Inbox, Mail, Paperclip, RefreshCw, Send, Sparkles, User, X } from "lucide-react";
 import { Boton, Vacio } from "./ui";
 import RevisionBorrador from "./RevisionBorrador";
+import SelectorDescuento from "./SelectorDescuento";
+import { descuentoDefinido } from "./descuento";
 
 const inicial = (t) => (String(t || "?").replace(/[^a-zA-Z0-9]/g, "")[0] || "?").toUpperCase();
 
@@ -14,6 +16,7 @@ export default function Bandeja({ aviso, onCuenta }) {
   const [generando, setGenerando] = useState(false);
   const [revision, setRevision] = useState(null); // { mailId, revision }
   const [foto, setFoto] = useState(null);
+  const [descuento, setDescuento] = useState(null);
 
   const traer = useCallback(async () => {
     try {
@@ -65,6 +68,8 @@ export default function Bandeja({ aviso, onCuenta }) {
           threadId: mail.threadId,
           imagenes: mail.imagenes || [],
           nombreCliente: mail.remitente,
+          mailId: mail.id,
+          descuento,
         }),
       });
       const data = await res.json();
@@ -98,7 +103,7 @@ export default function Bandeja({ aviso, onCuenta }) {
         </div>
         <div className="flex-1 overflow-y-auto divide-y divide-zinc-800/60">
           {mails.map((m) => (
-            <button key={m.id} onClick={() => setSel(m)} className={`w-full text-left p-3.5 flex gap-3 cursor-pointer transition-colors ${sel?.id === m.id ? "bg-zinc-900 border-l-2 border-[#FF5A00]" : "hover:bg-zinc-900/50 border-l-2 border-transparent"}`}>
+            <button key={m.id} onClick={() => { setSel(m); setDescuento(null); }} className={`w-full text-left p-3.5 flex gap-3 cursor-pointer transition-colors ${sel?.id === m.id ? "bg-zinc-900 border-l-2 border-[#FF5A00]" : "hover:bg-zinc-900/50 border-l-2 border-transparent"}`}>
               <div className="w-9 h-9 rounded-full bg-zinc-800 grid place-items-center text-sm font-semibold text-[#ff8a4d] shrink-0">{inicial(m.emailCliente)}</div>
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-medium text-zinc-100 truncate">{m.remitente || m.emailCliente}</p>
@@ -144,12 +149,14 @@ export default function Bandeja({ aviso, onCuenta }) {
 
             {revision?.mailId === sel.id && <RevisionBorrador revision={revision.revision} />}
 
+            <SelectorDescuento key={sel.id} email={sel.emailCliente} valor={descuento} onChange={setDescuento} />
+
             <div className="rounded-xl border border-zinc-800 bg-[#0d0d0e] p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div>
                 <h4 className="text-sm font-semibold text-white flex items-center gap-2"><Sparkles size={15} className="text-[#FF5A00]" /> Preparar respuesta</h4>
                 <p className="text-sm text-zinc-500 mt-1 max-w-lg">La IA lee el mensaje y las fotos, elige los productos, calcula los precios con tu lista y deja el borrador en Gmail. No se envía nada solo.</p>
               </div>
-              <Boton onClick={() => generarBorrador(sel)} cargando={generando} className="shrink-0"><Send size={15} /> {generando ? "Preparando…" : "Crear borrador en Gmail"}</Boton>
+              <Boton onClick={() => generarBorrador(sel)} cargando={generando} disabled={!descuentoDefinido(descuento)} title={descuentoDefinido(descuento) ? "" : "Primero elegí el descuento"} className="shrink-0"><Send size={15} /> {generando ? "Preparando…" : "Crear borrador en Gmail"}</Boton>
             </div>
           </div>
         ) : (

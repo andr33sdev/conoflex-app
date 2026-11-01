@@ -35,6 +35,7 @@ const MODULOS_SISTEMA = [
   { id: "agente:compras", nombre: "Agente · Compras y proveedores (Vera)" },
   { id: "agente:produccion", nombre: "Agente · Producción y pedidos (Romi)" },
   { id: "agente:ventas", nombre: "Agente · Ventas y mails (Cami)" },
+  { id: "agente:seguimiento", nombre: "Agente · Seguimiento de mails (Sofi)" },
 ];
 
 export default function AdminUsuarios() {

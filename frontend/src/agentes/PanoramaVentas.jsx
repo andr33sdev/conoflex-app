@@ -2,6 +2,9 @@ import { useState } from "react";
 import { Check, Loader2, Mail, Plus, Trash2 } from "lucide-react";
 import { api } from "../produccion/util";
 import { cuando } from "./formato";
+import EntrenarCami from "./EntrenarCami";
+import SelectorDescuento from "../comercial/SelectorDescuento";
+import { descuentoDefinido, descuentoTexto } from "../comercial/descuento";
 
 const Titulo = ({ children }) => <h4 className="text-[11.5px] font-semibold uppercase tracking-[0.1em] text-zinc-500 mb-2">{children}</h4>;
 const ESTADO = {
@@ -24,17 +27,21 @@ function Dato({ titulo, valor, detalle }) {
 /** Panel de Cami: mails de clientes que esperan, lo que se corrigió al enviar y las reglas comerciales anotadas. Cami solo deja borradores en Gmail. */
 export default function PanoramaVentas({ base, datos, error, onPreguntar, alCambiar, mostrar }) {
   const [armando, setArmando] = useState(null);
+  const [eligiendo, setEligiendo] = useState(null);
+  const [descuento, setDescuento] = useState(null);
   const [nota, setNota] = useState("");
   const [guardando, setGuardando] = useState(false);
   if (error) return <div className="p-6 text-center text-sm text-zinc-400">{error}</div>;
   if (!datos) return <div className="h-full grid place-items-center text-zinc-500 py-16"><Loader2 className="animate-spin" size={22} /></div>;
-  const { conteos: c = {}, mails = [], atendidos = [], patrones = [], notas = [] } = datos;
+  const { conteos: c = {}, mails = [], atendidos = [], patrones = [], notas = [], aprendizajes = {} } = datos;
 
   const armar = async (m) => {
     setArmando(m.mail_id);
     try {
-      await api(`${base}/mails/${m.mail_id}/borrador`, { method: "POST" });
-      mostrar?.("Listo: el borrador quedó en Gmail, sin enviar.");
+      await api(`${base}/mails/${m.mail_id}/borrador`, { method: "POST", body: { descuento } });
+      mostrar?.(`Listo: el borrador quedó en Gmail (${descuentoTexto(descuento)}), sin enviar.`);
+      setEligiendo(null);
+      setDescuento(null);
       alCambiar?.();
     } catch (e) {
       mostrar?.(e.message, "error");
@@ -65,15 +72,6 @@ export default function PanoramaVentas({ base, datos, error, onPreguntar, alCamb
       mostrar?.(er.message, "error");
     }
   };
-  const alternarAuto = async () => {
-    try {
-      await api(`${base}/auto`, { method: "PUT", body: { activo: !datos.auto } });
-      alCambiar?.();
-    } catch (er) {
-      mostrar?.(er.message, "error");
-    }
-  };
-
   return (
     <div className="max-w-3xl mx-auto px-3 sm:px-5 py-4 space-y-5">
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
@@ -84,14 +82,8 @@ export default function PanoramaVentas({ base, datos, error, onPreguntar, alCamb
       </div>
 
       <p className="rounded-xl border border-white/[0.07] px-4 py-3 text-[13px] text-zinc-400 leading-relaxed">
-        Cami lee los mails con la etiqueta <b className="text-zinc-200">IA-Consulta</b> y te deja el borrador en Gmail. <b className="text-zinc-200">Nunca envía</b>: el envío siempre es tuyo.
-        {datos.puede_configurar ? (
-          <button onClick={alternarAuto} className="ml-1 font-semibold text-white underline underline-offset-2 hover:text-zinc-300">
-            {datos.auto ? "Armado automático: activo (tocá para apagarlo)" : "Armado automático: apagado (tocá para activarlo)"}
-          </button>
-        ) : (
-          <span className="ml-1">Armado automático: {datos.auto ? "activo" : "apagado"}.</span>
-        )}
+        Cami lee los mails con la etiqueta <b className="text-zinc-200">IA-Consulta</b> y, cuando se lo pedís, te deja el borrador en Gmail. <b className="text-zinc-200">Nunca envía</b>: el envío siempre es tuyo.
+        <span className="ml-1">Antes de cada borrador me decís si lleva descuento y de cuánto: sin eso no armo nada.</span>
       </p>
 
       <section>
@@ -121,11 +113,19 @@ export default function PanoramaVentas({ base, datos, error, onPreguntar, alCamb
                       )}
                     </div>
                     {m.estado !== "BORRADOR" && (
-                      <button onClick={() => armar(m)} disabled={armando === m.mail_id} className="shrink-0 min-h-[38px] px-3 rounded-lg text-[13px] font-semibold bg-white text-black hover:bg-zinc-200 disabled:opacity-60 inline-flex items-center gap-1.5">
-                        {armando === m.mail_id ? <Loader2 size={14} className="animate-spin" /> : null} {armando === m.mail_id ? "Armando…" : "Armar borrador"}
+                      <button onClick={() => { setEligiendo(eligiendo === m.mail_id ? null : m.mail_id); setDescuento(null); }} aria-expanded={eligiendo === m.mail_id} className="shrink-0 min-h-[38px] px-3 rounded-lg text-[13px] font-semibold bg-white text-black hover:bg-zinc-200">
+                        {eligiendo === m.mail_id ? "Cancelar" : "Armar borrador"}
                       </button>
                     )}
                   </div>
+                  {eligiendo === m.mail_id && m.estado !== "BORRADOR" && (
+                    <div className="mt-3 rounded-xl border border-white/[0.1] bg-white/[0.03] p-3">
+                      <SelectorDescuento key={m.mail_id} compacto email={m.email_cliente} valor={descuento} onChange={setDescuento} />
+                      <button onClick={() => armar(m)} disabled={!descuentoDefinido(descuento) || armando === m.mail_id} className="mt-3 min-h-[44px] px-4 rounded-lg text-[13.5px] font-semibold bg-white text-black hover:bg-zinc-200 disabled:opacity-50 inline-flex items-center gap-1.5">
+                        {armando === m.mail_id && <Loader2 size={14} className="animate-spin" />} {armando === m.mail_id ? "Armando…" : descuentoDefinido(descuento) ? `Armar con ${descuentoTexto(descuento)}` : "Elegí el descuento primero"}
+                      </button>
+                    </div>
+                  )}
                 </li>
               );
             })}
@@ -136,6 +136,8 @@ export default function PanoramaVentas({ base, datos, error, onPreguntar, alCamb
           <button onClick={() => onPreguntar("¿Qué corregí en los últimos borradores antes de enviarlos?")} className="min-h-[38px] px-3.5 rounded-lg text-[13px] font-semibold bg-white/[0.07] hover:bg-white/[0.12] text-zinc-100">Qué corregí</button>
         </div>
       </section>
+
+      <EntrenarCami base={base} datos={aprendizajes} alCambiar={alCambiar} mostrar={mostrar} />
 
       {(atendidos.length > 0 || patrones.length > 0) && (
         <section>

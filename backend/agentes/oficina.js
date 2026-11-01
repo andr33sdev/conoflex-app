@@ -8,6 +8,7 @@ const PALABRAS = {
   stock: /(stock|dep[oó]sito|materia prima|semielaborad|inventario|quiebre|cu[aá]nto hay|se acaba|alcanza)/i,
   compras: /(compra|proveedor|solicitud|cotizaci|firma|orden de compra|entrega de material|pedir)/i,
   ventas: /(mail|correo|presupuesto|cotizaci[oó]n al cliente|borrador|lista de precios|consulta de (un )?cliente|vender|venta)/i,
+  seguimiento: /(seguimiento|sin respuesta|no respond|no contest|presupuestos? (enviado|pendiente)|enviamos|reclamar|recordar al cliente|olvidad)/i,
   produccion: /(producci|fabricar|fabricaci|pedido|plan de la semana|planta|m[aá]quina|lote|entregar|cliente)/i,
 };
 

@@ -8,7 +8,6 @@
 //   - las notas que la persona confirma ("a los distribuidores siempre 35%"), que se suman a las reglas comerciales.
 
 const ESTADOS = ["PENDIENTE", "BORRADOR", "ATENDIDO", "RETIRADO", "DESCARTADO", "ERROR"];
-const MAX_AUTOMATICOS = 2; // borradores por revisión: cuida el gasto de IA y no llena Gmail de golpe
 const MAX_INTENTOS = 3;
 
 async function asegurarTablasVentas(db) {
@@ -36,6 +35,8 @@ async function asegurarTablasVentas(db) {
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
       KEY idx_estado (estado, created_at)
     )`);
+  const [cols] = await db.query("SELECT COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'ventas_mails'");
+  if (!cols.some((c) => c.COLUMN_NAME === "descuento_pct")) await db.query("ALTER TABLE ventas_mails ADD COLUMN descuento_pct DECIMAL(5,2) NULL");
   await db.query(`
     CREATE TABLE IF NOT EXISTS ventas_notas (
       id INT AUTO_INCREMENT PRIMARY KEY,
@@ -237,6 +238,58 @@ async function quitarNota(db, id) {
   return r.affectedRows ? { ok: true } : { error: "No encontré esa nota." };
 }
 
+
+// ---------- descuento: la persona lo define SIEMPRE antes de armar un borrador ----------
+/**
+ * Acepta { sin: true } (sin descuento) o { pct: 0-60 } (también un número suelto o "sin"). Devuelve { pct } (0 = sin descuento) o null si no está definido.
+ * No hay valor por defecto: si la persona no lo dijo, no se arma el borrador.
+ */
+function validarDescuento(d) {
+  if (d === null || d === undefined || d === "") return null;
+  if (typeof d === "object") {
+    if (d.sin === true) return { pct: 0 };
+    return validarDescuento(d.pct ?? d.descuento_pct);
+  }
+  if (typeof d === "string" && /^\s*(sin|ninguno|no|0)\s*$/i.test(d)) return { pct: 0 };
+  const n = Number(String(d).replace(",", ".").replace("%", ""));
+  if (!Number.isFinite(n) || n < 0 || n > 60) return null;
+  return { pct: Math.round(n * 100) / 100 };
+}
+const ERROR_DESCUENTO = "Antes de armar el borrador definí si lleva descuento y de cuánto (o elegí «sin descuento»).";
+
+/** Qué descuento se le dio a este cliente la última vez, para sugerirlo (nunca se aplica solo). */
+async function sugerirDescuento(db, email) {
+  const out = { cliente: null, config: null, notas: [] };
+  const e = String(email || "").trim().toLowerCase();
+  if (e) {
+    const [rows] = await db.query("SELECT asunto, descuento_pct, cambios, revision, enviado_en, created_at FROM ventas_mails WHERE LOWER(email_cliente) = ? AND estado IN ('BORRADOR','ATENDIDO') ORDER BY created_at DESC LIMIT 5", [e]);
+    for (const r of rows) {
+      const c = json(r.cambios);
+      const rev = json(r.revision);
+      const enviado = c?.descuentoEnviado?.length === 1 ? c.descuentoEnviado[0] : null;
+      const pct = enviado ?? (r.descuento_pct !== null && r.descuento_pct !== undefined ? Number(r.descuento_pct) : rev?.descuento_pct ?? null);
+      if (pct !== null && pct !== undefined) {
+        out.cliente = { pct: Number(pct), asunto: r.asunto, motivo: enviado !== null ? "es lo que enviaste la última vez" : "es lo que llevó el último borrador" };
+        break;
+      }
+    }
+  }
+  const [cfg] = await db.query("SELECT valor FROM reglas WHERE clave = 'comercial_descuento_pct'").catch(() => [[]]);
+  const n = Number(String(cfg[0]?.valor ?? "").replace(",", "."));
+  if (Number.isFinite(n) && n > 0 && n <= 60) out.config = n;
+  out.notas = (await notasActivas(db)).filter((x) => /%/.test(x.texto)).map((x) => x.texto).slice(0, 5);
+  return out;
+}
+
+/** Ejemplos de respuestas que el equipo envió de verdad (sin cita), para que los borradores suenen cada vez más a cómo escribe la persona. */
+async function ejemplosEnviadosTexto(db, { cantidad = 2, max = 900 } = {}) {
+  const [rows] = await db.query("SELECT asunto, enviado_texto, cambios FROM ventas_mails WHERE estado = 'ATENDIDO' AND enviado_texto IS NOT NULL AND CHAR_LENGTH(enviado_texto) > 120 ORDER BY enviado_en DESC LIMIT 12").catch(() => [[]]);
+  // Se prefieren las que se retocaron poco o las que la persona reescribió: ambas muestran su estilo real.
+  const elegidas = rows.slice(0, cantidad);
+  if (!elegidas.length) return "";
+  return `EJEMPLOS DE RESPUESTAS QUE EL EQUIPO ENVIÓ (imitá su tono, su forma de saludar y de cerrar; no copies datos de otros clientes):\n${elegidas.map((r, i) => `--- Ejemplo ${i + 1} (asunto: ${recorte(r.asunto, 80)}) ---\n${recorte(r.enviado_texto, max)}`).join("\n")}`;
+}
+
 // ---------- sincronización con Gmail ----------
 /**
  * Registra los mails etiquetados que todavía no conocía. Si el hilo ya tiene una respuesta nuestra como último mensaje, queda ATENDIDO;
@@ -287,7 +340,9 @@ async function sincronizar({ db, mails, listar, estadoHilo }) {
 }
 
 /** Prepara el borrador de UN mail. Nunca envía. `mail`: el objeto completo de Gmail (con imágenes). */
-async function prepararBorrador({ db, mail, borrador, reglasExtra = "" }) {
+async function prepararBorrador({ db, mail, borrador, reglasExtra = "", descuento, alObservar = null }) {
+  const d = validarDescuento(descuento);
+  if (!d) return { ok: false, error: ERROR_DESCUENTO, faltaDescuento: true };
   const consultaText = [`Asunto: ${mail.asunto}`, mail.cuerpoCompleto || mail.resumen].filter(Boolean).join("\n\n");
   try {
     const r = await borrador({
@@ -298,11 +353,19 @@ async function prepararBorrador({ db, mail, borrador, reglasExtra = "" }) {
       imagenes: mail.imagenes,
       nombreCliente: mail.remitente,
       reglasExtra,
+      descuento: d,
     });
     await db.query(
-      "UPDATE ventas_mails SET estado = 'BORRADOR', draft_id = ?, revision = ?, borrador_texto = ?, borrador_en = NOW(), error = NULL, nota = NULL WHERE mail_id = ?",
-      [r.draftId, JSON.stringify(r.revision || null), recorte(textoPlano(r.html), 60000), mail.id],
+      "UPDATE ventas_mails SET estado = 'BORRADOR', draft_id = ?, revision = ?, borrador_texto = ?, borrador_en = NOW(), error = NULL, nota = NULL, descuento_pct = ? WHERE mail_id = ?",
+      [r.draftId, JSON.stringify(r.revision || null), recorte(textoPlano(r.html), 60000), d.pct, mail.id],
     );
+    if (alObservar && r.revision?.observaciones?.length) {
+      try {
+        await alObservar({ mailId: mail.id, cliente: mail.remitente || mail.emailCliente, asunto: mail.asunto, observaciones: r.revision.observaciones });
+      } catch (e) {
+        console.error("[ventas] observaciones:", e.message);
+      }
+    }
     return { ok: true, draftId: r.draftId, revision: r.revision || null };
   } catch (e) {
     console.error("[ventas] borrador:", e.message);
@@ -345,8 +408,9 @@ async function correccionesRecientes(db, { limite = 12 } = {}) {
 }
 
 module.exports = {
-  ESTADOS, MAX_AUTOMATICOS, MAX_INTENTOS,
+  ESTADOS, MAX_INTENTOS,
   asegurarTablasVentas, textoPlano, sinCita, porcentajesEn, importesEn, similitud, compararVersiones, describirCambios, patronesDeCorreccion,
   listarRegistros, conteos, filaPublica, notasActivas, notasTexto, guardarNota, quitarNota,
+  validarDescuento, ERROR_DESCUENTO, sugerirDescuento, ejemplosEnviadosTexto,
   sincronizar, prepararBorrador, revisarBorradores, correccionesRecientes,
 };

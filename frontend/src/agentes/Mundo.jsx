@@ -18,6 +18,7 @@ const TINTES = {
   compras: ["#333d4d", "#2e3846", "#3b82f6"],
   produccion: ["#3d3750", "#38324a", "#8b5cf6"],
   ventas: ["#2f4543", "#2a3e3c", "#14b8a6"],
+  seguimiento: ["#47374a", "#3f3043", "#ec4899"],
 };
 const PARED = "#d6d2c6";
 const SOMBRA = "rgba(0,0,0,0.32)";
@@ -87,7 +88,6 @@ function fondo(r, ids, f) {
     r(g.escritorio.x - 1, g.escritorio.y - 3, g.escritorio.w + 2, g.escritorio.h + 10, TINTES[id][0]);
     r(g.x + (g.izq ? 1 : 2), g.y + (g.arriba ? 0 : 1), 1, 1, TINTES[id][2]); // marca de color de la sala
   }
-  pisoSala(r, 176, 66, 68, 46, ["#383840", "#32323a"]); // archivo (sin escritorio)
   // reunión y cocina
   pisoSala(r, REUNION.x, REUNION.y, REUNION.w, REUNION.h, ["#3a3a42", "#34343c"]);
   pisoSala(r, CAFE.x, CAFE.y, CAFE.w, CAFE.h, ["#3f3a33", "#39342d"]);
@@ -146,14 +146,20 @@ function fondo(r, ids, f) {
   r(236, 28, 4, 9, "#FF5A00");
   r(235, 36, 6, 2, "#33333b");
   r(237, 30, 2, 1, "#f1f2f6");
-  // Archivo (sala sin escritorio): impresora y estantes
-  estante(r, 180, 69, 28);
-  estante(r, 212, 69, 26);
-  r(186, 98, 22, 10, "#585d66");
-  r(186, 98, 22, 2, "#7a808c");
-  r(190, 101, 12, 4, "#e8e4da");
-  caja(r, 216, 98, 9, 8, "#a07a4f");
-  caja(r, 226, 100, 7, 6, "#8b6a44");
+  // Seguimiento: tablero de hilos, calendario y bandeja de enviados
+  r(180, 69, 28, 11, "#e8e4da");
+  r(180, 69, 28, 1, "#ec4899");
+  [[182, 72, "#f2c94c"], [188, 72, "#7fd1c9"], [194, 72, "#f2a28c"], [200, 72, "#f2c94c"], [185, 76, "#f2a28c"], [197, 76, "#7fd1c9"]].forEach(([x, y, c]) => r(x, y, 4, 2, c));
+  r(214, 69, 20, 13, "#f1f2f6");
+  r(214, 69, 20, 3, "#ec4899");
+  for (let i = 0; i < 4; i++) for (let j = 0; j < 3; j++) r(216 + i * 4, 74 + j * 3, 2, 1, i === 3 && j === 1 ? "#ec4899" : "#9aa0ae");
+  r(180, 96, 22, 12, "#5b5f68");
+  r(180, 96, 22, 1, "#7a808c");
+  for (let i = 0; i < 3; i++) {
+    r(182, 98 + i * 3, 18, 2, "#6a6f79");
+    r(189, 98 + i * 3, 4, 1, "#9aa0ae");
+  }
+  caja(r, 204, 100, 6, 6, "#a07a4f");
   planta(r, 236, 100);
   // Sala de reuniones
   r(76, 14, 24, 16, "#6b5238");
@@ -285,6 +291,16 @@ const DICHOS = {
   "stock>ventas": "Te aviso qué hay para ofrecer",
   "compras>ventas": "Cambió el precio de un proveedor",
   "produccion>ventas": "Avisale al cliente que se atrasa",
+  "seguimiento>ventas": "¿Ese presupuesto sigue vivo?",
+  "ventas>seguimiento": "Se lo mandé hace una semana",
+  "seguimiento>rrhh": "¿Quién se ocupa de las visitas?",
+  "seguimiento>stock": "¿Hay stock para lo que cotizamos?",
+  "seguimiento>compras": "Un cliente espera el precio de cadena",
+  "seguimiento>produccion": "¿Cuándo se puede entregar ese pedido?",
+  "rrhh>seguimiento": "¿Ese cliente ya contestó?",
+  "stock>seguimiento": "Hay stock para ese presupuesto",
+  "compras>seguimiento": "Tengo el precio que faltaba",
+  "produccion>seguimiento": "Ese pedido ya entra en el plan",
 };
 
 function Globo({ e, texto, sub }) {
@@ -355,7 +371,6 @@ function Mapa({ agentes, onElegir, modo, vivoId, abiertosVivo, reunion }) {
       })}
       <span className="absolute top-1.5 rounded bg-black/45 px-1.5 text-[10px] font-semibold text-zinc-300" style={{ left: `${(70 / W) * 100}%` }}>Reunión</span>
       <span className="absolute bottom-1.5 rounded bg-black/45 px-1.5 text-[10px] font-semibold text-zinc-300" style={{ left: `${(70 / W) * 100}%` }}>Cocina</span>
-      <span className="absolute bottom-1.5 rounded bg-black/45 px-1.5 text-[10px] font-semibold text-zinc-300" style={{ left: `${(180 / W) * 100}%` }}>Archivo</span>
       {/* globos: solo para quien está yendo, charlando o recibiendo */}
       {lista.map((id) => {
         const e = esc[id];

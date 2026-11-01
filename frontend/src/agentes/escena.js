@@ -5,7 +5,7 @@
 export const W = 244;
 export const H = 112;
 export const PASILLO_Y = 62; // por dónde caminan (pies del personaje)
-export const ORDEN = ["rrhh", "stock", "compras", "produccion", "ventas"];
+export const ORDEN = ["rrhh", "stock", "compras", "produccion", "ventas", "seguimiento"];
 
 const SALAS = {
   rrhh: { x: 0, y: 0, izq: true, arriba: true },
@@ -13,6 +13,7 @@ const SALAS = {
   compras: { x: 0, y: 66, izq: true, arriba: false },
   produccion: { x: 108, y: 66, izq: false, arriba: false },
   ventas: { x: 176, y: 0, izq: false, arriba: true },
+  seguimiento: { x: 176, y: 66, izq: false, arriba: false },
 };
 export const SALA_W = 68;
 export const SALA_H = 46;
