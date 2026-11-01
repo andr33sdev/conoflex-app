@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, ArrowRight, CheckCircle2, FileSpreadsheet, FileText, History, Loader2, Paperclip, Search, Undo2, UploadCloud } from "lucide-react";
 import { api } from "../produccion/util";
-import { Aviso, Boton, Chip, Vacio } from "./ui";
+import { Aviso, Boton, Chip, Decision, Vacio } from "./ui";
 import { subirForm } from "./util";
 
 const fechaLarga = (v) => (v ? new Date(v).toLocaleDateString("es-AR", { day: "numeric", month: "long", year: "numeric" }) : "");
@@ -84,16 +84,6 @@ function Pasos({ paso }) {
         </li>
       ))}
     </ol>
-  );
-}
-
-function Decision({ valor, onElegir, si, no, tonoSi }) {
-  const on = tonoSi === "rojo" ? "bg-red-600 border-red-600 text-white font-semibold" : "bg-emerald-600 border-emerald-600 text-white font-semibold";
-  return (
-    <div className="flex gap-2 shrink-0" role="group">
-      <button type="button" aria-pressed={valor === "si"} onClick={() => onElegir("si")} className={`px-3 min-h-[36px] rounded-lg text-sm border cursor-pointer transition-colors ${valor === "si" ? on : "border-zinc-700 text-zinc-300 hover:border-zinc-500"}`}>{si}</button>
-      <button type="button" aria-pressed={valor === "no"} onClick={() => onElegir("no")} className={`px-3 min-h-[36px] rounded-lg text-sm border cursor-pointer transition-colors ${valor === "no" ? "bg-zinc-600 border-zinc-600 text-white font-semibold" : "border-zinc-700 text-zinc-300 hover:border-zinc-500"}`}>{no}</button>
-    </div>
   );
 }
 

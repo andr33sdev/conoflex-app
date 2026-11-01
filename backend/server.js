@@ -24,7 +24,8 @@ const { asegurarPush, enviarPush, registrarRutasPush } = require("./push");
 const { mismoProducto, asegurarColumnasCatalogo, registrarRutasCatalogo } = require("./comercial/catalogo");
 const { asegurarTablasPrecios, registrarRutasPrecios } = require("./comercial/precios");
 const { asegurarColumnaTema, registrarRutasTema, normalizarTema } = require("./tema");
-const { asegurarTablasFichasPdf, guardarFicha, registrarRutasFichasPdf } = require("./comercial/fichasPdf");
+const { asegurarTablasFichasPdf, registrarRutasFichasPdf } = require("./comercial/fichasPdf");
+const importarFichas = require("./comercial/importarFichas");
 const { registrarRutasFotos } = require("./comercial/fotos");
 const { generarCotizacion } = require("./comercial/cotizador");
 const { crearCorreoCrudo } = require("./comercial/correo");
@@ -208,7 +209,7 @@ registrarRutasNotificaciones(app, db);
 registrarRutasPush(app, db);
 registrarRutasCatalogo(app, { db, autenticarToken, autorizarRoles });
 registrarRutasListaPdf(app, { multer, autenticarToken, autorizarRoles });
-registrarRutasFichasPdf(app, { db, autenticarToken, autorizarRoles });
+registrarRutasFichasPdf(app, { db, autenticarToken, autorizarRoles, eliminar: importarFichas.eliminarFicha });
 registrarRutasTema(app, { db, autenticarToken });
 
 // Multer Config
@@ -5716,194 +5717,68 @@ app.post(
   "/api/catalogo/procesar-pdf",
   uploadMemory.array("pdf_files", 5),
   async (req, res) => {
-    let trabajoId = null;
+    const files = req.files;
+    const categoriaNombre = req.body.categoriaNombre || "Conos";
+    if (!files || files.length === 0) return res.status(400).json({ error: "No se recibió ningún archivo PDF." });
+
+    // Leer un PDF con IA puede tardar más de lo que aguantan los proxies (Vercel corta con 502):
+    // se responde al instante con un número de trabajo y la pantalla consulta el avance.
+    for (const [k, v] of trabajosPdf) if (Date.now() - v.creado > 3600000) trabajosPdf.delete(k);
+    const trabajoId = require("crypto").randomBytes(8).toString("hex");
+    const marcar = (cambios) => trabajosPdf.set(trabajoId, { ...trabajosPdf.get(trabajoId), ...cambios });
+    trabajosPdf.set(trabajoId, { estado: "PROCESANDO", creado: Date.now(), usuarioId: req.user?.id || null, archivos: files.length });
+    res.status(202).json({ trabajoId });
+
     try {
-      const files = req.files;
-      const categoriaNombre = req.body.categoriaNombre || "Conos";
-
-      if (!files || files.length === 0) {
-        return res
-          .status(400)
-          .json({ error: "No se recibió ningún archivo PDF." });
-      }
-
-      // Leer un PDF con IA puede tardar más de lo que aguantan los proxies (Vercel corta con 502):
-      // se responde al instante con un número de trabajo y la pantalla consulta el avance.
-      for (const [k, v] of trabajosPdf) if (Date.now() - v.creado > 3600000) trabajosPdf.delete(k);
-      trabajoId = require("crypto").randomBytes(8).toString("hex");
-      trabajosPdf.set(trabajoId, { estado: "PROCESANDO", creado: Date.now(), usuarioId: req.user?.id || null, archivos: files.length, hechos: 0 });
-      res.status(202).json({ trabajoId });
-
-      let totalProductosProcesados = 0;
-      const informe = { actualizados: 0, nuevos: [], omitidosEditados: [], ilegibles: 0 };
-
-      const nombreUsuario = req.user?.id
-        ? (await db.query("SELECT nombre FROM usuarios WHERE id = ?", [req.user.id]).then((r) => r[0][0]?.nombre).catch(() => null)) || null
-        : null;
-
+      const usuario = req.user?.id ? (await db.query("SELECT nombre FROM usuarios WHERE id = ?", [req.user.id]).then((r) => r[0][0]?.nombre).catch(() => null)) || null : null;
+      const leidos = [];
       for (const file of files) {
-        const pdfBase64 = file.buffer.toString("base64");
-        const afectadosArchivo = [];
-
-        const promptExtraccion = `
-        Analizá el documento PDF adjunto con fichas técnico-comerciales de productos.
-        Extraé todos los modelos de productos presentes.
-
-        Para cada producto, generá un objeto JSON con:
-        - "codigo": Código del modelo tal cual figura (ej: "1025", "2051L-1R", "2070-2R").
-        - "nombre": Nombre comercial del modelo (ej: "Multiuso Flexible", "Ciudad Light Semiflexible").
-        - "medidas": Datos técnicos en una línea (ej: "Altura: 20 cm | Base: 15 cm | Peso: 0,2 kg | Material: PVC flexible | Bandas: sin bandas").
-        - "descripcion": Descripción técnica y comercial del producto, fiel al PDF.
-        - "usos": Los usos recomendados tal cual figuran, cada uno como "Título: explicación" y separados entre sí por " | " (barra vertical con espacios).
-        - "advertencias": Limitaciones o cuándo NO conviene ofrecerlo (ej: "No para canalizar tránsito en rutas", "Priorizar interiores"), si el PDF las menciona; si no, "".
-        - "categoria": "${categoriaNombre}".
-
-        Reglas: no inventes datos que no estén en el PDF y no traslades medidas o pesos de un modelo a otro.
-        Devolvé ÚNICAMENTE un arreglo JSON válido sin formato markdown adicional.
-      `;
-
-        const response = await ai.models.generateContent({
-          model: "gemini-2.5-flash",
-          contents: [
-            {
-              inlineData: {
-                mimeType: "application/pdf",
-                data: pdfBase64,
-              },
-            },
-            promptExtraccion,
-          ],
-          config: {
-            responseMimeType: "application/json",
-          },
-        });
-
-        let productosExtraidos = [];
+        let productos = null;
         try {
-          productosExtraidos = JSON.parse(response.text);
+          productos = await importarFichas.extraer({ ai, file, categoria: categoriaNombre });
         } catch (e) {
-          const match = response.text.match(/\[\s*\{[\s\S]*\}\s*\]/);
-          if (match) {
-            productosExtraidos = JSON.parse(match[0]);
-          } else {
-            console.error(
-              "Error parseando respuesta JSON de Gemini:",
-              response.text,
-            );
-            informe.ilegibles++;
-            await guardarFicha(db, { nombre: file.originalname, buffer: file.buffer, categoria: categoriaNombre, usuario: nombreUsuario, leido: false }).catch((e) => console.error("[fichas-pdf]", e.message));
-            continue;
-          }
+          console.error("Error leyendo PDF con la IA:", e.message);
+          throw e;
         }
-
-        let procesadosEnArchivo = 0;
-        if (
-          Array.isArray(productosExtraidos) &&
-          productosExtraidos.length > 0
-        ) {
-          const [todos] = await db.query("SELECT id, codigo, ficha_editada FROM productos");
-          for (const p of productosExtraidos) {
-            if (!p.codigo) continue;
-
-            // 1. Buscar el producto por código (igual, o con sufijo como "NA"), sin coincidencias por "contiene".
-            const existentes = todos.filter((t) => mismoProducto(p.codigo, t.codigo));
-            const usos = String(p.usos || "");
-            const origen = String(file.originalname || "").slice(0, 200);
-
-            if (existentes.length > 0) {
-              // 2. Las fichas que se corrigieron a mano no se pisan.
-              const libres = existentes.filter((e) => !e.ficha_editada);
-              if (!libres.length) {
-                informe.omitidosEditados.push(p.codigo);
-                existentes.forEach((e) => afectadosArchivo.push({ producto_id: e.id, codigo: p.codigo, accion: "OMITIDO" }));
-                continue;
-              }
-              const ids = libres.map((e) => e.id);
-              await db.query(
-                `UPDATE productos
-               SET
-                 medidas = IF(medidas IS NULL OR medidas = '', ?, medidas),
-                 descripcion = ?,
-                 aplicacion = ?,
-                 usos_recomendados = ?,
-                 advertencias = ?,
-                 categoria = ?,
-                 ficha_origen = ?,
-                 ficha_actualizada = NOW()
-               WHERE id IN (?)`,
-                [
-                  p.medidas || "",
-                  p.descripcion || "",
-                  usos,
-                  usos,
-                  p.advertencias || "",
-                  p.categoria || categoriaNombre,
-                  origen,
-                  ids,
-                ],
-              );
-              informe.actualizados += ids.length;
-              ids.forEach((id) => afectadosArchivo.push({ producto_id: id, codigo: p.codigo, accion: "ACTUALIZADO" }));
-            } else {
-              // 3. Si no está en la lista de precios, se crea sin precio (aparece en la revisión de fichas).
-              const [ins] = await db.query(
-                `INSERT INTO productos
-               (codigo, nombre, medidas, descripcion, aplicacion, usos_recomendados, advertencias, categoria, ficha_origen, ficha_actualizada)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
-                [
-                  p.codigo,
-                  p.nombre || "",
-                  p.medidas || "",
-                  p.descripcion || "",
-                  usos,
-                  usos,
-                  p.advertencias || "",
-                  p.categoria || categoriaNombre,
-                  origen,
-                ],
-              );
-              informe.nuevos.push(p.codigo);
-              afectadosArchivo.push({ producto_id: ins.insertId, codigo: p.codigo, accion: "NUEVO" });
-            }
-            procesadosEnArchivo++;
-            totalProductosProcesados++;
-          }
-        }
-
-        // Guardar registro de la categoría
-        await db.query(
-          `INSERT INTO categorias_pdf (nombre, pdf_filename, total_productos)
-         VALUES (?, ?, ?)
-         ON DUPLICATE KEY UPDATE
-           pdf_filename = VALUES(pdf_filename),
-           total_productos = VALUES(total_productos)`,
-          [categoriaNombre, file.originalname, procesadosEnArchivo],
-        );
-        await guardarFicha(db, { nombre: file.originalname, buffer: file.buffer, categoria: categoriaNombre, usuario: nombreUsuario, afectados: afectadosArchivo }).catch((e) => console.error("[fichas-pdf]", e.message));
+        leidos.push({ nombre: file.originalname, buffer: file.buffer, productos });
       }
-
-      const resultado = {
-        success: true,
-        mensaje: `Fichas procesadas: ${informe.actualizados} actualizadas, ${informe.nuevos.length} nuevas${informe.omitidosEditados.length ? `, ${informe.omitidosEditados.length} sin tocar porque las corregiste a mano` : ""}.`,
-        ...informe,
-        total: totalProductosProcesados,
-      };
-      trabajosPdf.set(trabajoId, { ...trabajosPdf.get(trabajoId), estado: "LISTO", resultado });
+      // Si algún producto ya tenía su descripción y usos de otro PDF, se pregunta antes de pisarlos.
+      const conflictos = await importarFichas.buscarConflictos({ db, archivos: leidos });
+      if (conflictos.length) return marcar({ estado: "CONFIRMAR", conflictos, leidos, categoriaNombre, usuario });
+      marcar({ estado: "PROCESANDO", leidos: null });
+      const resultado = await importarFichas.aplicar({ db, archivos: leidos, categoria: categoriaNombre, usuario });
+      marcar({ estado: "LISTO", resultado });
     } catch (error) {
       console.error("Error en procesar-pdf:", error);
-      const mensaje = `Error al procesar el PDF: ${error.message}`;
-      if (trabajoId) trabajosPdf.set(trabajoId, { ...trabajosPdf.get(trabajoId), estado: "ERROR", error: mensaje });
-      else res.status(500).json({ error: mensaje });
+      marcar({ estado: "ERROR", error: `Error al procesar el PDF: ${error.message}`, leidos: null });
     }
   },
 );
+
+// La persona decidió, producto por producto, cuáles fichas de PDF anteriores se reemplazan.
+app.post("/api/catalogo/procesar-pdf/:trabajoId/confirmar", async (req, res) => {
+  const t = trabajosPdf.get(req.params.trabajoId);
+  if (!t || (t.usuarioId && t.usuarioId !== req.user?.id)) return res.status(404).json({ error: "No encuentro esa importación (el servidor pudo haberse reiniciado). Volvé a subir el PDF." });
+  if (t.estado !== "CONFIRMAR") return res.status(409).json({ error: "Esa importación ya no espera confirmación." });
+  const reemplazar = new Set((Array.isArray(req.body?.reemplazar) ? req.body.reemplazar : []).map(Number));
+  const { leidos, categoriaNombre, usuario } = t;
+  trabajosPdf.set(req.params.trabajoId, { ...t, estado: "PROCESANDO", conflictos: null, leidos: null });
+  res.status(202).json({ ok: true });
+  try {
+    const resultado = await importarFichas.aplicar({ db, archivos: leidos, categoria: categoriaNombre, usuario, reemplazar });
+    trabajosPdf.set(req.params.trabajoId, { ...trabajosPdf.get(req.params.trabajoId), estado: "LISTO", resultado });
+  } catch (error) {
+    console.error("Error aplicando fichas:", error);
+    trabajosPdf.set(req.params.trabajoId, { ...trabajosPdf.get(req.params.trabajoId), estado: "ERROR", error: `Error al guardar las fichas: ${error.message}` });
+  }
+});
 
 // Avance de la importación de fichas (la pantalla lo consulta cada pocos segundos).
 app.get("/api/catalogo/procesar-pdf/:trabajoId", (req, res) => {
   const t = trabajosPdf.get(req.params.trabajoId);
   if (!t || (t.usuarioId && t.usuarioId !== req.user?.id)) return res.status(404).json({ error: "No encuentro esa importación (el servidor pudo haberse reiniciado). Revisá “PDFs de usos” para ver si terminó." });
   if (t.estado === "ERROR") return res.status(500).json({ estado: "ERROR", error: t.error });
-  res.json({ estado: t.estado, archivos: t.archivos, resultado: t.resultado || null });
+  res.json({ estado: t.estado, archivos: t.archivos, resultado: t.resultado || null, conflictos: t.estado === "CONFIRMAR" ? t.conflictos : null });
 });
 
 // ==========================================

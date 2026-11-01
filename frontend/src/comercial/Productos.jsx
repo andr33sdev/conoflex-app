@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, Camera, CheckCircle2, FileText, Images, LayoutGrid, List, Loader2, Lock, Package, Plus, Search, Trash2, X } from "lucide-react";
 import { api } from "../produccion/util";
-import { Aviso, Boton, Chip, Modal, Panel, Vacio } from "./ui";
+import { Aviso, Boton, Chip, Decision, Modal, Panel, Vacio } from "./ui";
 import FichasPdf from "./FichasPdf";
 import { campo, etiqueta, peso, subirForm, urlImagen } from "./util";
 
@@ -282,6 +282,34 @@ function ModalFichasPdf({ categorias, onCerrar, onListo, aviso }) {
   const [categoria, setCategoria] = useState("");
   const [subiendo, setSubiendo] = useState(false);
   const [error, setError] = useState("");
+  const [trabajoId, setTrabajoId] = useState(null);
+  const [conflictos, setConflictos] = useState(null);
+  const [dec, setDec] = useState({});
+  // La lectura con IA puede tardar minutos: se consulta el avance hasta que termina o hasta que hay algo para confirmar.
+  const esperar = async (id) => {
+    for (let i = 0; i < 240; i++) {
+      await new Promise((r) => setTimeout(r, 3000));
+      let r;
+      try {
+        r = await api(`/api/catalogo/procesar-pdf/${id}`);
+      } catch (e) {
+        if (e.status === 404 || e.status === 500) throw e; // se perdió el trabajo o falló la lectura
+        continue; // corte de red momentáneo: sigue esperando
+      }
+      if (r.estado === "CONFIRMAR") {
+        setConflictos(r.conflictos || []);
+        setDec({});
+        return null;
+      }
+      if (r.estado === "LISTO") return r.resultado;
+    }
+    throw new Error("La importación está tardando demasiado. Revisá “PDFs de usos” en unos minutos para ver si terminó.");
+  };
+  const terminar = (d) => {
+    if (!d) return;
+    aviso(d.mensaje || "Fichas importadas.");
+    onListo();
+  };
   const enviar = async () => {
     setSubiendo(true);
     setError("");
@@ -290,28 +318,58 @@ function ModalFichasPdf({ categorias, onCerrar, onListo, aviso }) {
       archivos.forEach((a) => fd.append("pdf_files", a));
       fd.append("categoriaNombre", categoria.trim());
       const inicio = await subirForm("/api/catalogo/procesar-pdf", fd);
-      // La lectura con IA puede tardar minutos: se consulta el avance hasta que termina.
-      let d = null;
-      for (let i = 0; i < 240 && !d; i++) {
-        await new Promise((r) => setTimeout(r, 3000));
-        let r;
-        try {
-          r = await api(`/api/catalogo/procesar-pdf/${inicio.trabajoId}`);
-        } catch (e) {
-          if (e.status === 404) throw e; // se perdió el trabajo
-          if (e.status === 500) throw e; // falló la lectura
-          continue; // corte de red momentáneo: sigue esperando
-        }
-        if (r.estado === "LISTO") d = r.resultado;
-      }
-      if (!d) throw new Error("La importación está tardando demasiado. Revisá “PDFs de usos” en unos minutos para ver si terminó.");
-      aviso(d.mensaje || "Fichas importadas.");
-      onListo();
+      setTrabajoId(inicio.trabajoId);
+      terminar(await esperar(inicio.trabajoId));
     } catch (e) {
       setError(e.message);
       setSubiendo(false);
     }
   };
+  const confirmar = async () => {
+    setError("");
+    const reemplazar = conflictos.filter((c) => dec[c.producto_id] === "si").map((c) => c.producto_id);
+    setConflictos(null);
+    try {
+      await api(`/api/catalogo/procesar-pdf/${trabajoId}/confirmar`, { method: "POST", body: { reemplazar } });
+      terminar(await esperar(trabajoId));
+    } catch (e) {
+      setError(e.message);
+      setSubiendo(false);
+    }
+  };
+  const pendientes = conflictos ? conflictos.filter((c) => !dec[c.producto_id]).length : 0;
+  const fechaPdf = (f) => (f ? new Date(String(f).replace(" ", "T")).toLocaleString("es-AR", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "fecha desconocida");
+  if (conflictos) {
+    return (
+      <Modal ancho="max-w-3xl" titulo="Estos productos ya tenían su ficha de otro PDF" onCerrar={() => {}}
+        pie={<><Boton variante="suave" onClick={() => { const n = {}; conflictos.forEach((c) => { n[c.producto_id] = dec[c.producto_id] || "no"; }); setDec(n); }}>Conservar los que faltan</Boton><Boton onClick={confirmar} disabled={pendientes > 0}>{pendientes ? `Faltan ${pendientes} decisiones` : `Continuar (reemplazar ${conflictos.filter((c) => dec[c.producto_id] === "si").length})`}</Boton></>}>
+        <div className="space-y-3">
+          <Aviso tono="info">Para cada producto elegí si querés <b>reemplazar</b> la descripción y los usos que venían del PDF anterior por los del PDF nuevo, o <b>conservar</b> lo que ya estaba. Los demás productos del PDF se cargan igual.</Aviso>
+          <ul className="space-y-2.5">
+            {conflictos.map((c) => (
+              <li key={c.producto_id} className="rounded-xl border border-zinc-800 bg-[#0d0d0e] p-3.5">
+                <div className="flex flex-wrap items-start gap-3">
+                  <div className="min-w-0 flex-1 basis-60">
+                    <p className="text-sm text-zinc-100"><b className="text-[#ff8a4d]">{c.codigo}</b> <span className="text-zinc-400">{c.nombre}</span></p>
+                    <p className="text-xs text-zinc-500 mt-1">Ahora viene de <b className="text-zinc-300 font-medium">{c.anterior.pdf}</b> · subido el {fechaPdf(c.anterior.fecha)}</p>
+                    <p className="text-xs text-zinc-500">PDF nuevo: <b className="text-zinc-300 font-medium">{c.nuevo.pdf}</b></p>
+                  </div>
+                  <Decision valor={dec[c.producto_id]} onElegir={(v) => setDec({ ...dec, [c.producto_id]: v })} si="Reemplazar" no="Conservar" tonoSi="verde" />
+                </div>
+                {(c.descripcion_anterior || c.descripcion_nueva) && (
+                  <div className="grid sm:grid-cols-2 gap-2 mt-2.5 text-xs">
+                    <p className="rounded-lg bg-zinc-900/60 p-2 text-zinc-400"><b className="block text-zinc-300 font-medium mb-0.5">Actual</b>{c.descripcion_anterior || "Sin descripción"}</p>
+                    <p className="rounded-lg bg-zinc-900/60 p-2 text-zinc-400"><b className="block text-zinc-300 font-medium mb-0.5">Del PDF nuevo</b>{c.descripcion_nueva || "Sin descripción"}</p>
+                  </div>
+                )}
+              </li>
+            ))}
+          </ul>
+          {error && <Aviso tono="rojo">{error}</Aviso>}
+        </div>
+      </Modal>
+    );
+  }
   return (
     <Modal titulo="Importar fichas técnicas (PDF)" onCerrar={subiendo ? () => {} : onCerrar} pie={<><Boton variante="suave" onClick={onCerrar} disabled={subiendo}>Cancelar</Boton><Boton onClick={enviar} cargando={subiendo} disabled={!archivos.length || !categoria.trim()}>Importar {archivos.length ? `${archivos.length} ${archivos.length === 1 ? "PDF" : "PDFs"}` : ""}</Boton></>}>
       <div className="space-y-4">
@@ -492,7 +550,7 @@ export default function Productos({ aviso, refrescarKey, onCambio }) {
       )}
       {modal === "nuevo" && <ModalNuevo categorias={categorias} aviso={aviso} onCerrar={() => setModal(null)} onCreado={async (id) => { setModal(null); await cargar(); onCambio?.(); setAbierto(id); }} />}
       {modal === "fichas" && <ModalFichasPdf categorias={categorias} aviso={aviso} onCerrar={() => setModal(null)} onListo={() => { setModal(null); cargar(); onCambio?.(); }} />}
-      {modal === "pdfs" && <FichasPdf onCerrar={() => setModal(null)} onAbrirProducto={(id) => setAbierto(id)} />}
+      {modal === "pdfs" && <FichasPdf onCerrar={() => setModal(null)} onAbrirProducto={(id) => setAbierto(id)} onCambio={() => { cargar(); onCambio?.(); }} />}
       {modal === "fotos" && <ModalFotosLote onCerrar={() => setModal(null)} onListo={() => { cargar(); onCambio?.(); }} />}
     </div>
   );
