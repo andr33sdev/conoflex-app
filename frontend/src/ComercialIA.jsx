@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
+import RevisionFichas from "./comercial/RevisionFichas";
 import {
   Mail,
   Sparkles,
@@ -58,7 +59,7 @@ const getImageUrl = (url) => {
 };
 
 export default function ComercialIA() {
-  const [activeTab, setActiveTab] = useState("bandeja"); // 'bandeja' | 'catalogo' | 'prompt'
+  const [activeTab, setActiveTab] = useState("bandeja"); // 'bandeja' | 'catalogo' | 'fichas' | 'prompt'
   const [mails, setMails] = useState([]);
   const [selectedMail, setSelectedMail] = useState(null);
   const [reglas, setReglas] = useState("");
@@ -208,7 +209,7 @@ export default function ComercialIA() {
       const data = await res.json();
       if (res.ok && data.success) {
         fetchProductos();
-        showToast(`🎉 ${data.mensaje}`, "success");
+        showToast(`🎉 ${data.mensaje}${data.nuevos?.length ? ` Sin precio en la lista (revisalos en FICHAS): ${data.nuevos.slice(0, 6).join(", ")}.` : ""}`, "success");
       } else {
         showToast(data.error || "Error al procesar PDFs de fichas", "error");
       }
@@ -531,6 +532,17 @@ export default function ComercialIA() {
             }`}
           >
             <FileSpreadsheet size={14} /> CATÁLOGO ({productos.length})
+          </button>
+
+          <button
+            onClick={() => setActiveTab("fichas")}
+            className={`px-3.5 py-2 text-xs font-bold uppercase tracking-wider transition-all rounded-md flex items-center gap-2 cursor-pointer ${
+              activeTab === "fichas"
+                ? "bg-[#FF5A00] text-black shadow-md shadow-[#FF5A00]/20"
+                : "text-zinc-400 hover:text-white hover:bg-zinc-900"
+            }`}
+          >
+            <ShieldCheck size={14} /> FICHAS
           </button>
 
           <button
@@ -1123,6 +1135,8 @@ export default function ComercialIA() {
         {/* ========================================================
             TAB 3: REGLAS COMERCIALES
             ======================================================== */}
+        {activeTab === "fichas" && <RevisionFichas />}
+
         {activeTab === "prompt" && (
           <div className="p-6 space-y-4 max-w-4xl mx-auto h-full overflow-y-auto">
             <div className="bg-[#080808] border border-zinc-800 p-6 rounded-xl space-y-4 shadow-xl">
