@@ -453,5 +453,6 @@ async function prepararSeguimiento({ db, deps, ai, threadId, reglas = "", ejempl
 
 module.exports = {
   CONFIG, CLASES, asegurarTablasSeguimiento, dominiosInternos, analizarHilo, clasificarHeuristico, severidadDe, armarHallazgos, sincronizar, clasificarPendientes,
+  NO_REPLY, AUTOMATICO, REBOTE, direccion, direcciones, nombreDe, recorte,
   aMs, listar, obtener, conteos, descartar, posponer, reabrir, leerClasificaciones, redactarSeguimiento, prepararSeguimiento, aHtml, dias,
 };

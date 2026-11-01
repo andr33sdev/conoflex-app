@@ -42,6 +42,7 @@ export function geometria(id) {
 
 const SPEED = 16; // unidades del mapa por segundo
 const SLOT_MS = 40000;
+const SALIDA_PROB = 8; // % de tandas en las que alguien sale de su oficina
 
 function hash(a, b) {
   let x = (Math.imul(a | 0, 374761393) + Math.imul(b | 0, 668265263)) | 0;
@@ -128,9 +129,14 @@ function planDe(slot, ids) {
   const clave = `${slot}|${ids.join(",")}`;
   if (memo.has(clave)) return memo.get(clave);
   const n = ids.length;
-  let sale = ids.filter((_, i) => hash(slot, i + 1) % 100 < 45);
-  if (!sale.length && n) sale = [ids[hash(slot, 99) % n]];
-  if (sale.length === n && n > 1) sale = sale.slice(0, n - 1);
+  // Casi siempre están en su oficina: solo en ~1 de cada 12 tandas (unos 8 minutos) sale alguien, y casi siempre uno solo.
+  let sale = [];
+  if (n && hash(slot, 7) % 100 < SALIDA_PROB) {
+    sale = ids.filter((_, i) => hash(slot, i + 1) % 100 < 20);
+    if (!sale.length) sale = [ids[hash(slot, 99) % n]];
+    if (sale.length > 2) sale = sale.slice(0, 2);
+    if (sale.length === n && n > 1) sale = sale.slice(0, n - 1);
+  }
   const anfitriones = new Set();
   let cafes = 0;
   const viajes = [];

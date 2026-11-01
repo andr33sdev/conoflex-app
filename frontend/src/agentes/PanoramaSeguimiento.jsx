@@ -83,7 +83,8 @@ export default function PanoramaSeguimiento({ base, datos, error, onPreguntar, a
   const [volviendo, setVolviendo] = useState(null);
   if (error) return <div className="p-6 text-center text-sm text-zinc-400">{error}</div>;
   if (!datos) return <div className="h-full grid place-items-center text-zinc-500 py-16"><Loader2 className="animate-spin" size={22} /></div>;
-  const { conteos: c = {}, hilos = [], pospuestos = [], descartados = [], config = {} } = datos;
+  const { conteos: c = {}, hilos = [], pospuestos = [], descartados = [], config = {}, sin_responder: sr = {} } = datos;
+  const entrantes = sr.lista || [];
 
   const conAviso = hilos.filter((h) => h.estado === "REBOTE" || (h.severidad && h.clase !== "CORTESIA"));
   const pronto = hilos.filter((h) => !conAviso.includes(h) && h.clase !== "CORTESIA");
@@ -118,6 +119,31 @@ export default function PanoramaSeguimiento({ base, datos, error, onPreguntar, a
         Sofi revisa <b className="text-zinc-200">todos los mails que enviaron Cami y vos</b> en los últimos {config.ventana_dias || 45} días, sin que tengas que etiquetar nada, y avisa los que no tuvieron respuesta
         (desde los {config.dias_aviso || 3} días; urgentes desde los {config.dias_urgente || 7}). <b className="text-zinc-200">Nunca envía</b>: el seguimiento queda como borrador en Gmail y el envío siempre es tuyo.
       </p>
+
+      <section>
+        <Titulo>Escribieron y no les respondimos</Titulo>
+        {sr.error && <p className="mb-2 text-[12.5px] text-amber-300">{sr.error}</p>}
+        {entrantes.length === 0 ? (
+          <p className="rounded-xl border border-white/[0.07] px-4 py-4 text-[13.5px] text-zinc-400">
+            {sr.generado ? `No hay clientes esperando respuesta nuestra (miro la bandeja de los últimos ${sr.ventana_dias} días).` : "Todavía no revisé la bandeja de entrada: lo hago en la próxima revisión."}
+          </p>
+        ) : (
+          <ul className="rounded-xl border border-white/[0.09] divide-y divide-white/[0.06]">
+            {entrantes.map((h) => (
+              <li key={`${h.threadId}-${h.ultimo_msg_id}`} className="px-4 py-3">
+                <p className="text-[14.5px] font-semibold text-white leading-snug break-words">{h.contacto_nombre}</p>
+                <p className="text-[13px] text-zinc-400 leading-snug break-words">{h.asunto}</p>
+                {h.snippet && <p className="mt-1 text-[12.5px] text-zinc-500 leading-snug break-words">“{h.snippet.slice(0, 140)}”</p>}
+                <p className={`mt-1 text-[12px] font-semibold ${SEV[h.severidad]?.clase || "text-zinc-400"}`}>
+                  {h.dias >= 2 ? `Hace ${h.dias} días sin respuesta` : h.horas >= 24 ? "Hace 1 día sin respuesta" : `Hace ${h.horas} h sin respuesta`}
+                  <span className="font-normal text-zinc-500">{h.nuestro_antes ? " · ya veníamos hablando" : " · contacto nuevo"}{h.tiene_borrador ? " · hay un borrador en Gmail" : ""}</span>
+                </p>
+              </li>
+            ))}
+          </ul>
+        )}
+        <p className="mt-1.5 text-[12px] text-zinc-500">Cuento los mails de personas de afuera (sin promociones ni avisos automáticos) a los que nadie respondió pasadas {sr.minimo_horas || 4} horas. Se actualiza en cada revisión.</p>
+      </section>
 
       <section>
         <Titulo>Esperando respuesta</Titulo>

@@ -111,3 +111,14 @@ test("lista PDF: solo acepta PDF", () => {
   assert.ok(esPdf(Buffer.from("%PDF-1.7 contenido")));
   assert.ok(!esPdf(Buffer.from("MZ binario")));
 });
+
+test("armarHtml: próximos pasos numerados y datos a confirmar en listas (no un bloque de texto)", () => {
+  const { armarHtml } = require("../comercial/cotizador");
+  const html = armarHtml({ calculo: { lineas: [], descuentoPct: 0 }, redaccion: { saludo: "Hola", proximos_pasos: ["Confirmar modelo.", "Indicar CUIT."], datos_a_confirmar: ["Altura preferida"], cierre: "Quedamos a disposición." } });
+  assert.match(html, /Próximos pasos/);
+  assert.match(html, /Para avanzar necesitamos/);
+  assert.match(html, /Indicar CUIT/);
+  // Respaldo: un cierre larguísimo se separa en pasos.
+  const largo = armarHtml({ calculo: { lineas: [], descuentoPct: 0 }, redaccion: { saludo: "Hola", cierre: "Podemos reservar stock sin cargo. Necesitamos modelo y Razón Social. Indicar cantidad de unidades y preferencia de altura o peso para ajustar la propuesta. Quedamos atentos." } });
+  assert.match(largo, /Próximos pasos/);
+});

@@ -87,9 +87,20 @@ function Pasos({ paso }) {
   );
 }
 
+function Decision({ valor, onElegir, si, no, tonoSi }) {
+  const on = tonoSi === "rojo" ? "bg-red-600 border-red-600 text-white font-semibold" : "bg-emerald-600 border-emerald-600 text-white font-semibold";
+  return (
+    <div className="flex gap-2 shrink-0" role="group">
+      <button type="button" aria-pressed={valor === "si"} onClick={() => onElegir("si")} className={`px-3 min-h-[36px] rounded-lg text-sm border cursor-pointer transition-colors ${valor === "si" ? on : "border-zinc-700 text-zinc-300 hover:border-zinc-500"}`}>{si}</button>
+      <button type="button" aria-pressed={valor === "no"} onClick={() => onElegir("no")} className={`px-3 min-h-[36px] rounded-lg text-sm border cursor-pointer transition-colors ${valor === "no" ? "bg-zinc-600 border-zinc-600 text-white font-semibold" : "border-zinc-700 text-zinc-300 hover:border-zinc-500"}`}>{no}</button>
+    </div>
+  );
+}
+
 function Revision({ a, onAplicar, onCancelar, aplicando }) {
   const [sel, setSel] = useState(() => new Set(a.tildados));
-  const [selNuevos, setSelNuevos] = useState(() => new Set());
+  const [decNuevos, setDecNuevos] = useState({});
+  const [decAus, setDecAus] = useState({});
   const [vista, setVista] = useState(a.cambios.length ? "cambios" : a.nuevos.length ? "nuevos" : "cambios");
   const [q, setQ] = useState("");
   const [soloRevisar, setSoloRevisar] = useState(false);
@@ -111,8 +122,18 @@ function Revision({ a, onAplicar, onCancelar, aplicando }) {
   const subas = a.cambios.filter((c) => c.variacion !== null);
   const ordenadas = subas.map((c) => c.variacion).sort((x, y) => x - y);
   const mediana = ordenadas.length ? (ordenadas.length % 2 ? ordenadas[(ordenadas.length - 1) / 2] : Math.round(((ordenadas[ordenadas.length / 2 - 1] + ordenadas[ordenadas.length / 2]) / 2) * 10) / 10) : null;
-  const total = sel.size + selNuevos.size;
   const nuevosPosibles = a.nuevos.filter((n) => !n.aviso);
+  const agregar = nuevosPosibles.filter((n) => decNuevos[n.codigo] === "si").map((n) => n.codigo);
+  const quitar = a.ausentes.filter((p) => decAus[p.id] === "si").map((p) => p.id);
+  const pendNuevos = nuevosPosibles.filter((n) => !decNuevos[n.codigo]).length;
+  const pendAus = a.ausentes.filter((p) => !decAus[p.id]).length;
+  const pendientes = pendNuevos + pendAus;
+  const total = sel.size + agregar.length + quitar.length;
+  const decidirResto = (setter, actual, claves, v) => {
+    const n = { ...actual };
+    claves.forEach((k) => { if (!n[k]) n[k] = v; });
+    setter(n);
+  };
 
   return (
     <div className="space-y-4">
@@ -136,7 +157,7 @@ function Revision({ a, onAplicar, onCancelar, aplicando }) {
       <Aviso tono="info">Solo se actualiza el <b>precio</b>. Las descripciones, usos, advertencias, fotos y medidas de cada producto quedan como están.</Aviso>
 
       <div className="flex flex-wrap items-center gap-2">
-        {[["cambios", `Cambios (${a.cambios.length})`], ["nuevos", `Nuevos (${a.nuevos.length})`], ["ausentes", `No están en la lista (${a.ausentes.length})`]].map(([id, t]) => (
+        {[["cambios", `Cambios (${a.cambios.length})`], ["nuevos", `Nuevos (${a.nuevos.length})${pendNuevos ? ` · ${pendNuevos} sin decidir` : ""}`], ["ausentes", `Ya no están (${a.ausentes.length})${pendAus ? ` · ${pendAus} sin decidir` : ""}`]].map(([id, t]) => (
           <button key={id} onClick={() => setVista(id)} aria-pressed={vista === id} className={`px-3 min-h-[36px] rounded-lg text-sm border cursor-pointer transition-colors ${vista === id ? "bg-[#FF5A00] border-[#FF5A00] text-black font-semibold" : "border-zinc-800 text-zinc-300 hover:bg-zinc-900"}`}>{t}</button>
         ))}
         <div className="relative ml-auto w-full sm:w-64">
@@ -181,20 +202,19 @@ function Revision({ a, onAplicar, onCancelar, aplicando }) {
       {vista === "nuevos" && (
         <div className="rounded-xl border border-zinc-800 bg-[#0d0d0e] overflow-hidden">
           <div className="px-4 py-2.5 border-b border-zinc-800 text-xs text-zinc-400 flex flex-wrap items-center gap-3">
-            <span>Estos códigos no existen en el sistema. Si tildás uno se crea con su nombre y precio, y después le cargás la ficha.</span>
-            {nuevosPosibles.length > 0 && <button className="text-[#ff8a4d] hover:underline cursor-pointer" onClick={() => setSelNuevos(new Set(nuevosPosibles.map((n) => n.codigo)))}>Tildar todos</button>}
-            {selNuevos.size > 0 && <button className="text-[#ff8a4d] hover:underline cursor-pointer" onClick={() => setSelNuevos(new Set())}>Ninguno</button>}
+            <span>Estos códigos son nuevos: no existen en el sistema. Decidí uno por uno si querés agregarlos (se crean con nombre y precio; la ficha la cargás después).</span>
+            {pendNuevos > 0 && <button className="text-[#ff8a4d] hover:underline cursor-pointer" onClick={() => decidirResto(setDecNuevos, decNuevos, nuevosPosibles.map((n) => n.codigo), "no")}>No agregar los {pendNuevos} que faltan</button>}
           </div>
           {nuevos.length === 0 ? <Vacio titulo="No hay productos nuevos" texto="Todos los códigos de la lista ya estaban en el sistema." /> : (
             <ul className="divide-y divide-zinc-800/70 max-h-[52vh] overflow-y-auto">
               {nuevos.map((n) => (
-                <li key={n.codigo} className="px-4 py-2.5 flex items-start gap-3">
-                  <input type="checkbox" aria-label={`Crear ${n.codigo}`} disabled={!!n.aviso} checked={selNuevos.has(n.codigo)} onChange={() => alternar(selNuevos, setSelNuevos, n.codigo)} className="mt-1.5 accent-[#FF5A00] w-4 h-4 shrink-0" />
-                  <div className="min-w-0 flex-1">
+                <li key={n.codigo} className="px-4 py-3 flex flex-wrap items-center gap-3">
+                  <div className="min-w-0 flex-1 basis-56">
                     <p className="text-sm text-zinc-100 truncate"><b className="text-[#ff8a4d] font-semibold">{n.codigo}</b> <span className="text-zinc-400">{n.nombre}</span></p>
                     <p className="text-sm text-white break-all">{n.precio}</p>
                     {n.aviso && <p className="text-xs text-amber-400 mt-1">{n.aviso}</p>}
                   </div>
+                  {!n.aviso && <Decision valor={decNuevos[n.codigo]} onElegir={(v) => setDecNuevos({ ...decNuevos, [n.codigo]: v })} si="Agregar" no="No agregar" tonoSi="verde" />}
                 </li>
               ))}
             </ul>
@@ -204,11 +224,17 @@ function Revision({ a, onAplicar, onCancelar, aplicando }) {
 
       {vista === "ausentes" && (
         <div className="rounded-xl border border-zinc-800 bg-[#0d0d0e] overflow-hidden">
-          <p className="px-4 py-2.5 border-b border-zinc-800 text-xs text-zinc-400">Estos productos no aparecen en la lista. Se quedan como están (con el precio del mes anterior): no se borra nada.</p>
+          <div className="px-4 py-2.5 border-b border-zinc-800 text-xs text-zinc-400 flex flex-wrap items-center gap-3">
+            <span>Estos productos están en el sistema pero ya no aparecen en la lista. Decidí uno por uno cuáles quitar; los que mantengas siguen con el precio anterior. Si quitás alguno, “Deshacer” lo restaura.</span>
+            {pendAus > 0 && <button className="text-[#ff8a4d] hover:underline cursor-pointer" onClick={() => decidirResto(setDecAus, decAus, a.ausentes.map((p) => p.id), "no")}>Mantener los {pendAus} que faltan</button>}
+          </div>
           {a.ausentes.length === 0 ? <Vacio titulo="Todos los productos del sistema están en la lista" /> : (
             <ul className="divide-y divide-zinc-800/70 max-h-[52vh] overflow-y-auto">
               {a.ausentes.filter((p) => !q.trim() || `${p.codigo} ${p.nombre}`.toLowerCase().includes(q.trim().toLowerCase())).map((p) => (
-                <li key={p.id} className="px-4 py-2.5 text-sm"><b className="text-zinc-300">{p.codigo}</b> <span className="text-zinc-500">{p.nombre}</span> <span className="text-zinc-600">· {p.precio_lista || "sin precio"}</span></li>
+                <li key={p.id} className="px-4 py-3 flex flex-wrap items-center gap-3">
+                  <p className="min-w-0 flex-1 basis-56 text-sm"><b className="text-zinc-200">{p.codigo}</b> <span className="text-zinc-500">{p.nombre}</span> <span className="text-zinc-600">· {p.precio_lista || "sin precio"}</span></p>
+                  <Decision valor={decAus[p.id]} onElegir={(v) => setDecAus({ ...decAus, [p.id]: v })} si="Quitar" no="Mantener" tonoSi="rojo" />
+                </li>
               ))}
             </ul>
           )}
@@ -216,11 +242,11 @@ function Revision({ a, onAplicar, onCancelar, aplicando }) {
       )}
 
       <div className="sticky bottom-0 -mx-1 px-1 py-3 bg-gradient-to-t from-[#050505] via-[#050505] to-transparent flex flex-wrap items-center gap-3">
-        <Boton onClick={() => onAplicar([...sel], [...selNuevos])} cargando={aplicando} disabled={total === 0}>
-          <CheckCircle2 size={16} /> Aplicar {sel.size} {sel.size === 1 ? "precio" : "precios"}{selNuevos.size ? ` y crear ${selNuevos.size}` : ""}
+        <Boton onClick={() => onAplicar([...sel], agregar, quitar)} cargando={aplicando} disabled={total === 0 || pendientes > 0}>
+          <CheckCircle2 size={16} /> Aplicar {sel.size} {sel.size === 1 ? "precio" : "precios"}{agregar.length ? ` · agregar ${agregar.length}` : ""}{quitar.length ? ` · quitar ${quitar.length}` : ""}
         </Boton>
         <Boton variante="suave" onClick={onCancelar} disabled={aplicando}>Cancelar</Boton>
-        <p className="text-xs text-zinc-500">Hasta que no toques “Aplicar”, no se cambia nada.</p>
+        <p className={`text-xs ${pendientes ? "text-amber-400" : "text-zinc-500"}`}>{pendientes ? `Faltan ${pendientes} decisiones entre productos nuevos y que ya no están.` : "Hasta que no toques “Aplicar”, no se cambia nada."}</p>
       </div>
     </div>
   );
@@ -262,11 +288,11 @@ export default function ListaPrecios({ aviso, onCambioPrecios, irAProductos }) {
     }
   };
 
-  const aplicar = async (ids, nuevos) => {
+  const aplicar = async (ids, nuevos, quitar) => {
     setAplicando(true);
     setError("");
     try {
-      const d = await api(`/api/comercial/precios/${analisis.id}/aplicar`, { method: "POST", body: { ids, nuevos } });
+      const d = await api(`/api/comercial/precios/${analisis.id}/aplicar`, { method: "POST", body: { ids, nuevos, quitar } });
       setResultado(d);
       setPaso(2);
       cargarHistorial();
@@ -359,7 +385,7 @@ export default function ListaPrecios({ aviso, onCambioPrecios, irAProductos }) {
             <CheckCircle2 size={44} className="mx-auto text-emerald-400" />
             <div>
               <p className="text-lg font-semibold text-white">Lista aplicada</p>
-              <p className="text-sm text-zinc-300 mt-1">{resultado.actualizados} {resultado.actualizados === 1 ? "precio actualizado" : "precios actualizados"}{resultado.nuevos ? ` y ${resultado.nuevos} ${resultado.nuevos === 1 ? "producto creado" : "productos creados"}` : ""}. Las fichas quedaron intactas.</p>
+              <p className="text-sm text-zinc-300 mt-1">{resultado.actualizados} {resultado.actualizados === 1 ? "precio actualizado" : "precios actualizados"}{resultado.quitados ? `, ${resultado.quitados} ${resultado.quitados === 1 ? "producto quitado" : "productos quitados"}` : ""}{resultado.nuevos ? ` y ${resultado.nuevos} ${resultado.nuevos === 1 ? "producto creado" : "productos creados"}` : ""}. Las fichas quedaron intactas.</p>
               {resultado.saltados?.length > 0 && <p className="text-xs text-amber-400 mt-2">No se pudo: {resultado.saltados.join("; ")}</p>}
             </div>
             <div className="flex flex-wrap justify-center gap-2">

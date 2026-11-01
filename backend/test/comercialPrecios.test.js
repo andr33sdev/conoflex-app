@@ -112,3 +112,24 @@ test("aplicar: no repite una carga aplicada ni usa análisis viejos", async () =
   assert.strictEqual((await P.aplicarCarga(dbFalsa(d, "APLICADA"), { cargaId: 1 })).status, 409);
   assert.strictEqual((await P.aplicarCarga(dbFalsa(d, "ANALIZADA", Date.now() - 7 * 3600 * 1000), { cargaId: 1 })).status, 409);
 });
+
+test("aplicar: solo quita los ausentes que se eligieron uno por uno y guarda copia para deshacer", async () => {
+  const detalle = { cambios: [], nuevos: [], ausentes: [{ id: 7, codigo: "X7" }, { id: 8, codigo: "X8" }] };
+  const sqls = [];
+  const q = async (sql, params = []) => {
+    sqls.push({ sql, params });
+    if (/FROM precios_cargas WHERE id/.test(sql)) return [[{ id: 1, estado: "ANALIZADA", detalle: JSON.stringify(detalle), creada: Date.now() }]];
+    if (/SELECT \* FROM productos WHERE id/.test(sql)) return [[{ id: params[0], codigo: `X${params[0]}`, nombre: "n" }]];
+    return [[]];
+  };
+  const db = { query: q, getConnection: async () => ({ query: q, beginTransaction: async () => {}, commit: async () => {}, rollback: async () => {}, release: () => {} }) };
+  const r = await P.aplicarCarga(db, { cargaId: 1, quitar: [7, 999] });
+  assert.strictEqual(r.quitados, 1);
+  const borrados = sqls.filter((s) => /^DELETE FROM productos/.test(s.sql));
+  assert.deepStrictEqual(borrados.map((b) => b.params[0]), [7]);
+  assert.ok(sqls.some((s) => /INSERT INTO precios_quitados/.test(s.sql) && s.params[1] === 7));
+  // Sin elegir nada, no se borra nada.
+  sqls.length = 0;
+  await P.aplicarCarga(db, { cargaId: 1 });
+  assert.strictEqual(sqls.filter((s) => /^DELETE FROM productos/.test(s.sql)).length, 0);
+});

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, Camera, CheckCircle2, FileText, Images, LayoutGrid, List, Loader2, Lock, Package, Plus, Search, Trash2, X } from "lucide-react";
 import { api } from "../produccion/util";
 import { Aviso, Boton, Chip, Modal, Panel, Vacio } from "./ui";
+import FichasPdf from "./FichasPdf";
 import { campo, etiqueta, peso, subirForm, urlImagen } from "./util";
 
 const usosALineas = (t) => String(t || "").split(/\s*\|\s*|\r?\n/).map((x) => x.trim()).filter(Boolean).join("\n");
@@ -416,6 +417,7 @@ export default function Productos({ aviso, refrescarKey, onCambio }) {
             <p className="text-sm text-zinc-500 mt-0.5"><b className="text-zinc-200 font-medium">{r.completos}</b> de {r.total} fichas completas · la IA usa estas fichas para ofrecer y cotizar.</p>
           </div>
           <div className="flex flex-wrap gap-2">
+            <Boton variante="suave" onClick={() => setModal("pdfs")}><FileText size={15} /> PDFs de usos</Boton>
             <Boton variante="suave" onClick={() => setModal("fichas")}><FileText size={15} /> Importar fichas PDF</Boton>
             <Boton variante="suave" onClick={() => setModal("fotos")}><Images size={15} /> Fotos en lote</Boton>
             <Boton onClick={() => setModal("nuevo")}><Plus size={16} /> Nuevo producto</Boton>
@@ -475,6 +477,7 @@ export default function Productos({ aviso, refrescarKey, onCambio }) {
       )}
       {modal === "nuevo" && <ModalNuevo categorias={categorias} aviso={aviso} onCerrar={() => setModal(null)} onCreado={async (id) => { setModal(null); await cargar(); onCambio?.(); setAbierto(id); }} />}
       {modal === "fichas" && <ModalFichasPdf categorias={categorias} aviso={aviso} onCerrar={() => setModal(null)} onListo={() => { setModal(null); cargar(); onCambio?.(); }} />}
+      {modal === "pdfs" && <FichasPdf onCerrar={() => setModal(null)} onAbrirProducto={(id) => setAbierto(id)} />}
       {modal === "fotos" && <ModalFotosLote onCerrar={() => setModal(null)} onListo={() => { cargar(); onCambio?.(); }} />}
     </div>
   );

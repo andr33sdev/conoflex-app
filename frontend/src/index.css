@@ -209,3 +209,26 @@ button, a, select, summary, [role="button"] { touch-action: manipulation; }
 @keyframes cf-estado { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: none; } }
 .cf-estado { display: inline-block; animation: cf-estado 320ms ease-out both; }
 @media (prefers-reduced-motion: reduce) { .cf-estado { animation: none; } }
+
+/* ============ Modo claro ============
+   La interfaz se diseñó en oscuro con colores fijos en cada componente. El modo claro invierte la luminosidad de toda la página
+   (conservando los tonos: el naranja Conoflex sigue siendo naranja) y devuelve a su aspecto original lo que no debe invertirse:
+   fotos, videos, lienzos 3D, el mapa de calor y lo marcado con data-sin-tema. */
+html[data-tema="claro"] {
+  filter: invert(1) hue-rotate(180deg);
+  background: #f4f4f5;
+}
+html[data-tema="claro"] body { background-color: #f4f4f5; }
+html[data-tema="claro"] img,
+html[data-tema="claro"] video,
+html[data-tema="claro"] canvas,
+html[data-tema="claro"] picture,
+html[data-tema="claro"] iframe,
+html[data-tema="claro"] [data-sin-tema],
+html[data-tema="claro"] svg[shape-rendering="crispEdges"],
+html[data-tema="claro"] [style*="background-image: url"] {
+  filter: invert(1) hue-rotate(180deg);
+}
+/* Los íconos de imagen que ya son blancos/negros planos (logo) se ven bien invertidos; las sombras fuertes se suavizan. */
+html[data-tema="claro"] [class*="shadow-"] { --tw-shadow-color: rgba(0, 0, 0, 0.12); }
+html[data-tema="claro"] ::selection { background: rgba(255, 90, 0, 0.3); color: #000; }

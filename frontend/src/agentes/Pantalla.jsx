@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Bell, Eraser, FileDown, History, LayoutGrid, ClipboardList, Loader2, Mail, Users, MessageCircle, ScanSearch, Volume2, VolumeX } from "lucide-react";
+import { Bell, Eraser, GraduationCap, FileDown, History, LayoutGrid, ClipboardList, Loader2, Mail, Users, MessageCircle, ScanSearch, Volume2, VolumeX } from "lucide-react";
 import { api } from "../produccion/util";
 import { useToast } from "../produccion/useToast";
 import Chat from "./Chat";
@@ -418,7 +418,7 @@ export default function Pantalla({ agente, usuario, pregunta, onPreguntaUsada, o
     ...(perfil.panorama === "stock" ? [{ id: "panorama", texto: "Panorama", icono: LayoutGrid }] : []),
     ...(perfil.panorama === "compras" ? [{ id: "panorama", texto: "Mi lista", icono: ClipboardList }] : []),
     ...(perfil.panorama === "produccion" ? [{ id: "panorama", texto: "Prioridades", icono: LayoutGrid }] : []),
-    ...(perfil.panorama === "ventas" ? [{ id: "panorama", texto: "Mails", icono: Mail }] : []),
+    ...(perfil.panorama === "ventas" ? [{ id: "panorama", texto: "Mails", icono: Mail }, { id: "entrenamiento", texto: "Entrenamiento", icono: GraduationCap }] : []),
     ...(perfil.panorama === "seguimiento" ? [{ id: "panorama", texto: "Seguimiento", icono: Mail }] : []),
     ...(perfil.personal ? [{ id: "personal", texto: "Personal", icono: Users }] : []),
     ...(perfil.sinVigilante ? [] : [{ id: "avisos", texto: "Avisos", icono: Bell, n: abiertos }]),
@@ -513,6 +513,11 @@ export default function Pantalla({ agente, usuario, pregunta, onPreguntaUsada, o
         {tab === "panorama" && (
           <div className="h-full overflow-y-auto custom-scrollbar">
             {perfil.panorama === "seguimiento" ? <PanoramaSeguimiento base={base} datos={pano} error={errPano} onPreguntar={alPropuesta2} alCambiar={() => setVersion((v) => v + 1)} mostrar={mostrar} /> : perfil.panorama === "ventas" ? <PanoramaVentas base={base} datos={pano} error={errPano} onPreguntar={alPropuesta2} alCambiar={() => setVersion((v) => v + 1)} mostrar={mostrar} /> : perfil.panorama === "compras" ? <PanoramaCompras datos={pano} error={errPano} onPreguntar={alPropuesta2} /> : perfil.panorama === "produccion" ? <PanoramaProduccion datos={pano} error={errPano} onPreguntar={alPropuesta2} /> : <Panorama datos={pano} error={errPano} onPreguntar={alPropuesta2} />}
+          </div>
+        )}
+        {tab === "entrenamiento" && perfil.panorama === "ventas" && (
+          <div className="h-full overflow-y-auto custom-scrollbar">
+            <PanoramaVentas seccion="entrenamiento" base={base} datos={pano} error={errPano} onPreguntar={alPropuesta2} alCambiar={() => setVersion((v) => v + 1)} mostrar={mostrar} />
           </div>
         )}
         {tab === "personal" && (
