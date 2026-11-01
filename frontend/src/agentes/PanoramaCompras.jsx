@@ -1,21 +1,23 @@
 import { useState } from "react";
-import { Loader2, Trash2 } from "lucide-react";
+import { ChevronDown, Loader2, Trash2 } from "lucide-react";
 import { api } from "../produccion/util";
 
 const fmt = (n, d = 0) => (n == null || Number.isNaN(Number(n)) ? "—" : Number(n).toLocaleString("es-AR", { maximumFractionDigits: d }));
 const PRIO = { 5: "Urgente", 4: "Alta", 3: "Normal", 2: "Baja", 1: "Baja" };
 
-function Dato({ titulo, valor, detalle }) {
+/** Sección cerrada hasta que se pide: el título dice cuántos hay. */
+function Plegable({ titulo, cuenta, children }) {
+  const [abierta, setAbierta] = useState(false);
   return (
-    <div className="rounded-xl border border-white/[0.07] p-3.5">
-      <p className="text-[11.5px] font-semibold uppercase tracking-[0.1em] text-zinc-500">{titulo}</p>
-      <p className="mt-1 text-[26px] leading-none font-bold text-white tabular-nums">{valor}</p>
-      <p className="mt-1.5 text-[12px] text-zinc-500 leading-tight">{detalle}</p>
-    </div>
+    <section className="border-t border-white/[0.06] pt-1">
+      <button onClick={() => setAbierta((v) => !v)} aria-expanded={abierta} className="w-full flex items-center gap-2 py-3 text-left text-[14px] font-semibold text-zinc-300 hover:text-white">
+        <ChevronDown size={16} className={`transition-transform ${abierta ? "rotate-180" : ""}`} />
+        {titulo} <span className="text-zinc-500 font-medium">({cuenta})</span>
+      </button>
+      {abierta && <div className="pb-3">{children}</div>}
+    </section>
   );
 }
-
-const Titulo = ({ children }) => <h4 className="text-[11.5px] font-semibold uppercase tracking-[0.1em] text-zinc-500 mb-2">{children}</h4>;
 
 /** Panel de Vera: la lista de compra que está armando (en vivo), lo que espera firma, lo que no llegó y cómo cumple cada proveedor. */
 export default function PanoramaCompras({ datos, error, onPreguntar, base, alCambiar, mostrar }) {
@@ -59,8 +61,8 @@ export default function PanoramaCompras({ datos, error, onPreguntar, base, alCam
               ))}
             </ul>
             <div className="flex flex-wrap gap-1.5 px-3 pb-3 pt-2">
-              <button onClick={() => onPreguntar("Agregá a la lista lo que hace falta comprar")} className={`${accion} bg-white/[0.07] hover:bg-white/[0.12] text-zinc-100`}>Sumar lo que falta</button>
               <button onClick={() => onPreguntar("Dejá la lista lista para firmar")} className={`${accion} bg-white text-black hover:bg-zinc-200`}>Cerrar para firma</button>
+              <button onClick={() => onPreguntar("Agregá a la lista lo que hace falta comprar")} className={`${accion} text-zinc-300 hover:bg-white/[0.07]`}>Sumar lo que falta</button>
               <button onClick={() => setConfirmaBorrar(true)} className={`${accion} ml-auto text-rose-300 hover:bg-rose-500/10 inline-flex items-center gap-1.5`}><Trash2 size={14} /> Eliminar lista</button>
             </div>
             {confirmaBorrar && (
@@ -81,15 +83,8 @@ export default function PanoramaCompras({ datos, error, onPreguntar, base, alCam
         )}
       </section>
 
-      <div className="grid grid-cols-3 gap-2.5">
-        <Dato titulo="Por firmar" valor={r.por_firmar} detalle="solicitudes abiertas" />
-        <Dato titulo="Sin recibir" valor={r.sin_recibir} detalle="renglones pedidos" />
-        <Dato titulo="Proveedores" valor={r.proveedores} detalle="con compras" />
-      </div>
-
       {datos.por_firmar.length > 0 && (
-        <section>
-          <Titulo>Esperan firma</Titulo>
+        <Plegable titulo="Esperan firma" cuenta={datos.por_firmar.length}>
           <ul className="divide-y divide-white/[0.06]">
             {datos.por_firmar.map((s) => (
               <li key={s.id} className="flex items-center gap-2 py-2.5 text-[13.5px]">
@@ -99,12 +94,18 @@ export default function PanoramaCompras({ datos, error, onPreguntar, base, alCam
               </li>
             ))}
           </ul>
-        </section>
+        </Plegable>
+      )}
+
+      {r.sin_recibir > 0 && (
+        <p className="text-[13.5px] text-zinc-400">
+          <b className="text-zinc-200">{r.sin_recibir}</b> {r.sin_recibir === 1 ? "renglón pedido todavía sin recibir" : "renglones pedidos todavía sin recibir"}.{" "}
+          <button onClick={() => onPreguntar("¿Qué compras pedidas todavía no llegaron?")} className="font-semibold text-zinc-300 hover:text-white underline underline-offset-2">Ver cuáles</button>
+        </p>
       )}
 
       {datos.proveedores.length > 0 && (
-        <section>
-          <Titulo>Cumplimiento de proveedores</Titulo>
+        <Plegable titulo="Cumplimiento de proveedores" cuenta={datos.proveedores.length}>
           <ul className="space-y-3">
             {datos.proveedores.map((p) => (
               <li key={p.proveedor}>
@@ -117,7 +118,7 @@ export default function PanoramaCompras({ datos, error, onPreguntar, base, alCam
               </li>
             ))}
           </ul>
-        </section>
+        </Plegable>
       )}
     </div>
   );
