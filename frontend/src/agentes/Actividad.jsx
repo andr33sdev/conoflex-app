@@ -3,7 +3,7 @@ import { Loader2 } from "lucide-react";
 import { api } from "../produccion/util";
 import { cuando } from "./formato";
 
-const TEXTO = { LIQUIDACION: "Liquidación", CHAT: "Consulta", REVISION: "Revisión", GESTION: "Gestión", DERIVACION: "Derivación" };
+const TEXTO = { LIQUIDACION: "Liquidación", CHAT: "Consulta", REVISION: "Revisión", GESTION: "Gestión", DERIVACION: "Derivación", AJUSTE_STOCK: "Ajuste de stock", BORRADOR: "Borrador", ENVIADO: "Enviado" };
 
 export default function Actividad({ agenteId, nombre, version }) {
   const [lista, setLista] = useState(null);

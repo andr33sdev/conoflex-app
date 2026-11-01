@@ -2,14 +2,14 @@ import { memo, useEffect, useMemo, useState } from "react";
 import { Lock } from "lucide-react";
 import { rectasMini } from "./pixelMini";
 import { estadoDe, equipoIds, useSlotEstado } from "./estados";
-import { CAFE, H, REUNION, W, escena, geometria, segundosDeReunion } from "./escena";
+import { CAFE, H, ORDEN, REUNION, W, escena, geometria, segundosDeReunion } from "./escena";
 import Reunion from "./Reunion";
 import { useReunion } from "./useReunion";
 import PreguntaOficina from "./PreguntaOficina";
 import AvisosCelular from "./AvisosCelular";
 import { PROXIMOS } from "./proximos";
 
-// El departamento visto desde arriba. Todo se dibuja con rectángulos en un mapa de 176×112 unidades;
+// El departamento visto desde arriba. Todo se dibuja con rectángulos en un mapa de 244×112 unidades;
 // las personas caminan por los pasillos según el reloj (ver escena.js).
 
 const TINTES = {
@@ -17,6 +17,7 @@ const TINTES = {
   stock: ["#34413a", "#2f3b34", "#22c55e"],
   compras: ["#333d4d", "#2e3846", "#3b82f6"],
   produccion: ["#3d3750", "#38324a", "#8b5cf6"],
+  ventas: ["#2f4543", "#2a3e3c", "#14b8a6"],
 };
 const PARED = "#d6d2c6";
 const SOMBRA = "rgba(0,0,0,0.32)";
@@ -79,13 +80,14 @@ function fondo(r, ids, f) {
   r(73, 53, 30, 6, "#433d5e");
 
   // salas
-  for (const id of ["rrhh", "stock", "compras", "produccion"]) {
+  for (const id of ORDEN) {
     const g = geometria(id);
     pisoSala(r, g.x, g.y, g.w, g.h, TINTES[id]);
     r(g.escritorio.x - 2, g.escritorio.y - 4, g.escritorio.w + 4, g.escritorio.h + 12, TINTES[id][1]); // alfombra
     r(g.escritorio.x - 1, g.escritorio.y - 3, g.escritorio.w + 2, g.escritorio.h + 10, TINTES[id][0]);
     r(g.x + (g.izq ? 1 : 2), g.y + (g.arriba ? 0 : 1), 1, 1, TINTES[id][2]); // marca de color de la sala
   }
+  pisoSala(r, 176, 66, 68, 46, ["#383840", "#32323a"]); // archivo (sin escritorio)
   // reunión y cocina
   pisoSala(r, REUNION.x, REUNION.y, REUNION.w, REUNION.h, ["#3a3a42", "#34343c"]);
   pisoSala(r, CAFE.x, CAFE.y, CAFE.w, CAFE.h, ["#3f3a33", "#39342d"]);
@@ -130,6 +132,29 @@ function fondo(r, ids, f) {
   r(149, 108, 16, 1, "#9aa0ae");
   caja(r, 160, 68, 8, 7, "#a07a4f");
   caja(r, 168, 70, 6, 5, "#8b6a44");
+  // Ventas: cartelera de consultas, archivero y muestra de producto
+  r(182, 4, 26, 8, "#e8e4da");
+  r(182, 4, 26, 1, "#14b8a6");
+  [[184, 6, "#f2c94c"], [190, 6, "#7fd1c9"], [196, 6, "#f2a28c"], [202, 6, "#f2c94c"], [187, 9, "#7fd1c9"], [199, 9, "#f2a28c"]].forEach(([x, y, c]) => r(x, y, 4, 2, c));
+  r(214, 3, 22, 8, "#5b5f68");
+  r(214, 3, 22, 1, "#7a808c");
+  for (let i = 0; i < 3; i++) {
+    r(216 + i * 7, 5, 5, 4, "#6a6f79");
+    r(217 + i * 7, 6, 3, 1, "#9aa0ae");
+  }
+  planta(r, 178, 34);
+  r(236, 28, 4, 9, "#FF5A00");
+  r(235, 36, 6, 2, "#33333b");
+  r(237, 30, 2, 1, "#f1f2f6");
+  // Archivo (sala sin escritorio): impresora y estantes
+  estante(r, 180, 69, 28);
+  estante(r, 212, 69, 26);
+  r(186, 98, 22, 10, "#585d66");
+  r(186, 98, 22, 2, "#7a808c");
+  r(190, 101, 12, 4, "#e8e4da");
+  caja(r, 216, 98, 9, 8, "#a07a4f");
+  caja(r, 226, 100, 7, 6, "#8b6a44");
+  planta(r, 236, 100);
   // Sala de reuniones
   r(76, 14, 24, 16, "#6b5238");
   r(76, 14, 24, 1, "#8a6a4a");
@@ -151,6 +176,7 @@ function fondo(r, ids, f) {
   // pasillo
   planta(r, 4, 54);
   planta(r, 166, 54);
+  planta(r, 234, 54);
 
   // paredes con puertas
   const tramos = (y, h, puertas) => {
@@ -161,8 +187,8 @@ function fondo(r, ids, f) {
     });
     pared(r, x, y, W - x, h);
   };
-  tramos(46, 2, [[49, 59], [83, 93], [117, 127]]);
-  tramos(64, 2, [[49, 59], [83, 93], [117, 127]]);
+  tramos(46, 2, [[49, 59], [83, 93], [117, 127], [185, 195]]);
+  tramos(64, 2, [[49, 59], [83, 93], [117, 127], [185, 195]]);
   [0, 66].forEach((y) => {
     pared(r, 67, y === 0 ? 0 : 66, 2, 46);
     pared(r, 107, y === 0 ? 0 : 66, 2, 46);
@@ -171,13 +197,14 @@ function fondo(r, ids, f) {
   pared(r, 0, 0, W, 2);
   pared(r, 0, 110, W, 2);
   pared(r, 0, 0, 2, H);
-  pared(r, 174, 0, 2, H);
-  [[8, 24], [112, 130], [140, 160], [72, 100]].forEach(([a, b]) => r(a, 0, b - a, 2, CIELO[f]));
-  [[8, 24], [40, 58], [112, 130], [144, 160], [74, 100]].forEach(([a, b]) => r(a, 110, b - a, 2, CIELO[f]));
+  pared(r, 174, 0, 2, H); // entre Depósito y Ventas
+  pared(r, W - 2, 0, 2, H);
+  [[8, 24], [112, 130], [140, 160], [72, 100], [184, 204], [214, 234]].forEach(([a, b]) => r(a, 0, b - a, 2, CIELO[f]));
+  [[8, 24], [40, 58], [112, 130], [144, 160], [74, 100], [184, 204], [214, 234]].forEach(([a, b]) => r(a, 110, b - a, 2, CIELO[f]));
   [[10, 36], [74, 88]].forEach(([a, b]) => r(0, a, 2, b - a, CIELO[f]));
-  [[10, 36], [74, 88]].forEach(([a, b]) => r(174, a, 2, b - a, CIELO[f]));
+  [[10, 36], [74, 88]].forEach(([a, b]) => r(W - 2, a, 2, b - a, CIELO[f]));
   // marcos de las puertas
-  [49, 59, 83, 93, 117, 127].forEach((x) => {
+  [49, 59, 83, 93, 117, 127, 185, 195].forEach((x) => {
     r(x - 1, 46, 1, 2, "#8a6a4a");
     r(x - 1, 64, 1, 2, "#8a6a4a");
   });
@@ -250,6 +277,14 @@ const DICHOS = {
   "produccion>rrhh": "¿Quién ficha hoy en planta?",
   "produccion>stock": "¿Alcanza el material para esta semana?",
   "produccion>compras": "¿Cuándo llega lo que pedimos?",
+  "ventas>rrhh": "¿Qué días son feriado este mes?",
+  "ventas>stock": "¿Hay conos para un pedido grande?",
+  "ventas>compras": "¿Cuándo llega la cadena?",
+  "ventas>produccion": "¿Para cuándo puedo prometer la entrega?",
+  "rrhh>ventas": "Te paso los feriados que vienen",
+  "stock>ventas": "Te aviso qué hay para ofrecer",
+  "compras>ventas": "Cambió el precio de un proveedor",
+  "produccion>ventas": "Avisale al cliente que se atrasa",
 };
 
 function Globo({ e, texto, sub }) {
@@ -271,7 +306,7 @@ function ReunionEnCurso({ esc, reunion, s }) {
   const sec = reunion?.secciones?.find((x) => x.agente === id);
   return (
     <>
-      <div className="absolute left-1/2 -translate-x-1/2 top-[13%] pointer-events-none z-10">
+      <div className="absolute -translate-x-1/2 top-[13%] pointer-events-none z-10" style={{ left: `${(88 / W) * 100}%` }}>
         <span className="block rounded-md bg-black/60 px-2 py-0.5 text-[10.5px] sm:text-[11px] font-semibold text-zinc-200">Reunión de las 08:00 en curso</span>
       </div>
       {sec && <Globo e={esc[id]} texto={sec.resumen} />}
@@ -306,7 +341,7 @@ function Mapa({ agentes, onElegir, modo, vivoId, abiertosVivo, reunion }) {
         )}
       </svg>
       {/* nombres de las salas */}
-      {["rrhh", "stock", "compras", "produccion"].map((id) => {
+      {ORDEN.map((id) => {
         const g = geometria(id);
         const a = agentes.find((x) => x.id === id);
         if (!a) return null;
@@ -318,8 +353,9 @@ function Mapa({ agentes, onElegir, modo, vivoId, abiertosVivo, reunion }) {
           </button>
         );
       })}
-      <span className="absolute left-[40.5%] top-1.5 rounded bg-black/45 px-1.5 text-[10px] font-semibold text-zinc-300">Reunión</span>
-      <span className="absolute left-[40.5%] bottom-1.5 rounded bg-black/45 px-1.5 text-[10px] font-semibold text-zinc-300">Cocina</span>
+      <span className="absolute top-1.5 rounded bg-black/45 px-1.5 text-[10px] font-semibold text-zinc-300" style={{ left: `${(70 / W) * 100}%` }}>Reunión</span>
+      <span className="absolute bottom-1.5 rounded bg-black/45 px-1.5 text-[10px] font-semibold text-zinc-300" style={{ left: `${(70 / W) * 100}%` }}>Cocina</span>
+      <span className="absolute bottom-1.5 rounded bg-black/45 px-1.5 text-[10px] font-semibold text-zinc-300" style={{ left: `${(180 / W) * 100}%` }}>Archivo</span>
       {/* globos: solo para quien está yendo, charlando o recibiendo */}
       {lista.map((id) => {
         const e = esc[id];

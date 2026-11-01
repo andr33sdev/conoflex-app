@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import RevisionFichas from "./comercial/RevisionFichas";
+import RevisionBorrador from "./comercial/RevisionBorrador";
 import {
   Mail,
   Sparkles,
@@ -65,6 +66,7 @@ export default function ComercialIA() {
   const [reglas, setReglas] = useState("");
   const [loading, setLoading] = useState(false);
   const [generandoBorrador, setGenerandoBorrador] = useState(false);
+  const [revisionBorrador, setRevisionBorrador] = useState(null); // { mailId, revision }
   const [conectado, setConectado] = useState(true);
   const [errorMsg, setErrorMsg] = useState("");
 
@@ -286,11 +288,13 @@ export default function ComercialIA() {
           asunto: mail.asunto,
           threadId: mail.threadId,
           imagenes: mail.imagenes || [], // FOTOS ENVIADAS POR EL CLIENTE
+          nombreCliente: mail.remitente,
         }),
       });
       const data = await res.json();
       if (data.success) {
         showToast("✨ ¡Borrador inyectado con éxito en Gmail!", "success");
+        setRevisionBorrador(data.revision ? { mailId: mail.id, revision: data.revision } : null);
         fetchMails();
       } else {
         showToast(data.error || "No se pudo inyectar el borrador", "error");
@@ -737,6 +741,8 @@ export default function ComercialIA() {
                         </div>
                       )}
                   </div>
+
+                  {revisionBorrador?.mailId === selectedMail.id && <RevisionBorrador revision={revisionBorrador.revision} />}
 
                   {/* Banner CTA Generador */}
                   <div className="bg-[#080808] border border-zinc-800/80 rounded-xl p-5 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-xl">

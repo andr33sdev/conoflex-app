@@ -52,6 +52,17 @@ export const ACTIVIDADES = {
     A("Tomando un café", "taza", "cafe"),
     A("Esperando tu consulta", "puntos"),
   ],
+  ventas: [
+    A("Leyendo los mails de clientes", "sobre", "scan"),
+    A("Armando un borrador de respuesta", "doc", "abajo"),
+    A("Revisando la lista de precios", "lista", "scan"),
+    A("Calculando un presupuesto", "calculadora", "abajo"),
+    A("Comparando con lo que corregiste", "lupa", "lado"),
+    A("Mirando qué productos ofrecer", "caja", "scan"),
+    A("Esperando un mail nuevo", "sobre", "lado"),
+    A("Tomando un café", "taza", "cafe"),
+    A("Esperando tu consulta", "puntos"),
+  ],
 };
 
 const MODOS = {
@@ -64,7 +75,7 @@ const MODOS = {
 const SEGUNDOS = 9;
 
 // Quiénes están en el equipo de esta persona (según sus permisos): el mapa y los estados hablan solo de ellos.
-let EQUIPO = { ids: ORDEN.slice(), nombres: { rrhh: "Lía", stock: "Nati", compras: "Vera", produccion: "Romi" } };
+let EQUIPO = { ids: ORDEN.slice(), nombres: { rrhh: "Lía", stock: "Nati", compras: "Vera", produccion: "Romi", ventas: "Cami" } };
 export function setEquipo(agentes = []) {
   const ids = ORDEN.filter((id) => agentes.some((a) => a.id === id));
   EQUIPO = { ids, nombres: { ...EQUIPO.nombres, ...Object.fromEntries(agentes.map((a) => [a.id, a.nombre])) } };
@@ -97,7 +108,7 @@ export function estadoDe(id, nombre, { modo = "idle", abiertos = 0, ahora = Date
   const salida = estadoEscena(id, escena(ahora, EQUIPO.ids)[id]);
   if (salida) return { modo: "idle", ...salida };
   const lista = abiertos > 0 ? [...base.slice(0, 4), A(`Atendiendo ${abiertos} ${abiertos === 1 ? "aviso abierto" : "avisos abiertos"}`, "carpeta", "abajo"), ...base.slice(4)] : base;
-  const semilla = { rrhh: 0, stock: 3, compras: 5, produccion: 7 }[id] ?? 0;
+  const semilla = { rrhh: 0, stock: 3, compras: 5, produccion: 7, ventas: 2 }[id] ?? 0;
   const slot = Math.floor(ahora / (SEGUNDOS * 1000));
   const a = lista[(slot * 5 + semilla) % lista.length];
   return { ...a, modo: "idle" };
