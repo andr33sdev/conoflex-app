@@ -19,6 +19,7 @@ const { asegurarTablaReflectivas, registrarRutasReflectivas } = require("./refle
 const { asegurarTablasIngenieria, registrarRutasIngenieria } = require("./ingenieriasRutas");
 const { asegurarTablasNotificaciones, crearNotificacion, registrarRutasNotificaciones, alCrearNotificacion } = require("./notificaciones");
 const { asegurarPush, enviarPush, registrarRutasPush } = require("./push");
+const { mismoProducto, asegurarColumnasCatalogo, registrarRutasCatalogo } = require("./comercial/catalogo");
 const { asegurarTablaMovimientos, moverStock, historialMateriaPrima } = require("./stockMovimientos");
 const { asegurarComprasStock, buscarMateriaPrima, aplicarRecepcion, norm } = require("./comprasStock");
 const { asegurarColumnaPagoMensual } = require("./escala");
@@ -196,6 +197,7 @@ registrarRutasReflectivas(app, db, requirePermiso, requireAdmin);
 registrarRutasIngenieria(app, db, requirePermiso, requireAdmin);
 registrarRutasNotificaciones(app, db);
 registrarRutasPush(app, db);
+registrarRutasCatalogo(app, { db, autenticarToken, autorizarRoles });
 
 // Multer Config
 const uploadTemp = multer({ dest: UPLOADS_DIR });
@@ -809,6 +811,7 @@ async function initDB() {
     await asegurarTablasIngenieria(db);
     await asegurarTablasNotificaciones(db);
     await asegurarTablaMovimientos(db);
+    await asegurarColumnasCatalogo(db);
     await asegurarComprasStock(db);
 
     console.log("✅ Estructura MySQL inicializada correctamente.");
@@ -5544,6 +5547,7 @@ app.post(
       }
 
       let totalProductosProcesados = 0;
+      const informe = { actualizados: 0, nuevos: [], omitidosEditados: [], ilegibles: 0 };
 
       for (const file of files) {
         const pdfBase64 = file.buffer.toString("base64");
@@ -5553,13 +5557,15 @@ app.post(
         Extraé todos los modelos de productos presentes.
 
         Para cada producto, generá un objeto JSON con:
-        - "codigo": Código del modelo (ej: "1025", "2051L-1R", "2070-2R").
+        - "codigo": Código del modelo tal cual figura (ej: "1025", "2051L-1R", "2070-2R").
         - "nombre": Nombre comercial del modelo (ej: "Multiuso Flexible", "Ciudad Light Semiflexible").
-        - "medidas": Medidas de altura, base, peso y material (ej: "Conformado: 1 Pieza | Base: 35x35cm. | Reflectivo: 1x7cm.").
-        - "descripcion": Resumen descriptivo técnico y comercial del producto.
-        - "usos": Lista detallada de usos recomendados y aplicaciones de venta separados por coma.
+        - "medidas": Datos técnicos en una línea (ej: "Altura: 20 cm | Base: 15 cm | Peso: 0,2 kg | Material: PVC flexible | Bandas: sin bandas").
+        - "descripcion": Descripción técnica y comercial del producto, fiel al PDF.
+        - "usos": Los usos recomendados tal cual figuran, cada uno como "Título: explicación" y separados entre sí por " | " (barra vertical con espacios).
+        - "advertencias": Limitaciones o cuándo NO conviene ofrecerlo (ej: "No para canalizar tránsito en rutas", "Priorizar interiores"), si el PDF las menciona; si no, "".
         - "categoria": "${categoriaNombre}".
 
+        Reglas: no inventes datos que no estén en el PDF y no traslades medidas o pesos de un modelo a otro.
         Devolvé ÚNICAMENTE un arreglo JSON válido sin formato markdown adicional.
       `;
 
@@ -5591,61 +5597,78 @@ app.post(
               "Error parseando respuesta JSON de Gemini:",
               response.text,
             );
+            informe.ilegibles++;
             continue;
           }
         }
 
+        let procesadosEnArchivo = 0;
         if (
           Array.isArray(productosExtraidos) &&
           productosExtraidos.length > 0
         ) {
+          const [todos] = await db.query("SELECT id, codigo, ficha_editada FROM productos");
           for (const p of productosExtraidos) {
             if (!p.codigo) continue;
 
-            // 1. Buscar si el producto ya existe por código exacto o contenido en código compuesto (ej: "2051L-1R / 2051-1R")
-            const [existentes] = await db.query(
-              `SELECT id FROM productos WHERE codigo = ? OR codigo LIKE ?`,
-              [p.codigo, `%${p.codigo}%`],
-            );
+            // 1. Buscar el producto por código (igual, o con sufijo como "NA"), sin coincidencias por "contiene".
+            const existentes = todos.filter((t) => mismoProducto(p.codigo, t.codigo));
+            const usos = String(p.usos || "");
+            const origen = String(file.originalname || "").slice(0, 200);
 
             if (existentes.length > 0) {
-              // 2. Si existe, actualizamos la ficha técnica, descripción y usos
-              const ids = existentes.map((e) => e.id);
+              // 2. Las fichas que se corrigieron a mano no se pisan.
+              const libres = existentes.filter((e) => !e.ficha_editada);
+              if (!libres.length) {
+                informe.omitidosEditados.push(p.codigo);
+                continue;
+              }
+              const ids = libres.map((e) => e.id);
               await db.query(
-                `UPDATE productos 
-               SET 
+                `UPDATE productos
+               SET
                  medidas = IF(medidas IS NULL OR medidas = '', ?, medidas),
                  descripcion = ?,
                  aplicacion = ?,
                  usos_recomendados = ?,
-                 categoria = ?
+                 advertencias = ?,
+                 categoria = ?,
+                 ficha_origen = ?,
+                 ficha_actualizada = NOW()
                WHERE id IN (?)`,
                 [
                   p.medidas || "",
                   p.descripcion || "",
-                  p.usos || "",
-                  p.usos || "",
+                  usos,
+                  usos,
+                  p.advertencias || "",
                   p.categoria || categoriaNombre,
+                  origen,
                   ids,
                 ],
               );
+              informe.actualizados += ids.length;
             } else {
-              // 3. Si no existe en la base de datos, lo insertamos como nuevo
+              // 3. Si no está en la lista de precios, se crea sin precio (aparece en la revisión de fichas).
               await db.query(
-                `INSERT INTO productos 
-               (codigo, nombre, medidas, descripcion, aplicacion, usos_recomendados, categoria) 
-               VALUES (?, ?, ?, ?, ?, ?, ?)`,
+                `INSERT INTO productos
+               (codigo, nombre, medidas, descripcion, aplicacion, usos_recomendados, advertencias, categoria, ficha_origen, ficha_actualizada)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
                 [
                   p.codigo,
                   p.nombre || "",
                   p.medidas || "",
                   p.descripcion || "",
-                  p.usos || "",
-                  p.usos || "",
+                  usos,
+                  usos,
+                  p.advertencias || "",
                   p.categoria || categoriaNombre,
+                  origen,
                 ],
               );
+              informe.nuevos.push(p.codigo);
             }
+            procesadosEnArchivo++;
             totalProductosProcesados++;
           }
         }
@@ -5654,16 +5677,18 @@ app.post(
         await db.query(
           `INSERT INTO categorias_pdf (nombre, pdf_filename, total_productos)
          VALUES (?, ?, ?)
-         ON DUPLICATE KEY UPDATE 
+         ON DUPLICATE KEY UPDATE
            pdf_filename = VALUES(pdf_filename),
-           total_productos = total_productos + VALUES(total_productos)`,
-          [categoriaNombre, file.originalname, totalProductosProcesados],
+           total_productos = VALUES(total_productos)`,
+          [categoriaNombre, file.originalname, procesadosEnArchivo],
         );
       }
 
       res.json({
         success: true,
-        mensaje: `¡Fichas procesadas con éxito! Se actualizaron ${totalProductosProcesados} productos en el catálogo.`,
+        mensaje: `Fichas procesadas: ${informe.actualizados} actualizadas, ${informe.nuevos.length} nuevas${informe.omitidosEditados.length ? `, ${informe.omitidosEditados.length} sin tocar porque las corregiste a mano` : ""}.`,
+        ...informe,
+        total: totalProductosProcesados,
       });
     } catch (error) {
       console.error("Error en procesar-pdf:", error);
