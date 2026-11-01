@@ -28,6 +28,7 @@ const FirmaSolicitudPublica = lazy(() => import("./FirmaSolicitudPublica"));
 const Agentes = lazy(() => import("./Agentes"));
 import { itemPorId, veLaboratorio, tieneAlgunAgente } from "./menu";
 import PantallaCarga, { CargandoModulo } from "./PantallaCarga";
+import { olvidarUsuarioTema, sincronizarTema } from "./tema";
 
 // Cada módulo se descarga cuando se lo abre; mientras tanto se muestra el logo de carga.
 // El módulo de la dirección actual se precarga durante la pantalla de inicio.
@@ -156,6 +157,11 @@ function AppInterna() {
     }
   };
 
+  // El tema (claro/oscuro) es del usuario y vive en el servidor: se aplica en cualquier dispositivo apenas hay sesión.
+  useEffect(() => {
+    sincronizarTema(usuarioActual);
+  }, [usuarioActual]);
+
   const handleLoginSuccess = (user) => {
     setUsuarioActual(user);
     localStorage.setItem("usuario_conoflex", JSON.stringify(user));
@@ -163,6 +169,7 @@ function AppInterna() {
 
   const handleLogout = () => {
     setUsuarioActual(null);
+    olvidarUsuarioTema();
     localStorage.removeItem("usuario_conoflex");
     localStorage.removeItem("token");
     sessionStorage.clear();

@@ -10,6 +10,12 @@
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <script>
+      try {
+        var t = localStorage.getItem("tema_conoflex_ultimo");
+        if (t === "claro") document.documentElement.dataset.tema = "claro";
+      } catch (e) {}
+    </script>
     <title>Conoflex App | Gestión de Producción</title>
   </head>
   <body>

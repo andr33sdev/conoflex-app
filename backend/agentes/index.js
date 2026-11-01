@@ -11,6 +11,7 @@ const { crearCami, confirmarNota, cancelarNota } = require("./ventasChat");
 const V = require("./ventasMails");
 const Apr = require("./ventasAprendizaje");
 const S = require("./seguimientoMails");
+const SR = require("./sinResponder");
 const { crearSofi } = require("./seguimientoChat");
 const { decisionProduccion } = require("./produccionDecision");
 const { listarOperarios, fichaOperario } = require("./fichaOperario");
@@ -382,6 +383,7 @@ async function revisarVentas({ db, mails }, { ahora = new Date() } = {}) {
     const claves = new Set(encontrados.map((h) => h.clave));
     const nuevos = [];
     for (const h of encontrados) {
+      if (h.conservar) continue;
       const previo = porClave.get(h.clave);
       if (!previo) {
         await db.query("INSERT INTO agentes_hallazgos (agente, clave, tipo, severidad, titulo, texto, operario, fecha) VALUES (?,?,?,?,?,?,?,NULL)", [agente, h.clave, h.tipo, h.severidad, h.titulo, h.texto, h.operario]);
@@ -427,6 +429,9 @@ async function revisarVentas({ db, mails }, { ahora = new Date() } = {}) {
  * detecta los hilos cuyo último mail es nuestro y no tuvo respuesta, y los deja como avisos según lo que se mandó y los días de espera.
  * NUNCA envía un mail.
  */
+// Último resultado de "clientes que escribieron y no respondimos" (se recalcula en cada revisión; no se guarda en la base).
+let sinResponderActual = { generado: null, lista: [], error: null };
+
 async function revisarSeguimiento({ db, ai, seguimiento }, { ahora = new Date() } = {}) {
   const agente = "seguimiento";
   try {
@@ -448,6 +453,19 @@ async function revisarSeguimiento({ db, ai, seguimiento }, { ahora = new Date() 
 
     const filas = await S.listar(db, { estados: ["ESPERANDO", "POSPUESTO", "REBOTE"], limite: 300, ahoraMs: ahora.getTime() });
     const encontrados = S.armarHallazgos(filas, { ahoraMs: ahora.getTime() });
+    // Segunda función: clientes que escribieron y no respondimos. Si falla no frena el seguimiento de lo enviado.
+    try {
+      const entrantes = await SR.buscar({ deps: seguimiento, ahoraMs: ahora.getTime() });
+      sinResponderActual = { generado: ahora.toISOString(), lista: entrantes, error: null };
+      encontrados.push(...SR.armarHallazgos(entrantes, { ahoraMs: ahora.getTime() }));
+    } catch (e) {
+      if (e.status === 401) throw e;
+      console.error("[seguimiento] sin responder:", e.message);
+      sinResponderActual = { ...sinResponderActual, error: "No pude revisar la bandeja de entrada." };
+      // Para no cerrar por error los avisos de la revisión anterior, se conservan abiertos.
+      const [abiertosEntrantes] = await db.query("SELECT clave FROM agentes_hallazgos WHERE agente = ? AND estado = 'ABIERTO' AND tipo = 'CLIENTE_SIN_RESPUESTA'", [agente]);
+      for (const a of abiertosEntrantes) encontrados.push({ clave: a.clave, tipo: "CLIENTE_SIN_RESPUESTA", severidad: "BAJA", titulo: null, texto: null, operario: null, fecha: null, conservar: true });
+    }
     const [previos] = await db.query("SELECT id, clave, tipo, estado FROM agentes_hallazgos WHERE agente = ?", [agente]);
     const porClave = new Map(previos.map((p) => [p.clave, p]));
     const claves = new Set(encontrados.map((h) => h.clave));
@@ -472,9 +490,9 @@ async function revisarSeguimiento({ db, ai, seguimiento }, { ahora = new Date() 
       const roles = await rolesDelAgente(db, "agente:seguimiento");
       const aviso = (titulo, texto, push = false) => crearNotificacion(db, { tipo: "AGENTE_SEGUIMIENTO", titulo, texto, ruta: "/agentes?a=seguimiento", roles, push });
       if (aNotificar.length <= 3) for (const h of aNotificar) await aviso(`Sofi: ${h.titulo}`, h.texto, h.severidad === "ALTA");
-      else await aviso(`Sofi tiene ${aNotificar.length} mails enviados sin respuesta`, aNotificar.slice(0, 3).map((h) => h.operario).join(" · ") + ` · y ${aNotificar.length - 3} más`, aNotificar.some((h) => h.severidad === "ALTA"));
+      else await aviso(`Sofi tiene ${aNotificar.length} mails para atender`, aNotificar.slice(0, 3).map((h) => h.operario).join(" · ") + ` · y ${aNotificar.length - 3} más`, aNotificar.some((h) => h.severidad === "ALTA"));
     }
-    if (nuevos.length) await registrarActividad(db, agente, "AVISO", `Detectó ${nuevos.length} ${nuevos.length === 1 ? "mail enviado sin respuesta" : "mails enviados sin respuesta"}`, nuevos.map((h) => `• ${h.titulo}`).join("\n"));
+    if (nuevos.length) await registrarActividad(db, agente, "AVISO", `Detectó ${nuevos.length} ${nuevos.length === 1 ? "mail pendiente de seguimiento" : "mails pendientes de seguimiento"}`, nuevos.map((h) => `• ${h.titulo}`).join("\n"));
     if (sync.respondidos) await registrarActividad(db, agente, "RESUELTO", `${sync.respondidos === 1 ? "1 cliente respondió" : `${sync.respondidos} clientes respondieron`} un mail que estaba esperando`);
     if (sync.vencidos) await registrarActividad(db, agente, "RESUELTO", `Dejó de seguir ${sync.vencidos} ${sync.vencidos === 1 ? "hilo" : "hilos"} que salieron de la ventana de ${S.CONFIG.ventanaDias} días`);
 
@@ -686,6 +704,7 @@ function registrarRutasAgentes(app, { db, pool, ai, mails = null, seguimiento = 
           generado: new Date().toISOString(),
           conteos: await S.conteos(db),
           config: { dias_aviso: S.CONFIG.diasAviso, dias_urgente: S.CONFIG.diasUrgente, dias_frio: S.CONFIG.diasFrio, ventana_dias: S.CONFIG.ventanaDias },
+          sin_responder: { ...sinResponderActual, ventana_dias: SR.CONFIG.ventanaDias, minimo_horas: SR.CONFIG.minimoHoras },
           hilos: lista.filter((h) => !h.pospuesto).map((h) => ({ ...h, clase_texto: { PRESUPUESTO: "Presupuesto", CONSULTA: "Consulta", CORTESIA: "Cortesía", OTRO: "Otro" }[h.clase] || null })),
           pospuestos: lista.filter((h) => h.pospuesto),
           descartados: await S.listar(db, { estados: ["DESCARTADO"], limite: 8 }),

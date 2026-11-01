@@ -23,6 +23,8 @@ const { asegurarTablasNotificaciones, crearNotificacion, registrarRutasNotificac
 const { asegurarPush, enviarPush, registrarRutasPush } = require("./push");
 const { mismoProducto, asegurarColumnasCatalogo, registrarRutasCatalogo } = require("./comercial/catalogo");
 const { asegurarTablasPrecios, registrarRutasPrecios } = require("./comercial/precios");
+const { asegurarColumnaTema, registrarRutasTema, normalizarTema } = require("./tema");
+const { asegurarTablasFichasPdf, guardarFicha, registrarRutasFichasPdf } = require("./comercial/fichasPdf");
 const { registrarRutasFotos } = require("./comercial/fotos");
 const { generarCotizacion } = require("./comercial/cotizador");
 const { crearCorreoCrudo } = require("./comercial/correo");
@@ -206,6 +208,8 @@ registrarRutasNotificaciones(app, db);
 registrarRutasPush(app, db);
 registrarRutasCatalogo(app, { db, autenticarToken, autorizarRoles });
 registrarRutasListaPdf(app, { multer, autenticarToken, autorizarRoles });
+registrarRutasFichasPdf(app, { db, autenticarToken, autorizarRoles });
+registrarRutasTema(app, { db, autenticarToken });
 
 // Multer Config
 const uploadTemp = multer({ dest: UPLOADS_DIR });
@@ -823,6 +827,8 @@ async function initDB() {
     await asegurarTablaMovimientos(db);
     await asegurarColumnasCatalogo(db);
     await asegurarTablasPrecios(db);
+    await asegurarTablasFichasPdf(db);
+    await asegurarColumnaTema(db);
     await asegurarComprasStock(db);
 
     console.log("✅ Estructura MySQL inicializada correctamente.");
@@ -1215,6 +1221,7 @@ app.post("/api/auth/login", async (req, res) => {
         rol: user.rol,
         permisos,
         vendedores: vendedoresArr, // <-- ENVIADO A LA SESIÓN
+        tema: normalizarTema(user.tema) || "oscuro",
       },
     });
   } catch (error) {
@@ -2003,6 +2010,18 @@ const seguimientoGmail = {
     let pageToken;
     do {
       const r = await gmail.users.threads.list({ userId: "me", q: `in:sent newer_than:${Math.max(1, Math.round(dias))}d`, maxResults: Math.min(100, max - out.length), pageToken });
+      for (const t of r.data.threads || []) out.push({ threadId: t.id, historyId: t.historyId });
+      pageToken = r.data.nextPageToken;
+    } while (pageToken && out.length < max);
+    return out;
+  },
+  // Hilos de la bandeja de entrada con mensajes recientes (sin promociones, redes ni notificaciones).
+  listarRecibidos: async ({ dias, max }) => {
+    const gmail = gmailAutenticado();
+    const out = [];
+    let pageToken;
+    do {
+      const r = await gmail.users.threads.list({ userId: "me", q: `in:inbox newer_than:${Math.max(1, Math.round(dias))}d -category:promotions -category:social -category:updates -category:forums`, maxResults: Math.min(100, max - out.length), pageToken });
       for (const t of r.data.threads || []) out.push({ threadId: t.id, historyId: t.historyId });
       pageToken = r.data.nextPageToken;
     } while (pageToken && out.length < max);
@@ -5709,8 +5728,13 @@ app.post(
       let totalProductosProcesados = 0;
       const informe = { actualizados: 0, nuevos: [], omitidosEditados: [], ilegibles: 0 };
 
+      const nombreUsuario = req.user?.id
+        ? (await db.query("SELECT nombre FROM usuarios WHERE id = ?", [req.user.id]).then((r) => r[0][0]?.nombre).catch(() => null)) || null
+        : null;
+
       for (const file of files) {
         const pdfBase64 = file.buffer.toString("base64");
+        const afectadosArchivo = [];
 
         const promptExtraccion = `
         Analizá el documento PDF adjunto con fichas técnico-comerciales de productos.
@@ -5758,6 +5782,7 @@ app.post(
               response.text,
             );
             informe.ilegibles++;
+            await guardarFicha(db, { nombre: file.originalname, buffer: file.buffer, categoria: categoriaNombre, usuario: nombreUsuario, leido: false }).catch((e) => console.error("[fichas-pdf]", e.message));
             continue;
           }
         }
@@ -5781,6 +5806,7 @@ app.post(
               const libres = existentes.filter((e) => !e.ficha_editada);
               if (!libres.length) {
                 informe.omitidosEditados.push(p.codigo);
+                existentes.forEach((e) => afectadosArchivo.push({ producto_id: e.id, codigo: p.codigo, accion: "OMITIDO" }));
                 continue;
               }
               const ids = libres.map((e) => e.id);
@@ -5808,9 +5834,10 @@ app.post(
                 ],
               );
               informe.actualizados += ids.length;
+              ids.forEach((id) => afectadosArchivo.push({ producto_id: id, codigo: p.codigo, accion: "ACTUALIZADO" }));
             } else {
               // 3. Si no está en la lista de precios, se crea sin precio (aparece en la revisión de fichas).
-              await db.query(
+              const [ins] = await db.query(
                 `INSERT INTO productos
                (codigo, nombre, medidas, descripcion, aplicacion, usos_recomendados, advertencias, categoria, ficha_origen, ficha_actualizada)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
@@ -5827,6 +5854,7 @@ app.post(
                 ],
               );
               informe.nuevos.push(p.codigo);
+              afectadosArchivo.push({ producto_id: ins.insertId, codigo: p.codigo, accion: "NUEVO" });
             }
             procesadosEnArchivo++;
             totalProductosProcesados++;
@@ -5842,6 +5870,7 @@ app.post(
            total_productos = VALUES(total_productos)`,
           [categoriaNombre, file.originalname, procesadosEnArchivo],
         );
+        await guardarFicha(db, { nombre: file.originalname, buffer: file.buffer, categoria: categoriaNombre, usuario: nombreUsuario, afectados: afectadosArchivo }).catch((e) => console.error("[fichas-pdf]", e.message));
       }
 
       res.json({

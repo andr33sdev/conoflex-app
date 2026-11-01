@@ -9,11 +9,14 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Ellipsis,
+  Moon,
+  Sun,
 } from "lucide-react";
 
 import logo from "./assets/logo.svg";
 import CommandPalette from "./CommandPalette";
 import Campanita from "./Campanita";
+import { cambiarTema, useTema } from "./tema";
 import {
   GRUPOS,
   INICIO,
@@ -119,6 +122,22 @@ function MenuCompleto({ items, activeModule, colapsado, onElegir }) {
   );
 }
 
+function BotonTema() {
+  const tema = useTema();
+  const [error, setError] = useState(false);
+  const claro = tema === "claro";
+  return (
+    <button
+      onClick={async () => setError(!(await cambiarTema(claro ? "oscuro" : "claro")))}
+      title={error ? "No pude guardar tu preferencia en el servidor; queda solo en este dispositivo" : claro ? "Cambiar a modo oscuro" : "Cambiar a modo claro"}
+      aria-label={claro ? "Cambiar a modo oscuro" : "Cambiar a modo claro"}
+      className={`p-2 rounded-lg transition-colors hover:bg-white/[0.06] ${error ? "text-amber-400" : "text-zinc-500 hover:text-[#FF5A00]"}`}
+    >
+      {claro ? <Moon size={17} /> : <Sun size={17} />}
+    </button>
+  );
+}
+
 function Usuario({ usuario, onLogout, colapsado }) {
   return (
     <div
@@ -137,6 +156,7 @@ function Usuario({ usuario, onLogout, colapsado }) {
           </p>
         </div>
       )}
+      <BotonTema />
       <button
         onClick={onLogout}
         title="Cerrar sesión"

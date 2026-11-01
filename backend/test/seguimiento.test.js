@@ -283,3 +283,26 @@ test("revisarSeguimiento: avisos por hilo, notificación y cierre cuando el clie
     await db.query("DELETE FROM agentes_hallazgos WHERE agente = 'seguimiento'");
   });
 });
+
+test("Sofi sin responder: cliente que escribió y nadie contestó; ignora automáticos, internos y lo ya respondido", () => {
+  const SR = require("../agentes/sinResponder");
+  const ahora = Date.now();
+  const m = (o) => ({ id: "m" + Math.random(), fecha: ahora - 2 * 86400000, de: "Juan Pérez <juan@cliente.com>", para: "ventas@conoflex.com", asunto: "Cotización conos", enviado: false, borrador: false, automatico: false, snippet: "Hola, necesito precios", ...o });
+  const yo = "ventas@conoflex.com";
+  const a = SR.analizarEntrante({ threadId: "t1", mensajes: [m({})] }, { miEmail: yo });
+  assert.strictEqual(a.contacto_email, "juan@cliente.com");
+  assert.strictEqual(a.contacto_nombre, "Juan Pérez");
+  // ya contestamos
+  assert.strictEqual(SR.analizarEntrante({ threadId: "t", mensajes: [m({}), m({ enviado: true, fecha: ahora - 86400000, de: yo })] }, { miEmail: yo }), null);
+  // respuesta automática del cliente no cuenta, pero lo anterior sí
+  assert.ok(SR.analizarEntrante({ threadId: "t", mensajes: [m({}), m({ automatico: true, fecha: ahora - 3600000 })] }, { miEmail: yo }));
+  // no-reply e interno
+  assert.strictEqual(SR.analizarEntrante({ threadId: "t", mensajes: [m({ de: "noreply@banco.com" })] }, { miEmail: yo }), null);
+  assert.strictEqual(SR.analizarEntrante({ threadId: "t", mensajes: [m({ de: "Colega <colega@conoflex.com>" })] }, { miEmail: yo }), null);
+  assert.strictEqual(SR.severidadEntrante(5), "BAJA");
+  assert.strictEqual(SR.severidadEntrante(30), "MEDIA");
+  assert.strictEqual(SR.severidadEntrante(80), "ALTA");
+  const h = SR.armarHallazgos([{ ...a, ultimo_ms: ahora - 80 * 3600000 }], { ahoraMs: ahora })[0];
+  assert.strictEqual(h.tipo, "CLIENTE_SIN_RESPUESTA");
+  assert.match(h.clave, /^sinres:t1:/);
+});

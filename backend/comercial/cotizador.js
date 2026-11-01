@@ -179,10 +179,28 @@ function armarHtml({ calculo, redaccion }) {
   const condHtml = conds.length
     ? `<div style="border-left:4px solid #ea580c;padding:8px 14px;margin:12px 0;font-size:13px;color:#0f172a;"><div style="color:#ea580c;font-weight:bold;margin-bottom:4px;">Información Importante para su Compra:</div>${conds.map((c) => `<div>• <b>${esc(c.titulo || "")}${c.titulo ? ":" : ""}</b> ${textoHtml(c.texto)}</div>`).join("")}</div>`
     : "";
-  return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#0f172a;line-height:1.5;">` +
-    `<p>${textoHtml(redaccion.saludo || "")}</p>${tabla}` +
-    (redaccion.cierre ? `<p>${textoHtml(redaccion.cierre)}</p>` : "") +
+  const lista = (v, max, largo) => (Array.isArray(v) ? v : []).map((x) => String(x || "").trim()).filter(Boolean).slice(0, max).map((x) => x.slice(0, largo));
+  let pasos = lista(redaccion.proximos_pasos, 5, 260);
+  const datos = lista(redaccion.datos_a_confirmar, 6, 200);
+  let cierre = String(redaccion.cierre || "").trim();
+  // Respaldo: si la IA devolvió todo en un solo bloque ("cierre" largo), se separa en oraciones para que no quede un muro de texto.
+  if (!pasos.length && cierre.length > 160) {
+    const frases = cierre.split(/(?<=[.!?])\s+/).map((x) => x.trim()).filter(Boolean);
+    pasos = frases.slice(0, Math.max(1, frases.length - 1)).slice(0, 5);
+    cierre = frases.length > 1 ? frases[frases.length - 1] : "";
+  }
+  const pasosHtml = pasos.length
+    ? `<div style="border:1px solid #e2e8f0;background:#f8fafc;border-radius:10px;padding:12px 14px;margin:14px 0;"><div style="font-size:14px;font-weight:bold;color:#0f172a;margin-bottom:8px;">Próximos pasos</div><table width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;">${pasos.map((t, i) => `<tr><td width="30" valign="top" style="padding:4px 0;"><div style="width:22px;height:22px;line-height:22px;border-radius:11px;background:#ea580c;color:#ffffff;font-size:12px;font-weight:bold;text-align:center;">${i + 1}</div></td><td valign="top" style="padding:4px 0 4px 6px;font-size:13.5px;color:#0f172a;line-height:1.45;">${textoHtml(t)}</td></tr>`).join("")}</table></div>`
+    : "";
+  const datosHtml = datos.length
+    ? `<div style="border:1px dashed #cbd5e1;border-radius:10px;padding:12px 14px;margin:14px 0;"><div style="font-size:14px;font-weight:bold;color:#0f172a;margin-bottom:6px;">Para avanzar necesitamos que nos confirme</div>${datos.map((t) => `<div style="font-size:13.5px;color:#0f172a;line-height:1.45;padding:2px 0;">&#9744;&nbsp; ${textoHtml(t)}</div>`).join("")}</div>`
+    : "";
+  return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#0f172a;line-height:1.55;">` +
+    `<p style="margin:0 0 10px 0;">${textoHtml(redaccion.saludo || "")}</p>${tabla}` +
+    pasosHtml +
+    datosHtml +
     condHtml +
+    (cierre ? `<p style="margin:12px 0 0 0;">${textoHtml(cierre)}</p>` : "") +
     `</div>`;
 }
 
@@ -256,7 +274,9 @@ Devolvé SOLO un JSON:
 {
   "saludo": "apertura natural y cálida de 1 a 3 oraciones: agradecé la consulta, nombrá al cliente si se sabe y presentá la propuesta",
   "por_producto": {"<id del producto>": "1 o 2 oraciones de venta, adaptadas a lo que el cliente necesita, usando SOLO los usos de la ficha"},
-  "cierre": "próximo paso concreto (ej: confirmar modelo, razón social y CUIT si las reglas lo piden) y las preguntas que falten",
+  "proximos_pasos": ["entre 2 y 4 pasos MUY breves, cada uno una sola oración en infinitivo o imperativo cordial (ej: 'Confirmar el modelo elegido y la cantidad de unidades.', 'Indicarnos Razón Social y CUIT para facturar.', 'Coordinamos la reserva de stock y el despacho sin cargo a CABA y GBA.')"],
+  "datos_a_confirmar": ["solo las preguntas concretas que faltan del cliente, una por ítem y cortas (ej: 'Preferencia de altura o peso', 'Uso en interiores o exteriores'); [] si no falta nada"],
+  "cierre": "UNA sola oración final cordial, de menos de 140 caracteres (ej: 'Quedamos a su disposición para cualquier consulta.')",
   "condiciones": [{"titulo": "Impuestos", "texto": "..."}, {"titulo": "Descuentos", "texto": "..."}, {"titulo": "Logística y Envíos", "texto": "..."}]
 }
 Reglas de redacción:
@@ -264,6 +284,7 @@ Reglas de redacción:
 - Respetá las "advertencias" de cada ficha: si el uso que pide el cliente no es el recomendado, decilo con tacto y sugerí lo adecuado.
 - Si el cliente mandó foto o nombró otra marca, explicá brevemente la correspondencia ("En base a la fotografía, nuestro modelo equivalente es…").
 - Las "condiciones" salen de las reglas comerciales (IVA, descuentos por cantidad, logística, plazos); no inventes condiciones que las reglas no mencionen. Si no hay ninguna, devolvé [].
+- FORMATO: nada de párrafos largos. El saludo máximo 3 oraciones; los próximos pasos y los datos a confirmar van en listas cortas (no repitas lo mismo en ambos); el cierre es una sola frase. Cada ítem de lista, una idea. Si hay precios sujetos a confirmación, decilo en UN paso, no en un párrafo aparte.
 - Tono técnico, seguro y persuasivo. NUNCA uses corchetes ni comodines como "[Tu Nombre]" ni firmes con un nombre inventado.
 - Español rioplatense, sin markdown salvo **negrita** para resaltar.`;
 }

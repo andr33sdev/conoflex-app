@@ -215,6 +215,15 @@ async function asegurarTablasPrecios(db) {
     KEY idx_producto (producto_id, id),
     KEY idx_carga (carga_id)
   )`);
+  // Copia completa de los productos que la persona decidió quitar, para poder deshacer.
+  await db.query(`CREATE TABLE IF NOT EXISTS precios_quitados (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    carga_id INT NOT NULL,
+    producto_id INT NOT NULL,
+    datos MEDIUMTEXT NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    KEY idx_carga (carga_id)
+  )`);
 }
 
 async function guardarAnalisis(db, { archivo, usuario, analisis }) {
@@ -226,7 +235,7 @@ async function guardarAnalisis(db, { archivo, usuario, analisis }) {
  * Aplica la carga confirmada. SOLO escribe precio_lista (guardando el anterior) y crea los productos nuevos elegidos.
  * `ids`: productos a actualizar; `nuevos`: códigos a crear. Lo que no se pida, no se toca.
  */
-async function aplicarCarga(db, { cargaId, ids = [], nuevos = [], usuario, ahora = Date.now() }) {
+async function aplicarCarga(db, { cargaId, ids = [], nuevos = [], quitar = [], usuario, ahora = Date.now() }) {
   const [[carga]] = await db.query("SELECT id, estado, detalle, UNIX_TIMESTAMP(created_at) * 1000 AS creada FROM precios_cargas WHERE id = ?", [cargaId]);
   if (!carga) return { error: "No encontré esa carga. Volvé a subir la lista.", status: 404 };
   if (carga.estado !== "ANALIZADA") return { error: carga.estado === "APLICADA" ? "Esa carga ya se aplicó." : "Esa carga ya no se puede aplicar. Volvé a subir la lista.", status: 409 };
@@ -239,9 +248,11 @@ async function aplicarCarga(db, { cargaId, ids = [], nuevos = [], usuario, ahora
   }
   const quieren = new Set(ids.map(Number));
   const quierenNuevos = new Set(nuevos.map((c) => normalizarCodigo(c)));
+  const quierenQuitar = new Set(quitar.map(Number));
   const conn = await db.getConnection();
   let actualizados = 0;
   let creados = 0;
+  let quitados = 0;
   const saltados = [];
   try {
     await conn.beginTransaction();
@@ -271,6 +282,18 @@ async function aplicarCarga(db, { cargaId, ids = [], nuevos = [], usuario, ahora
       await conn.query("INSERT INTO precios_historial (producto_id, carga_id, precio_anterior, precio_nuevo) VALUES (?,?,NULL,?)", [r.insertId, cargaId, n.precio]);
       creados++;
     }
+    // Solo se quitan productos que el análisis marcó como ausentes Y que la persona eligió uno por uno.
+    for (const a of analisis.ausentes || []) {
+      if (!quierenQuitar.has(Number(a.id))) continue;
+      const [[p]] = await conn.query("SELECT * FROM productos WHERE id = ? FOR UPDATE", [a.id]);
+      if (!p) {
+        saltados.push(`${a.codigo}: ya no existe`);
+        continue;
+      }
+      await conn.query("INSERT INTO precios_quitados (carga_id, producto_id, datos) VALUES (?,?,?)", [cargaId, p.id, JSON.stringify(p)]);
+      await conn.query("DELETE FROM productos WHERE id = ?", [p.id]);
+      quitados++;
+    }
     await conn.query("UPDATE precios_cargas SET estado = 'APLICADA', actualizados = ?, nuevos = ?, aplicada_en = NOW(), usuario = COALESCE(?, usuario) WHERE id = ?", [actualizados, creados, usuario || null, cargaId]);
     await conn.commit();
   } catch (e) {
@@ -279,7 +302,7 @@ async function aplicarCarga(db, { cargaId, ids = [], nuevos = [], usuario, ahora
   } finally {
     conn.release();
   }
-  return { ok: true, actualizados, nuevos: creados, saltados };
+  return { ok: true, actualizados, nuevos: creados, quitados, saltados };
 }
 
 /** Deshace los precios de una carga (solo si el producto sigue con el precio que puso la carga). No borra productos nuevos. */
@@ -297,8 +320,25 @@ async function deshacerCarga(db, cargaId) {
     if (r.affectedRows) revertidos++;
     else conservados.push(f.producto_id);
   }
+  // Vuelve a crear los productos que se habían quitado (con su ficha completa).
+  const [quitadas] = await db.query("SELECT datos FROM precios_quitados WHERE carga_id = ?", [cargaId]);
+  let restaurados = 0;
+  for (const q of quitadas) {
+    try {
+      const d = JSON.parse(q.datos);
+      const [[ya]] = await db.query("SELECT id FROM productos WHERE id = ? OR codigo = ?", [d.id, d.codigo]);
+      if (ya) continue;
+      const cols = Object.keys(d);
+      const vals = cols.map((c) => (typeof d[c] === "string" && /^\d{4}-\d{2}-\d{2}T/.test(d[c]) ? new Date(d[c]) : d[c]));
+      await db.query(`INSERT INTO productos (${cols.map((c) => "`" + c + "`").join(",")}) VALUES (${cols.map(() => "?").join(",")})`, vals);
+      restaurados++;
+    } catch (e) {
+      console.error("[precios] restaurar:", e.message);
+    }
+  }
+  await db.query("DELETE FROM precios_quitados WHERE carga_id = ?", [cargaId]);
   await db.query("UPDATE precios_cargas SET estado = 'DESHECHA', deshecha_en = NOW() WHERE id = ?", [cargaId]);
-  return { ok: true, revertidos, conservados: conservados.length };
+  return { ok: true, revertidos, conservados: conservados.length, restaurados };
 }
 
 // ---------- lectura con IA ----------
@@ -380,7 +420,7 @@ function registrarRutasPrecios(app, { db, ai, multer, autenticarToken, autorizar
   app.post("/api/comercial/precios/:id/aplicar", ...permiso, async (req, res) => {
     try {
       const b = req.body || {};
-      const r = await aplicarCarga(db, { cargaId: Number(req.params.id), ids: Array.isArray(b.ids) ? b.ids : [], nuevos: Array.isArray(b.nuevos) ? b.nuevos : [], usuario: await quien(req) });
+      const r = await aplicarCarga(db, { cargaId: Number(req.params.id), ids: Array.isArray(b.ids) ? b.ids : [], nuevos: Array.isArray(b.nuevos) ? b.nuevos : [], quitar: Array.isArray(b.quitar) ? b.quitar : [], usuario: await quien(req) });
       if (r.error) return res.status(r.status || 400).json({ error: r.error });
       res.json({ success: true, ...r });
     } catch (e) {
