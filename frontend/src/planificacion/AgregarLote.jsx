@@ -46,7 +46,7 @@ function Sugerida({ s, semana, onAgregado, toast }) {
       <p className="mt-2 text-[15px] font-bold text-white leading-snug">{s.nombre}</p>
       <p className="text-xs text-zinc-500">{s.codigo}</p>
       <p className="mt-2 text-[13px] text-zinc-400 leading-relaxed">
-        Stock <b className="text-zinc-200 tabular-nums">{num(s.stock_total)}</b> · se vende <b className="text-zinc-200 tabular-nums">{num(s.demanda_mensual)}</b>/mes · alcanza para <b className={`tabular-nums ${s.urgencia === "CRITICA" ? "text-rose-300" : "text-zinc-200"}`}>{s.dias_de_stock != null ? num(s.dias_de_stock, 0) : "—"}</b> días
+        Stock <b className="text-zinc-200 tabular-nums">{num(s.stock_total)}</b> · alcanza <b className={`tabular-nums ${s.urgencia === "CRITICA" ? "text-rose-300" : "text-zinc-200"}`}>{s.dias_de_stock != null ? num(s.dias_de_stock, 0) : "—"}</b> días
         {s.ya_planificado > 0 && <> · ya en lista: <b className="text-zinc-200 tabular-nums">{num(s.ya_planificado)}</b></>}
       </p>
       <div className="mt-3 flex items-end gap-2">
@@ -169,6 +169,8 @@ function ALaMano({ semana, onCambio, toast }) {
                   <button onClick={() => { setSel(c); setCant(""); }} className="w-full text-left rounded-xl border border-white/[0.07] bg-[#131317] hover:border-[#FF5A00]/50 hover:bg-[#17171c] px-4 py-3 transition-colors cursor-pointer">
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="font-bold text-white">{c.nombre}</span>
+                      {c.origen === "PROVEEDOR" && <Chip tono="amarillo">Se compra a proveedor</Chip>}
+                      {c.origen === "PARAGUAY" && <Chip tono="azul">Viene de Paraguay</Chip>}
                       {!c.tiene_receta && <Chip tono="gris">Sin receta activa</Chip>}
                     </div>
                     <p className="text-xs text-zinc-500 mt-0.5">{c.codigo} · stock {num(c.stock_total)}</p>
@@ -205,9 +207,9 @@ function ALaMano({ semana, onCambio, toast }) {
 export default function AgregarLote({ abierto, onCerrar, semana, onCambio, toast }) {
   const [tab, setTab] = useState("sugerencias");
   return (
-    <Modal abierto={abierto} onCerrar={onCerrar} titulo="Agregar a la lista de la semana" subtitulo="Cada renglón recibe un número de lote automático." ancho="max-w-3xl">
+    <Modal abierto={abierto} onCerrar={onCerrar} titulo="Agregar a la lista de la semana" subtitulo="Cada renglón recibe un número de lote. Todavía no se produce nada: después lo repartís en turnos." ancho="max-w-3xl">
       <div role="tablist" className="inline-flex p-1 rounded-xl bg-white/[0.05] border border-white/[0.07] mb-5">
-        {[{ id: "sugerencias", t: "Sugerencias", i: Sparkles }, { id: "mano", t: "A mano", i: Hand }].map(({ id, t, i: I }) => (
+        {[{ id: "sugerencias", t: "Sugeridos", i: Sparkles }, { id: "mano", t: "Elegir yo", i: Hand }].map(({ id, t, i: I }) => (
           <button key={id} role="tab" aria-selected={tab === id} onClick={() => setTab(id)} className={`inline-flex items-center gap-2 min-h-[38px] px-4 rounded-lg text-sm font-bold transition-colors cursor-pointer ${tab === id ? "bg-[#FF5A00] text-black" : "text-zinc-400 hover:text-white"}`}>
             <I size={15} /> {t}
           </button>

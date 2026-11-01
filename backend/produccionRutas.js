@@ -219,12 +219,12 @@ function registrarRutasProduccion(app, db, requirePermiso) {
 
   app.get("/api/prod/catalogo", PLAN, seguro(async (req, res) => {
     const [rows] = await db.query(
-      `SELECT s.id, s.codigo, s.nombre,
+      `SELECT s.id, s.codigo, s.nombre, s.origen,
               COALESCE(s.stock_33,0)+COALESCE(s.stock_26,0)+COALESCE(s.stock_ayolas,0)+COALESCE(s.stock_37,0) AS stock_total,
               EXISTS(SELECT 1 FROM ingenierias i WHERE i.semielaborado_id = s.id AND i.es_activa = 1) AS tiene_receta
          FROM semielaborados s ORDER BY s.nombre`,
     );
-    res.json(rows.map((r) => ({ ...r, stock_total: Math.max(0, Number(r.stock_total) || 0), tiene_receta: !!r.tiene_receta })));
+    res.json(rows.map((r) => ({ ...r, origen: String(r.origen || "FABRICA").toUpperCase(), stock_total: Math.max(0, Number(r.stock_total) || 0), tiene_receta: !!r.tiene_receta })));
   }));
 
   // ---------------------------------------------------------------- plan semanal
@@ -307,7 +307,8 @@ function registrarRutasProduccion(app, db, requirePermiso) {
       recetas[k].ingredientes.push({ mp_id: r.materia_prima_id, codigo: r.codigo, nombre: r.nombre, cantidad: r.cantidad, stock: r.stock_actual });
     }
     // La demanda identifica al semielaborado por código; acá hace falta su id.
-    const [ids] = await db.query("SELECT id, codigo FROM semielaborados");
+    // Solo se sugiere fabricar lo que se hace acá y al que se le sigue la demanda (no lo comprado ni lo de Paraguay).
+    const [ids] = await db.query("SELECT id, codigo FROM semielaborados WHERE COALESCE(origen,'FABRICA') = 'FABRICA' AND COALESCE(seguir_demanda,1) = 1");
     const idPorCodigo = new Map(ids.map((x) => [String(x.codigo), x.id]));
     const demanda = dem.semielaborados.filter((f) => idPorCodigo.has(String(f.codigo))).map((f) => ({ ...f, id: idPorCodigo.get(String(f.codigo)) }));
     const sugerencias = P.sugerirProduccion({ demanda, planificado, recetas, coberturaDias: cobertura });
