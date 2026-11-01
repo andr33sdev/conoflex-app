@@ -7,6 +7,7 @@ const PALABRAS = {
   rrhh: /(sueld|liquidaci|horas? extra|fichad|presentismo|feriado|falta|llegad|operario|personal|ausen|licencia|turno|vacacion|legajo|asistencia)/i,
   stock: /(stock|dep[oó]sito|materia prima|semielaborad|inventario|quiebre|cu[aá]nto hay|se acaba|alcanza)/i,
   compras: /(compra|proveedor|solicitud|cotizaci|firma|orden de compra|entrega de material|pedir)/i,
+  ventas: /(mail|correo|presupuesto|cotizaci[oó]n al cliente|borrador|lista de precios|consulta de (un )?cliente|vender|venta)/i,
   produccion: /(producci|fabricar|fabricaci|pedido|plan de la semana|planta|m[aá]quina|lote|entregar|cliente)/i,
 };
 

@@ -2,16 +2,17 @@
 // Todo sale del reloj de pared (no hay estado ni servidor): cada 40 s se decide, con una cuenta fija, quién se levanta,
 // a quién va a ver o si va a tomar un café. Así el mapa, el menú y la cabecera de cada agente cuentan lo mismo.
 
-export const W = 176;
+export const W = 244;
 export const H = 112;
 export const PASILLO_Y = 62; // por dónde caminan (pies del personaje)
-export const ORDEN = ["rrhh", "stock", "compras", "produccion"];
+export const ORDEN = ["rrhh", "stock", "compras", "produccion", "ventas"];
 
 const SALAS = {
   rrhh: { x: 0, y: 0, izq: true, arriba: true },
   stock: { x: 108, y: 0, izq: false, arriba: true },
   compras: { x: 0, y: 66, izq: true, arriba: false },
   produccion: { x: 108, y: 66, izq: false, arriba: false },
+  ventas: { x: 176, y: 0, izq: false, arriba: true },
 };
 export const SALA_W = 68;
 export const SALA_H = 46;
@@ -95,7 +96,7 @@ const ZONA = "America/Argentina/Buenos_Aires";
 const REUNION_SEG = 8 * 3600;
 const REUNION_DURA = 10 * 60;
 const REUNION_QUEDA = 9 * 60;
-const REUNION_SPOTS = [{ x: 74, y: 42 }, { x: 83, y: 42 }, { x: 92, y: 42 }, { x: 101, y: 42 }];
+const REUNION_SPOTS = [{ x: 74, y: 42 }, { x: 83, y: 42 }, { x: 92, y: 42 }, { x: 101, y: 42 }, { x: 88, y: 37 }];
 
 /** Segundos desde las 08:00 de hoy si ahora corre la reunión (lunes a viernes), o null. */
 export function segundosDeReunion(ahora = Date.now()) {

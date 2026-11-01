@@ -51,6 +51,9 @@ export const TIPOS_AVISO = {
   PROVEEDOR_INCUMPLE: { texto: "Proveedor incumple", tono: "rojo" },
   LISTA_ABIERTA: { texto: "Lista en armado", tono: "azul" },
   INTERNA_DEMORADA: { texto: "Pedido interno demorado", tono: "naranja" },
+  MAIL_BORRADOR: { texto: "Borrador listo", tono: "azul" },
+  MAIL_PENDIENTE: { texto: "Sin responder", tono: "naranja" },
+  MAIL_ERROR: { texto: "Falló el borrador", tono: "rojo" },
 };
 
 export function saludoSegunHora(nombre) {

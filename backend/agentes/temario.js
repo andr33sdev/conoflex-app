@@ -51,6 +51,16 @@ async function sugerenciasDe({ db, secciones }) {
   const prod = secciones.find((s) => s.agente === "produccion");
   if (prod?.urgente) out.push({ agente: "produccion", texto: "Hay prioridades de producción urgentes: arrancar el turno con el plan de fabricación ya definido, en lugar de decidirlo en el momento." });
 
+  // Cami: lo que se repite al corregir sus borradores es lo que conviene dejar anotado como regla.
+  if (nombres.ventas) {
+    try {
+      const { correccionesRecientes, patronesDeCorreccion } = require("./ventasMails");
+      for (const p of patronesDeCorreccion(await correccionesRecientes(db, { limite: 12 })).slice(0, 2)) out.push({ agente: "ventas", texto: `${p.texto} Decile a Cami cuál es la regla y la anota.` });
+    } catch (e) {
+      console.error("[temario] ventas:", e.message);
+    }
+  }
+
   const urgentes = secciones.filter((s) => s.urgente).length;
   if (urgentes >= 3) out.push({ agente: "produccion", texto: `Hoy hay ${urgentes} áreas con temas urgentes a la vez: conviene que la reunión termine con un responsable y una hora límite para cada uno.` });
   if (!out.length) out.push({ agente: "produccion", texto: "Sin urgencias: buen momento para revisar mínimos de stock y avisos viejos antes de que se vuelvan problema." });
@@ -66,7 +76,7 @@ ${datos}
 
 Ya se sugirió: ${ya.map((y) => y.texto).join(" | ") || "nada"}.
 Proponé hasta 2 ideas NUEVAS, concretas y accionables, para mejorar la forma de trabajar (procesos, anticipación, orden). Sin inventar números ni hechos que no estén en el resumen. Cada idea en una oración, español rioplatense.
-Respondé SOLO con JSON: {"ideas":[{"agente":"rrhh|stock|compras|produccion","texto":"..."}]}`;
+Respondé SOLO con JSON: {"ideas":[{"agente":"${secciones.map((s) => s.agente).join("|")}","texto":"..."}]}`;
   try {
     const r = await ai.models.generateContent({
       model: CONFIG.modelo,

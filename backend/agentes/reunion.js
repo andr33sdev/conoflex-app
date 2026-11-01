@@ -80,6 +80,7 @@ async function armarReunion({ pool, db, agentes }) {
     poner("produccion", { resumen: "No pude armar las prioridades esta mañana.", urgente: false, lineas: [] });
     console.error("[reunión] producción:", e.message);
   }
+  if (por.ventas) poner("ventas", seccionAvisos(por.ventas, await hallazgos(db, "ventas"), "Sin consultas de clientes esperando respuesta."));
   return { secciones, urgentes: secciones.filter((s) => s.urgente).length };
 }
 
