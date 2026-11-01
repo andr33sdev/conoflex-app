@@ -20,6 +20,9 @@ const { asegurarTablasIngenieria, registrarRutasIngenieria } = require("./ingeni
 const { asegurarTablasNotificaciones, crearNotificacion, registrarRutasNotificaciones, alCrearNotificacion } = require("./notificaciones");
 const { asegurarPush, enviarPush, registrarRutasPush } = require("./push");
 const { mismoProducto, asegurarColumnasCatalogo, registrarRutasCatalogo } = require("./comercial/catalogo");
+const { generarCotizacion } = require("./comercial/cotizador");
+const { crearCorreoCrudo } = require("./comercial/correo");
+const { leerLista, registrarRutasListaPdf } = require("./comercial/listaPdf");
 const { asegurarTablaMovimientos, moverStock, historialMateriaPrima } = require("./stockMovimientos");
 const { asegurarComprasStock, buscarMateriaPrima, aplicarRecepcion, norm } = require("./comprasStock");
 const { asegurarColumnaPagoMensual } = require("./escala");
@@ -198,6 +201,7 @@ registrarRutasIngenieria(app, db, requirePermiso, requireAdmin);
 registrarRutasNotificaciones(app, db);
 registrarRutasPush(app, db);
 registrarRutasCatalogo(app, { db, autenticarToken, autorizarRoles });
+registrarRutasListaPdf(app, { multer, autenticarToken, autorizarRoles });
 
 // Multer Config
 const uploadTemp = multer({ dest: UPLOADS_DIR });
@@ -1957,7 +1961,7 @@ app.post(
   autorizarRoles("ADMIN", "COMERCIAL"),
   async (req, res) => {
     try {
-      const { mailCliente, consultaText, asunto, threadId, imagenes } =
+      const { mailCliente, consultaText, asunto, threadId, imagenes, nombreCliente } =
         req.body;
       const gmail = google.gmail({ version: "v1", auth: oauth2Client });
 
@@ -2018,6 +2022,38 @@ app.post(
       );
       const reglasEntrenamiento = reglaRows[0] ? reglaRows[0].valor : "";
 
+      // 3. Cotizador (etapa B): la IA elige los productos, el servidor calcula los precios y arma las tarjetas.
+      let htmlBody = null;
+      let revision = null;
+      let adjunto = null;
+      try {
+        const [productosCot] = await db.query(
+          "SELECT id, codigo, nombre, medidas, precio_lista, especificacion, aplicacion, descripcion, usos_recomendados, advertencias, categoria, foto_tecnica, foto_catalogo FROM productos",
+        );
+        const [cfgRows] = await db.query("SELECT valor FROM reglas WHERE clave = 'comercial_descuento_pct'");
+        const cfgPct = Number(String(cfgRows[0]?.valor ?? "").replace(",", "."));
+        const lista = leerLista();
+        const r = await generarCotizacion({
+          ai,
+          modelo: "gemini-2.5-flash",
+          productos: productosCot,
+          reglas: reglasEntrenamiento,
+          mailCliente,
+          nombreCliente,
+          texto: consultaText,
+          imagenes: imagenesParaGemini,
+          adjuntaLista: !!lista,
+          descuentoConfig: Number.isFinite(cfgPct) && cfgPct > 0 && cfgPct <= 60 ? cfgPct : null,
+        });
+        htmlBody = r.html;
+        revision = r.revision;
+        if (r.revision.adjunta_lista) adjunto = lista;
+      } catch (errCot) {
+        console.error("Cotizador nuevo falló, se usa el método anterior:", errCot.message);
+        revision = { descuento_pct: null, adjunta_lista: false, lineas: [], avisos: ["El cotizador nuevo no pudo con este mail y el borrador salió con el método anterior: los precios y totales los calculó la IA, revisalos uno por uno antes de enviar."] };
+      }
+
+      if (!htmlBody) {
       const [productosDB] = await db.query(
         "SELECT codigo, nombre, medidas, precio_lista, especificacion, aplicacion, foto_tecnica, foto_catalogo FROM productos",
       );
@@ -2068,7 +2104,7 @@ Devuelve ÚNICAMENTE el código HTML crudo sin bloques Markdown (\`\`\`html) ni 
         contents: contentsGemini,
       });
 
-      let htmlBody = response.text
+      htmlBody = response.text
         .replace(/```html/gi, "")
         .replace(/```/g, "")
         .trim();
@@ -2087,13 +2123,16 @@ Devuelve ÚNICAMENTE el código HTML crudo sin bloques Markdown (\`\`\`html) ni 
       htmlBody = htmlBody.replace(/\{FOTO_TECNICA_URL=[^\}]*\}/g, "");
       htmlBody = htmlBody.replace(/\{FOTO_CATALOGO_URL=[^\}]*\}/g, "");
 
+      }
+
       // 6. Creación del borrador en Gmail
-      const draftPayload = crearRawEmail(
-        mailCliente,
-        asunto || "Presupuesto Conoflex Argentina",
-        htmlBody,
+      const draftPayload = crearCorreoCrudo({
+        to: mailCliente,
+        asunto: asunto || "Presupuesto Conoflex Argentina",
+        html: htmlBody,
         threadId,
-      );
+        adjunto,
+      });
 
       const draftCreated = await gmail.users.drafts.create({
         userId: "me",
@@ -2104,6 +2143,7 @@ Devuelve ÚNICAMENTE el código HTML crudo sin bloques Markdown (\`\`\`html) ni 
         success: true,
         mensaje: "Borrador generado en Gmail",
         draftId: draftCreated.data.id,
+        revision,
       });
     } catch (error) {
       console.error("Error creando borrador:", error);

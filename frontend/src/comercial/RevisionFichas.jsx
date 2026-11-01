@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
-import { AlertCircle, CheckCircle2, Loader2, Lock, Search, X } from "lucide-react";
+import { AlertCircle, CheckCircle2, Loader2, Lock, Paperclip, Search, X } from "lucide-react";
 import { api } from "../produccion/util";
 
 const FILTROS = [
@@ -101,6 +101,52 @@ function Editor({ p, onCerrar, onGuardado }) {
   );
 }
 
+/** La lista de precios en PDF que se adjunta sola a los borradores cuando el cliente la pide. */
+function ListaPdf() {
+  const [est, setEst] = useState(null);
+  const [subiendo, setSubiendo] = useState(false);
+  const [error, setError] = useState("");
+  useEffect(() => {
+    api("/api/comercial/lista-pdf").then(setEst).catch(() => setEst({ existe: false }));
+  }, []);
+  const subir = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setSubiendo(true);
+    setError("");
+    try {
+      const fd = new FormData();
+      fd.append("lista", file);
+      const res = await fetch("/api/comercial/lista-pdf", { method: "POST", body: fd });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.error || "No pude subir la lista.");
+      setEst(d);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSubiendo(false);
+    }
+  };
+  const fecha = est?.actualizado ? new Date(est.actualizado).toLocaleDateString("es-AR", { day: "numeric", month: "long", year: "numeric" }) : "";
+  return (
+    <div className="mb-5 flex flex-wrap items-center gap-3 rounded-lg border border-zinc-800 bg-[#0b0b0b] p-3">
+      <Paperclip size={16} className="text-[#FF5A00] shrink-0" />
+      <div className="min-w-0 flex-1 basis-64">
+        <p className="text-sm font-bold text-white">Lista de precios en PDF para adjuntar</p>
+        <p className="text-xs text-zinc-500">
+          {est === null ? "Cargando…" : est.existe ? `Cargada (${(est.bytes / 1024 / 1024).toFixed(1)} MB, ${fecha}). Se adjunta sola cuando el cliente pide la lista.` : "Todavía no cargaste ninguna: hoy hay que adjuntarla a mano en cada borrador."}
+        </p>
+        {error && <p className="text-xs text-red-400 mt-1">{error}</p>}
+      </div>
+      <label className={`min-h-[38px] px-4 rounded-lg text-xs font-bold uppercase tracking-wider inline-flex items-center gap-2 cursor-pointer ${subiendo ? "opacity-60" : "bg-[#FFD700] hover:bg-yellow-400 text-black"}`}>
+        {subiendo && <Loader2 size={14} className="animate-spin" />} {est?.existe ? "Reemplazar PDF" : "Subir PDF"}
+        <input type="file" accept="application/pdf" className="hidden" onChange={subir} disabled={subiendo} />
+      </label>
+    </div>
+  );
+}
+
 /** Revisión de las fichas que salieron de los PDF: qué le falta a cada producto y corrección a mano. */
 export default function RevisionFichas() {
   const [datos, setDatos] = useState(null);
@@ -135,6 +181,7 @@ export default function RevisionFichas() {
   return (
     <div className="h-full overflow-y-auto p-4 sm:p-6">
       <div className="max-w-6xl mx-auto">
+        <ListaPdf />
         <div className="flex flex-wrap items-end gap-x-6 gap-y-2 mb-4">
           <div>
             <h2 className="text-lg font-extrabold text-white">Revisión de fichas</h2>
