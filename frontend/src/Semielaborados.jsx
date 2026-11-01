@@ -15,8 +15,6 @@ import {
   Layers,
   Box,
   Sparkle,
-  Calendar,
-  ChevronDown,
 } from "lucide-react";
 import { Truck } from "lucide-react";
 import { api } from "./produccion/util";
@@ -36,8 +34,6 @@ export default function Semielaborados() {
     const saved = localStorage.getItem("conoflex_meses_historial");
     return saved ? parseInt(saved, 10) : 3; // 3 meses por defecto
   });
-  const [isMesesMenuOpen, setIsMesesMenuOpen] = useState(false);
-  const mesesMenuRef = useRef(null);
 
   // PREVISUALIZACIÓN Y AUDITORÍA SHEETS
   const [previewData, setPreviewData] = useState(null);
@@ -69,20 +65,6 @@ export default function Semielaborados() {
       alert(e.message);
     }
   };
-
-  // DETECTOR DE CLIC AFUERA PARA CERRAR EL MENÚ DE MESES
-  useEffect(() => {
-    const handleClickOutside = (event) => {
-      if (
-        mesesMenuRef.current &&
-        !mesesMenuRef.current.contains(event.target)
-      ) {
-        setIsMesesMenuOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
 
   // AJUSTE DE FILAS EN TIEMPO REAL (48px exactos)
   useEffect(() => {
@@ -255,138 +237,69 @@ export default function Semielaborados() {
 
   return (
     <div className="flex-1 flex flex-col h-full min-h-0 bg-black font-sans text-zinc-200 overflow-hidden relative selection:bg-[#FF5A00]/30">
-      {/* 1. HEADER HERO */}
-      <div className="border-b border-zinc-800/50 p-6 md:p-10 flex flex-col md:flex-row md:items-end justify-between gap-6 shrink-0 bg-[#050505] relative overflow-hidden">
-        <div className="z-10">
-          <h1 className="text-4xl md:text-5xl font-extrabold italic tracking-tighter text-white uppercase leading-none">
-            Semielaborados
-          </h1>
-          <p className="text-zinc-500 text-sm mt-2 max-w-md uppercase tracking-widest font-bold flex items-center gap-2">
-            INVENTARIO DE PROCESOS{" "}
-            <span className="bg-[#FF5A00]/10 text-[#FF5A00] border border-[#FF5A00]/20 px-2 py-0.5 rounded-none text-[10px]">
-              4 DEPÓSITOS
-            </span>
-          </p>
-        </div>
-
-        <div className="flex flex-col sm:flex-row gap-3 z-10 w-full md:w-auto">
-        <button
-          onClick={() => setVerCamion(true)}
-          className="flex items-center justify-center gap-3 px-6 py-3 font-bold text-xs uppercase tracking-widest border border-zinc-700 text-white hover:border-[#FF5A00] hover:text-[#FF5A00] transition-all cursor-pointer"
-        >
-          <Truck size={16} /> Camión Paraguay
-        </button>
-        <button
-          onClick={handleStartSync}
-          disabled={isSyncing}
-          className="flex items-center justify-between gap-4 px-6 py-3 font-bold text-xs uppercase tracking-widest transition-all z-10 w-full md:w-auto bg-[#FFD700] hover:bg-white text-black active:scale-95 disabled:opacity-50 cursor-pointer"
-        >
-          <RefreshCw
-            size={16}
-            className={`${isSyncing ? "animate-spin" : ""}`}
-            strokeWidth={3}
+      {/* 2. BARRA ÚNICA: buscar, filtrar y las dos acciones */}
+      <div className="px-4 py-4 md:px-8 border-b border-zinc-800/50 flex flex-col md:flex-row md:items-center gap-3 shrink-0 bg-black relative z-20">
+        <div className="relative w-full md:flex-1 md:max-w-sm">
+          <Search size={14} className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-600" />
+          <input
+            type="text"
+            placeholder="Buscar por código o nombre"
+            value={search}
+            onChange={(e) => {
+              setSearch(e.target.value);
+              setCurrentPage(1);
+            }}
+            className="w-full bg-transparent border border-zinc-800 focus:border-[#FF5A00] text-white pl-10 pr-4 py-2 text-sm transition-colors outline-none"
           />
-          SINCRONIZAR SHEETS
-        </button>
         </div>
-      </div>
 
-      {/* 2. PANEL DE FILTROS & BÚSQUEDA */}
-      <div className="px-4 py-4 md:px-8 border-b border-zinc-800/50 flex flex-col md:flex-row items-center justify-between gap-3 shrink-0 bg-black relative z-20">
-        <div className="flex flex-col sm:flex-row items-center gap-3 w-full md:w-auto flex-1 min-w-0">
-          {/* BUSCADOR (Ancho optimizado) */}
-          <div className="relative w-full sm:w-64 shrink-0">
-            <Search
-              size={14}
-              className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-600"
-            />
-            <input
-              type="text"
-              placeholder="Buscar por código o artículo..."
-              value={search}
-              onChange={(e) => {
-                setSearch(e.target.value);
-                setCurrentPage(1);
-              }}
-              className="w-full bg-transparent border border-zinc-800 focus:border-[#FF5A00] text-white pl-10 pr-4 py-2 text-xs transition-colors outline-none"
-            />
-          </div>
-
-          {/* TABS DE DEPÓSITOS (Con shrink-0 para evitar cortes) */}
-          <div className="flex items-center gap-0 w-full sm:w-auto overflow-x-auto border border-zinc-800 bg-[#050505] shrink-0">
-            {["GENERAL", "33", "26", "AYOLAS", "37"].map((dep) => {
-              const isSelected = activeTab === dep;
-              return (
-                <button
-                  key={dep}
-                  onClick={() => {
-                    setActiveTab(dep);
-                    setCurrentPage(1);
-                  }}
-                  className={`px-3.5 py-2 text-xs font-bold transition-all cursor-pointer whitespace-nowrap uppercase tracking-widest border-r border-zinc-800 last:border-r-0 ${
-                    isSelected
-                      ? "bg-[#FF5A00] text-black"
-                      : "text-zinc-500 hover:text-white hover:bg-zinc-900"
-                  }`}
-                >
-                  {dep === "GENERAL" ? "GENERAL" : `DEP. ${dep}`}
-                </button>
-              );
-            })}
-          </div>
-
-          {/* DESPLEGABLE CON ANCHO FIJO (w-[195px]) */}
-          <div
-            className="relative shrink-0 w-full sm:w-[195px]"
-            ref={mesesMenuRef}
+        <div className="flex items-center gap-2 w-full md:w-auto">
+          <select
+            value={activeTab}
+            onChange={(e) => {
+              setActiveTab(e.target.value);
+              setCurrentPage(1);
+            }}
+            aria-label="Depósito"
+            className="flex-1 md:flex-none bg-black border border-zinc-800 text-zinc-200 text-sm px-3 py-2 outline-none focus:border-[#FF5A00] cursor-pointer"
           >
-            <button
-              onClick={() => setIsMesesMenuOpen(!isMesesMenuOpen)}
-              className="w-full flex items-center justify-between gap-1.5 bg-[#050505] border border-zinc-800 hover:border-zinc-700 px-3 py-2 text-xs font-bold tracking-widest uppercase text-white transition-colors cursor-pointer"
-            >
-              <Calendar size={14} className="text-[#FF5A00] shrink-0" />
-              <span className="text-zinc-500 text-[10px] shrink-0">
-                HISTORIAL:
-              </span>
-              <span className="text-[#FF5A00] shrink-0">
-                {mesesHistorial} {mesesHistorial === 1 ? "MES" : "MESES"}
-              </span>
-              <ChevronDown
-                size={14}
-                className={`text-zinc-500 shrink-0 transition-transform ${isMesesMenuOpen ? "rotate-180" : ""}`}
-              />
-            </button>
-
-            {isMesesMenuOpen && (
-              <div className="absolute top-full left-0 w-full mt-1 bg-[#050505] border border-zinc-800 shadow-2xl z-50 flex flex-col py-1">
-                {[1, 2, 3, 4, 5, 6].map((m) => (
-                  <button
-                    key={m}
-                    onClick={() => {
-                      setMesesHistorial(m);
-                      setIsMesesMenuOpen(false);
-                      setCurrentPage(1);
-                    }}
-                    className={`text-left px-4 py-2   text-xs font-bold tracking-widest uppercase transition-colors border-l-2 ${
-                      mesesHistorial === m
-                        ? "border-[#FF5A00] text-[#FF5A00] bg-[#FF5A00]/10"
-                        : "border-transparent text-zinc-400 hover:text-white hover:bg-zinc-900"
-                    }`}
-                  >
-                    {m} {m === 1 ? "MES ATRÁS" : "MESES ATRÁS"}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
+            <option value="GENERAL">Todos los depósitos</option>
+            <option value="33">Depósito 33</option>
+            <option value="26">Depósito 26</option>
+            <option value="AYOLAS">Ayolas</option>
+            <option value="37">Depósito 37</option>
+          </select>
+          <select
+            value={mesesHistorial}
+            onChange={(e) => {
+              setMesesHistorial(Number(e.target.value));
+              setCurrentPage(1);
+            }}
+            aria-label="Meses para calcular la demanda"
+            className="flex-1 md:flex-none bg-black border border-zinc-800 text-zinc-200 text-sm px-3 py-2 outline-none focus:border-[#FF5A00] cursor-pointer"
+          >
+            {[1, 2, 3, 4, 5, 6].map((m) => (
+              <option key={m} value={m}>
+                Demanda de {m === 1 ? "1 mes" : `${m} meses`}
+              </option>
+            ))}
+          </select>
         </div>
 
-        {/* CONTADOR TOTAL */}
-        <div className="border border-zinc-800 px-4 py-2 text-[10px] md:text-xs text-zinc-500   tracking-widest flex items-center gap-2 bg-[#050505] uppercase font-bold w-full md:w-auto justify-between shrink-0">
-          <span className="flex items-center gap-1.5">TOTAL ITEMS:</span>
-          <strong className="text-white">
-            {processedItems.length} / {items.length}
-          </strong>
+        <div className="flex items-center gap-2 w-full md:w-auto md:ml-auto">
+          <button
+            onClick={() => setVerCamion(true)}
+            className="flex-1 md:flex-none flex items-center justify-center gap-2 px-4 py-2 text-sm font-semibold border border-zinc-800 text-zinc-300 hover:border-[#FF5A00] hover:text-white transition-colors cursor-pointer"
+          >
+            <Truck size={15} /> Camión Paraguay
+          </button>
+          <button
+            onClick={handleStartSync}
+            disabled={isSyncing}
+            className="flex-1 md:flex-none flex items-center justify-center gap-2 px-4 py-2 text-sm font-semibold border border-zinc-800 text-zinc-300 hover:border-[#FF5A00] hover:text-white transition-colors disabled:opacity-50 cursor-pointer"
+          >
+            <RefreshCw size={15} className={isSyncing ? "animate-spin" : ""} /> Sincronizar
+          </button>
         </div>
       </div>
 

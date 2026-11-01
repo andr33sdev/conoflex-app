@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import {
-  RefreshCw,
   Menu,
   X,
   LogOut,
@@ -173,8 +172,6 @@ export default function Layout({
   children,
   activeModule,
   setActiveModule,
-  onReloadSheets,
-  isReloading,
   usuarioActual = { nombre: "Usuario", rol: "ADMIN", permisos: ["*"] },
   onLogout = () => {},
 }) {
@@ -353,22 +350,6 @@ export default function Layout({
               {actual?.label || "Conoflex"}
             </p>
           </div>
-
-          {activeModule === "semielaborados" && (
-            <button
-              onClick={onReloadSheets}
-              disabled={isReloading}
-              className="flex items-center gap-2 px-3 md:px-4 h-9 rounded-xl bg-[#FFD60A] text-black text-[13px] font-bold hover:brightness-110 disabled:opacity-50 transition"
-            >
-              <RefreshCw
-                size={15}
-                className={isReloading ? "animate-spin" : ""}
-              />
-              <span className="hidden sm:inline">
-                {isReloading ? "Sincronizando…" : "Sincronizar Sheets"}
-              </span>
-            </button>
-          )}
 
           <Campanita usuarioActual={usuarioActual} />
 

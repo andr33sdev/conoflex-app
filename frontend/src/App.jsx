@@ -134,28 +134,7 @@ function AppInterna() {
   }, [usuarioActual, activeModule]);
 
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
-  const [isReloading, setIsReloading] = useState(false);
-  const [reloadKey, setReloadKey] = useState(0);
-
-  const handleReloadSheets = async () => {
-    if (activeModule !== "semielaborados") return;
-
-    setIsReloading(true);
-    try {
-      const res = await fetch("/api/semielaborados/recargar-sheets", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-      });
-
-      if (res.ok) {
-        setReloadKey((prev) => prev + 1);
-      }
-    } catch (err) {
-      console.error("Error al recargar desde Google Sheets:", err);
-    } finally {
-      setIsReloading(false);
-    }
-  };
+  const reloadKey = 0; // la recarga directa de Sheets se reemplazó por la sincronización con revisión dentro de Semielaborados
 
   // El tema (claro/oscuro) es del usuario y vive en el servidor: se aplica en cualquier dispositivo apenas hay sesión.
   useEffect(() => {
@@ -206,8 +185,6 @@ function AppInterna() {
       activeModule={activeModule}
       setActiveModule={irA}
       onOpenUploadModal={() => setIsUploadModalOpen(true)}
-      onReloadSheets={handleReloadSheets}
-      isReloading={isReloading}
       usuarioActual={usuarioActual}
       onLogout={handleLogout}
     >
