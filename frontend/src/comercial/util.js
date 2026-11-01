@@ -7,8 +7,9 @@ export function urlImagen(url) {
   if (!url) return "";
   if (/^(data:|blob:|https?:\/\/)/.test(url)) {
     const i = url.indexOf("/imagenes/");
-    // Si la foto quedó guardada con otro servidor (ej: localhost), se la pide al servidor actual.
-    return i > 0 && /localhost|127\.0\.0\.1/.test(url) ? encodeURI(getApiUrl(url.slice(i))) : url;
+    // Si la foto quedó guardada con otro servidor (localhost) o con la dirección http del servidor (el navegador bloquea
+    // contenido http dentro de una página https), se la pide por la ruta pública del sitio actual.
+    return i > 0 && (/localhost|127\.0\.0\.1/.test(url) || /^http:\/\//.test(url)) ? encodeURI(getApiUrl(url.slice(i))) : url;
   }
   return encodeURI(getApiUrl(url.includes("/imagenes/") ? "/imagenes/" + url.split("/imagenes/")[1] : url));
 }

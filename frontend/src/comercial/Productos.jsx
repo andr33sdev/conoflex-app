@@ -289,7 +289,22 @@ function ModalFichasPdf({ categorias, onCerrar, onListo, aviso }) {
       const fd = new FormData();
       archivos.forEach((a) => fd.append("pdf_files", a));
       fd.append("categoriaNombre", categoria.trim());
-      const d = await subirForm("/api/catalogo/procesar-pdf", fd);
+      const inicio = await subirForm("/api/catalogo/procesar-pdf", fd);
+      // La lectura con IA puede tardar minutos: se consulta el avance hasta que termina.
+      let d = null;
+      for (let i = 0; i < 240 && !d; i++) {
+        await new Promise((r) => setTimeout(r, 3000));
+        let r;
+        try {
+          r = await api(`/api/catalogo/procesar-pdf/${inicio.trabajoId}`);
+        } catch (e) {
+          if (e.status === 404) throw e; // se perdió el trabajo
+          if (e.status === 500) throw e; // falló la lectura
+          continue; // corte de red momentáneo: sigue esperando
+        }
+        if (r.estado === "LISTO") d = r.resultado;
+      }
+      if (!d) throw new Error("La importación está tardando demasiado. Revisá “PDFs de usos” en unos minutos para ver si terminó.");
       aviso(d.mensaje || "Fichas importadas.");
       onListo();
     } catch (e) {

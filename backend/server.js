@@ -5711,10 +5711,12 @@ const uploadMemory = multer({
   limits: { fileSize: 25 * 1024 * 1024 }, // Límite 25MB
 });
 
+const trabajosPdf = new Map();
 app.post(
   "/api/catalogo/procesar-pdf",
   uploadMemory.array("pdf_files", 5),
   async (req, res) => {
+    let trabajoId = null;
     try {
       const files = req.files;
       const categoriaNombre = req.body.categoriaNombre || "Conos";
@@ -5724,6 +5726,13 @@ app.post(
           .status(400)
           .json({ error: "No se recibió ningún archivo PDF." });
       }
+
+      // Leer un PDF con IA puede tardar más de lo que aguantan los proxies (Vercel corta con 502):
+      // se responde al instante con un número de trabajo y la pantalla consulta el avance.
+      for (const [k, v] of trabajosPdf) if (Date.now() - v.creado > 3600000) trabajosPdf.delete(k);
+      trabajoId = require("crypto").randomBytes(8).toString("hex");
+      trabajosPdf.set(trabajoId, { estado: "PROCESANDO", creado: Date.now(), usuarioId: req.user?.id || null, archivos: files.length, hechos: 0 });
+      res.status(202).json({ trabajoId });
 
       let totalProductosProcesados = 0;
       const informe = { actualizados: 0, nuevos: [], omitidosEditados: [], ilegibles: 0 };
@@ -5873,20 +5882,29 @@ app.post(
         await guardarFicha(db, { nombre: file.originalname, buffer: file.buffer, categoria: categoriaNombre, usuario: nombreUsuario, afectados: afectadosArchivo }).catch((e) => console.error("[fichas-pdf]", e.message));
       }
 
-      res.json({
+      const resultado = {
         success: true,
         mensaje: `Fichas procesadas: ${informe.actualizados} actualizadas, ${informe.nuevos.length} nuevas${informe.omitidosEditados.length ? `, ${informe.omitidosEditados.length} sin tocar porque las corregiste a mano` : ""}.`,
         ...informe,
         total: totalProductosProcesados,
-      });
+      };
+      trabajosPdf.set(trabajoId, { ...trabajosPdf.get(trabajoId), estado: "LISTO", resultado });
     } catch (error) {
       console.error("Error en procesar-pdf:", error);
-      res
-        .status(500)
-        .json({ error: `Error al procesar el PDF: ${error.message}` });
+      const mensaje = `Error al procesar el PDF: ${error.message}`;
+      if (trabajoId) trabajosPdf.set(trabajoId, { ...trabajosPdf.get(trabajoId), estado: "ERROR", error: mensaje });
+      else res.status(500).json({ error: mensaje });
     }
   },
 );
+
+// Avance de la importación de fichas (la pantalla lo consulta cada pocos segundos).
+app.get("/api/catalogo/procesar-pdf/:trabajoId", (req, res) => {
+  const t = trabajosPdf.get(req.params.trabajoId);
+  if (!t || (t.usuarioId && t.usuarioId !== req.user?.id)) return res.status(404).json({ error: "No encuentro esa importación (el servidor pudo haberse reiniciado). Revisá “PDFs de usos” para ver si terminó." });
+  if (t.estado === "ERROR") return res.status(500).json({ estado: "ERROR", error: t.error });
+  res.json({ estado: t.estado, archivos: t.archivos, resultado: t.resultado || null });
+});
 
 // ==========================================
 // CONNIE: analista de datos con acceso de solo lectura a toda la base
