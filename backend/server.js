@@ -12,6 +12,7 @@ const jwt = require("jsonwebtoken");
 const crypto = require("crypto");
 const { crearConnie } = require("./connie");
 const { asegurarTablasAgentes, registrarRutasAgentes, iniciarVigilantes } = require("./agentes");
+const { notasTexto: notasVentasTexto } = require("./agentes/ventasMails");
 const { demandaMateriasPrimas } = require("./demanda");
 const { separarDuplicadas, asegurarTablaDuplicadas } = require("./fichero");
 const { asegurarTablasProduccion, registrarRutasProduccion } = require("./produccionRutas");
@@ -1877,6 +1878,61 @@ async function extraerContenidoMail(gmail, messageId, payload) {
   return { cuerpoCompleto: cuerpoFinal, imagenes };
 }
 
+// Notas comerciales que la persona confirmó hablando con Cami: se suman a las reglas de cada borrador.
+async function notasAprendidasTexto() {
+  try {
+    return await notasVentasTexto(db);
+  } catch {
+    return "";
+  }
+}
+
+// Cliente de Gmail con las credenciales guardadas (las mismas que usa todo el módulo comercial).
+function gmailAutenticado() {
+  const pathToken = fs.existsSync(path.join(__dirname, "token.json"))
+    ? path.join(__dirname, "token.json")
+    : path.join(__dirname, "tokens_web.json");
+  if (fs.existsSync(pathToken)) {
+    const tokens = JSON.parse(fs.readFileSync(pathToken));
+    oauth2Client.setCredentials(tokens);
+  }
+  if (!oauth2Client.credentials || (!oauth2Client.credentials.access_token && !oauth2Client.credentials.refresh_token)) {
+    const err = new Error("No autenticado en Gmail");
+    err.status = 401;
+    throw err;
+  }
+  return google.gmail({ version: "v1", auth: oauth2Client });
+}
+
+// Mails con la etiqueta IA-Consulta, con el contenido completo e imágenes. Lo usan la pantalla comercial y la agente de ventas.
+async function leerMailsEtiquetados(max = 10) {
+  const gmail = gmailAutenticado();
+  const listRes = await gmail.users.messages.list({ userId: "me", q: "label:IA-Consulta", maxResults: max });
+  const messages = listRes.data.messages || [];
+  const mailsDetalle = [];
+  for (const msg of messages) {
+    const detail = await gmail.users.messages.get({ userId: "me", id: msg.id, format: "full" });
+    const headers = detail.data.payload.headers || [];
+    const subject = headers.find((h) => h.name.toLowerCase() === "subject")?.value || "Sin asunto";
+    const from = headers.find((h) => h.name.toLowerCase() === "from")?.value || "Desconocido";
+    const emailMatch = from.match(/<([^>]+)>/) || [null, from];
+    // Extracción completa: cuerpo entero sin límites de caracteres + imágenes adjuntas
+    const { cuerpoCompleto, imagenes } = await extraerContenidoMail(gmail, msg.id, detail.data.payload);
+    mailsDetalle.push({
+      id: msg.id,
+      threadId: detail.data.threadId,
+      fecha: Number(detail.data.internalDate) || null,
+      asunto: subject,
+      remitente: from,
+      emailCliente: emailMatch[1],
+      resumen: cuerpoCompleto || detail.data.snippet || "",
+      cuerpoCompleto: cuerpoCompleto || detail.data.snippet || "",
+      imagenes: imagenes,
+    });
+  }
+  return mailsDetalle;
+}
+
 // ENDPOINT: LISTADO DE MAILS (CON CONTENIDO 100% COMPLETO E IMÁGENES)
 app.get(
   "/api/mails",
@@ -1884,182 +1940,144 @@ app.get(
   autorizarRoles("ADMIN", "COMERCIAL"),
   async (req, res) => {
     try {
-      const pathToken = fs.existsSync(path.join(__dirname, "token.json"))
-        ? path.join(__dirname, "token.json")
-        : path.join(__dirname, "tokens_web.json");
-
-      if (fs.existsSync(pathToken)) {
-        const tokens = JSON.parse(fs.readFileSync(pathToken));
-        oauth2Client.setCredentials(tokens);
-      }
-
-      if (
-        !oauth2Client.credentials ||
-        (!oauth2Client.credentials.access_token &&
-          !oauth2Client.credentials.refresh_token)
-      ) {
-        return res.status(401).json({ error: "No autenticado en Gmail" });
-      }
-
-      const gmail = google.gmail({ version: "v1", auth: oauth2Client });
-      const listRes = await gmail.users.messages.list({
-        userId: "me",
-        q: "label:IA-Consulta",
-        maxResults: 10,
-      });
-
-      const messages = listRes.data.messages || [];
-      const mailsDetalle = [];
-
-      for (const msg of messages) {
-        const detail = await gmail.users.messages.get({
-          userId: "me",
-          id: msg.id,
-          format: "full",
-        });
-
-        const headers = detail.data.payload.headers || [];
-        const subject =
-          headers.find((h) => h.name.toLowerCase() === "subject")?.value ||
-          "Sin asunto";
-        const from =
-          headers.find((h) => h.name.toLowerCase() === "from")?.value ||
-          "Desconocido";
-        const emailMatch = from.match(/<([^>]+)>/) || [null, from];
-
-        // Extracción completa: cuerpo entero sin límites de caracteres + imágenes adjuntas
-        const { cuerpoCompleto, imagenes } = await extraerContenidoMail(
-          gmail,
-          msg.id,
-          detail.data.payload,
-        );
-
-        mailsDetalle.push({
-          id: msg.id,
-          threadId: detail.data.threadId,
-          asunto: subject,
-          remitente: from,
-          emailCliente: emailMatch[1],
-          resumen: cuerpoCompleto || detail.data.snippet || "",
-          cuerpoCompleto: cuerpoCompleto || detail.data.snippet || "",
-          imagenes: imagenes,
-        });
-      }
-
-      res.json({ mails: mailsDetalle });
+      res.json({ mails: await leerMailsEtiquetados(10) });
     } catch (error) {
+      if (error.status === 401) return res.status(401).json({ error: "No autenticado en Gmail" });
       console.error("Error leyendo Gmail:", error);
       res.status(500).json({ error: "Error leyendo Gmail: " + error.message });
     }
   },
 );
 
-// ENDPOINT: GENERACIÓN MULTIMODAL DE BORRADOR CON GEMINI Y GMAIL
-app.post(
-  "/api/crear-borrador-gmail",
-  autenticarToken,
-  autorizarRoles("ADMIN", "COMERCIAL"),
-  async (req, res) => {
-    try {
-      const { mailCliente, consultaText, asunto, threadId, imagenes, nombreCliente } =
-        req.body;
-      const gmail = google.gmail({ version: "v1", auth: oauth2Client });
+// El hilo de un mail: si ya hubo una respuesta enviada por nosotros y cuál fue (para no duplicar borradores y para aprender de lo que se mandó).
+async function estadoDelHilo(threadId, desdeMs = 0) {
+  const gmail = gmailAutenticado();
+  const th = await gmail.users.threads.get({ userId: "me", id: threadId, format: "full" });
+  const msgs = th.data.messages || [];
+  const enviados = msgs.filter((m) => (m.labelIds || []).includes("SENT") && Number(m.internalDate || 0) >= desdeMs);
+  const ultimo = enviados[enviados.length - 1];
+  let texto = null;
+  if (ultimo) {
+    const { cuerpoCompleto } = await extraerContenidoMail(gmail, ultimo.id, ultimo.payload);
+    texto = cuerpoCompleto;
+  }
+  const borradores = msgs.filter((m) => (m.labelIds || []).includes("DRAFT")).length;
+  const ultimoMsg = msgs[msgs.length - 1];
+  const ultimoEsNuestro = !!ultimoMsg && (ultimoMsg.labelIds || []).includes("SENT") && !(ultimoMsg.labelIds || []).includes("DRAFT");
+  return { ultimoEsNuestro, mensajes: msgs.length, enviado: !!ultimo, enviadoTexto: texto, enviadoEn: ultimo ? Number(ultimo.internalDate) : null, borradoresEnHilo: borradores };
+}
 
-      // 1. Preparar las imágenes para la API multimodal de Gemini
-      const imagenesParaGemini = [];
+// Ya no existe el borrador en Gmail (se envió o se borró).
+async function borradorExiste(draftId) {
+  try {
+    const gmail = gmailAutenticado();
+    await gmail.users.drafts.get({ userId: "me", id: draftId, format: "minimal" });
+    return true;
+  } catch (e) {
+    if (e.code === 404 || e.status === 404) return false;
+    throw e;
+  }
+}
 
-      // A) Si vienen desde el frontend
-      if (Array.isArray(imagenes) && imagenes.length > 0) {
-        for (const img of imagenes) {
-          if (img.data && img.mimeType) {
-            imagenesParaGemini.push({
-              inlineData: {
-                mimeType: img.mimeType,
-                data: img.data,
-              },
-            });
-          }
-        }
-      }
+// Arma el borrador de respuesta en Gmail (nunca envía). Lo usa la pantalla comercial y la agente de ventas.
+async function crearBorradorDesdeConsulta({ mailCliente, consultaText, asunto, threadId, imagenes, nombreCliente, reglasExtra = "" }) {
+  const gmail = gmailAutenticado();
 
-      // B) Respaldo: Si no vinieron en el body pero hay threadId, extraerlas directamente del último mensaje
-      if (imagenesParaGemini.length === 0 && threadId) {
-        try {
-          const threadRes = await gmail.users.threads.get({
-            userId: "me",
-            id: threadId,
-            format: "full",
-          });
-          const msgs = threadRes.data.messages || [];
-          const lastMsg = msgs[msgs.length - 1];
+  // 1. Preparar las imágenes para la API multimodal de Gemini
+  const imagenesParaGemini = [];
 
-          if (lastMsg && lastMsg.payload) {
-            const { imagenes: imgsThread } = await extraerContenidoMail(
-              gmail,
-              lastMsg.id,
-              lastMsg.payload,
-            );
-            for (const img of imgsThread) {
-              imagenesParaGemini.push({
-                inlineData: {
-                  mimeType: img.mimeType,
-                  data: img.data,
-                },
-              });
-            }
-          }
-        } catch (errThread) {
-          console.warn(
-            "Aviso al obtener adjuntos del hilo:",
-            errThread.message,
-          );
-        }
-      }
-
-      // 2. Consultar reglas comerciales y catálogo en la base de datos
-      const [reglaRows] = await db.query(
-        "SELECT valor FROM reglas WHERE clave = 'prompt_comercial'",
-      );
-      const reglasEntrenamiento = reglaRows[0] ? reglaRows[0].valor : "";
-
-      // 3. Cotizador (etapa B): la IA elige los productos, el servidor calcula los precios y arma las tarjetas.
-      let htmlBody = null;
-      let revision = null;
-      let adjunto = null;
-      try {
-        const [productosCot] = await db.query(
-          "SELECT id, codigo, nombre, medidas, precio_lista, especificacion, aplicacion, descripcion, usos_recomendados, advertencias, categoria, foto_tecnica, foto_catalogo FROM productos",
-        );
-        const [cfgRows] = await db.query("SELECT valor FROM reglas WHERE clave = 'comercial_descuento_pct'");
-        const cfgPct = Number(String(cfgRows[0]?.valor ?? "").replace(",", "."));
-        const lista = leerLista();
-        const r = await generarCotizacion({
-          ai,
-          modelo: "gemini-2.5-flash",
-          productos: productosCot,
-          reglas: reglasEntrenamiento,
-          mailCliente,
-          nombreCliente,
-          texto: consultaText,
-          imagenes: imagenesParaGemini,
-          adjuntaLista: !!lista,
-          descuentoConfig: Number.isFinite(cfgPct) && cfgPct > 0 && cfgPct <= 60 ? cfgPct : null,
+  // A) Si vienen desde el frontend
+  if (Array.isArray(imagenes) && imagenes.length > 0) {
+    for (const img of imagenes) {
+      if (img.data && img.mimeType) {
+        imagenesParaGemini.push({
+          inlineData: {
+            mimeType: img.mimeType,
+            data: img.data,
+          },
         });
-        htmlBody = r.html;
-        revision = r.revision;
-        if (r.revision.adjunta_lista) adjunto = lista;
-      } catch (errCot) {
-        console.error("Cotizador nuevo falló, se usa el método anterior:", errCot.message);
-        revision = { descuento_pct: null, adjunta_lista: false, lineas: [], avisos: ["El cotizador nuevo no pudo con este mail y el borrador salió con el método anterior: los precios y totales los calculó la IA, revisalos uno por uno antes de enviar."] };
       }
+    }
+  }
 
-      if (!htmlBody) {
-      const [productosDB] = await db.query(
-        "SELECT codigo, nombre, medidas, precio_lista, especificacion, aplicacion, foto_tecnica, foto_catalogo FROM productos",
+  // B) Respaldo: Si no vinieron en el body pero hay threadId, extraerlas directamente del último mensaje
+  if (imagenesParaGemini.length === 0 && threadId) {
+    try {
+      const threadRes = await gmail.users.threads.get({
+        userId: "me",
+        id: threadId,
+        format: "full",
+      });
+      const msgs = threadRes.data.messages || [];
+      const lastMsg = msgs[msgs.length - 1];
+
+      if (lastMsg && lastMsg.payload) {
+        const { imagenes: imgsThread } = await extraerContenidoMail(
+          gmail,
+          lastMsg.id,
+          lastMsg.payload,
+        );
+        for (const img of imgsThread) {
+          imagenesParaGemini.push({
+            inlineData: {
+              mimeType: img.mimeType,
+              data: img.data,
+            },
+          });
+        }
+      }
+    } catch (errThread) {
+      console.warn(
+        "Aviso al obtener adjuntos del hilo:",
+        errThread.message,
       );
+    }
+  }
 
-      // 3. Prompt con directiva estricta para visión y mapeo de competencia/similares
-      const prompt = `
+  // 2. Consultar reglas comerciales y catálogo en la base de datos
+  const [reglaRows] = await db.query(
+    "SELECT valor FROM reglas WHERE clave = 'prompt_comercial'",
+  );
+  const reglasEntrenamiento = [reglaRows[0] ? reglaRows[0].valor : "", reglasExtra].filter(Boolean).join("\n\n");
+
+  // 3. Cotizador (etapa B): la IA elige los productos, el servidor calcula los precios y arma las tarjetas.
+  let htmlBody = null;
+  let revision = null;
+  let adjunto = null;
+  try {
+    const [productosCot] = await db.query(
+      "SELECT id, codigo, nombre, medidas, precio_lista, especificacion, aplicacion, descripcion, usos_recomendados, advertencias, categoria, foto_tecnica, foto_catalogo FROM productos",
+    );
+    const [cfgRows] = await db.query("SELECT valor FROM reglas WHERE clave = 'comercial_descuento_pct'");
+    const cfgPct = Number(String(cfgRows[0]?.valor ?? "").replace(",", "."));
+    const lista = leerLista();
+    const r = await generarCotizacion({
+      ai,
+      modelo: "gemini-2.5-flash",
+      productos: productosCot,
+      reglas: reglasEntrenamiento,
+      mailCliente,
+      nombreCliente,
+      texto: consultaText,
+      imagenes: imagenesParaGemini,
+      adjuntaLista: !!lista,
+      descuentoConfig: Number.isFinite(cfgPct) && cfgPct > 0 && cfgPct <= 60 ? cfgPct : null,
+    });
+    htmlBody = r.html;
+    revision = r.revision;
+    if (r.revision.adjunta_lista) adjunto = lista;
+  } catch (errCot) {
+    console.error("Cotizador nuevo falló, se usa el método anterior:", errCot.message);
+    revision = { descuento_pct: null, adjunta_lista: false, lineas: [], avisos: ["El cotizador nuevo no pudo con este mail y el borrador salió con el método anterior: los precios y totales los calculó la IA, revisalos uno por uno antes de enviar."] };
+  }
+
+  if (!htmlBody) {
+  const [productosDB] = await db.query(
+    "SELECT codigo, nombre, medidas, precio_lista, especificacion, aplicacion, foto_tecnica, foto_catalogo FROM productos",
+  );
+
+  // 3. Prompt con directiva estricta para visión y mapeo de competencia/similares
+  const prompt = `
 REGLAS Y POLÍTICAS COMERCIALES DEL USUARIO (PRIORIDAD MÁXIMA):
 ${reglasEntrenamiento}
 
@@ -2096,53 +2114,66 @@ INSTRUCCIONES DE MAQUETACIÓN EN TARJETAS HTML:
 Devuelve ÚNICAMENTE el código HTML crudo sin bloques Markdown (\`\`\`html) ni comentarios.
 `;
 
-      // 4. Invocación a Gemini 2.5 Flash con soporte multimodal
-      const contentsGemini = [...imagenesParaGemini, prompt];
+  // 4. Invocación a Gemini 2.5 Flash con soporte multimodal
+  const contentsGemini = [...imagenesParaGemini, prompt];
 
-      const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash",
-        contents: contentsGemini,
-      });
+  const response = await ai.models.generateContent({
+    model: "gemini-2.5-flash",
+    contents: contentsGemini,
+  });
 
-      htmlBody = response.text
-        .replace(/```html/gi, "")
-        .replace(/```/g, "")
-        .trim();
+  htmlBody = response.text
+    .replace(/```html/gi, "")
+    .replace(/```/g, "")
+    .trim();
 
-      // 5. Reemplazo de variables de imagen por etiquetas <img> reales
-      htmlBody = htmlBody.replace(
-        /\{FOTO_TECNICA_URL=(https?:\/\/[^\}]+)\}/g,
-        '<img src="$1" width="100%" style="max-height:220px; height: auto; object-fit:contain; border-radius:4px; margin: 0 5px;" alt="Técnica" />',
-      );
-      htmlBody = htmlBody.replace(
-        /\{FOTO_CATALOGO_URL=(https?:\/\/[^\}]+)\}/g,
-        '<img src="$1" width="100%" style="max-height:220px; height: auto; object-fit:contain; border-radius:4px; margin: 0 5px;" alt="Catálogo" />',
-      );
+  // 5. Reemplazo de variables de imagen por etiquetas <img> reales
+  htmlBody = htmlBody.replace(
+    /\{FOTO_TECNICA_URL=(https?:\/\/[^\}]+)\}/g,
+    '<img src="$1" width="100%" style="max-height:220px; height: auto; object-fit:contain; border-radius:4px; margin: 0 5px;" alt="Técnica" />',
+  );
+  htmlBody = htmlBody.replace(
+    /\{FOTO_CATALOGO_URL=(https?:\/\/[^\}]+)\}/g,
+    '<img src="$1" width="100%" style="max-height:220px; height: auto; object-fit:contain; border-radius:4px; margin: 0 5px;" alt="Catálogo" />',
+  );
 
-      // Limpieza de cualquier variable residual
-      htmlBody = htmlBody.replace(/\{FOTO_TECNICA_URL=[^\}]*\}/g, "");
-      htmlBody = htmlBody.replace(/\{FOTO_CATALOGO_URL=[^\}]*\}/g, "");
+  // Limpieza de cualquier variable residual
+  htmlBody = htmlBody.replace(/\{FOTO_TECNICA_URL=[^\}]*\}/g, "");
+  htmlBody = htmlBody.replace(/\{FOTO_CATALOGO_URL=[^\}]*\}/g, "");
 
-      }
+  }
 
-      // 6. Creación del borrador en Gmail
-      const draftPayload = crearCorreoCrudo({
-        to: mailCliente,
-        asunto: asunto || "Presupuesto Conoflex Argentina",
-        html: htmlBody,
-        threadId,
-        adjunto,
-      });
+  // 6. Creación del borrador en Gmail
+  const draftPayload = crearCorreoCrudo({
+    to: mailCliente,
+    asunto: asunto || "Presupuesto Conoflex Argentina",
+    html: htmlBody,
+    threadId,
+    adjunto,
+  });
 
-      const draftCreated = await gmail.users.drafts.create({
-        userId: "me",
-        requestBody: draftPayload,
-      });
+  const draftCreated = await gmail.users.drafts.create({
+    userId: "me",
+    requestBody: draftPayload,
+  });
 
+  return { draftId: draftCreated.data.id, revision, html: htmlBody };
+}
+
+// ENDPOINT: GENERACIÓN MULTIMODAL DE BORRADOR CON GEMINI Y GMAIL
+app.post(
+  "/api/crear-borrador-gmail",
+  autenticarToken,
+  autorizarRoles("ADMIN", "COMERCIAL"),
+  async (req, res) => {
+    try {
+      const { mailCliente, consultaText, asunto, threadId, imagenes, nombreCliente } = req.body;
+      gmailAutenticado();
+      const { draftId, revision } = await crearBorradorDesdeConsulta({ mailCliente, consultaText, asunto, threadId, imagenes, nombreCliente, reglasExtra: await notasAprendidasTexto() });
       res.json({
         success: true,
         mensaje: "Borrador generado en Gmail",
-        draftId: draftCreated.data.id,
+        draftId,
         revision,
       });
     } catch (error) {
@@ -5754,7 +5785,13 @@ app.post("/api/chat-ia", requirePermiso("connie"), connie.manejador());
 // AGENTES: módulo aparte (cada agente con su especialidad y su permiso "agente:<id>").
 // Reutiliza el motor de IA y las funciones de liquidación de Connie sin modificarla.
 // ==========================================
-const agentes = registrarRutasAgentes(app, { db, pool: dbConnie, ai });
+const agentes = registrarRutasAgentes(app, {
+  db,
+  pool: dbConnie,
+  ai,
+  // Gmail para Cami (agente de ventas): lee los mails etiquetados y deja borradores; nunca envía.
+  mails: { listar: () => leerMailsEtiquetados(10), estadoHilo: estadoDelHilo, existeBorrador: borradorExiste, borrador: crearBorradorDesdeConsulta },
+});
 
 app.listen(PORT, () => {
   console.log(`🚀 Servidor Conoflex unificado ejecutándose en puerto ${PORT}`);

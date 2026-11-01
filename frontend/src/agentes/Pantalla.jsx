@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Bell, FileDown, History, LayoutGrid, ClipboardList, Loader2, Users, MessageCircle, ScanSearch, Volume2, VolumeX } from "lucide-react";
+import { Bell, FileDown, History, LayoutGrid, ClipboardList, Loader2, Mail, Users, MessageCircle, ScanSearch, Volume2, VolumeX } from "lucide-react";
 import { api } from "../produccion/util";
 import { useToast } from "../produccion/useToast";
 import Chat from "./Chat";
@@ -13,6 +13,7 @@ import { Avatar8 } from "./pixel";
 import Panorama from "./Panorama";
 import PanoramaCompras from "./PanoramaCompras";
 import PanoramaProduccion from "./PanoramaProduccion";
+import PanoramaVentas from "./PanoramaVentas";
 import Ficha from "./Ficha";
 import { dictar, fijarVozAgente, prepararVoz, reproducirVoz, soportaDictado, textoParaVoz } from "./voz";
 import { getApiUrl } from "../apiConfig";
@@ -182,7 +183,8 @@ export default function Pantalla({ agente, usuario, pregunta, onPreguntaUsada, o
     const poner = (nuevo) => setMensajes((prev) => prev.map((x, i) => (i === indice ? { ...x, confirmacion: { ...x.confirmacion, ...nuevo } } : x)));
     poner({ estado: "enviando" });
     try {
-      const r = await api("/api/agentes/stock/confirmar", { method: "POST", body: { token: c.token, cancelar: !aceptar } });
+      const url = c.tipo === "nota" ? "/api/agentes/ventas/confirmar-nota" : "/api/agentes/stock/confirmar";
+      const r = await api(url, { method: "POST", body: { token: c.token, cancelar: !aceptar } });
       poner(aceptar ? { estado: "hecho", stockFinal: r.stock_actual } : { estado: "cancelado" });
       if (aceptar) setVersion((v) => v + 1);
     } catch (e) {
@@ -393,6 +395,7 @@ export default function Pantalla({ agente, usuario, pregunta, onPreguntaUsada, o
     ...(perfil.panorama === "stock" ? [{ id: "panorama", texto: "Panorama", icono: LayoutGrid }] : []),
     ...(perfil.panorama === "compras" ? [{ id: "panorama", texto: "Mi lista", icono: ClipboardList }] : []),
     ...(perfil.panorama === "produccion" ? [{ id: "panorama", texto: "Prioridades", icono: LayoutGrid }] : []),
+    ...(perfil.panorama === "ventas" ? [{ id: "panorama", texto: "Mails", icono: Mail }] : []),
     ...(perfil.personal ? [{ id: "personal", texto: "Personal", icono: Users }] : []),
     ...(perfil.sinVigilante ? [] : [{ id: "avisos", texto: "Avisos", icono: Bell, n: abiertos }]),
     { id: "actividad", texto: "Actividad", icono: History },
@@ -480,7 +483,7 @@ export default function Pantalla({ agente, usuario, pregunta, onPreguntaUsada, o
         )}
         {tab === "panorama" && (
           <div className="h-full overflow-y-auto custom-scrollbar">
-            {perfil.panorama === "compras" ? <PanoramaCompras datos={pano} error={errPano} onPreguntar={alPropuesta2} /> : perfil.panorama === "produccion" ? <PanoramaProduccion datos={pano} error={errPano} onPreguntar={alPropuesta2} /> : <Panorama datos={pano} error={errPano} onPreguntar={alPropuesta2} />}
+            {perfil.panorama === "ventas" ? <PanoramaVentas base={base} datos={pano} error={errPano} onPreguntar={alPropuesta2} alCambiar={() => setVersion((v) => v + 1)} mostrar={mostrar} /> : perfil.panorama === "compras" ? <PanoramaCompras datos={pano} error={errPano} onPreguntar={alPropuesta2} /> : perfil.panorama === "produccion" ? <PanoramaProduccion datos={pano} error={errPano} onPreguntar={alPropuesta2} /> : <Panorama datos={pano} error={errPano} onPreguntar={alPropuesta2} />}
           </div>
         )}
         {tab === "personal" && (

@@ -33,7 +33,7 @@ export const PERSONAJES = {
   stock: { pestanas: true, aros: "#e6bf48", piel: "#e0ae88", sombra: "#c58a64", luz: "#eec4a2", pelo: "#3b2418", peloLuz: "#5d3b28", iris: "#2e2a28", ropa: "#5d8a5c", ropa2: "#46704a", ropaLuz: "#78a577", pelos: "cola", lentes: false, extra: "casco", rubor: "#c98f74", labio: "#c25a5a" },
   compras: { pestanas: true, piel: "#f1c9ac", sombra: "#d0a083", luz: "#f8dcc6", pelo: "#8d5a2b", peloLuz: "#ad7840", iris: "#3d5a7a", ropa: "#51709e", ropa2: "#3d5782", ropaLuz: "#6a8bb9", pelos: "corto", lentes: true, extra: "auricular", rubor: "#e8b0a0", labio: "#c0615a" },
   produccion: { pestanas: true, aros: "#e6bf48", piel: "#c68a63", sombra: "#a56b48", luz: "#d9a07b", pelo: "#2a1a14", peloLuz: "#4a3126", iris: "#3a2418", ropa: "#5b5fa8", ropa2: "#464a8a", ropaLuz: "#7479c0", pelos: "rizos", lentes: false, extra: "chaqueta", rubor: "#b9785a", labio: "#8f3f45" },
-  ventas: { piel: "#4a4a54", sombra: "#3c3c45", luz: "#555560", pelo: "#33333b", peloLuz: "#3f3f48", iris: "#2a2a30", ropa: "#3a3a44", ropa2: "#2d2d35", ropaLuz: "#464651", pelos: "corto", lentes: false, extra: null, rubor: "#4a4a54", labio: "#3c3c45", apagado: true },
+  ventas: { pestanas: true, aros: "#e6bf48", piel: "#e8bd9a", sombra: "#c99573", luz: "#f3d3b6", pelo: "#a8442a", peloLuz: "#c9623c", iris: "#2f5d4e", ropa: "#2f9c95", ropa2: "#217c76", ropaLuz: "#4fbab2", pelos: "corto", lentes: false, extra: null, rubor: "#e2a899", labio: "#b8584c" },
 };
 
 const NEGRO = "#1b1b21";
