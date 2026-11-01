@@ -94,7 +94,7 @@ test("transferir, deshacer, entradas avisadas y que la planilla no pise lo hecho
     const h = { AB1: { stock_33: 10, stock_26: 100, stock_ayolas: 0, stock_37: 0 } };
     await M.conAjustesDeLaApp(pool, h);
     assert.equal(h.AB1.stock_33, 10, "deshecha: no suma nada");
-    assert.equal((await M.historial(pool, 1)).length, 3);
+    assert.equal((await M.historial(pool, 1)).length, 5);
   } finally {
     await limpiar();
     await pool.end();
