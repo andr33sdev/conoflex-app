@@ -13,3 +13,5 @@ build/
 # Tokens de Google (Gmail) y archivos temporales generados por el backend
 token.json
 backend/uploads/
+
+backend/datos_comercial/
