@@ -512,7 +512,7 @@ export default function Pantalla({ agente, usuario, pregunta, onPreguntaUsada, o
         )}
         {tab === "panorama" && (
           <div className="h-full overflow-y-auto custom-scrollbar">
-            {perfil.panorama === "seguimiento" ? <PanoramaSeguimiento base={base} datos={pano} error={errPano} onPreguntar={alPropuesta2} alCambiar={() => setVersion((v) => v + 1)} mostrar={mostrar} /> : perfil.panorama === "ventas" ? <PanoramaVentas base={base} datos={pano} error={errPano} onPreguntar={alPropuesta2} alCambiar={() => setVersion((v) => v + 1)} mostrar={mostrar} /> : perfil.panorama === "compras" ? <PanoramaCompras datos={pano} error={errPano} onPreguntar={alPropuesta2} /> : perfil.panorama === "produccion" ? <PanoramaProduccion datos={pano} error={errPano} onPreguntar={alPropuesta2} /> : <Panorama datos={pano} error={errPano} onPreguntar={alPropuesta2} />}
+            {perfil.panorama === "seguimiento" ? <PanoramaSeguimiento base={base} datos={pano} error={errPano} onPreguntar={alPropuesta2} alCambiar={() => setVersion((v) => v + 1)} mostrar={mostrar} /> : perfil.panorama === "ventas" ? <PanoramaVentas base={base} datos={pano} error={errPano} onPreguntar={alPropuesta2} alCambiar={() => setVersion((v) => v + 1)} mostrar={mostrar} /> : perfil.panorama === "compras" ? <PanoramaCompras datos={pano} error={errPano} onPreguntar={alPropuesta2} base={base} alCambiar={() => setVersion((v) => v + 1)} mostrar={mostrar} /> : perfil.panorama === "produccion" ? <PanoramaProduccion datos={pano} error={errPano} onPreguntar={alPropuesta2} /> : <Panorama datos={pano} error={errPano} onPreguntar={alPropuesta2} />}
           </div>
         )}
         {tab === "entrenamiento" && perfil.panorama === "ventas" && (

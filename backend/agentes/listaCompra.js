@@ -160,4 +160,14 @@ async function cerrarLista(db, usuario) {
   return { ok: true, solicitud_id: l.solicitud_id, renglones: Number(c.n), siguiente_paso: "Queda en el módulo Solicitudes de Compra, lista para las firmas del jefe y del gerente." };
 }
 
-module.exports = { asegurarTablaListas, resolverMateria, leerLista, listaAbierta, agregarALista, quitarDeLista, cambiarProveedor, cerrarLista, sinAcentos };
+/** Elimina la lista en armado entera (la solicitud y sus renglones): queda sin ninguna y la próxima vez se arma una nueva. */
+async function eliminarLista(db, usuario, { eliminarSolicitud }) {
+  const l = await listaAbierta(db, usuario.id);
+  if (!l) return { error: "No hay una lista de compra en armado." };
+  const [[c]] = await db.query("SELECT COUNT(*) AS n FROM solicitudes_compra_items WHERE solicitud_id = ?", [l.solicitud_id]);
+  const r = await eliminarSolicitud(db, { id: l.solicitud_id, forzar: false, usuario: usuario.nombre || null });
+  if (r.error) return r;
+  return { ok: true, eliminada: l.solicitud_id, renglones: Number(c.n) };
+}
+
+module.exports = { eliminarLista, asegurarTablaListas, resolverMateria, leerLista, listaAbierta, agregarALista, quitarDeLista, cambiarProveedor, cerrarLista, sinAcentos };

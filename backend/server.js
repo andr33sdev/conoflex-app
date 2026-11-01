@@ -26,6 +26,7 @@ const { asegurarTablasPrecios, registrarRutasPrecios } = require("./comercial/pr
 const { asegurarColumnaTema, registrarRutasTema, normalizarTema } = require("./tema");
 const { asegurarTablasFichasPdf, registrarRutasFichasPdf } = require("./comercial/fichasPdf");
 const importarFichas = require("./comercial/importarFichas");
+const { asegurarColumnasGestion, registrarRutasGestion } = require("./comprasGestion");
 const { registrarRutasFotos } = require("./comercial/fotos");
 const { generarCotizacion } = require("./comercial/cotizador");
 const { crearCorreoCrudo } = require("./comercial/correo");
@@ -831,6 +832,7 @@ async function initDB() {
     await asegurarTablasFichasPdf(db);
     await asegurarColumnaTema(db);
     await asegurarComprasStock(db);
+    await asegurarColumnasGestion(db);
 
     console.log("✅ Estructura MySQL inicializada correctamente.");
   } catch (err) {
@@ -5477,6 +5479,9 @@ const nombreDeUsuario = async (req) => {
   return r[0]?.nombre || "Usuario";
 };
 
+// Eliminar una solicitud entera y corregir lo que realmente se pidió (proveedor / cantidad) en un renglón.
+registrarRutasGestion(app, { db, nombreDeUsuario });
+
 // CREAR NUEVA SOLICITUD
 app.post("/api/compras/solicitudes", async (req, res) => {
   const { fecha, items } = req.body;
@@ -5540,8 +5545,17 @@ app.put("/api/compras/solicitudes/:id", async (req, res) => {
     for (let item of items) {
       const mp = await buscarMateriaPrima(conn, item);
       const recibida = parseFloat(item.cantidad_recibida) || 0;
+      let previo = item.id ? viejos.find((v) => v.id === Number(item.id) && !usados.has(v.id)) : null;
+      if (!previo) previo = viejos.find((v) => !usados.has(v.id) && norm(v.articulo) === norm(item.articulo));
+      if (previo) usados.add(previo.id);
+      // Se conserva lo que se había sugerido originalmente si el proveedor o la cantidad cambian al editar.
+      const cambioProv = previo && String(previo.proveedor || "") !== String(item.proveedor || "");
+      const cambioCant = previo && Number(previo.cantidad_solicitada) !== Number(item.cantidad_solicitada);
+      const provSug = previo ? (previo.proveedor_sugerido ?? (cambioProv ? previo.proveedor || "" : null)) : null;
+      const cantSug = previo ? (previo.cantidad_sugerida ?? (cambioCant ? previo.cantidad_solicitada : null)) : null;
+      const corregidoEn = previo ? (cambioProv || cambioCant ? new Date() : previo.pedido_corregido_en || null) : null;
       const [ins] = await conn.query(
-        "INSERT INTO solicitudes_compra_items (solicitud_id, articulo, proveedor, cantidad_solicitada, cantidad_recibida, prioridad, numero_oc, materia_prima_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO solicitudes_compra_items (solicitud_id, articulo, proveedor, cantidad_solicitada, cantidad_recibida, prioridad, numero_oc, materia_prima_id, proveedor_sugerido, cantidad_sugerida, pedido_corregido_en) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         [
           id,
           item.articulo,
@@ -5551,12 +5565,12 @@ app.put("/api/compras/solicitudes/:id", async (req, res) => {
           item.prioridad,
           item.numero_oc,
           mp?.id || null,
+          provSug,
+          cantSug,
+          corregidoEn,
         ],
       );
       // Lo recibido de más (o de menos) respecto de lo que ya estaba cargado ajusta el stock.
-      let previo = item.id ? viejos.find((v) => v.id === Number(item.id) && !usados.has(v.id)) : null;
-      if (!previo) previo = viejos.find((v) => !usados.has(v.id) && norm(v.articulo) === norm(item.articulo));
-      if (previo) usados.add(previo.id);
       const delta = recibida - (previo ? parseFloat(previo.cantidad_recibida) || 0 : 0);
       if (delta) {
         const r = await aplicarRecepcion(conn, { item: { ...item, id: ins.insertId, materia_prima_id: mp?.id }, delta, usuario, solicitud_id: Number(id) });

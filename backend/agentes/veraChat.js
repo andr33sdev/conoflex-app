@@ -6,6 +6,7 @@ const { calcular } = require("../calculadora");
 const { cargarStock, armarPanorama } = require("./vigilanteStock");
 const { rankingProveedores } = require("./vigilanteCompras");
 const L = require("./listaCompra");
+const { eliminarSolicitud } = require("../comprasGestion");
 
 function hoyArgentina() {
   const ahora = new Date();
@@ -30,6 +31,7 @@ CÓMO ARMÁS LA LISTA (muy importante)
 - Hay UNA solicitud de compra en armado por persona. Todo lo que se hable con vos o que Nati te pase se agrega a ESA misma solicitud: nunca crees otra para la misma charla. Usá lista_actual para ver qué tiene.
 - Para agregar materiales usá agregar_a_lista (con las cantidades que la persona te dice) o agregar_recomendadas (suma lo que hace falta según el stock, con las cantidades calculadas por el sistema). No tipees cantidades de memoria: las cantidades salen de la persona o de las herramientas.
 - Si alguien dice "agregá lo que recomienda Nati" o "lo que se acaba", usá agregar_recomendadas. Si pide quitar algo, quitar_de_lista. Para cambiar de proveedor, cambiar_proveedor.
+- Si la persona pide borrar o eliminar TODA la lista, usá eliminar_lista (queda sin ninguna y la próxima vez se arma una nueva); no la uses para quitar un solo material.
 - Cuando la persona diga que la lista está completa o pida dejarla lista para firmar, usá cerrar_lista. Vos NO firmás ni mandás nada al proveedor: la solicitud queda en el módulo Solicitudes de Compra para las firmas.
 - Después de agregar, decí en la primera línea qué agregaste y cuántos renglones tiene la lista, y mostrá la lista actual en tabla.
 - Si faltan datos (proveedor "A definir"), avisalo con "Ojo:" y ofrecé completarlo.
@@ -64,6 +66,7 @@ const HERRAMIENTAS = [
       { name: "quitar_de_lista", description: "Quita una materia prima de la lista en armado.", parameters: OBJ({ materia_prima: { type: "STRING" } }, ["materia_prima"]) },
       { name: "cambiar_proveedor", description: "Cambia el proveedor de un renglón de la lista en armado.", parameters: OBJ({ materia_prima: { type: "STRING" }, proveedor: { type: "STRING" } }, ["materia_prima", "proveedor"]) },
       { name: "cerrar_lista", description: "Da por completa la lista: la solicitud queda lista para las firmas en el módulo Solicitudes de Compra y la próxima vez se arma una nueva.", parameters: OBJ({}) },
+      { name: "eliminar_lista", description: "Elimina por completo la lista de compra en armado (la solicitud y todos sus renglones). Usala SOLO si la persona pide explícitamente borrar/eliminar toda la lista; para sacar un material usá quitar_de_lista.", parameters: OBJ({}) },
       { name: "que_comprar", description: "Calcula qué materias primas conviene reponer (sin agregarlas a la lista), con cuánto falta para cubrir N meses.", parameters: OBJ({ meses: { type: "INTEGER" } }) },
       { name: "compras_en_curso", description: "Renglones de solicitudes de compra pedidos y sin recibir completos: artículo, proveedor, cuánto se pidió y llegó, hace cuántos días.", parameters: OBJ({ proveedor: { type: "STRING", description: "Filtrar por proveedor (opcional)." } }) },
       { name: "ficha_proveedor", description: "Historia de un proveedor: qué se le compra, cumplimiento de lo pedido, pendientes.", parameters: OBJ({ proveedor: { type: "STRING" } }, ["proveedor"]) },
@@ -82,6 +85,7 @@ const PALABRAS_HERRAMIENTA = {
   quitar_de_lista: "Quitó de la lista",
   cambiar_proveedor: "Cambió un proveedor",
   cerrar_lista: "Cerró la lista para firma",
+  eliminar_lista: "Eliminó la lista de compra",
   que_comprar: "Calculó qué comprar",
   compras_en_curso: "Revisó las compras en curso",
   ficha_proveedor: "Consultó un proveedor",
@@ -115,6 +119,7 @@ function crearVera({ pool, db, ai }) {
     if (!usuario) return { error: "No sé quién sos: volvé a iniciar sesión." };
     if (llamada.name === "lista_actual") return L.leerLista(db, usuario.id);
     if (llamada.name === "cerrar_lista") return L.cerrarLista(db, usuario);
+    if (llamada.name === "eliminar_lista") return L.eliminarLista(db, usuario, { eliminarSolicitud });
 
     if (["agregar_a_lista", "agregar_recomendadas", "quitar_de_lista", "cambiar_proveedor", "que_comprar"].includes(llamada.name)) {
       const pano = await materias();
