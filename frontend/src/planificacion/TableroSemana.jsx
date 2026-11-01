@@ -11,9 +11,7 @@ function Celda({ fecha, turno, info, asigs, onAbrir, esHoy, ancha }) {
   const est = estadoTurno(info, asigs);
   const sin = info?.sin_produccion;
   const Icono = turno === "NOCHE" ? Moon : Sun;
-  const pedido = asigs.reduce((a, x) => a + x.cantidad, 0);
-  const hecho = asigs.reduce((a, x) => a + (x.real?.buenas || 0), 0);
-  const maxFilas = ancha ? 5 : 3;
+  const maxFilas = ancha ? 4 : 2;
 
   return (
     <button
@@ -33,7 +31,7 @@ function Celda({ fecha, turno, info, asigs, onAbrir, esHoy, ancha }) {
         {(asigs.length > 0 || info?.lanzado || sin) && (
           <span className={`inline-flex items-center gap-1.5 text-[10.5px] font-bold ${TEXTO[est.tono]}`}>
             <span className={`w-1.5 h-1.5 rounded-full ${PUNTO[est.tono]}`} />
-            <span className={ancha ? "" : "hidden 2xl:inline"}>{est.texto}</span>
+            <span className={ancha ? "" : "hidden 2xl:inline"}>{asigs.length || info?.lanzado || sin ? est.texto : ""}</span>
           </span>
         )}
       </span>
@@ -41,15 +39,11 @@ function Celda({ fecha, turno, info, asigs, onAbrir, esHoy, ancha }) {
       {sin ? (
         <span className="text-[11px] text-zinc-500 leading-snug line-clamp-3">{info.motivo || "No se produce en este turno."}</span>
       ) : asigs.length ? (
-        <span className="flex flex-col gap-1 min-w-0">
+        <span className="flex flex-col gap-1.5 min-w-0">
           {asigs.slice(0, maxFilas).map((a) => (
             <span key={a.id} className="block min-w-0 leading-tight">
-              <span className="block text-[12px] font-semibold text-zinc-200 truncate">{a.semielaborado_nombre}</span>
-              <span className="block text-[11px] text-zinc-500 truncate tabular-nums">
-                <b className="text-white">{a.real ? num(a.real.buenas) : num(a.cantidad)}</b>
-                {a.real && <span>/{num(a.cantidad)}</span>}
-                {" u"}{a.maquina ? ` · ${a.maquina}` : ""}
-              </span>
+              <span className="block text-[12.5px] font-semibold text-zinc-100 truncate">{a.semielaborado_nombre}</span>
+              <span className="block text-[11.5px] text-zinc-500 tabular-nums">{num(a.real ? a.real.buenas : a.cantidad)} u</span>
             </span>
           ))}
           {asigs.length > maxFilas && <span className="text-[11px] font-bold text-zinc-500">+{asigs.length - maxFilas} más</span>}
@@ -60,11 +54,6 @@ function Celda({ fecha, turno, info, asigs, onAbrir, esHoy, ancha }) {
         </span>
       )}
 
-      {pedido > 0 && hecho > 0 && (
-        <span className="mt-auto h-1 rounded-full bg-white/[0.07] overflow-hidden">
-          <span className="block h-full rounded-full bg-emerald-400" style={{ width: `${Math.min(100, (hecho / pedido) * 100)}%` }} />
-        </span>
-      )}
     </button>
   );
 }

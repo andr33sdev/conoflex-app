@@ -111,12 +111,8 @@ export default function PlanificacionProduccion() {
               onAccion={(a) => (a.tipo === "agregar" ? setAgregando(true) : a.tipo === "cargas" ? setVerCargas(true) : setTurnoAbierto({ fecha: a.fecha, turno: a.turno }))}
             />
 
-            <div className="grid gap-4 grid-cols-[minmax(0,1fr)] xl:grid-cols-[minmax(0,1fr)_320px] items-start">
-              <TableroSemana plan={plan} onAbrir={(fecha, turno) => setTurnoAbierto({ fecha, turno })} />
-              <div className="xl:sticky xl:top-2 xl:max-h-[calc(100dvh-7rem)] flex flex-col">
-                <ListaSemana items={items} onAgregar={() => setAgregando(true)} onCambio={recargar} toast={toast} />
-              </div>
-            </div>
+            <TableroSemana plan={plan} onAbrir={(fecha, turno) => setTurnoAbierto({ fecha, turno })} />
+            <ListaSemana items={items} onAgregar={() => setAgregando(true)} onCambio={recargar} toast={toast} />
           </motion.div>
         )}
       </div>

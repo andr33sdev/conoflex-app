@@ -5,6 +5,7 @@ const P = require("./produccionPlan");
 const { demandaSemielaborados } = require("./demanda");
 const F = require("./ingenieriaFormula");
 const { moverStock } = require("./stockMovimientos");
+const { asegurarSemiStockCarga, sumarPorCarga, devolverPorCarga } = require("./semiStockCarga");
 const { registrarAlertaDeCarga, fotoIngenieria, formulaDeFoto } = require("./ingenieriasRutas");
 
 const FECHA = (col) => `DATE_FORMAT(${col}, '%Y-%m-%d')`;
@@ -26,6 +27,7 @@ const hoyISO = () => {
 };
 
 async function asegurarTablasProduccion(db) {
+  await asegurarSemiStockCarga(db);
   await db.query(`
     CREATE TABLE IF NOT EXISTS prod_maquinas (
       id INT AUTO_INCREMENT PRIMARY KEY,
@@ -725,8 +727,9 @@ function registrarRutasProduccion(app, db, requirePermiso) {
       // Si lo que se usó no coincide con la receta definida, queda un aviso para el admin.
       await registrarAlertaDeCarga(conn, { ...c, fecha_iso: fecha });
       await conn.query("UPDATE prod_cargas SET estado='APROBADA', aprobado_por=?, aprobado_at=NOW(), registro_id=? WHERE id=?", [nombre, reg.insertId, c.id]);
+      const semiSumado = await sumarPorCarga(conn, c, ef.buenas);
       await conn.commit();
-      res.json({ ok: true, buenas: ef.buenas, consumos: ef.consumos });
+      res.json({ ok: true, buenas: ef.buenas, consumos: ef.consumos, semielaborado_sumado: semiSumado });
     } catch (e) {
       await conn.rollback();
       console.error("[produccion] aprobar carga:", e);
@@ -757,6 +760,7 @@ function registrarRutasProduccion(app, db, requirePermiso) {
       if (!c) { await conn.rollback(); return res.status(404).json({ error: "Esa carga no existe (puede que ya la hayan eliminado)." }); }
 
       const devueltos = [];
+      let semiDevuelto = 0;
       if (c.estado === "APROBADA") {
         const [movs] = await conn.query(
           "SELECT materia_prima_id, cantidad FROM mp_movimientos WHERE referencia_tipo = 'CARGA' AND referencia_id = ? AND tipo = 'CONSUMO_PRODUCCION'",
@@ -777,6 +781,7 @@ function registrarRutasProduccion(app, db, requirePermiso) {
         }
         if (c.registro_id) await conn.query("DELETE FROM registro_produccion WHERE id = ?", [c.registro_id]); // sus materiales se borran en cascada
         await conn.query("DELETE FROM ingenieria_alertas WHERE carga_id = ? AND estado = 'ABIERTA'", [c.id]);
+        semiDevuelto = await devolverPorCarga(conn, c.id);
       }
       await conn.query("DELETE FROM prod_cargas WHERE id = ?", [c.id]);
 
@@ -791,7 +796,7 @@ function registrarRutasProduccion(app, db, requirePermiso) {
         }
       }
       await conn.commit();
-      res.json({ ok: true, estado_anterior: c.estado, materiales_devueltos: devueltos.length, sacada_de_tablet: sacada });
+      res.json({ ok: true, estado_anterior: c.estado, materiales_devueltos: devueltos.length, semielaborado_devuelto: semiDevuelto, sacada_de_tablet: sacada });
     } catch (e) {
       await conn.rollback();
       console.error("[produccion] eliminar carga:", e);

@@ -27,7 +27,7 @@ function Tarjeta({ c, pendiente, onResuelto, toast }) {
       await api(`/api/prod/cargas/${c.id}${sacarDeTablet ? "?sacar_de_tablet=1" : ""}`, { method: "DELETE" });
       toast(
         c.estado === "APROBADA"
-          ? sacarDeTablet ? "Producción eliminada y sacada de la tablet. La materia prima volvió al stock." : "Producción eliminada. La materia prima volvió al stock y la tablet puede volver a cargarla."
+          ? sacarDeTablet ? "Producción eliminada y sacada de la tablet. Volvieron la materia prima y el stock del semielaborado." : "Producción eliminada. Volvieron la materia prima y el stock del semielaborado; la tablet puede volver a cargarla."
           : sacarDeTablet ? "Carga eliminada y sacada de la tablet." : "Carga eliminada.",
       );
       onResuelto();
@@ -41,7 +41,7 @@ function Tarjeta({ c, pendiente, onResuelto, toast }) {
     setOcupado(true);
     try {
       await api(`/api/prod/cargas/${c.id}/${accion}`, { method: "PUT", body });
-      toast(accion === "aprobar" ? "Carga aprobada: ya figura en métricas y se descontó la materia prima" : "Carga rechazada: el operario la va a ver para corregirla");
+      toast(accion === "aprobar" ? "Carga aprobada: figura en métricas, se descontó la materia prima y se sumó al stock del semielaborado" : "Carga rechazada: el operario la va a ver para corregirla");
       onResuelto();
     } catch (e) {
       toast(e.message, "error");
@@ -79,7 +79,7 @@ function Tarjeta({ c, pendiente, onResuelto, toast }) {
             <motion.div key="e" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="rounded-xl border border-rose-500/30 bg-rose-500/[0.07] p-3.5">
               <p className="text-sm text-rose-100 leading-snug">
                 {c.estado === "APROBADA"
-                  ? "Se saca de métricas y la materia prima que se descontó vuelve al stock (queda en su historial). ¿Qué hacemos con la tablet?"
+                  ? "Se saca de métricas, vuelve al stock la materia prima usada y se restan del semielaborado las piezas que había sumado. ¿Qué hacemos con la tablet?"
                   : "Se elimina esta carga. ¿Qué hacemos con la tablet?"}
               </p>
               <div className="mt-3 flex flex-col sm:flex-row gap-2">
