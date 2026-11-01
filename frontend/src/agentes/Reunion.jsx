@@ -9,10 +9,30 @@ const fechaLarga = (f) => {
   return new Date(a, m - 1, d).toLocaleDateString("es-AR", { weekday: "long", day: "numeric", month: "long" });
 };
 
-/** Una nota del tablero. */
-function Nota({ texto, fuerte }) {
+/** Una línea de detalle del temario. */
+function Nota({ texto }) {
+  return <li className="text-[13px] leading-snug text-zinc-400 border-l border-white/15 pl-2.5">{texto}</li>;
+}
+
+/** Tarjeta de un agente: la frase que resume, y el detalle recién cuando se pide. */
+function Tarjeta({ s, onElegir }) {
+  const [abierta, setAbierta] = useState(false);
+  const n = s.lineas.length;
   return (
-    <li className={`px-2.5 py-2 text-[13px] leading-snug border-l-2 bg-white/[0.035] ${fuerte ? "border-white text-white font-semibold" : "border-white/20 text-zinc-300"}`}>{texto}</li>
+    <li className="bg-[#111114] p-4 flex flex-col">
+      <div className="flex items-center gap-2.5">
+        <Avatar8 id={s.agente} tam={40} burbuja={false} />
+        <p className="min-w-0 text-[14px] font-bold text-white leading-tight">{s.nombre}<span className="block text-[12px] font-medium text-zinc-500">{s.puesto}</span></p>
+      </div>
+      <p className={`mt-3 text-[13.5px] leading-snug ${s.urgente ? "text-white font-semibold" : "text-zinc-300"}`}>{s.resumen}</p>
+      {abierta && n > 0 && <ul className="mt-2.5 space-y-2">{s.lineas.map((l) => <Nota key={l} texto={l} />)}</ul>}
+      <div className="mt-auto pt-3 flex items-center justify-between gap-2 text-[12.5px] font-semibold">
+        {n > 0 ? (
+          <button onClick={() => setAbierta((v) => !v)} aria-expanded={abierta} className="text-zinc-500 hover:text-white">{abierta ? "Ocultar" : `Ver detalle (${n})`}</button>
+        ) : <span />}
+        <button onClick={() => onElegir(s.agente)} className="text-zinc-400 hover:text-white">Hablar →</button>
+      </div>
+    </li>
   );
 }
 
@@ -21,37 +41,32 @@ function Temario({ temario, onElegir }) {
   if (!temario) return <div className="p-5 grid place-items-center text-zinc-500"><Loader2 size={18} className="animate-spin" /></div>;
   if (temario.error || !temario.secciones.length) return <p className="px-4 pb-4 text-[13.5px] text-zinc-400">Todavía no hay temas anotados para la próxima reunión.</p>;
   return (
-    <ul className="grid gap-px bg-white/[0.06] sm:grid-cols-2 xl:grid-cols-4 border-y border-white/[0.06]">
-      {temario.secciones.map((s) => (
-        <li key={s.agente} className="bg-[#111114] p-3.5">
-          <div className="flex items-center gap-2.5">
-            <Avatar8 id={s.agente} tam={40} burbuja={false} />
-            <p className="min-w-0 text-[13.5px] font-bold text-white leading-tight">{s.nombre}<span className="block text-[12px] font-medium text-zinc-500">{s.puesto}</span></p>
-          </div>
-          <ul className="mt-2.5 space-y-1.5">
-            <Nota texto={s.resumen} fuerte={s.urgente} />
-            {s.lineas.map((l) => <Nota key={l} texto={l} />)}
-          </ul>
-          <button onClick={() => onElegir(s.agente)} className="mt-2 text-[12.5px] font-semibold text-zinc-400 hover:text-white">Hablar con {s.nombre} →</button>
-        </li>
-      ))}
+    <ul className="grid gap-px bg-white/[0.06] sm:grid-cols-2 xl:grid-cols-3 border-y border-white/[0.06]">
+      {temario.secciones.map((s) => <Tarjeta key={s.agente} s={s} onElegir={onElegir} />)}
     </ul>
   );
 }
 
+/** Ideas de mejora: cerradas hasta que se piden. */
 function Ideas({ lista, titulo }) {
+  const [abierta, setAbierta] = useState(false);
   if (!lista?.length) return null;
   return (
-    <div className="px-4 py-3.5">
-      <h3 className="flex items-center gap-2 text-[13.5px] font-bold text-white"><Lightbulb size={15} /> {titulo}</h3>
-      <ul className="mt-2 space-y-2">
-        {lista.map((i, n) => (
-          <li key={n} className="flex gap-2.5 text-[13.5px] leading-snug text-zinc-300">
-            <Avatar8 id={i.agente} tam={28} burbuja={false} className="shrink-0 mt-0.5" />
-            <span>{i.texto}</span>
-          </li>
-        ))}
-      </ul>
+    <div className="border-t border-white/[0.06]">
+      <button onClick={() => setAbierta((v) => !v)} aria-expanded={abierta} className="w-full flex items-center gap-2 px-4 py-3 text-left text-[13.5px] font-semibold text-zinc-300 hover:text-white">
+        <ChevronDown size={16} className={`transition-transform ${abierta ? "rotate-180" : ""}`} />
+        <Lightbulb size={14} /> {titulo} ({lista.length})
+      </button>
+      {abierta && (
+        <ul className="px-4 pb-4 space-y-2.5">
+          {lista.map((i, n) => (
+            <li key={n} className="flex gap-2.5 text-[13.5px] leading-snug text-zinc-300">
+              <Avatar8 id={i.agente} tam={28} burbuja={false} className="shrink-0 mt-0.5" />
+              <span>{i.texto}</span>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }
@@ -76,7 +91,7 @@ export default function Reunion({ reunion, temario, esAdmin, onRehacer, onElegir
   const ideas = reunion.sugerencias?.length ? reunion.sugerencias : temario?.sugerencias;
   return (
     <section className="rounded-2xl border border-white/[0.08] bg-[#111114] overflow-hidden" aria-label="Reunión de las 08:00">
-      <header className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 pt-3.5 pb-2.5">
+      <header className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 pt-3.5 pb-3">
         <h2 className="text-[15px] font-bold text-white">Reunión de las 08:00</h2>
         <span className="text-[12.5px] text-zinc-500">Próxima: {temario?.proxima?.cuando || "lunes a viernes, a las 08:00"}</span>
         {temario && !temario.error && temario.secciones.length > 0 && (
@@ -88,9 +103,8 @@ export default function Reunion({ reunion, temario, esAdmin, onRehacer, onElegir
           </button>
         )}
       </header>
-      <p className="px-4 pb-2.5 text-[12.5px] text-zinc-500">Temario: lo que cada uno fue anotando para tratar. Se actualiza solo durante el día.</p>
       <Temario temario={temario} onElegir={onElegir} />
-      <Ideas lista={ideas} titulo={reunion.sugerencias?.length ? `Ideas que salieron de la reunión (${cuandoFue})` : "Ideas para mejorar (si hoy se hiciera la reunión)"} />
+      <Ideas lista={ideas} titulo={reunion.sugerencias?.length ? `Ideas de la reunión · ${cuandoFue}` : "Ideas para mejorar"} />
       <div className="border-t border-white/[0.06]">
         <button onClick={() => setAbierta((v) => !v)} aria-expanded={abierta} className="w-full flex items-center gap-2 px-4 py-3 text-left text-[13.5px] font-semibold text-zinc-300 hover:text-white">
           <ChevronDown size={16} className={`transition-transform ${abierta ? "rotate-180" : ""}`} />

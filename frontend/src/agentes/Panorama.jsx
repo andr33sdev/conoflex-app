@@ -30,8 +30,34 @@ function Dato({ titulo, valor, detalle, onClick }) {
     <C onClick={onClick} className={`text-left rounded-xl border border-white/[0.07] p-3.5 ${onClick ? "hover:border-white/20 transition-colors" : ""}`}>
       <p className="text-[11.5px] font-semibold uppercase tracking-[0.1em] text-zinc-500">{titulo}</p>
       <p className="mt-1 text-[26px] leading-none font-bold text-white tabular-nums">{valor}</p>
-      <p className="mt-1.5 text-[12px] text-zinc-500 leading-tight">{detalle}</p>
+      {detalle && <p className="mt-1.5 text-[12px] text-zinc-500 leading-tight">{detalle}</p>}
     </C>
+  );
+}
+
+/** Una fila: nombre, estado y cuánto alcanza. El resto (stock, consumo, depósitos) aparece al abrirla. */
+function Fila({ x, esMP, onPreguntar }) {
+  const [abierta, setAbierta] = useState(false);
+  const n = NIVELES[x.nivel] || NIVELES.ok;
+  const alcanza = x.demanda_mensual > 0 && x.dias != null ? `Alcanza ${fmt(x.dias)} ${Math.round(x.dias) === 1 ? "día" : "días"}` : "Sin consumo";
+  return (
+    <li className="py-3">
+      <button onClick={() => setAbierta((v) => !v)} aria-expanded={abierta} className="w-full text-left">
+        <span className="flex items-baseline gap-2">
+          <span className="text-[15px] font-semibold text-white leading-snug break-words min-w-0">{x.nombre}</span>
+          <span className={`ml-auto shrink-0 text-[12.5px] font-semibold ${n.urg ? "text-[#ff8a4d]" : "text-zinc-500"}`}>{alcanza}</span>
+        </span>
+        <span className="mt-2 block"><Cobertura dias={x.demanda_mensual > 0 ? x.dias : null} urgente={n.urg} /></span>
+      </button>
+      {abierta && (
+        <div className="mt-2.5 space-y-1 text-[13px] text-zinc-400">
+          <p>Stock <b className="text-zinc-200 font-semibold tabular-nums">{fmt(esMP ? x.stock : x.stock_total, 1)}</b> {esMP ? x.unidad : "u."}{x.demanda_mensual > 0 && <> · consumo <b className="text-zinc-200 font-semibold tabular-nums">{fmt(x.demanda_mensual)}</b>/mes</>}{x.agota && <> · se agota ~{fechaCorta(x.agota)}</>}</p>
+          {!esMP && x.por_deposito && <p className="text-zinc-500">{Object.entries(x.por_deposito).filter(([, v]) => v).map(([k, v]) => `${k}: ${fmt(v)}`).join(" · ")}</p>}
+          {esMP && x.compra_pendiente > 0 && <p className="text-zinc-500">Ya pedido: {fmt(x.compra_pendiente)} {x.unidad}</p>}
+          <button onClick={() => onPreguntar(esMP ? `Contame de ${x.nombre}: cuánto me alcanza, qué productos lo usan y cuánto debería pedir.` : `Contame de ${x.nombre}: stock por depósito, cuánto debería fabricar y qué lo consume.`)} className="pt-1 font-semibold text-zinc-300 hover:text-white">Preguntarle a Nati →</button>
+        </div>
+      )}
+    </li>
   );
 }
 
@@ -58,10 +84,10 @@ export default function Panorama({ datos, error, onPreguntar }) {
   return (
     <div className="max-w-3xl mx-auto px-3 sm:px-5 py-4 space-y-4">
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-        <Dato titulo="Críticas" valor={(r.criticas || 0) + (r.semis_criticos || 0)} detalle="alcanzan para una semana o menos" onClick={() => setFiltro("urgente")} />
-        <Dato titulo="Bajas" valor={(r.bajas || 0) + (r.semis_bajos || 0)} detalle="entre una y dos semanas" onClick={() => setFiltro("urgente")} />
-        <Dato titulo="Compras abiertas" valor={r.compras_abiertas || 0} detalle="renglones sin recibir" onClick={() => onPreguntar("¿Qué compras pedidas todavía no llegaron?")} />
-        <Dato titulo="Pedidos internos" valor={r.internas_pendientes || 0} detalle="de semielaborados pendientes" onClick={() => onPreguntar("¿Qué pedidos internos de semielaborados están pendientes?")} />
+        <Dato titulo="Críticas" valor={(r.criticas || 0) + (r.semis_criticos || 0)} onClick={() => setFiltro("urgente")} />
+        <Dato titulo="Bajas" valor={(r.bajas || 0) + (r.semis_bajos || 0)} onClick={() => setFiltro("urgente")} />
+        <Dato titulo="Compras sin recibir" valor={r.compras_abiertas || 0} onClick={() => onPreguntar("¿Qué compras pedidas todavía no llegaron?")} />
+        <Dato titulo="Pedidos internos" valor={r.internas_pendientes || 0} onClick={() => onPreguntar("¿Qué pedidos internos de semielaborados están pendientes?")} />
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
@@ -79,44 +105,13 @@ export default function Panorama({ datos, error, onPreguntar }) {
       {lista.length === 0 ? (
         <div className="py-14 text-center">
           <p className="text-[15px] font-semibold text-white">{filtro === "urgente" ? "Nada urgente en el depósito" : "No hay nada para mostrar acá"}</p>
-          <p className="mt-1 text-sm text-zinc-500">{filtro === "urgente" ? "Todo lo que se consume tiene cobertura para más de dos semanas." : "Probá con otro filtro."}</p>
+          {filtro !== "urgente" && <p className="mt-1 text-sm text-zinc-500">Probá con otro filtro.</p>}
         </div>
       ) : (
         <ul className="divide-y divide-white/[0.06]">
-          {lista.slice(0, 60).map((x) => {
-            const n = NIVELES[x.nivel] || NIVELES.ok;
-            const esMP = ver === "materias";
-            return (
-              <li key={x.id ?? x.codigo} className="py-3.5">
-                <div className="flex items-baseline gap-2">
-                  <p className="text-[15px] font-semibold text-white leading-snug break-words min-w-0">{x.nombre}</p>
-                  <span className={`ml-auto shrink-0 text-[11.5px] font-semibold uppercase tracking-[0.08em] ${n.urg ? "text-[#ff8a4d]" : "text-zinc-500"}`}>{n.txt}</span>
-                </div>
-                <p className="mt-0.5 text-[12.5px] text-zinc-400">
-                  Stock <b className="text-zinc-200 font-semibold tabular-nums">{fmt(esMP ? x.stock : x.stock_total, 1)}</b> {esMP ? x.unidad : "u."}
-                  {x.demanda_mensual > 0 && <> · consumo <b className="text-zinc-200 font-semibold tabular-nums">{fmt(x.demanda_mensual)}</b>/mes</>}
-                  {x.dias != null && x.demanda_mensual > 0 && <> · alcanza <b className="text-zinc-200 font-semibold tabular-nums">{fmt(x.dias)} d</b></>}
-                  {x.agota && <> · se agota ~{fechaCorta(x.agota)}</>}
-                </p>
-                {!esMP && x.por_deposito && (
-                  <p className="mt-0.5 text-[12px] text-zinc-500">{Object.entries(x.por_deposito).filter(([, v]) => v).map(([k, v]) => `${k}: ${fmt(v)}`).join(" · ")}</p>
-                )}
-                <div className="mt-2"><Cobertura dias={x.demanda_mensual > 0 ? x.dias : null} urgente={n.urg} /></div>
-                <div className="mt-2 flex flex-wrap items-center gap-2">
-                  {esMP && x.compra_pendiente > 0 && <span className="text-[12px] text-zinc-500">Ya pedido: {fmt(x.compra_pendiente)} {x.unidad}</span>}
-                  <button
-                    onClick={() => onPreguntar(esMP ? `Contame de ${x.nombre}: cuánto me alcanza, qué productos lo usan y cuánto debería pedir.` : `Contame de ${x.nombre}: stock por depósito, cuánto debería fabricar y qué lo consume.`)}
-                    className="ml-auto min-h-[34px] px-2.5 rounded-lg text-[12.5px] font-semibold text-zinc-400 hover:text-white hover:bg-white/[0.07]"
-                  >
-                    Preguntarle a Nati →
-                  </button>
-                </div>
-              </li>
-            );
-          })}
+          {lista.slice(0, 60).map((x) => <Fila key={x.id ?? x.codigo} x={x} esMP={ver === "materias"} onPreguntar={onPreguntar} />)}
         </ul>
       )}
-      <p className="text-[11.5px] text-zinc-600 text-center">El consumo mensual es una estimación a partir de las ventas y las ingenierías. La barra marca 7 y 15 días.</p>
     </div>
   );
 }
