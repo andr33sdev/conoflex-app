@@ -22,6 +22,7 @@ const { asegurarTablasNotificaciones, crearNotificacion, registrarRutasNotificac
 const { asegurarPush, enviarPush, registrarRutasPush } = require("./push");
 const { mismoProducto, asegurarColumnasCatalogo, registrarRutasCatalogo } = require("./comercial/catalogo");
 const { asegurarTablasPrecios, registrarRutasPrecios } = require("./comercial/precios");
+const { registrarRutasFotos } = require("./comercial/fotos");
 const { generarCotizacion } = require("./comercial/cotizador");
 const { crearCorreoCrudo } = require("./comercial/correo");
 const { leerLista, registrarRutasListaPdf } = require("./comercial/listaPdf");
@@ -266,6 +267,7 @@ const oauth2Client = new google.auth.OAuth2(
 );
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 registrarRutasPrecios(app, { db, ai, multer, autenticarToken, autorizarRoles, leerExcel: (p) => procesarExcelTarjetas(p).textoFormateado });
+registrarRutasFotos(app, { db, multer, autenticarToken, autorizarRoles, dirImagenes: IMAGENES_DIR, baseUrl: () => process.env.BASE_URL || `http://localhost:${PORT}` });
 const TOKEN_PATH = path.join(__dirname, "token.json");
 const TOKEN_PATH_WEB = path.join(__dirname, "tokens_web.json");
 

@@ -98,10 +98,10 @@ async function asegurarColumnasCatalogo(db) {
   )`);
 }
 
-const CAMPOS_FICHA = ["id", "codigo", "nombre", "categoria", "medidas", "precio_lista", "especificacion", "aplicacion", "descripcion", "usos_recomendados", "advertencias", "ficha_editada", "ficha_origen", "foto_tecnica", "foto_catalogo"];
+const CAMPOS_FICHA = ["id", "codigo", "nombre", "categoria", "medidas", "precio_lista", "especificacion", "aplicacion", "descripcion", "usos_recomendados", "advertencias", "ficha_editada", "ficha_origen", "foto_tecnica", "foto_catalogo", "precio_anterior"];
 
 async function listarFichas(db) {
-  const [rows] = await db.query(`SELECT ${CAMPOS_FICHA.join(", ")}, DATE_FORMAT(ficha_actualizada, '%Y-%m-%d %H:%i') AS ficha_actualizada FROM productos ORDER BY categoria, nombre, codigo`);
+  const [rows] = await db.query(`SELECT ${CAMPOS_FICHA.join(", ")}, DATE_FORMAT(ficha_actualizada, '%Y-%m-%d %H:%i') AS ficha_actualizada, DATE_FORMAT(precio_actualizado, '%Y-%m-%d') AS precio_actualizado FROM productos ORDER BY categoria, nombre, codigo`);
   const productos = rows.map((p) => ({ ...p, ficha_editada: !!p.ficha_editada, estado: estadoFicha(p) }));
   return { productos, resumen: resumenFichas(productos) };
 }
@@ -133,6 +133,67 @@ function registrarRutasCatalogo(app, { db, autenticarToken, autorizarRoles }) {
     } catch (e) {
       console.error("[catálogo] guardar ficha:", e.message);
       res.status(500).json({ error: "No pude guardar la ficha." });
+    }
+  });
+
+  // ---- Producto individual: alta, edición completa y baja ----
+  const columnas = (b, parcial) => {
+    const c = {
+      codigo: limpio(b.codigo, 60), nombre: limpio(b.nombre, 200), medidas: limpio(b.medidas, 300), precio_lista: limpio(b.precio_lista, 250),
+      especificacion: limpio(b.especificacion, 2000), categoria: limpio(b.categoria, 100) || "General",
+      descripcion: limpio(b.descripcion, 4000), usos_recomendados: limpio(b.usos_recomendados, 6000), advertencias: limpio(b.advertencias, 2000),
+    };
+    c.aplicacion = c.usos_recomendados;
+    return parcial ? Object.fromEntries(Object.entries(c).filter(([k]) => k in b || (k === "aplicacion" && "usos_recomendados" in b))) : c;
+  };
+
+  app.post("/api/comercial/productos", ...permiso, async (req, res) => {
+    try {
+      const c = columnas(req.body || {}, false);
+      if (!c.codigo || !c.nombre) return res.status(400).json({ error: "Falta el código o el nombre del producto." });
+      const [dup] = await db.query("SELECT id FROM productos WHERE codigo = ?", [c.codigo]);
+      if (dup.length) return res.status(409).json({ error: `Ya existe un producto con el código ${c.codigo}.` });
+      const [r] = await db.query(
+        "INSERT INTO productos (codigo, nombre, medidas, precio_lista, especificacion, aplicacion, categoria, descripcion, usos_recomendados, advertencias, ficha_editada, ficha_actualizada) VALUES (?,?,?,?,?,?,?,?,?,?,1,NOW())",
+        [c.codigo, c.nombre, c.medidas, c.precio_lista, c.especificacion, c.aplicacion, c.categoria, c.descripcion, c.usos_recomendados, c.advertencias],
+      );
+      res.json({ success: true, id: r.insertId });
+    } catch (e) {
+      console.error("[catálogo] crear producto:", e.message);
+      res.status(500).json({ error: "No pude crear el producto." });
+    }
+  });
+
+  // Edición completa de un producto (lo que toque el usuario queda protegido de futuras cargas de PDF).
+  app.put("/api/comercial/productos/:id", ...permiso, async (req, res) => {
+    try {
+      const c = columnas(req.body || {}, true);
+      if ("codigo" in c && !c.codigo) return res.status(400).json({ error: "El código no puede quedar vacío." });
+      if ("nombre" in c && !c.nombre) return res.status(400).json({ error: "El nombre no puede quedar vacío." });
+      if (c.codigo) {
+        const [dup] = await db.query("SELECT id FROM productos WHERE codigo = ? AND id <> ?", [c.codigo, req.params.id]);
+        if (dup.length) return res.status(409).json({ error: `Ya existe otro producto con el código ${c.codigo}.` });
+      }
+      const keys = Object.keys(c);
+      if (!keys.length) return res.status(400).json({ error: "No hay nada para guardar." });
+      const fichaCambia = keys.some((k) => ["descripcion", "usos_recomendados", "advertencias", "categoria"].includes(k));
+      const [r] = await db.query(`UPDATE productos SET ${keys.map((k) => `${k} = ?`).join(", ")}${fichaCambia ? ", ficha_editada = 1, ficha_actualizada = NOW()" : ""}, updated_at = NOW() WHERE id = ?`, [...keys.map((k) => c[k]), req.params.id]);
+      if (!r.affectedRows) return res.status(404).json({ error: "No encontré ese producto." });
+      res.json({ success: true });
+    } catch (e) {
+      console.error("[catálogo] editar producto:", e.message);
+      res.status(500).json({ error: "No pude guardar el producto." });
+    }
+  });
+
+  app.delete("/api/comercial/productos/:id", ...permiso, async (req, res) => {
+    try {
+      const [r] = await db.query("DELETE FROM productos WHERE id = ?", [req.params.id]);
+      if (!r.affectedRows) return res.status(404).json({ error: "No encontré ese producto." });
+      res.json({ success: true });
+    } catch (e) {
+      console.error("[catálogo] borrar producto:", e.message);
+      res.status(500).json({ error: "No pude borrar el producto." });
     }
   });
 }

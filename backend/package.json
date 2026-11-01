@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
-    "test": "node --test test/connie.test.js test/fichero.test.js test/liquidacion.test.js test/demanda.test.js test/presentismo.test.js test/rentabilidad.test.js test/produccionPlan.test.js test/reflectivas.test.js test/ingenieriaFormula.test.js test/ingenieriasRutas.test.js test/notificaciones.test.js test/agentes.test.js test/produccionAgente.test.js test/reunionOficinaPush.test.js test/temario.test.js test/ajusteStock.test.js test/comercialCatalogo.test.js test/comercialCotizador.test.js test/ventasMails.test.js test/comercialPrecios.test.js"
+    "test": "node --test test/connie.test.js test/fichero.test.js test/liquidacion.test.js test/demanda.test.js test/presentismo.test.js test/rentabilidad.test.js test/produccionPlan.test.js test/reflectivas.test.js test/ingenieriaFormula.test.js test/ingenieriasRutas.test.js test/notificaciones.test.js test/agentes.test.js test/produccionAgente.test.js test/reunionOficinaPush.test.js test/temario.test.js test/ajusteStock.test.js test/comercialCatalogo.test.js test/comercialCotizador.test.js test/ventasMails.test.js test/comercialPrecios.test.js test/comercialFotos.test.js"
   },
   "keywords": [],
   "author": "",
