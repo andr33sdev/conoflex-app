@@ -41,11 +41,15 @@ function nivelDe({ stock, dias, demanda }, { critico = UMBRALES.critico, bajo = 
  *  internas: [{ id, semielaborado_nombre, cantidad_solicitada, urgencia, estado, solicitado_at }]  (solicitudes internas abiertas)
  *  compras:  [{ id, materia_prima_id, articulo, proveedor, cantidad_solicitada, cantidad_recibida, creada }]  (renglones sin recibir completo)
  */
-function analizarStock({ mps = [], semis = [], internas = [], compras = [], entradas = [], ahoraMs = Date.now() } = {}) {
+function analizarStock({ mps = [], semis = [], internas = [], compras = [], entradas = [], desalineados = [], ahoraMs = Date.now() } = {}) {
   const out = [];
+  for (const d of desalineados) {
+    const dif = Number(d.diferencia) || 0;
+    out.push({ clave: `desalineado33:${d.codigo}`, tipo: "DESALINEADO_33", severidad: "MEDIA", titulo: `${d.nombre}: el 33 no coincide con la planilla`, texto: `La planilla dice ${fmt(d.hoja, 0)} y la app ${fmt(d.app, 0)} (${dif > 0 ? "la app tiene " + fmt(dif, 0) + " de más" : "a la app le faltan " + fmt(-dif, 0)}). Si el correcto es el de la planilla, sincronizá el stock; si es el de la app, corregí la planilla. El aviso se cierra solo cuando coinciden.`, operario: d.nombre, fecha: null });
+  }
   for (const e of entradas) {
     const dep = e.deposito === "ayolas" ? "Ayolas" : `el depósito ${e.deposito}`;
-    out.push({ clave: `entrada33:${e.id}`, tipo: "ENTRADA_OTRO_DEPOSITO", severidad: "MEDIA", titulo: `${e.nombre}: entraron ${fmt(e.cantidad, 0)} al 33 desde ${dep}`, texto: `Figura en ENTRADA 33 el ${fechaCorta(e.fecha)}. Hacé la transferencia en la app para que cuente en el stock del 33; este aviso se cierra solo.`, operario: e.nombre, fecha: e.fecha });
+    out.push({ clave: `entrada33:${e.id}`, tipo: "ENTRADA_OTRO_DEPOSITO", severidad: "MEDIA", titulo: `${e.nombre}: entraron ${fmt(e.cantidad, 0)} al 33 desde ${dep}`, texto: `Figura en ENTRADA 33 el ${fechaCorta(e.fecha)}. Hacé la transferencia en la app para que cuente en el stock del 33; este aviso se cierra solo.${e.recordada_hora ? ` Te lo recordé a las ${e.recordada_hora} (es este mismo movimiento, avisado a las ${e.avisada_hora}).` : ""}`, operario: e.nombre, fecha: e.fecha });
   }
   const compraDe = (mp) =>
     compras.filter((c) => (c.materia_prima_id && c.materia_prima_id === mp.id) || String(c.articulo || "").trim().toLowerCase() === String(mp.nombre || "").trim().toLowerCase());

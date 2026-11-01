@@ -23,7 +23,7 @@ const { analizarCompras, rankingProveedores, AUTORESOLVIBLES: AUTO_COMPRAS } = r
 const { asegurarTablaListas, leerLista, eliminarLista } = require("./listaCompra");
 const { eliminarSolicitud } = require("../comprasGestion");
 const { analizarStock, armarPanorama, cargarStock } = require("./vigilanteStock");
-const { sincronizarHojas } = require("../semiMovimientos");
+const { sincronizarHojas, compararStock33, marcarAvisadas, entradasParaRecordar, marcarRecordadas, entradasPendientes } = require("../semiMovimientos");
 const { sintetizar } = require("./voz");
 const { pdfLiquidacion, pdfReporte } = require("./pdf");
 const { liquidarDesdeBD } = require("../liquidacionDb");
@@ -239,10 +239,35 @@ async function revisarStock({ pool, db }, { ahora = new Date() } = {}) {
   const agente = "stock";
   try {
     await sincronizarHojas(db).catch((e) => console.error("[stock] leer ENTRADA/SALIDA 33:", e.message)); // trae lo que cargaron en la planilla
-    const datos = await cargarStock(pool, { ahoraMs: ahora.getTime() });
-    const encontrados = analizarStock(datos);
     const [previos] = await db.query("SELECT id, clave, tipo, estado FROM agentes_hallazgos WHERE agente = ?", [agente]);
     const porClave = new Map(previos.map((p) => [p.clave, p]));
+    // Recordatorio: pasada media hora del aviso de una entrada de otro depósito sin transferir. Es el mismo aviso (misma entrada), una sola vez.
+    try {
+      const ids = await entradasParaRecordar(db);
+      const pend = ids.length ? (await entradasPendientes(db)).filter((e) => ids.includes(e.id) && porClave.get(`entrada33:${e.id}`)?.estado === "ABIERTO") : [];
+      if (pend.length) {
+        const roles = await rolesDelAgente(db, "agente:stock");
+        const detalle = (e) => `${e.nombre}: ${Math.round(e.cantidad)} u. desde ${e.deposito === "ayolas" ? "Ayolas" : `el depósito ${e.deposito}`}`;
+        await crearNotificacion(db, {
+          tipo: "AGENTE_STOCK",
+          titulo: pend.length === 1 ? `Recordatorio del aviso de las ${pend[0].avisada_hora}: ${pend[0].nombre}` : `Recordatorio: ${pend.length} entradas al 33 sin transferir`,
+          texto: `Es el mismo movimiento que te avisé${pend.length === 1 ? ` a las ${pend[0].avisada_hora}` : ""}, no uno nuevo, y todavía no lo transferiste en la app. ${pend.slice(0, 3).map(detalle).join(" · ")}`,
+          ruta: "/agentes?a=stock", roles, push: false,
+        });
+        await registrarActividad(db, agente, "AVISO", `Recordé ${pend.length === 1 ? "una entrada" : `${pend.length} entradas`} al 33 sin transferir`, pend.map((e) => `• ${detalle(e)} (aviso de las ${e.avisada_hora})`).join("\n"));
+      }
+      await marcarRecordadas(db, ids.filter((id) => porClave.get(`entrada33:${id}`)?.estado === "ABIERTO"));
+    } catch (e) {
+      console.error("[stock] recordatorios:", e.message);
+    }
+    const datos = await cargarStock(pool, { ahoraMs: ahora.getTime() });
+    // El 33 de la planilla contra el de la app: solo se avisa lo que sigue distinto pasado un rato.
+    try {
+      datos.desalineados = (await compararStock33(db)).diferencias.filter((d) => d.persistente);
+    } catch (e) {
+      console.error("[stock] comparar 33:", e.message);
+    }
+    const encontrados = analizarStock(datos);
     const claves = new Set(encontrados.map((h) => h.clave));
     const nuevos = [];
     for (const h of encontrados) {
@@ -254,6 +279,7 @@ async function revisarStock({ pool, db }, { ahora = new Date() } = {}) {
         await db.query("UPDATE agentes_hallazgos SET severidad = ?, titulo = ?, texto = ?, fecha = ? WHERE id = ?", [h.severidad, h.titulo, h.texto, h.fecha, previo.id]);
       }
     }
+    await marcarAvisadas(db, nuevos.filter((h) => h.clave.startsWith("entrada33:")).map((h) => Number(h.clave.split(":")[1]))).catch(() => {});
     // Todo lo de stock se resuelve solo cuando la condición desaparece (llegó la compra, se fabricó, se corrigió la carga).
     const resueltos = previos.filter((p) => p.estado === "ABIERTO" && !claves.has(p.clave));
     for (const r of resueltos) await db.query("UPDATE agentes_hallazgos SET estado = 'RESUELTO', resuelto_por = 'Nati (automático)', resuelto_en = NOW() WHERE id = ?", [r.id]);
@@ -1105,22 +1131,28 @@ function registrarRutasAgentes(app, { db, pool, ai, mails = null, seguimiento = 
 }
 
 /** Deja corriendo el vigilante: una revisión poco después de arrancar y luego cada N minutos (sin IA, solo consultas). */
-function iniciarVigilantes(agentes, { intervaloMin = Number(process.env.AGENTES_INTERVALO_MIN) || 30 } = {}) {
+function iniciarVigilantes(agentes, { intervaloMin = Number(process.env.AGENTES_INTERVALO_MIN) || 30, intervaloStockMin = Number(process.env.AGENTES_INTERVALO_STOCK_MIN) || 15 } = {}) {
   if (String(process.env.AGENTES_VIGILANTE || "").toLowerCase() === "off") return () => {};
   const correr = () => {
     agentes.revisarRRHH().catch((e) => console.error("[agentes] vigilante RRHH:", e.message));
-    // Nati revisa un poco después para no pisar la revisión de Lía.
-    setTimeout(() => agentes.revisarStock?.().catch((e) => console.error("[agentes] vigilante stock:", e.message)), 15000).unref?.();
     setTimeout(() => agentes.revisarCompras?.().catch((e) => console.error("[agentes] vigilante compras:", e.message)), 30000).unref?.();
     setTimeout(() => agentes.revisarVentas?.().catch((e) => console.error("[agentes] vigilante ventas:", e.message)), 45000).unref?.();
     setTimeout(() => agentes.revisarSeguimiento?.().catch((e) => console.error("[agentes] vigilante seguimiento:", e.message)), 60000).unref?.();
   };
   agentes.iniciarReunion?.();
+  // Nati (stock) revisa más seguido: cada 15 minutos, porque lee lo que cargan en la planilla y manda recordatorios.
+  const revisarNati = () => agentes.revisarStock?.().catch((e) => console.error("[agentes] vigilante stock:", e.message));
+  const tn0 = setTimeout(revisarNati, 35000);
+  const tn = setInterval(revisarNati, Math.max(5, intervaloStockMin) * 60 * 1000);
+  tn0.unref?.();
+  tn.unref?.();
   const t0 = setTimeout(correr, 20000);
   const t = setInterval(correr, Math.max(5, intervaloMin) * 60 * 1000);
   t0.unref?.();
   t.unref?.();
   return () => {
+    clearTimeout(tn0);
+    clearInterval(tn);
     clearTimeout(t0);
     clearInterval(t);
   };

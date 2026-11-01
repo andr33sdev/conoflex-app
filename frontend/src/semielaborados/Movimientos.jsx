@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ArrowRightLeft, ChevronDown, Loader2, Undo2 } from "lucide-react";
+import { ArrowRightLeft, ChevronDown, Loader2, Pencil, Undo2 } from "lucide-react";
 import { api } from "../produccion/util";
 
 const DEPS = [["33", "Depósito 33", "stock_33"], ["26", "Depósito 26", "stock_26"], ["ayolas", "Ayolas", "stock_ayolas"], ["37", "Depósito 37", "stock_37"]];
@@ -10,6 +10,9 @@ const campo = "w-full h-11 rounded-lg bg-[#15151a] border border-white/10 focus:
 /** Transferir entre depósitos y ver los movimientos del semielaborado (con su OP). */
 export default function Movimientos({ item, alCambiar }) {
   const [form, setForm] = useState(false);
+  const [corrigiendo, setCorrigiendo] = useState(false);
+  const [depC, setDepC] = useState("33");
+  const [real, setReal] = useState("");
   const [desde, setDesde] = useState("26");
   const [hasta, setHasta] = useState("33");
   const [cantidad, setCantidad] = useState("");
@@ -48,6 +51,24 @@ export default function Movimientos({ item, alCambiar }) {
     }
   };
 
+  const figura = Number(item[DEPS.find((d) => d[0] === depC)[2]]) || 0;
+  const corregir = async () => {
+    setOcupado(true);
+    setError("");
+    try {
+      const r = await api(`/api/semielaborados/${item.id}/ajustar`, { method: "POST", body: { deposito: depC, cantidad: Number(real), nota: "Conteo" } });
+      setHecho(`Listo: ${DEPS.find((d) => d[0] === depC)[1]} quedó en ${n0(r.despues)} (figuraba ${n0(r.antes)}).`);
+      setCorrigiendo(false);
+      setReal("");
+      setVersion((v) => v + 1);
+      alCambiar();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setOcupado(false);
+    }
+  };
+
   const deshacer = async (id) => {
     try {
       await api(`/api/semielaborados/transferencias/${id}`, { method: "DELETE" });
@@ -61,11 +82,35 @@ export default function Movimientos({ item, alCambiar }) {
 
   return (
     <div className="space-y-3 text-sm">
-      {!form ? (
-        <button onClick={() => { setForm(true); setHecho(""); }} className="inline-flex items-center gap-2 min-h-[44px] px-4 rounded-lg bg-white/[0.07] hover:bg-white/[0.12] text-white font-semibold cursor-pointer">
-          <ArrowRightLeft size={16} /> Transferir entre depósitos
-        </button>
-      ) : (
+      {!form && !corrigiendo && (
+        <div className="flex flex-wrap gap-2">
+          <button onClick={() => { setForm(true); setHecho(""); setError(""); }} className="inline-flex items-center gap-2 min-h-[44px] px-4 rounded-lg bg-white/[0.07] hover:bg-white/[0.12] text-white font-semibold cursor-pointer">
+            <ArrowRightLeft size={16} /> Transferir entre depósitos
+          </button>
+          <button onClick={() => { setCorrigiendo(true); setHecho(""); setError(""); }} className="inline-flex items-center gap-2 min-h-[44px] px-4 rounded-lg text-zinc-300 hover:text-white hover:bg-white/[0.07] font-semibold cursor-pointer">
+            <Pencil size={15} /> Corregir stock
+          </button>
+        </div>
+      )}
+      {corrigiendo && (
+        <div className="rounded-xl border border-white/10 p-4 space-y-3 bg-white/[0.02]">
+          <label className="block"><span className="block text-zinc-500 text-xs mb-1">Depósito</span>
+            <select value={depC} onChange={(e) => setDepC(e.target.value)} className={campo}>
+              {DEPS.map(([v, t]) => <option key={v} value={v}>{t}</option>)}
+            </select></label>
+          <label className="block"><span className="block text-zinc-500 text-xs mb-1">Cantidad que hay realmente <span className="text-zinc-600">(figura {n0(figura)})</span></span>
+            <input type="number" inputMode="numeric" min="0" value={real} onChange={(e) => setReal(e.target.value)} className={campo} autoFocus />
+          </label>
+          {error && <p className="text-rose-300 text-[13px]">{error}</p>}
+          <div className="flex gap-2">
+            <button onClick={corregir} disabled={ocupado || real === ""} className="min-h-[44px] px-5 rounded-lg bg-white text-black font-bold hover:bg-zinc-200 disabled:opacity-50 inline-flex items-center gap-2 cursor-pointer">
+              {ocupado && <Loader2 size={15} className="animate-spin" />} Dejar en {real === "" ? "…" : n0(real)}
+            </button>
+            <button onClick={() => { setCorrigiendo(false); setError(""); }} className="min-h-[44px] px-4 rounded-lg text-zinc-400 hover:text-white cursor-pointer">Cancelar</button>
+          </div>
+        </div>
+      )}
+      {form && (
         <div className="rounded-xl border border-white/10 p-4 space-y-3 bg-white/[0.02]">
           <div className="grid grid-cols-2 gap-3">
             <label className="block"><span className="block text-zinc-500 text-xs mb-1">Sale de</span>
@@ -91,7 +136,7 @@ export default function Movimientos({ item, alCambiar }) {
         </div>
       )}
       {hecho && <p className="text-emerald-300 text-[13px]">{hecho}</p>}
-      {!form && error && <p className="text-rose-300 text-[13px]">{error}</p>}
+      {!form && !corrigiendo && error && <p className="text-rose-300 text-[13px]">{error}</p>}
 
       <button onClick={() => setVer((v) => !v)} aria-expanded={ver} className="flex items-center gap-1.5 text-[13px] font-semibold text-zinc-400 hover:text-white cursor-pointer">
         <ChevronDown size={15} className={`transition-transform ${ver ? "rotate-180" : ""}`} /> Movimientos

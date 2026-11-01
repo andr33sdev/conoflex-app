@@ -100,3 +100,58 @@ test("transferir, deshacer, entradas avisadas y que la planilla no pise lo hecho
     await pool.end();
   }
 });
+
+test("corregir el stock a mano, comparar el 33 con la planilla y recordar una sola vez el mismo aviso", async () => {
+  let pool;
+  try {
+    pool = mysql.createPool({ host: process.env.TEST_DB_HOST || "localhost", user: process.env.TEST_DB_USER || "root", password: process.env.TEST_DB_PASSWORD || "", database: process.env.TEST_DB_NAME || "test" });
+    await pool.query("SELECT 1");
+  } catch { if (pool) await pool.end().catch(() => {}); return; }
+  const limpiar = async () => { for (const t of ["semi_ajustes", "semi_alineacion", "semi_transferencias", "semi_hoja_movs", "prod_semi_stock_movs", "semielaborados"]) await pool.query(`DROP TABLE IF EXISTS ${t}`); };
+  try {
+    await limpiar();
+    await pool.query("CREATE TABLE semielaborados (id INT AUTO_INCREMENT PRIMARY KEY, codigo VARCHAR(50), nombre VARCHAR(100), stock_33 DOUBLE DEFAULT 0, stock_26 DOUBLE DEFAULT 0, stock_ayolas DOUBLE DEFAULT 0, stock_37 DOUBLE DEFAULT 0)");
+    await M.asegurarMovimientos(pool);
+    await pool.query("INSERT INTO semielaborados (codigo, nombre, stock_33) VALUES ('AB1','Base', 128), ('CD2','Tapa', 10)");
+    const st = async () => Number((await pool.query("SELECT stock_33 v FROM semielaborados WHERE id=1"))[0][0].v);
+
+    // Figura 128 y hay 95: se corrige a mano y queda el rastro
+    const r = await M.ajustarStock(pool, { semielaborado_id: 1, deposito: "33", cantidad: 95, nota: "conteo", usuario: "Andrés" });
+    assert.deepEqual([r.antes, r.despues, r.cambio], [128, 95, -33]);
+    assert.equal(await st(), 95);
+    await assert.rejects(M.ajustarStock(pool, { semielaborado_id: 1, deposito: "33", cantidad: -1 }), /0 o más/);
+    // la planilla sigue diciendo 128: al sincronizar, la corrección se mantiene
+    const hoja = { AB1: { stock_33: 128, stock_26: 0, stock_ayolas: 0, stock_37: 0 } };
+    await M.conAjustesDeLaApp(pool, hoja);
+    assert.equal(hoja.AB1.stock_33, 95);
+    assert.ok((await M.historial(pool, 1)).some((m) => m.clase === "ajuste"));
+
+    // Comparación con la planilla: AB1 difiere (128 vs 95), CD2 coincide; recién "persistente" pasado el tiempo
+    const csv = "AB1,Base,x,x,128\nCD2,Tapa,x,x,10\nZZ9,Otro,x,x,5";
+    let c = await M.compararStock33(pool, { traer: async () => csv });
+    assert.equal(c.diferencias.length, 1);
+    assert.deepEqual([c.diferencias[0].hoja, c.diferencias[0].app, c.diferencias[0].diferencia, c.diferencias[0].persistente], [128, 95, -33, false]);
+    c = await M.compararStock33(pool, { traer: async () => csv, minutos: 0 });
+    assert.equal(c.diferencias[0].persistente, true);
+    await M.ajustarStock(pool, { semielaborado_id: 1, deposito: "33", cantidad: 128 });
+    c = await M.compararStock33(pool, { traer: async () => csv });
+    assert.equal(c.diferencias.length, 0, "alineados");
+
+    // Recordatorio: no antes de la media hora, una sola vez, y el texto aclara que es el mismo movimiento
+    await pool.query("INSERT INTO semi_hoja_movs (clave, tipo, fecha, codigo, cantidad, procedencia, semielaborado_id) VALUES ('k1','ENTRADA', CURDATE(), 'AB1', 20, '37', 1)");
+    await M.marcarAvisadas(pool, [1]);
+    assert.deepEqual(await M.entradasParaRecordar(pool), []);
+    await pool.query("UPDATE semi_hoja_movs SET avisada_en = DATE_SUB(NOW(), INTERVAL 31 MINUTE)");
+    assert.deepEqual(await M.entradasParaRecordar(pool), [1]);
+    await M.marcarRecordadas(pool, [1]);
+    assert.deepEqual(await M.entradasParaRecordar(pool), []);
+    const [e] = await M.entradasPendientes(pool);
+    assert.ok(e.avisada_hora && e.recordada_hora);
+    const h = analizarStock({ entradas: [e] });
+    assert.match(h[0].texto, /Te lo recordé a las .* mismo movimiento/);
+    assert.equal(h[0].clave, "entrada33:1", "misma clave: es el mismo aviso");
+  } finally {
+    await limpiar();
+    await pool.end();
+  }
+});

@@ -44,9 +44,31 @@ async function asegurarMovimientos(db) {
       procedencia VARCHAR(100) NULL,
       semielaborado_id INT NULL,
       atendida TINYINT NOT NULL DEFAULT 0,
+      avisada_en DATETIME NULL,
+      recordada_en DATETIME NULL,
       creado DATETIME DEFAULT CURRENT_TIMESTAMP,
       KEY idx_semi (semielaborado_id),
       KEY idx_tipo (tipo, fecha)
+    )`);
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS semi_ajustes (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      semielaborado_id INT NOT NULL,
+      deposito VARCHAR(20) NOT NULL,
+      antes DOUBLE NOT NULL,
+      despues DOUBLE NOT NULL,
+      delta DOUBLE NOT NULL,
+      nota VARCHAR(255) NULL,
+      usuario VARCHAR(255) NULL,
+      creado DATETIME DEFAULT CURRENT_TIMESTAMP,
+      KEY idx_semi (semielaborado_id)
+    )`);
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS semi_alineacion (
+      codigo VARCHAR(100) NOT NULL PRIMARY KEY,
+      hoja DOUBLE NOT NULL,
+      app DOUBLE NOT NULL,
+      desde DATETIME DEFAULT CURRENT_TIMESTAMP
     )`);
 }
 
@@ -161,12 +183,95 @@ async function sincronizarHojas(db, { aplicar = true, traer = (u) => fetch(u).th
 /** Entradas al 33 que dicen venir de otro depósito y todavía no se transfirieron en la app. */
 async function entradasPendientes(db, { dias = DIAS_AVISO } = {}) {
   const [rows] = await db.query(
-    `SELECT h.id, h.codigo, COALESCE(s.nombre, h.descripcion, h.codigo) AS nombre, h.cantidad, h.procedencia, DATE_FORMAT(h.fecha, '%Y-%m-%d') AS fecha
+    `SELECT h.id, h.codigo, COALESCE(s.nombre, h.descripcion, h.codigo) AS nombre, h.cantidad, h.procedencia, DATE_FORMAT(h.fecha, '%Y-%m-%d') AS fecha, DATE_FORMAT(h.avisada_en, '%H:%i') AS avisada_hora, DATE_FORMAT(h.recordada_en, '%H:%i') AS recordada_hora
        FROM semi_hoja_movs h LEFT JOIN semielaborados s ON s.id = h.semielaborado_id
       WHERE h.tipo = 'ENTRADA' AND h.atendida = 0 AND h.fecha >= DATE_SUB(CURDATE(), INTERVAL ? DAY) ORDER BY h.fecha, h.id`,
     [dias],
   );
   return rows.map((r) => ({ ...r, deposito: depositoDe(r.procedencia) })).filter((r) => r.deposito && r.deposito !== "33");
+}
+
+
+// ---------- Recordatorio del mismo aviso ----------
+const MIN_RECORDATORIO = 30;
+/** Marca la hora en que se avisó cada entrada (la primera vez que Nati la mostró). */
+async function marcarAvisadas(db, ids) {
+  if (ids.length) await db.query("UPDATE semi_hoja_movs SET avisada_en = NOW() WHERE avisada_en IS NULL AND id IN (?)", [ids]);
+}
+/** Entradas avisadas hace más de media hora que siguen sin transferirse y todavía no se recordaron. */
+async function entradasParaRecordar(db) {
+  const [rows] = await db.query(
+    "SELECT id FROM semi_hoja_movs WHERE tipo = 'ENTRADA' AND atendida = 0 AND recordada_en IS NULL AND avisada_en IS NOT NULL AND avisada_en <= DATE_SUB(NOW(), INTERVAL ? MINUTE)",
+    [MIN_RECORDATORIO],
+  );
+  return rows.map((r) => r.id);
+}
+async function marcarRecordadas(db, ids) {
+  if (ids.length) await db.query("UPDATE semi_hoja_movs SET recordada_en = NOW() WHERE id IN (?)", [ids]);
+}
+
+// ---------- Corregir el stock a mano ----------
+/** Deja el depósito en la cantidad contada; desde ahí la app lo sigue moviendo sola. Queda el rastro de cuánto había y cuánto se puso. */
+async function ajustarStock(db, { semielaborado_id, deposito, cantidad, nota, usuario }) {
+  const nuevo = Number(cantidad);
+  if (!DEPOSITOS[deposito]) throw Object.assign(new Error("Elegí el depósito."), { status: 400 });
+  if (!(nuevo >= 0) || !Number.isFinite(nuevo)) throw Object.assign(new Error("Poné la cantidad que hay realmente (0 o más)."), { status: 400 });
+  const col = DEPOSITOS[deposito];
+  const conn = await db.getConnection();
+  try {
+    await conn.beginTransaction();
+    const [[s]] = await conn.query(`SELECT id, nombre, ${col} AS actual FROM semielaborados WHERE id = ? FOR UPDATE`, [semielaborado_id]);
+    if (!s) throw Object.assign(new Error("Ese semielaborado no existe."), { status: 404 });
+    const antes = Number(s.actual) || 0;
+    const delta = nuevo - antes;
+    if (delta !== 0) {
+      await conn.query(`UPDATE semielaborados SET ${col} = ? WHERE id = ?`, [nuevo, s.id]);
+      await conn.query("INSERT INTO semi_ajustes (semielaborado_id, deposito, antes, despues, delta, nota, usuario) VALUES (?,?,?,?,?,?,?)", [s.id, deposito, antes, nuevo, delta, (nota || "").slice(0, 255) || null, usuario || null]);
+    }
+    await conn.commit();
+    return { semielaborado: s.nombre, deposito, antes, despues: nuevo, cambio: delta };
+  } catch (e) {
+    await conn.rollback();
+    throw e;
+  } finally {
+    conn.release();
+  }
+}
+
+// ---------- Planilla vs app (depósito 33) ----------
+const URL_STOCK_33 = process.env.URL_STOCK_33 || `${BASE}?gid=1240979540&single=true&output=csv`;
+const MIN_DESALINEADO = 20;
+
+/** Stock del 33 que figura en la pestaña STOCK 33 (misma lectura que usa la sincronización: código en A, stock en E). */
+function parsearStockPlanilla(texto) {
+  const out = new Map();
+  for (const f of filasCSV(texto)) {
+    if (f.length < 5 || !f[0]) continue;
+    const v = parseFloat(String(f[4]).replace(",", "."));
+    if (Number.isNaN(v)) continue;
+    out.set(f[0].toUpperCase().trim(), { nombre: f[1] || f[0], stock: v });
+  }
+  return out;
+}
+
+/** Compara el 33 de la planilla con el de la app. Guarda desde cuándo está desalineado cada código. */
+async function compararStock33(db, { traer = (u) => fetch(u).then((r) => (r.ok ? r.text() : Promise.reject(new Error(`HTTP ${r.status}`)))), minutos = MIN_DESALINEADO } = {}) {
+  const hoja = parsearStockPlanilla(await traer(URL_STOCK_33));
+  const [semis] = await db.query("SELECT id, codigo, nombre, stock_33 FROM semielaborados");
+  const dif = [];
+  for (const s of semis) {
+    const h = hoja.get(String(s.codigo).toUpperCase().trim());
+    if (!h) continue;
+    const app = Number(s.stock_33) || 0;
+    if (Math.abs(h.stock - app) > 0.001) dif.push({ id: s.id, codigo: s.codigo, nombre: s.nombre, hoja: h.stock, app, diferencia: app - h.stock });
+  }
+  const codigos = dif.map((d) => d.codigo);
+  if (codigos.length) await db.query("DELETE FROM semi_alineacion WHERE codigo NOT IN (?)", [codigos]);
+  else await db.query("DELETE FROM semi_alineacion");
+  for (const d of dif) await db.query("INSERT INTO semi_alineacion (codigo, hoja, app) VALUES (?,?,?) ON DUPLICATE KEY UPDATE hoja = VALUES(hoja), app = VALUES(app)", [d.codigo, d.hoja, d.app]);
+  const [persist] = await db.query("SELECT codigo FROM semi_alineacion WHERE desde <= DATE_SUB(NOW(), INTERVAL ? MINUTE)", [minutos]);
+  const firmes = new Set(persist.map((r) => r.codigo));
+  return { comparados: [...hoja.keys()].length, diferencias: dif.map((d) => ({ ...d, persistente: firmes.has(d.codigo) })) };
 }
 
 // ---------- Transferencias ----------
@@ -252,6 +357,10 @@ async function ajustesDeLaApp(db) {
       if (DEPOSITOS[r.hasta]) sumar(r.codigo, DEPOSITOS[r.hasta], Number(r.c) - Number(r.cub || 0));
     }
   } catch { /* todavía sin transferencias */ }
+  try {
+    const [aj] = await db.query("SELECT s.codigo, a.deposito, SUM(a.delta) AS c FROM semi_ajustes a JOIN semielaborados s ON s.id = a.semielaborado_id GROUP BY s.codigo, a.deposito");
+    for (const r of aj) if (Object.values(DEPOSITOS).includes(DEPOSITOS[r.deposito])) sumar(r.codigo, DEPOSITOS[r.deposito], Number(r.c));
+  } catch { /* todavía sin correcciones */ }
   return mapa;
 }
 
@@ -275,7 +384,9 @@ async function historial(db, semielaboradoId, { limite = 60 } = {}) {
     [s.codigo, limite],
   );
   const [tr] = await db.query("SELECT id, DATE_FORMAT(creado,'%Y-%m-%d') AS fecha, desde, hasta, cantidad, nota, usuario, anulada FROM semi_transferencias WHERE semielaborado_id = ? ORDER BY id DESC LIMIT ?", [semielaboradoId, limite]);
+  const [aj] = await db.query("SELECT DATE_FORMAT(creado,'%Y-%m-%d') AS fecha, deposito, antes, despues, nota, usuario FROM semi_ajustes WHERE semielaborado_id = ? ORDER BY id DESC LIMIT ?", [semielaboradoId, limite]);
   const out = [
+    ...aj.map((a) => ({ clase: "ajuste", fecha: a.fecha, cantidad: a.despues, op: null, detalle: `Corregido a mano en ${NOMBRE_DEPOSITO[a.deposito]}: figuraba ${a.antes}${a.nota ? ` · ${a.nota}` : ""}${a.usuario ? ` · ${a.usuario}` : ""}`, origen: "app" })),
     ...hoja.map((h) => ({ clase: h.tipo === "SALIDA" ? "salida" : "entrada", fecha: h.fecha, cantidad: h.cantidad, op: h.op, detalle: h.tipo === "SALIDA" ? "Salida del 33" : `Entrada al 33${h.procedencia ? ` desde ${h.procedencia}` : ""}`, origen: "planilla" })),
     ...tr.map((t) => ({ clase: "transferencia", id: t.id, fecha: t.fecha, cantidad: t.cantidad, op: null, detalle: `${NOMBRE_DEPOSITO[t.desde]} → ${NOMBRE_DEPOSITO[t.hasta]}${t.nota ? ` · ${t.nota}` : ""}${t.usuario ? ` · ${t.usuario}` : ""}`, anulada: !!t.anulada, origen: "app" })),
   ];
@@ -294,10 +405,13 @@ function registrarRutasMovimientos(app, db, { nombreDeUsuario = async (req) => r
   app.post("/api/semielaborados/transferir", manejar(async (req) => transferir(db, { ...req.body, usuario: await nombreDeUsuario(req) })));
   app.delete("/api/semielaborados/transferencias/:id", manejar((req) => anularTransferencia(db, Number(req.params.id))));
   app.get("/api/semielaborados/:id/movimientos", manejar((req) => historial(db, Number(req.params.id))));
+  app.post("/api/semielaborados/:id/ajustar", manejar(async (req) => ajustarStock(db, { ...req.body, semielaborado_id: Number(req.params.id), usuario: await nombreDeUsuario(req) })));
+  app.get("/api/semielaborados/alineacion-33", manejar(() => compararStock33(db)));
   app.post("/api/semielaborados/leer-planilla-movimientos", manejar(() => sincronizarHojas(db)));
 }
 
 module.exports = {
   asegurarMovimientos, parsearHoja, filasCSV, fechaISO, depositoDe, guardarHoja, sincronizarHojas, entradasPendientes,
+  marcarAvisadas, entradasParaRecordar, marcarRecordadas, ajustarStock, compararStock33, parsearStockPlanilla, MIN_RECORDATORIO,
   transferir, anularTransferencia, ajustesDeLaApp, conAjustesDeLaApp, historial, registrarRutasMovimientos, DEPOSITOS, NOMBRE_DEPOSITO,
 };
