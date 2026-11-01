@@ -74,21 +74,20 @@ function priorizar({ semis = [], pedidos = [], plan = [], mpsCriticas = 0, limit
 }
 
 /**
- * Pedidos que todavía hay que fabricar o entregar. La fuente es la planilla de ventas (tabla estado_pedidos, la misma que
- * usa Connie), no la tabla interna "pedidos": ahí no se marca la entrega. Un pedido cuenta como abierto si no está
- * cancelado, no tiene despacho y todavía no figura como preparado (lo preparado ya está fabricado).
+ * Pedidos a los que hay que prestarles atención: los de la tabla "pedidos" (la del módulo Pedidos) cuyo estado NO es
+ * COMPLETADO. Los completados no se miran; los archivados tampoco (son los que se sacaron de la vista a mano).
+ * Lo que falta fabricar es cantidad_total menos cantidad_completada.
  */
 async function cargarPedidosAbiertos(pool) {
-  const vacio = (c) => `(${c} IS NULL OR TRIM(${c}) = '' OR TRIM(${c}) = '-' OR UPPER(${c}) LIKE '%SIN %')`;
-  const [rows] = await pool.query(
-    `SELECT id, op, cliente, modelo AS articulo, cantidad AS total, estado, DATE_FORMAT(fecha, '%Y-%m-%d') AS fecha
-       FROM estado_pedidos
-      WHERE ${vacio("despacho")} AND ${vacio("preparado")}
-        AND UPPER(COALESCE(estado,'')) NOT LIKE '%CANCEL%' AND UPPER(COALESCE(estado,'')) NOT LIKE '%ENTREG%' AND UPPER(COALESCE(estado,'')) NOT LIKE '%DESPACH%'
-        AND fecha >= DATE_SUB(CURDATE(), INTERVAL 150 DAY)
-      ORDER BY fecha ASC, id ASC LIMIT 300`,
-  );
-  return rows.map((r) => ({ ...r, total: Number(r.total) || 0, completada: 0 }));
+  const base = `SELECT id, op, cliente, articulo, cantidad_total AS total, cantidad_completada AS completada, estado, DATE_FORMAT(fecha, '%Y-%m-%d') AS fecha
+       FROM pedidos WHERE UPPER(TRIM(COALESCE(estado,''))) <> 'COMPLETADO'`;
+  let rows;
+  try {
+    [rows] = await pool.query(`${base} AND COALESCE(archivado, 0) = 0 ORDER BY fecha ASC, id ASC LIMIT 300`);
+  } catch {
+    [rows] = await pool.query(`${base} ORDER BY fecha ASC, id ASC LIMIT 300`); // todavía sin la columna "archivado"
+  }
+  return rows.map((r) => ({ ...r, total: Number(r.total) || 0, completada: Number(r.completada) || 0 }));
 }
 
 async function cargarPlanSemana(pool, ahora = new Date()) {

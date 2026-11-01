@@ -71,3 +71,18 @@ test("la ficha suma meses, llegadas tarde y marca los meses sin presentismo", ()
   assert.equal(f.llegadas_tarde[0].fecha, "2026-03-16"); // la más reciente primero
   assert.equal(f.meses[1].con_datos, false);
 });
+
+test("Romi toma los pedidos de la tabla pedidos y deja afuera los completados", async () => {
+  const { cargarPedidosAbiertos } = require("../agentes/produccionDecision");
+  const consultas = [];
+  const pool = { async query(sql) { consultas.push(sql); return [[{ id: 1, op: "OP-1", cliente: "Vial", articulo: "CONO", total: "1000", completada: "400", estado: "EN_PROCESO", fecha: "2026-10-01" }]]; } };
+  const r = await cargarPedidosAbiertos(pool);
+  assert.match(consultas[0], /FROM pedidos/);
+  assert.match(consultas[0], /<> 'COMPLETADO'/);
+  assert.deepEqual([r[0].total, r[0].completada], [1000, 400]);
+  // sin la columna "archivado" vuelve a intentar sin ese filtro
+  let n = 0;
+  const viejo = { async query(sql) { n++; if (/archivado/.test(sql)) throw new Error("Unknown column"); return [[]]; } };
+  assert.deepEqual(await cargarPedidosAbiertos(viejo), []);
+  assert.equal(n, 2);
+});
