@@ -28,6 +28,7 @@ const { asegurarTablasFichasPdf, registrarRutasFichasPdf } = require("./comercia
 const importarFichas = require("./comercial/importarFichas");
 const { asegurarColumnasGestion, registrarRutasGestion } = require("./comprasGestion");
 const { asegurarSemis, registrarRutasSemis } = require("./semisGestion");
+const { asegurarMovimientos, registrarRutasMovimientos, conAjustesDeLaApp } = require("./semiMovimientos");
 const { registrarRutasFotos } = require("./comercial/fotos");
 const { generarCotizacion } = require("./comercial/cotizador");
 const { crearCorreoCrudo } = require("./comercial/correo");
@@ -834,6 +835,7 @@ async function initDB() {
     await asegurarColumnaTema(db);
     await asegurarComprasStock(db);
     await asegurarSemis(db);
+    await asegurarMovimientos(db);
     await asegurarColumnasGestion(db);
 
     console.log("✅ Estructura MySQL inicializada correctamente.");
@@ -3042,6 +3044,8 @@ app.post("/api/semielaborados/recargar-sheets", async (req, res) => {
       }
     }
 
+    // La planilla pisa el stock: se le suma encima lo que se movió en la app (producción aprobada y transferencias).
+    await conAjustesDeLaApp(db, updatesMap);
     const conn = await db.getConnection();
     try {
       await conn.beginTransaction();
@@ -3109,6 +3113,7 @@ app.post("/api/semielaborados/previsualizar-sheets", async (req, res) => {
       }
     }
 
+    await conAjustesDeLaApp(db, updatesMap);
     const [currentSE] = await db.query("SELECT * FROM semielaborados");
     const currentMap = {};
     currentSE.forEach((s) => {
@@ -5484,6 +5489,7 @@ const nombreDeUsuario = async (req) => {
 // Eliminar una solicitud entera y corregir lo que realmente se pidió (proveedor / cantidad) en un renglón.
 registrarRutasGestion(app, { db, nombreDeUsuario });
 registrarRutasSemis(app, { db, nombreDeUsuario });
+registrarRutasMovimientos(app, db, { nombreDeUsuario });
 
 // CREAR NUEVA SOLICITUD
 app.post("/api/compras/solicitudes", async (req, res) => {
