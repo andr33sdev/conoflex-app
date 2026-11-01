@@ -12,7 +12,8 @@ const jwt = require("jsonwebtoken");
 const crypto = require("crypto");
 const { crearConnie } = require("./connie");
 const { asegurarTablasAgentes, registrarRutasAgentes, iniciarVigilantes } = require("./agentes");
-const { notasTexto: notasVentasTexto } = require("./agentes/ventasMails");
+const { sinCita: sinCitaMail, notasTexto: notasVentasTexto, validarDescuento, ERROR_DESCUENTO, sugerirDescuento, ejemplosEnviadosTexto } = require("./agentes/ventasMails");
+const { registrarObservaciones } = require("./agentes/ventasAprendizaje");
 const { demandaMateriasPrimas } = require("./demanda");
 const { separarDuplicadas, asegurarTablaDuplicadas } = require("./fichero");
 const { asegurarTablasProduccion, registrarRutasProduccion } = require("./produccionRutas");
@@ -1987,8 +1988,78 @@ async function borradorExiste(draftId) {
   }
 }
 
+// ---- Seguimiento de mails enviados (Sofi): lectura liviana de Gmail, sin etiquetas. Solo encabezados; nunca envía. ----
+const cabecera = (m, nombre) => (m.payload?.headers || []).find((h) => h.name.toLowerCase() === nombre)?.value || "";
+const seguimientoGmail = {
+  miEmail: async () => {
+    const gmail = gmailAutenticado();
+    const r = await gmail.users.getProfile({ userId: "me" });
+    return String(r.data.emailAddress || "").toLowerCase();
+  },
+  // Una (o pocas) consultas: los hilos con mails enviados en la ventana, con su historyId. Sin etiquetas.
+  listarEnviados: async ({ dias, max }) => {
+    const gmail = gmailAutenticado();
+    const out = [];
+    let pageToken;
+    do {
+      const r = await gmail.users.threads.list({ userId: "me", q: `in:sent newer_than:${Math.max(1, Math.round(dias))}d`, maxResults: Math.min(100, max - out.length), pageToken });
+      for (const t of r.data.threads || []) out.push({ threadId: t.id, historyId: t.historyId });
+      pageToken = r.data.nextPageToken;
+    } while (pageToken && out.length < max);
+    return out;
+  },
+  leerHilo: async (threadId) => {
+    const gmail = gmailAutenticado();
+    const th = await gmail.users.threads.get({ userId: "me", id: threadId, format: "metadata", metadataHeaders: ["From", "To", "Cc", "Subject", "Auto-Submitted", "Precedence"] });
+    return {
+      threadId, historyId: th.data.historyId,
+      mensajes: (th.data.messages || []).map((m) => {
+        const etiquetas = m.labelIds || [];
+        const auto = cabecera(m, "auto-submitted");
+        return {
+          id: m.id, fecha: Number(m.internalDate) || 0, de: cabecera(m, "from"), para: cabecera(m, "to"), cc: cabecera(m, "cc"), asunto: cabecera(m, "subject"),
+          enviado: etiquetas.includes("SENT"), borrador: etiquetas.includes("DRAFT"),
+          automatico: (!!auto && auto.toLowerCase() !== "no") || /bulk|auto_reply|junk/i.test(cabecera(m, "precedence")), snippet: m.snippet || "",
+        };
+      }),
+    };
+  },
+  textoMensaje: async (threadId, msgId) => {
+    const gmail = gmailAutenticado();
+    const d = await gmail.users.messages.get({ userId: "me", id: msgId, format: "full" });
+    const { cuerpoCompleto } = await extraerContenidoMail(gmail, msgId, d.data.payload);
+    return sinCitaMail(cuerpoCompleto || d.data.snippet || "");
+  },
+  // Los últimos mensajes del hilo (con texto) para que Sofi redacte el seguimiento con contexto real.
+  historialHilo: async (threadId) => {
+    const gmail = gmailAutenticado();
+    const th = await gmail.users.threads.get({ userId: "me", id: threadId, format: "full" });
+    const msgs = (th.data.messages || []).filter((m) => !(m.labelIds || []).includes("DRAFT")).slice(-4);
+    const out = [];
+    for (const m of msgs) {
+      const { cuerpoCompleto } = await extraerContenidoMail(gmail, m.id, m.payload);
+      out.push({ enviado: (m.labelIds || []).includes("SENT"), fecha: new Date(Number(m.internalDate)).toISOString().slice(0, 10), texto: sinCitaMail(cuerpoCompleto || m.snippet || "") });
+    }
+    return out;
+  },
+  // Deja el seguimiento como BORRADOR dentro del hilo. No existe ninguna ruta que lo envíe.
+  crearBorradorEnHilo: async ({ threadId, para, asunto, html }) => {
+    const gmail = gmailAutenticado();
+    const creado = await gmail.users.drafts.create({ userId: "me", requestBody: crearCorreoCrudo({ to: para, asunto, html, threadId }) });
+    return { draftId: creado.data.id };
+  },
+};
+
 // Arma el borrador de respuesta en Gmail (nunca envía). Lo usa la pantalla comercial y la agente de ventas.
-async function crearBorradorDesdeConsulta({ mailCliente, consultaText, asunto, threadId, imagenes, nombreCliente, reglasExtra = "" }) {
+async function crearBorradorDesdeConsulta({ mailCliente, consultaText, asunto, threadId, imagenes, nombreCliente, reglasExtra = "", descuento }) {
+  // El descuento lo define siempre la persona: sin eso no se arma ningún borrador.
+  const desc = validarDescuento(descuento);
+  if (!desc) {
+    const err = new Error(ERROR_DESCUENTO);
+    err.status = 400;
+    err.codigo = "DESCUENTO_REQUERIDO";
+    throw err;
+  }
   const gmail = gmailAutenticado();
 
   // 1. Preparar las imágenes para la API multimodal de Gemini
@@ -2046,7 +2117,7 @@ async function crearBorradorDesdeConsulta({ mailCliente, consultaText, asunto, t
   const [reglaRows] = await db.query(
     "SELECT valor FROM reglas WHERE clave = 'prompt_comercial'",
   );
-  const reglasEntrenamiento = [reglaRows[0] ? reglaRows[0].valor : "", reglasExtra].filter(Boolean).join("\n\n");
+  const reglasEntrenamiento = [reglaRows[0] ? reglaRows[0].valor : "", reglasExtra, await ejemplosEnviadosTexto(db).catch(() => ""), `DESCUENTO DEFINIDO POR LA PERSONA PARA ESTE PRESUPUESTO: ${desc.pct ? `${desc.pct}%` : "SIN DESCUENTO"}. Es el único descuento válido: ignorá cualquier otro porcentaje que figure en las reglas para este pedido.`].filter(Boolean).join("\n\n");
 
   // 3. Cotizador (etapa B): la IA elige los productos, el servidor calcula los precios y arma las tarjetas.
   let htmlBody = null;
@@ -2056,8 +2127,6 @@ async function crearBorradorDesdeConsulta({ mailCliente, consultaText, asunto, t
     const [productosCot] = await db.query(
       "SELECT id, codigo, nombre, medidas, precio_lista, especificacion, aplicacion, descripcion, usos_recomendados, advertencias, categoria, foto_tecnica, foto_catalogo FROM productos",
     );
-    const [cfgRows] = await db.query("SELECT valor FROM reglas WHERE clave = 'comercial_descuento_pct'");
-    const cfgPct = Number(String(cfgRows[0]?.valor ?? "").replace(",", "."));
     const lista = leerLista();
     const r = await generarCotizacion({
       ai,
@@ -2069,14 +2138,14 @@ async function crearBorradorDesdeConsulta({ mailCliente, consultaText, asunto, t
       texto: consultaText,
       imagenes: imagenesParaGemini,
       adjuntaLista: !!lista,
-      descuentoConfig: Number.isFinite(cfgPct) && cfgPct > 0 && cfgPct <= 60 ? cfgPct : null,
+      descuentoConfig: desc.pct,
     });
     htmlBody = r.html;
     revision = r.revision;
     if (r.revision.adjunta_lista) adjunto = lista;
   } catch (errCot) {
     console.error("Cotizador nuevo falló, se usa el método anterior:", errCot.message);
-    revision = { descuento_pct: null, adjunta_lista: false, lineas: [], avisos: ["El cotizador nuevo no pudo con este mail y el borrador salió con el método anterior: los precios y totales los calculó la IA, revisalos uno por uno antes de enviar."] };
+    revision = { descuento_pct: desc.pct || null, descuento_definido: true, adjunta_lista: false, lineas: [], avisos: ["El cotizador nuevo no pudo con este mail y el borrador salió con el método anterior: los precios y totales los calculó la IA, revisalos uno por uno antes de enviar."] };
   }
 
   if (!htmlBody) {
@@ -2175,9 +2244,12 @@ app.post(
   autorizarRoles("ADMIN", "COMERCIAL"),
   async (req, res) => {
     try {
-      const { mailCliente, consultaText, asunto, threadId, imagenes, nombreCliente } = req.body;
+      const { mailCliente, consultaText, asunto, threadId, imagenes, nombreCliente, mailId } = req.body;
+      const descuento = validarDescuento(req.body.descuento);
+      if (!descuento) return res.status(400).json({ error: ERROR_DESCUENTO, codigo: "DESCUENTO_REQUERIDO" });
       gmailAutenticado();
-      const { draftId, revision } = await crearBorradorDesdeConsulta({ mailCliente, consultaText, asunto, threadId, imagenes, nombreCliente, reglasExtra: await notasAprendidasTexto() });
+      const { draftId, revision } = await crearBorradorDesdeConsulta({ mailCliente, consultaText, asunto, threadId, imagenes, nombreCliente, reglasExtra: await notasAprendidasTexto(), descuento });
+      if (revision?.observaciones?.length) await registrarObservaciones(db, { mailId: mailId || threadId || `manual-${Date.now()}`, cliente: nombreCliente || mailCliente, asunto, observaciones: revision.observaciones }).catch((e) => console.error("[ventas] observaciones:", e.message));
       res.json({
         success: true,
         mensaje: "Borrador generado en Gmail",
@@ -2192,6 +2264,15 @@ app.post(
     }
   },
 );
+
+// Sugerencia de descuento para un cliente (solo sugiere: nunca se aplica solo).
+app.get("/api/comercial/descuento-sugerido", autenticarToken, autorizarRoles("ADMIN", "COMERCIAL"), async (req, res) => {
+  try {
+    res.json(await sugerirDescuento(db, req.query.email));
+  } catch (e) {
+    res.status(500).json({ error: "No pude buscar sugerencias de descuento." });
+  }
+});
 
 // ANÁLISIS ESTRATÉGICO Y DIAGNÓSTICO OPERATIVO CON IA
 app.post(
@@ -5799,6 +5880,8 @@ const agentes = registrarRutasAgentes(app, {
   ai,
   // Gmail para Cami (agente de ventas): lee los mails etiquetados y deja borradores; nunca envía.
   mails: { listar: () => leerMailsEtiquetados(10), estadoHilo: estadoDelHilo, existeBorrador: borradorExiste, borrador: crearBorradorDesdeConsulta },
+  // Gmail para Sofi (seguimiento): mira la carpeta de enviados, sin etiquetas, y solo deja borradores.
+  seguimiento: seguimientoGmail,
 });
 
 app.listen(PORT, () => {

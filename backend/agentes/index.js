@@ -9,6 +9,9 @@ const { crearVera } = require("./veraChat");
 const { crearRomi } = require("./maruChat");
 const { crearCami, confirmarNota, cancelarNota } = require("./ventasChat");
 const V = require("./ventasMails");
+const Apr = require("./ventasAprendizaje");
+const S = require("./seguimientoMails");
+const { crearSofi } = require("./seguimientoChat");
 const { decisionProduccion } = require("./produccionDecision");
 const { listarOperarios, fichaOperario } = require("./fichaOperario");
 const { confirmarPropuesta, cancelarPropuesta } = require("./ajusteStock");
@@ -68,11 +71,21 @@ const AGENTES = [
     id: "ventas",
     nombre: "Cami",
     puesto: "Ventas y mails",
-    descripcion: "Lee los mails de clientes que etiquetás IA-Consulta, te deja el borrador de respuesta listo en Gmail (nunca envía) y aprende de lo que corregís.",
+    descripcion: "Lee los mails de clientes que etiquetás IA-Consulta, te deja el borrador listo en Gmail cuando definís el descuento (nunca envía) y aprende de lo que corregís y de lo que preguntan los clientes.",
     permiso: "agente:ventas",
     color: "#14b8a6",
     voz: "Autonoe",
     estilo: "mujer comercial, simpática y segura, de voz brillante y ritmo ágil y cálido",
+  },
+  {
+    id: "seguimiento",
+    nombre: "Sofi",
+    puesto: "Seguimiento de mails",
+    descripcion: "Controla los mails que enviaron Cami y vos (sin etiquetas) y que el cliente nunca respondió: presupuestos olvidados, consultas sin contestar y rebotes. Te deja el borrador de seguimiento en Gmail, sin enviarlo.",
+    permiso: "agente:seguimiento",
+    color: "#ec4899",
+    voz: "Kore",
+    estilo: "mujer atenta y constante, de voz serena y firme, ritmo medio y tono amable que insiste sin presionar",
   },
 ];
 const agentePorId = (id) => AGENTES.find((a) => a.id === id) || null;
@@ -81,6 +94,8 @@ async function asegurarTablasAgentes(db) {
   await asegurarTablaReuniones(db).catch((e) => console.error("[agentes] tabla de reuniones:", e.message));
   await asegurarTablaListas(db).catch((e) => console.error("[agentes] tabla de listas:", e.message));
   await V.asegurarTablasVentas(db).catch((e) => console.error("[agentes] tablas de ventas:", e.message));
+  await Apr.asegurarTablasAprendizaje(db).catch((e) => console.error("[agentes] tablas de aprendizaje:", e.message));
+  await S.asegurarTablasSeguimiento(db).catch((e) => console.error("[agentes] tablas de seguimiento:", e.message));
   await db.query(`
     CREATE TABLE IF NOT EXISTS agentes_estado (
       agente VARCHAR(30) PRIMARY KEY,
@@ -325,11 +340,10 @@ async function revisarCompras({ pool, db }, { ahora = new Date() } = {}) {
 const nombreCliente = (remitente, email) => String(remitente || "").replace(/<[^>]*>/g, "").replace(/["']/g, "").trim() || email || "un cliente";
 
 /**
- * Revisión de Cami (ventas): lee los mails etiquetados IA-Consulta en Gmail, arma borradores para los nuevos (si el armado automático
- * está activo), detecta los que ya se enviaron y guarda qué se corrigió. Los avisos abiertos son los mails que esperan a la persona.
- * NUNCA envía un mail: solo deja borradores.
+ * Revisión de Cami (ventas): lee los mails etiquetados IA-Consulta en Gmail, detecta los que ya se respondieron y guarda qué se corrigió.
+ * NO arma borradores sola: cada borrador necesita que la persona defina antes si lleva descuento y de cuánto. NUNCA envía un mail.
  */
-async function revisarVentas({ db, mails, autoActivo = async () => true }, { ahora = new Date() } = {}) {
+async function revisarVentas({ db, mails }, { ahora = new Date() } = {}) {
   void ahora;
   const agente = "ventas";
   try {
@@ -343,24 +357,11 @@ async function revisarVentas({ db, mails, autoActivo = async () => true }, { aho
       }
       throw e;
     }
-
-    // Borradores automáticos: solo mails recientes (los viejos etiquetados se arman a pedido) y de a pocos por revisión.
     const hechos = [];
-    if (await autoActivo()) {
-      const [cand] = await db.query(
-        "SELECT mail_id FROM ventas_mails WHERE (estado = 'PENDIENTE' OR (estado = 'ERROR' AND intentos < ?)) AND (fecha_mail IS NULL OR fecha_mail >= (NOW() - INTERVAL 3 DAY)) ORDER BY created_at LIMIT ?",
-        [V.MAX_INTENTOS, V.MAX_AUTOMATICOS],
-      );
-      const reglasExtra = await V.notasTexto(db);
-      for (const c of cand) {
-        const mail = sync.vistos.find((x) => x.id === c.mail_id);
-        if (!mail) continue;
-        const r = await V.prepararBorrador({ db, mail, borrador: mails.borrador, reglasExtra });
-        hechos.push({ mail, ok: r.ok });
-      }
-    }
 
     const seguimiento = await V.revisarBorradores({ db, estadoHilo: mails.estadoHilo, existeBorrador: mails.existeBorrador });
+    // Lo que se repite al corregir mis borradores entra como sugerencia para entrenarme.
+    await Apr.registrarPatrones(db, V.patronesDeCorreccion(await V.correccionesRecientes(db, { limite: 12 }))).catch((e) => console.error("[ventas] patrones:", e.message));
 
     // Avisos: un hallazgo por mail que espera a la persona (borrador para revisar, consulta sin responder o error).
     const filas = await V.listarRegistros(db, { estados: ["PENDIENTE", "BORRADOR", "ERROR"], limite: 100 });
@@ -373,7 +374,7 @@ async function revisarVentas({ db, mails, autoActivo = async () => true }, { aho
         return { clave: `mail:${m.mail_id}`, tipo: "MAIL_BORRADOR", severidad: viejo ? "ALTA" : "MEDIA", titulo: `Borrador listo para revisar: ${cliente}`, texto: `${m.asunto || "Consulta"}.${avisos ? ` Trae ${avisos === 1 ? "1 cosa" : `${avisos} cosas`} a confirmar antes de enviar.` : ""} Está en Borradores de Gmail; revisalo y enviá.`, operario: cliente };
       if (m.estado === "ERROR")
         return { clave: `mail:${m.mail_id}`, tipo: "MAIL_ERROR", severidad: "ALTA", titulo: `No pude armar el borrador de ${cliente}`, texto: `${m.asunto || "Consulta"}. ${m.error || "Falló la IA o Gmail."} Pedímelo de nuevo desde acá o respondelo a mano.`, operario: cliente };
-      return { clave: `mail:${m.mail_id}`, tipo: "MAIL_PENDIENTE", severidad: viejo ? "ALTA" : "MEDIA", titulo: `Consulta sin responder: ${cliente}`, texto: `${m.asunto || "Consulta"}. Todavía no tiene borrador; pedímelo y lo armo.`, operario: cliente };
+      return { clave: `mail:${m.mail_id}`, tipo: "MAIL_PENDIENTE", severidad: viejo ? "ALTA" : "MEDIA", titulo: `Consulta sin responder: ${cliente}`, texto: `${m.asunto || "Consulta"}. Decime si lleva descuento y de cuánto (o si va sin descuento) y te armo el borrador.`, operario: cliente };
     });
 
     const [previos] = await db.query("SELECT id, clave, tipo, estado FROM agentes_hallazgos WHERE agente = ?", [agente]);
@@ -421,18 +422,94 @@ async function revisarVentas({ db, mails, autoActivo = async () => true }, { aho
   }
 }
 
-function registrarRutasAgentes(app, { db, pool, ai, mails = null }) {
-  // El armado automático de borradores de Cami se puede apagar (regla ventas_auto = 0) sin tocar el código.
-  const autoActivo = async () => {
-    const [r] = await db.query("SELECT valor FROM reglas WHERE clave = 'ventas_auto'").catch(() => [[]]);
-    return !(r[0] && String(r[0].valor).trim() === "0");
-  };
+/**
+ * Revisión de Sofi (seguimiento): mira la carpeta de enviados de Gmail SIN etiquetas, solo lo que cambió desde la última vez,
+ * detecta los hilos cuyo último mail es nuestro y no tuvo respuesta, y los deja como avisos según lo que se mandó y los días de espera.
+ * NUNCA envía un mail.
+ */
+async function revisarSeguimiento({ db, ai, seguimiento }, { ahora = new Date() } = {}) {
+  const agente = "seguimiento";
+  try {
+    let sync;
+    try {
+      sync = await S.sincronizar({ db, deps: seguimiento, ahoraMs: ahora.getTime() });
+    } catch (e) {
+      if (e.status === 401) {
+        await db.query("INSERT INTO agentes_estado (agente, ultimo_error) VALUES (?, ?) ON DUPLICATE KEY UPDATE ultimo_error = VALUES(ultimo_error)", [agente, "Gmail no está conectado."]).catch(() => {});
+        return { ok: false, error: "Gmail no está conectado: conectalo desde Comercial y vuelvo a revisar." };
+      }
+      throw e;
+    }
+    // Qué mandamos (presupuesto, consulta...) solo se mira para lo que ya lleva días esperando.
+    await S.clasificarPendientes({ db, deps: seguimiento, ai, ahoraMs: ahora.getTime() }).catch((e) => {
+      if (e.status === 401) throw e;
+      console.error("[seguimiento] clasificar:", e.message);
+    });
+
+    const filas = await S.listar(db, { estados: ["ESPERANDO", "POSPUESTO", "REBOTE"], limite: 300, ahoraMs: ahora.getTime() });
+    const encontrados = S.armarHallazgos(filas, { ahoraMs: ahora.getTime() });
+    const [previos] = await db.query("SELECT id, clave, tipo, estado FROM agentes_hallazgos WHERE agente = ?", [agente]);
+    const porClave = new Map(previos.map((p) => [p.clave, p]));
+    const claves = new Set(encontrados.map((h) => h.clave));
+    const nuevos = [];
+    for (const h of encontrados) {
+      const previo = porClave.get(h.clave);
+      if (!previo) {
+        await db.query("INSERT INTO agentes_hallazgos (agente, clave, tipo, severidad, titulo, texto, operario, fecha) VALUES (?,?,?,?,?,?,?,NULL)", [agente, h.clave, h.tipo, h.severidad, h.titulo, h.texto, h.operario]);
+        nuevos.push(h);
+      } else if (previo.estado === "ABIERTO") {
+        await db.query("UPDATE agentes_hallazgos SET tipo = ?, severidad = ?, titulo = ?, texto = ? WHERE id = ?", [h.tipo, h.severidad, h.titulo, h.texto, previo.id]);
+        // Subió de urgencia o se enfrió: vale un aviso nuevo; el resto de los cambios (los días que pasan) son silenciosos.
+        if (previo.tipo !== h.tipo && h.tipo !== "FRIO") nuevos.push(h);
+      }
+    }
+    // Se cierran solos cuando el cliente responde, se descarta, se pospone o se vence.
+    const resueltos = previos.filter((p) => p.estado === "ABIERTO" && !claves.has(p.clave));
+    for (const r of resueltos) await db.query("UPDATE agentes_hallazgos SET estado = 'RESUELTO', resuelto_por = 'Sofi (automático)', resuelto_en = NOW() WHERE id = ?", [r.id]);
+
+    const aNotificar = nuevos.filter((h) => h.severidad !== "BAJA");
+    if (aNotificar.length) {
+      const roles = await rolesDelAgente(db, "agente:seguimiento");
+      const aviso = (titulo, texto, push = false) => crearNotificacion(db, { tipo: "AGENTE_SEGUIMIENTO", titulo, texto, ruta: "/agentes?a=seguimiento", roles, push });
+      if (aNotificar.length <= 3) for (const h of aNotificar) await aviso(`Sofi: ${h.titulo}`, h.texto, h.severidad === "ALTA");
+      else await aviso(`Sofi tiene ${aNotificar.length} mails enviados sin respuesta`, aNotificar.slice(0, 3).map((h) => h.operario).join(" · ") + ` · y ${aNotificar.length - 3} más`, aNotificar.some((h) => h.severidad === "ALTA"));
+    }
+    if (nuevos.length) await registrarActividad(db, agente, "AVISO", `Detectó ${nuevos.length} ${nuevos.length === 1 ? "mail enviado sin respuesta" : "mails enviados sin respuesta"}`, nuevos.map((h) => `• ${h.titulo}`).join("\n"));
+    if (sync.respondidos) await registrarActividad(db, agente, "RESUELTO", `${sync.respondidos === 1 ? "1 cliente respondió" : `${sync.respondidos} clientes respondieron`} un mail que estaba esperando`);
+    if (sync.vencidos) await registrarActividad(db, agente, "RESUELTO", `Dejó de seguir ${sync.vencidos} ${sync.vencidos === 1 ? "hilo" : "hilos"} que salieron de la ventana de ${S.CONFIG.ventanaDias} días`);
+
+    const c = await S.conteos(db, { ahoraMs: ahora.getTime() });
+    const abiertos = Number((await db.query("SELECT COUNT(*) AS n FROM agentes_hallazgos WHERE agente = ? AND estado = 'ABIERTO'", [agente]))[0][0].n);
+    const resumen = abiertos
+      ? `Miré ${sync.en_ventana} hilos enviados: ${c.presupuestos ? `${c.presupuestos} ${c.presupuestos === 1 ? "presupuesto" : "presupuestos"} sin respuesta` : `${abiertos} ${abiertos === 1 ? "mail" : "mails"} sin respuesta`}${c.urgentes ? `, ${c.urgentes} ${c.urgentes === 1 ? "urgente" : "urgentes"}` : ""}.`
+      : `Miré ${sync.en_ventana} hilos enviados: no hay nada sin respuesta que reclamar.`;
+    await db.query(
+      "INSERT INTO agentes_estado (agente, ultima_revision, resumen, operarios_revisados, ultimo_error) VALUES (?, NOW(), ?, ?, NULL) ON DUPLICATE KEY UPDATE ultima_revision = NOW(), resumen = VALUES(resumen), operarios_revisados = VALUES(operarios_revisados), ultimo_error = NULL",
+      [agente, resumen, sync.en_ventana],
+    );
+    return { ok: true, operarios: sync.en_ventana, nuevos: nuevos.length, resueltos: resueltos.length, abiertos, resumen, gmail: { leidos: sync.leidos, sin_cambios: sync.sin_cambios, pendientes_de_leer: sync.pendientes_de_leer } };
+  } catch (e) {
+    console.error("[agentes] revisión de seguimiento falló:", e.message);
+    await db.query("INSERT INTO agentes_estado (agente, ultimo_error) VALUES (?, ?) ON DUPLICATE KEY UPDATE ultimo_error = VALUES(ultimo_error)", [agente, String(e.message).slice(0, 300)]).catch(() => {});
+    return { ok: false, error: "No pude revisar los mails enviados en este momento." };
+  }
+}
+
+function registrarRutasAgentes(app, { db, pool, ai, mails = null, seguimiento = null }) {
+  // Lo que Cami nota en cada mail (puntos grises, características pedidas, preguntas repetidas) queda guardado para que el equipo lo defina.
+  const observar = (o) => Apr.registrarObservaciones(db, o);
   const chats = { rrhh: crearLia({ pool, db, ai }), stock: crearNati({ pool, db, ai }), compras: crearVera({ pool, db, ai }), produccion: crearRomi({ pool, db, ai }) };
   const revisiones = { rrhh: () => revisarRRHH({ pool, db }), stock: () => revisarStock({ pool, db }), compras: () => revisarCompras({ pool, db }) };
   if (mails) {
-    chats.ventas = crearCami({ ai, db, mails, autoActivo });
-    revisiones.ventas = () => revisarVentas({ db, mails, autoActivo });
+    chats.ventas = crearCami({ ai, db, mails, observar });
+    revisiones.ventas = () => revisarVentas({ db, mails });
   }
+  if (seguimiento) {
+    chats.seguimiento = crearSofi({ ai, db, seguimiento });
+    revisiones.seguimiento = () => revisarSeguimiento({ db, ai, seguimiento });
+  }
+  // Los agentes que dependen de Gmail solo existen si el servidor lo conecta.
+  const disponible = (a) => (a.id === "ventas" ? !!mails : a.id === "seguimiento" ? !!seguimiento : true);
 
   const quien = async (req) => {
     const [r] = await db.query("SELECT id, nombre, rol FROM usuarios WHERE id = ?", [req.user?.id]);
@@ -448,7 +525,7 @@ function registrarRutasAgentes(app, { db, pool, ai, mails = null }) {
   const delAgente = async (req, res, next) => {
     try {
       const agente = agentePorId(req.params.id);
-      if (!agente || (agente.id === "ventas" && !mails)) return res.status(404).json({ error: "Ese agente no existe." });
+      if (!agente || !disponible(agente)) return res.status(404).json({ error: "Ese agente no existe." });
       const usuario = await quien(req);
       if (!(await tienePermiso(usuario, agente.permiso))) return res.status(403).json({ error: "Tu rol no tiene habilitado este agente." });
       req.agente = agente;
@@ -464,7 +541,7 @@ function registrarRutasAgentes(app, { db, pool, ai, mails = null }) {
     try {
       const usuario = await quien(req);
       const visibles = [];
-      for (const a of AGENTES) if ((a.id !== "ventas" || mails) && (await tienePermiso(usuario, a.permiso))) visibles.push(a);
+      for (const a of AGENTES) if (disponible(a) && (await tienePermiso(usuario, a.permiso))) visibles.push(a);
       const resultado = [];
       for (const a of visibles) {
         const [estRows] = await db.query("SELECT ultima_revision, resumen FROM agentes_estado WHERE agente = ?", [a.id]);
@@ -482,7 +559,7 @@ function registrarRutasAgentes(app, { db, pool, ai, mails = null }) {
   // ---- Reunión de las 08:00 ----
   const permisosDe = async (usuario) => {
     const ok = [];
-    for (const a of AGENTES) if ((a.id !== "ventas" || mails) && (await tienePermiso(usuario, a.permiso))) ok.push(a);
+    for (const a of AGENTES) if (disponible(a) && (await tienePermiso(usuario, a.permiso))) ok.push(a);
     return ok;
   };
   app.get("/api/agentes/reunion", async (req, res) => {
@@ -506,7 +583,7 @@ function registrarRutasAgentes(app, { db, pool, ai, mails = null }) {
       const usuario = await quien(req);
       const mios = await permisosDe(usuario);
       if (!mios.length) return res.status(403).json({ error: "Tu rol no tiene agentes habilitados." });
-      const t = await armarTemario({ pool, db, agentes: AGENTES.filter((a) => a.id !== "ventas" || mails) });
+      const t = await armarTemario({ pool, db, agentes: AGENTES.filter(disponible) });
       const ids = new Set(mios.map((a) => a.id));
       const secciones = t.secciones.filter((x) => ids.has(x.agente));
       res.json({ secciones, urgentes: secciones.filter((x) => x.urgente).length, sugerencias: t.sugerencias.filter((x) => ids.has(x.agente)), proxima: t.proxima, actualizado: t.actualizado });
@@ -601,15 +678,26 @@ function registrarRutasAgentes(app, { db, pool, ai, mails = null }) {
 
   // Panorama de stock (Nati): niveles reales de materias primas y semielaborados, para el tablero y el depósito 3D.
   app.get("/api/agentes/:id/panorama", delAgente, async (req, res) => {
-    if (!["stock", "compras", "produccion", "ventas"].includes(req.agente.id)) return res.status(400).json({ error: "Este agente no tiene panorama." });
+    if (!["stock", "compras", "produccion", "ventas", "seguimiento"].includes(req.agente.id)) return res.status(400).json({ error: "Este agente no tiene panorama." });
     try {
+      if (req.agente.id === "seguimiento") {
+        const lista = (await S.listar(db, { estados: ["ESPERANDO", "POSPUESTO", "REBOTE"], limite: 200 })).sort((a, b) => (b.dias ?? 0) - (a.dias ?? 0));
+        return res.json({
+          generado: new Date().toISOString(),
+          conteos: await S.conteos(db),
+          config: { dias_aviso: S.CONFIG.diasAviso, dias_urgente: S.CONFIG.diasUrgente, dias_frio: S.CONFIG.diasFrio, ventana_dias: S.CONFIG.ventanaDias },
+          hilos: lista.filter((h) => !h.pospuesto).map((h) => ({ ...h, clase_texto: { PRESUPUESTO: "Presupuesto", CONSULTA: "Consulta", CORTESIA: "Cortesía", OTRO: "Otro" }[h.clase] || null })),
+          pospuestos: lista.filter((h) => h.pospuesto),
+          descartados: await S.listar(db, { estados: ["DESCARTADO"], limite: 8 }),
+        });
+      }
       if (req.agente.id === "ventas") {
         const filas = await V.listarRegistros(db, { limite: 40 });
         const correcciones = await V.correccionesRecientes(db, { limite: 12 });
         return res.json({
           generado: new Date().toISOString(),
           conteos: await V.conteos(db),
-          auto: await autoActivo(),
+          aprendizajes: { conteos: await Apr.conteos(db), abiertas: await Apr.listar(db, { estados: ["ABIERTA"], limite: 20 }), en_curso: await Apr.listar(db, { estados: ["EN_CURSO"], limite: 20 }), decididas: await Apr.listar(db, { estados: ["RESUELTA", "DESCARTADA"], limite: 8 }) },
           mails: filas.filter((m) => ["PENDIENTE", "BORRADOR", "ERROR"].includes(m.estado)),
           atendidos: filas.filter((m) => m.estado === "ATENDIDO").slice(0, 8).map((m) => ({ ...m, que_cambio: V.describirCambios(m.cambios) })),
           patrones: V.patronesDeCorreccion(correcciones),
@@ -694,11 +782,44 @@ function registrarRutasAgentes(app, { db, pool, ai, mails = null }) {
   });
 
 
-  // ---- Cami (ventas): borrador a pedido, armado automático y notas comerciales ----
+  // ---- Sofi (seguimiento): borrador de seguimiento en el hilo (nunca se envía) y decisiones sobre cada hilo ----
+  const soloSeguimiento = (req, res, next) => (req.agente.id === "seguimiento" ? next() : res.status(400).json({ error: "Esto es solo de Sofi." }));
+  app.post("/api/agentes/:id/hilos/:tid/seguimiento", delAgente, soloSeguimiento, async (req, res) => {
+    try {
+      const r = await S.prepararSeguimiento({
+        db, deps: seguimiento, ai, threadId: String(req.params.tid), reglas: await V.notasTexto(db).catch(() => ""), ejemplos: await V.ejemplosEnviadosTexto(db, { cantidad: 2, max: 600 }).catch(() => ""),
+        textoPropio: req.body?.texto || null,
+      });
+      if (!r.ok) return res.status(r.status || 400).json({ error: r.error });
+      if (!r.yaEstaba) await registrarActividad(db, "seguimiento", "BORRADOR", `${req.usuario.nombre} pidió el seguimiento de ${r.hilo.contacto_nombre || r.hilo.contacto_email}`, r.hilo.asunto, req.usuario.nombre);
+      res.json({ success: true, ...r });
+    } catch (e) {
+      console.error("[seguimiento] borrador:", e.message);
+      res.status(e.status === 401 ? 401 : 500).json({ error: e.status === 401 ? "Gmail no está conectado." : "No pude armar el seguimiento. Probá de nuevo." });
+    }
+  });
+  const accionHilo = (nombre, hacer, verbo) =>
+    app.post(`/api/agentes/:id/hilos/:tid/${nombre}`, delAgente, soloSeguimiento, async (req, res) => {
+      try {
+        const r = await hacer(req);
+        if (r.error) return res.status(r.status || 400).json({ error: r.error });
+        await registrarActividad(db, "seguimiento", "GESTION", `${req.usuario.nombre} ${verbo(r)}: ${r.hilo.contacto_nombre || r.hilo.contacto_email}`, r.hilo.asunto, req.usuario.nombre);
+        res.json({ ok: true });
+      } catch (e) {
+        res.status(500).json({ error: "No pude guardar el cambio." });
+      }
+    });
+  accionHilo("posponer", (req) => S.posponer(db, { threadId: req.params.tid, dias: req.body?.dias, usuario: req.usuario.nombre, nota: req.body?.nota }), (r) => `pospuso ${r.dias} ${r.dias === 1 ? "día" : "días"}`);
+  accionHilo("descartar", (req) => S.descartar(db, { threadId: req.params.tid, usuario: req.usuario.nombre, nota: req.body?.nota }), () => "dejó de seguir");
+  accionHilo("reabrir", (req) => S.reabrir(db, { threadId: req.params.tid, usuario: req.usuario.nombre }), () => "volvió a seguir");
+
+  // ---- Cami (ventas): borrador a pedido (siempre con el descuento definido), aprendizajes y notas comerciales ----
   const soloVentas = (req, res, next) => (req.agente.id === "ventas" ? next() : res.status(400).json({ error: "Esto es solo de Cami." }));
   const armando = new Set();
   app.post("/api/agentes/:id/mails/:mailId/borrador", delAgente, soloVentas, async (req, res) => {
     const id = String(req.params.mailId);
+    const descuento = V.validarDescuento(req.body?.descuento);
+    if (!descuento) return res.status(400).json({ error: V.ERROR_DESCUENTO, codigo: "DESCUENTO_REQUERIDO" });
     if (armando.has(id)) return res.status(429).json({ error: "Ya estoy armando ese borrador, esperá un momento." });
     armando.add(id);
     try {
@@ -709,9 +830,9 @@ function registrarRutasAgentes(app, { db, pool, ai, mails = null }) {
       const lista = await mails.listar();
       const completo = lista.find((x) => x.id === id);
       if (!completo) return res.status(400).json({ error: "Ese mail ya no tiene la etiqueta IA-Consulta en Gmail." });
-      const r = await V.prepararBorrador({ db, mail: completo, borrador: mails.borrador, reglasExtra: await V.notasTexto(db) });
+      const r = await V.prepararBorrador({ db, mail: completo, borrador: mails.borrador, reglasExtra: await V.notasTexto(db), descuento, alObservar: observar });
       if (!r.ok) return res.status(500).json({ error: "No pude armar el borrador. Probá de nuevo en unos minutos." });
-      await registrarActividad(db, "ventas", "BORRADOR", `${req.usuario.nombre} pidió el borrador de ${nombreCliente(completo.remitente, completo.emailCliente)}`, completo.asunto, req.usuario.nombre);
+      await registrarActividad(db, "ventas", "BORRADOR", `${req.usuario.nombre} pidió el borrador de ${nombreCliente(completo.remitente, completo.emailCliente)} (${descuento.pct ? `${descuento.pct}% de descuento` : "sin descuento"})`, completo.asunto, req.usuario.nombre);
       // El aviso de este mail queda resuelto con la próxima revisión; la hacemos ahora para que el tablero lo refleje.
       await revisiones.ventas();
       res.json({ success: true, revision: r.revision });
@@ -722,13 +843,56 @@ function registrarRutasAgentes(app, { db, pool, ai, mails = null }) {
       armando.delete(id);
     }
   });
-  app.put("/api/agentes/:id/auto", delAgente, soloVentas, async (req, res) => {
+  app.get("/api/agentes/:id/descuento-sugerido", delAgente, soloVentas, async (req, res) => {
     try {
-      if (String(req.usuario.rol || "").toUpperCase() !== "ADMIN") return res.status(403).json({ error: "Solo administración puede cambiar esto." });
-      const activo = !!req.body?.activo;
-      await db.query("INSERT INTO reglas (clave, valor) VALUES ('ventas_auto', ?) ON DUPLICATE KEY UPDATE valor = VALUES(valor)", [activo ? "1" : "0"]);
-      await registrarActividad(db, "ventas", "GESTION", `${req.usuario.nombre} ${activo ? "activó" : "apagó"} el armado automático de borradores`, null, req.usuario.nombre);
-      res.json({ ok: true, auto: activo });
+      res.json(await V.sugerirDescuento(db, req.query.email));
+    } catch (e) {
+      res.status(500).json({ error: "No pude buscar sugerencias de descuento." });
+    }
+  });
+  app.get("/api/agentes/:id/aprendizajes", delAgente, soloVentas, async (req, res) => {
+    try {
+      const estados = String(req.query.estado || "ABIERTA").split(",").filter((x) => ["ABIERTA", "EN_CURSO", "RESUELTA", "DESCARTADA"].includes(x));
+      res.json({ conteos: await Apr.conteos(db), aprendizajes: await Apr.listar(db, { estados: estados.length ? estados : ["ABIERTA"], limite: 60 }) });
+    } catch (e) {
+      res.status(500).json({ error: "No pude cargar lo que estoy aprendiendo." });
+    }
+  });
+  // Buscador de productos para definir "qué productos tienen esta característica".
+  app.get("/api/agentes/:id/productos-buscar", delAgente, soloVentas, async (req, res) => {
+    try {
+      const q = String(req.query.q || "").trim().slice(0, 60);
+      const like = `%${q.replace(/[%_]/g, "")}%`;
+      const [rows] = q ? await db.query("SELECT id, codigo, nombre FROM productos WHERE codigo LIKE ? OR nombre LIKE ? ORDER BY codigo LIMIT 25", [like, like]) : await db.query("SELECT id, codigo, nombre FROM productos ORDER BY codigo LIMIT 25");
+      res.json({ productos: rows });
+    } catch (e) {
+      res.status(500).json({ error: "No pude buscar productos." });
+    }
+  });
+  // La persona decide qué hacer con una sugerencia: queda guardada en la base y pasa a las reglas de los próximos borradores.
+  app.post("/api/agentes/:id/aprendizajes/:aid/resolver", delAgente, soloVentas, async (req, res) => {
+    try {
+      const b = req.body || {};
+      let productos = [];
+      if (Array.isArray(b.productos) && b.productos.length) {
+        const ids = b.productos.map(Number).filter(Number.isFinite).slice(0, 80);
+        if (ids.length) [productos] = await db.query(`SELECT id, codigo, nombre FROM productos WHERE id IN (${ids.map(() => "?").join(",")})`, ids);
+      }
+      const r = await Apr.resolver(db, { id: Number(req.params.aid), accion: String(b.accion || ""), decision: b.decision, productos, usuario: req.usuario.nombre });
+      if (r.error) return res.status(r.status || 400).json({ error: r.error });
+      await registrarActividad(db, "ventas", "GESTION", `${req.usuario.nombre} definió: ${r.titulo}`, `${Apr.ACCIONES[b.accion]}${r.nota ? `\n${r.nota}` : ""}`, req.usuario.nombre);
+      res.json({ ok: true, ...r });
+    } catch (e) {
+      console.error("[ventas] resolver aprendizaje:", e.message);
+      res.status(500).json({ error: "No pude guardar la decisión." });
+    }
+  });
+  app.post("/api/agentes/:id/aprendizajes/:aid/cerrar", delAgente, soloVentas, async (req, res) => {
+    try {
+      const r = await Apr.cerrarEnCurso(db, { id: Number(req.params.aid), usuario: req.usuario.nombre, decision: req.body?.decision });
+      if (r.error) return res.status(r.status || 400).json({ error: r.error });
+      await registrarActividad(db, "ventas", "GESTION", `${req.usuario.nombre} marcó como hecho un pendiente de entrenamiento`, null, req.usuario.nombre);
+      res.json({ ok: true });
     } catch (e) {
       res.status(500).json({ error: "No pude guardar el cambio." });
     }
@@ -761,7 +925,7 @@ function registrarRutasAgentes(app, { db, pool, ai, mails = null }) {
       if (req.body?.cancelar) return res.json(cancelarNota({ usuario, token: req.body?.token }));
       const r = await confirmarNota({ db, usuario, token: req.body?.token });
       if (r.error) return res.status(r.status || 400).json({ error: r.error });
-      await registrarActividad(db, "ventas", "GESTION", `${usuario.nombre} confirmó una regla comercial`, r.texto, usuario.nombre);
+      await registrarActividad(db, "ventas", "GESTION", r.decision ? `${usuario.nombre} confirmó una decisión de entrenamiento` : `${usuario.nombre} confirmó una regla comercial`, r.texto, usuario.nombre);
       res.json({ success: true, ...r });
     } catch (e) {
       console.error("[agentes] confirmar nota:", e.message);
@@ -887,8 +1051,8 @@ function registrarRutasAgentes(app, { db, pool, ai, mails = null }) {
 
   // La reunión de las 08:00 se avisa por la campanita y al celular a todos los roles que tengan algún agente.
   const depsReunion = {
-    pool, db, ai, agentes: AGENTES.filter((a) => a.id !== "ventas" || mails),
-    revisar: [revisiones.rrhh, revisiones.stock, revisiones.compras, ...(revisiones.ventas ? [revisiones.ventas] : [])],
+    pool, db, ai, agentes: AGENTES.filter(disponible),
+    revisar: [revisiones.rrhh, revisiones.stock, revisiones.compras, ...(revisiones.ventas ? [revisiones.ventas] : []), ...(revisiones.seguimiento ? [revisiones.seguimiento] : [])],
     notificar: async (c) => {
       const [rows] = await db.query("SELECT DISTINCT rol_nombre FROM permisos_roles WHERE modulo_id LIKE 'agente:%' OR modulo_id = '*'");
       const roles = ["ADMIN", ...rows.map((r) => r.rol_nombre)];
@@ -901,7 +1065,7 @@ function registrarRutasAgentes(app, { db, pool, ai, mails = null }) {
       });
     },
   };
-  return { revisarRRHH: revisiones.rrhh, revisarStock: revisiones.stock, revisarCompras: revisiones.compras, revisarVentas: revisiones.ventas, iniciarReunion: () => iniciarReunion(depsReunion) };
+  return { revisarRRHH: revisiones.rrhh, revisarStock: revisiones.stock, revisarCompras: revisiones.compras, revisarVentas: revisiones.ventas, revisarSeguimiento: revisiones.seguimiento, iniciarReunion: () => iniciarReunion(depsReunion) };
 }
 
 /** Deja corriendo el vigilante: una revisión poco después de arrancar y luego cada N minutos (sin IA, solo consultas). */
@@ -913,6 +1077,7 @@ function iniciarVigilantes(agentes, { intervaloMin = Number(process.env.AGENTES_
     setTimeout(() => agentes.revisarStock?.().catch((e) => console.error("[agentes] vigilante stock:", e.message)), 15000).unref?.();
     setTimeout(() => agentes.revisarCompras?.().catch((e) => console.error("[agentes] vigilante compras:", e.message)), 30000).unref?.();
     setTimeout(() => agentes.revisarVentas?.().catch((e) => console.error("[agentes] vigilante ventas:", e.message)), 45000).unref?.();
+    setTimeout(() => agentes.revisarSeguimiento?.().catch((e) => console.error("[agentes] vigilante seguimiento:", e.message)), 60000).unref?.();
   };
   agentes.iniciarReunion?.();
   const t0 = setTimeout(correr, 20000);
@@ -925,4 +1090,4 @@ function iniciarVigilantes(agentes, { intervaloMin = Number(process.env.AGENTES_
   };
 }
 
-module.exports = { revisarVentas, revisarCompras, AGENTES, agentePorId, asegurarTablasAgentes, registrarRutasAgentes, iniciarVigilantes, revisarRRHH, revisarStock, ahoraArgentina };
+module.exports = { revisarSeguimiento, revisarVentas, revisarCompras, AGENTES, agentePorId, asegurarTablasAgentes, registrarRutasAgentes, iniciarVigilantes, revisarRRHH, revisarStock, ahoraArgentina };

@@ -81,6 +81,7 @@ async function armarReunion({ pool, db, agentes }) {
     console.error("[reunión] producción:", e.message);
   }
   if (por.ventas) poner("ventas", seccionAvisos(por.ventas, await hallazgos(db, "ventas"), "Sin consultas de clientes esperando respuesta."));
+  if (por.seguimiento) poner("seguimiento", seccionAvisos(por.seguimiento, await hallazgos(db, "seguimiento"), "Ningún mail enviado quedó sin respuesta."));
   return { secciones, urgentes: secciones.filter((s) => s.urgente).length };
 }
 

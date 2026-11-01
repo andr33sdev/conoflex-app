@@ -37,9 +37,9 @@ function TarjetaAjuste({ c, onAceptar, onCancelar }) {
 function TarjetaNota({ c, onAceptar, onCancelar }) {
   return (
     <div className="mt-3 rounded-xl border border-white/[0.14] bg-white/[0.04] p-3.5" role="group" aria-label="Confirmar regla comercial">
-      <p className="text-[12px] font-semibold uppercase tracking-wide text-zinc-500">Regla comercial · falta tu confirmación</p>
+      <p className="text-[12px] font-semibold uppercase tracking-wide text-zinc-500">{c.tipo === "decision" ? "Decisión de entrenamiento" : "Regla comercial"} · falta tu confirmación</p>
       <p className="mt-1.5 text-[15px] text-white leading-snug">“{c.texto}”</p>
-      <p className="mt-1 text-[12.5px] text-zinc-500">Se suma a las reglas de cada borrador desde el próximo.</p>
+      <p className="mt-1 text-[12.5px] text-zinc-500">{c.tipo === "decision" ? "Queda guardada y la uso en cada borrador desde el próximo." : "Se suma a las reglas de cada borrador desde el próximo."}</p>
       {c.estado === "pendiente" || c.estado === "enviando" ? (
         <div className="mt-3 flex flex-wrap gap-2">
           <button onClick={onAceptar} disabled={c.estado === "enviando"} className="inline-flex items-center gap-2 min-h-[42px] px-4 rounded-lg bg-[#FF5A00] hover:bg-[#ff6d1f] text-[14px] font-bold text-black disabled:opacity-60">
@@ -51,7 +51,7 @@ function TarjetaNota({ c, onAceptar, onCancelar }) {
         </div>
       ) : (
         <p className={`mt-3 text-[13.5px] font-semibold ${c.estado === "hecho" ? "text-emerald-400" : c.estado === "error" ? "text-red-400" : "text-zinc-400"}`}>
-          {c.estado === "hecho" ? "Listo: quedó anotada." : c.estado === "cancelado" ? "Cancelado: no anoté nada." : c.error || "No se pudo anotar."}
+          {c.estado === "hecho" ? "Listo: quedó guardada." : c.estado === "cancelado" ? "Cancelado: no anoté nada." : c.error || "No se pudo anotar."}
         </p>
       )}
     </div>
@@ -108,7 +108,7 @@ export default function Chat({ perfil, estado, mensajes, enviando, texto, onText
                         </button>
                       </div>
                     )}
-                    {m.confirmacion && (m.confirmacion.tipo === "nota" ? <TarjetaNota c={m.confirmacion} onAceptar={() => onConfirmar?.(i, true)} onCancelar={() => onConfirmar?.(i, false)} /> : <TarjetaAjuste c={m.confirmacion} onAceptar={() => onConfirmar?.(i, true)} onCancelar={() => onConfirmar?.(i, false)} />)}
+                    {m.confirmacion && ((m.confirmacion.tipo === "nota" || m.confirmacion.tipo === "decision") ? <TarjetaNota c={m.confirmacion} onAceptar={() => onConfirmar?.(i, true)} onCancelar={() => onConfirmar?.(i, false)} /> : <TarjetaAjuste c={m.confirmacion} onAceptar={() => onConfirmar?.(i, true)} onCancelar={() => onConfirmar?.(i, false)} />)}
                     {!m.error && m.texto && (
                       <div className="mt-2 flex items-center gap-1 -ml-2">
                         {m.herramientas?.filter((h) => h.nombre === "liquidar_horas" && h.ok && h.args).slice(-1).map((h) => (

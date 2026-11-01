@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Bell, FileDown, History, LayoutGrid, ClipboardList, Loader2, Mail, Users, MessageCircle, ScanSearch, Volume2, VolumeX } from "lucide-react";
+import { Bell, Eraser, FileDown, History, LayoutGrid, ClipboardList, Loader2, Mail, Users, MessageCircle, ScanSearch, Volume2, VolumeX } from "lucide-react";
 import { api } from "../produccion/util";
 import { useToast } from "../produccion/useToast";
 import Chat from "./Chat";
@@ -14,6 +14,7 @@ import Panorama from "./Panorama";
 import PanoramaCompras from "./PanoramaCompras";
 import PanoramaProduccion from "./PanoramaProduccion";
 import PanoramaVentas from "./PanoramaVentas";
+import PanoramaSeguimiento from "./PanoramaSeguimiento";
 import Ficha from "./Ficha";
 import { dictar, fijarVozAgente, prepararVoz, reproducirVoz, soportaDictado, textoParaVoz } from "./voz";
 import { getApiUrl } from "../apiConfig";
@@ -183,7 +184,7 @@ export default function Pantalla({ agente, usuario, pregunta, onPreguntaUsada, o
     const poner = (nuevo) => setMensajes((prev) => prev.map((x, i) => (i === indice ? { ...x, confirmacion: { ...x.confirmacion, ...nuevo } } : x)));
     poner({ estado: "enviando" });
     try {
-      const url = c.tipo === "nota" ? "/api/agentes/ventas/confirmar-nota" : "/api/agentes/stock/confirmar";
+      const url = c.tipo === "nota" || c.tipo === "decision" ? "/api/agentes/ventas/confirmar-nota" : "/api/agentes/stock/confirmar";
       const r = await api(url, { method: "POST", body: { token: c.token, cancelar: !aceptar } });
       poner(aceptar ? { estado: "hecho", stockFinal: r.stock_actual } : { estado: "cancelado" });
       if (aceptar) setVersion((v) => v + 1);
@@ -192,10 +193,30 @@ export default function Pantalla({ agente, usuario, pregunta, onPreguntaUsada, o
     }
   };
 
+  // Limpiar la conversación (pide confirmar con un segundo toque, sin ventanas del navegador).
+  const [confirmaLimpiar, setConfirmaLimpiar] = useState(false);
+  useEffect(() => {
+    if (!confirmaLimpiar) return undefined;
+    const t = setTimeout(() => setConfirmaLimpiar(false), 4000);
+    return () => clearTimeout(t);
+  }, [confirmaLimpiar]);
+  const limpiarChat = () => {
+    if (!confirmaLimpiar) return setConfirmaLimpiar(true);
+    setConfirmaLimpiar(false);
+    cortarLectura(); // también sube el turno: si ya estaba pensando, esa respuesta se descarta
+    setHablando(false);
+    setTexto("");
+    setEnviando(false);
+    reporteAuto.current = false;
+    setMensajes([]);
+    mostrar(`Chat con ${perfil.nombre} limpio.`);
+  };
+
   const enviar = async (forzado, porVoz = false) => {
     const t = (typeof forzado === "string" ? forzado : texto).trim();
     if (!t || enviando) return;
     cortarLectura();
+    const inicio = turno.current;
     const nuevos = [...msgsRef.current, { rol: "user", texto: t }];
     setMensajes(nuevos);
     setTexto("");
@@ -210,6 +231,7 @@ export default function Pantalla({ agente, usuario, pregunta, onPreguntaUsada, o
       // Con voz: el texto aparece recién cuando el audio está listo, y los dos arrancan en el mismo instante
       // (mientras tanto Lía sigue "pensando"). Si el audio tarda demasiado o falla, se muestra solo el texto.
       const resp = data.respuesta || "";
+      if (turno.current !== inicio) return; // limpiaron el chat o cortaron mientras pensaba: la respuesta ya no corresponde
       const mi = turno.current;
       const conVoz = porVoz || vozActiva || manosRef.current.activo;
       const prep = conVoz ? await Promise.race([prepararVoz(textoParaVoz(resp), { base }), new Promise((r) => setTimeout(() => r(null), 16000))]) : null;
@@ -223,6 +245,7 @@ export default function Pantalla({ agente, usuario, pregunta, onPreguntaUsada, o
       }
     } catch (e) {
       reporteAuto.current = false;
+      if (turno.current !== inicio) return;
       setMensajes([...nuevos, { rol: "assistant", texto: `No pude responderte: ${e.message}`, error: true }]);
     } finally {
       setEnviando(false);
@@ -396,6 +419,7 @@ export default function Pantalla({ agente, usuario, pregunta, onPreguntaUsada, o
     ...(perfil.panorama === "compras" ? [{ id: "panorama", texto: "Mi lista", icono: ClipboardList }] : []),
     ...(perfil.panorama === "produccion" ? [{ id: "panorama", texto: "Prioridades", icono: LayoutGrid }] : []),
     ...(perfil.panorama === "ventas" ? [{ id: "panorama", texto: "Mails", icono: Mail }] : []),
+    ...(perfil.panorama === "seguimiento" ? [{ id: "panorama", texto: "Seguimiento", icono: Mail }] : []),
     ...(perfil.personal ? [{ id: "personal", texto: "Personal", icono: Users }] : []),
     ...(perfil.sinVigilante ? [] : [{ id: "avisos", texto: "Avisos", icono: Bell, n: abiertos }]),
     { id: "actividad", texto: "Actividad", icono: History },
@@ -412,6 +436,11 @@ export default function Pantalla({ agente, usuario, pregunta, onPreguntaUsada, o
         </div>
         <div className="flex items-center gap-0.5 shrink-0">
           {agente.id === "rrhh" && <Liquidar onLiquidar={descargarPdf} boton={boton} />}
+          {mensajes.length > 0 && (
+            <button onClick={limpiarChat} className={`${boton} ${confirmaLimpiar ? "!text-red-300 bg-red-500/10" : ""}`} aria-label={confirmaLimpiar ? "Tocá otra vez para borrar la conversación" : `Limpiar el chat con ${perfil.nombre}`} title="Limpiar el chat">
+              <Eraser size={17} /> <span className={confirmaLimpiar ? "inline" : "hidden md:inline"}>{confirmaLimpiar ? "¿Borrar todo?" : "Limpiar"}</span>
+            </button>
+          )}
           <button onClick={pedirReporte} disabled={enviando} className={boton} aria-label="Pedir un reporte en PDF" title="Pedir un reporte en PDF">
             <FileDown size={17} /> <span className="hidden md:inline">Reporte</span>
           </button>
@@ -483,7 +512,7 @@ export default function Pantalla({ agente, usuario, pregunta, onPreguntaUsada, o
         )}
         {tab === "panorama" && (
           <div className="h-full overflow-y-auto custom-scrollbar">
-            {perfil.panorama === "ventas" ? <PanoramaVentas base={base} datos={pano} error={errPano} onPreguntar={alPropuesta2} alCambiar={() => setVersion((v) => v + 1)} mostrar={mostrar} /> : perfil.panorama === "compras" ? <PanoramaCompras datos={pano} error={errPano} onPreguntar={alPropuesta2} /> : perfil.panorama === "produccion" ? <PanoramaProduccion datos={pano} error={errPano} onPreguntar={alPropuesta2} /> : <Panorama datos={pano} error={errPano} onPreguntar={alPropuesta2} />}
+            {perfil.panorama === "seguimiento" ? <PanoramaSeguimiento base={base} datos={pano} error={errPano} onPreguntar={alPropuesta2} alCambiar={() => setVersion((v) => v + 1)} mostrar={mostrar} /> : perfil.panorama === "ventas" ? <PanoramaVentas base={base} datos={pano} error={errPano} onPreguntar={alPropuesta2} alCambiar={() => setVersion((v) => v + 1)} mostrar={mostrar} /> : perfil.panorama === "compras" ? <PanoramaCompras datos={pano} error={errPano} onPreguntar={alPropuesta2} /> : perfil.panorama === "produccion" ? <PanoramaProduccion datos={pano} error={errPano} onPreguntar={alPropuesta2} /> : <Panorama datos={pano} error={errPano} onPreguntar={alPropuesta2} />}
           </div>
         )}
         {tab === "personal" && (

@@ -43,6 +43,20 @@ function parsearJson(texto) {
   }
 }
 
+const TIPOS_OBSERVACION = new Set(["VACIO", "CARACTERISTICA", "PREGUNTA", "MEJORA"]);
+/** Lo que la IA notó para que el equipo lo defina: cosas pedidas que el sistema no tiene definidas. Solo texto corto y de tipos conocidos. */
+function normalizarObservaciones(lista) {
+  const out = [];
+  for (const o of Array.isArray(lista) ? lista : []) {
+    const tipo = String(o?.tipo || "").toUpperCase();
+    const titulo = String(o?.titulo || "").replace(/\s+/g, " ").trim().slice(0, 160);
+    if (!TIPOS_OBSERVACION.has(tipo) || titulo.length < 6) continue;
+    out.push({ tipo, titulo, detalle: String(o?.detalle || "").replace(/\s+/g, " ").trim().slice(0, 400), evidencia: String(o?.evidencia || "").replace(/\s+/g, " ").trim().slice(0, 300) });
+    if (out.length >= 4) break;
+  }
+  return out;
+}
+
 /** Valida lo que devolvió el primer paso: solo ids que existen, cantidades numéricas, sin repetidos. */
 function validarPedido(crudo, productos) {
   if (!crudo || typeof crudo !== "object") return null;
@@ -71,6 +85,7 @@ function validarPedido(crudo, productos) {
     items,
     sin_equivalente: (Array.isArray(crudo.sin_equivalente) ? crudo.sin_equivalente : []).filter((x) => x && x.pedido).slice(0, 6).map((x) => ({ pedido: String(x.pedido).slice(0, 160), detalle: String(x.detalle || "").slice(0, 300) })),
     preguntas_al_cliente: (Array.isArray(crudo.preguntas_al_cliente) ? crudo.preguntas_al_cliente : []).map((x) => String(x).slice(0, 200)).filter(Boolean).slice(0, 4),
+    observaciones: normalizarObservaciones(crudo.observaciones),
   };
 }
 
@@ -188,14 +203,16 @@ ${texto}
 Devolvé SOLO un JSON con esta forma:
 {
   "pide_lista_precios": true|false,
-  "descuento_pct": número|null,
+  "descuento_pct": null,
+  "observaciones": [{"tipo": "VACIO"|"CARACTERISTICA"|"PREGUNTA"|"MEJORA", "titulo": "frase corta", "detalle": "qué falta definir", "evidencia": "frase textual del cliente"}],
   "items": [{"id": id del catálogo, "cantidad": número|null, "unidad": "u"|"m"|"par"|"rollo"|null, "variante": texto|null, "motivo": "por qué este producto", "correspondencia": "si mandó foto o nombró otra marca: qué se ve y por qué equivale; si no, null"}],
   "sin_equivalente": [{"pedido": "lo que pidió", "detalle": "por qué no hay"}],
   "preguntas_al_cliente": ["datos que faltan para cotizar bien"]
 }
 Reglas:
 - Usá SOLO ids que figuren en el catálogo de arriba. Nunca inventes productos.
-- "descuento_pct": solo si las REGLAS COMERCIALES indican un descuento aplicable a este pedido; si no lo indican, null. No lo inventes.
+- "descuento_pct": dejalo siempre en null: el descuento lo define la persona del equipo antes de armar el borrador, no vos.
+- "observaciones": ayudan al equipo a entrenarte. Anotá (máximo 4, solo si de verdad aplica) lo que el cliente pidió o preguntó y que NO está definido en las reglas comerciales ni en el catálogo: "VACIO" = política o dato que falta (plazo de entrega, formas de pago, instalación, certificaciones, mínimos de compra); "CARACTERISTICA" = una característica que el cliente pide para el producto (color, material, peso, reflectivo, medida) y que el catálogo no confirma; "PREGUNTA" = una duda del cliente que seguramente se repite y conviene tener respondida; "MEJORA" = algo que haría las respuestas más acertadas (un producto que falta, un dato a agregar a una ficha). "titulo" = frase corta y genérica (sin nombres de clientes), "evidencia" = cita textual breve del mail. Si no hay nada para anotar, devolvé [].
 - Si el cliente no precisa un modelo (ej: "quiero comprar conos"), proponé 2 o 3 alternativas de esa categoría según las reglas y los usos del catálogo (máximo ${MAX_ITEMS} ítems en total).
 - "cantidad" solo si el cliente la dijo ("35 postes" → 35; "70m de cadena" → 70 con unidad "m"). Si no la dijo, null.
 - "variante": si el cliente aclaró una variante (color, tipo de fijación, etc.) ponela; si no, null.
@@ -257,6 +274,7 @@ Reglas de redacción:
  */
 async function generarCotizacion(deps) {
   const { ai, modelo, productos, reglas, mailCliente, nombreCliente, texto, imagenes = [], adjuntaLista = false, descuentoConfig = null } = deps;
+  if (descuentoConfig !== null && !(Number.isFinite(descuentoConfig) && descuentoConfig >= 0 && descuentoConfig <= 60)) throw new Error("Descuento inválido.");
   const r1 = await ai.models.generateContent({
     model: modelo,
     contents: [...imagenes, promptPedido({ reglas, indice: indiceCatalogo(productos), mailCliente, texto })],
@@ -279,6 +297,8 @@ async function generarCotizacion(deps) {
   const html = armarHtml({ calculo, redaccion });
   const revision = {
     descuento_pct: calculo.descuentoPct,
+    descuento_definido: descuentoConfig !== null,
+    observaciones: pedido.observaciones,
     adjunta_lista: adjunta,
     pide_lista_precios: pedido.pide_lista_precios,
     avisos: [
@@ -292,4 +312,4 @@ async function generarCotizacion(deps) {
   return { html, revision };
 }
 
-module.exports = { indiceCatalogo, parsearJson, validarPedido, calcularItem, calcularPedido, tarjetaHtml, armarHtml, promptPedido, promptRedaccion, generarCotizacion, pesos, normalizarCodigo };
+module.exports = { indiceCatalogo, parsearJson, validarPedido, calcularItem, calcularPedido, tarjetaHtml, armarHtml, promptPedido, promptRedaccion, generarCotizacion, pesos, normalizarCodigo, normalizarObservaciones };

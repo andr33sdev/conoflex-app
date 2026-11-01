@@ -5,8 +5,8 @@ import { api } from "./produccion/util";
 import { fechaCorta, hace } from "./ingenieria/formato";
 
 const CADA_MS = 45000;
-const COLOR_AGENTE = { AGENTE_RRHH: "#FF5A00", AGENTE_STOCK: "#22c55e", AGENTE_COMPRAS: "#3b82f6", AGENTE_REUNION: "#8b5cf6" };
-const NOMBRE_AGENTE = { AGENTE_RRHH: "Lía", AGENTE_STOCK: "Nati", AGENTE_COMPRAS: "Vera", AGENTE_REUNION: "Reunión" };
+const COLOR_AGENTE = { AGENTE_RRHH: "#FF5A00", AGENTE_STOCK: "#22c55e", AGENTE_COMPRAS: "#3b82f6", AGENTE_PRODUCCION: "#8b5cf6", AGENTE_VENTAS: "#14b8a6", AGENTE_SEGUIMIENTO: "#ec4899", AGENTE_REUNION: "#8b5cf6" };
+const NOMBRE_AGENTE = { AGENTE_RRHH: "Lía", AGENTE_STOCK: "Nati", AGENTE_COMPRAS: "Vera", AGENTE_PRODUCCION: "Romi", AGENTE_VENTAS: "Cami", AGENTE_SEGUIMIENTO: "Sofi", AGENTE_REUNION: "Reunión" };
 
 /**
  * Campanita de admin y producción.
