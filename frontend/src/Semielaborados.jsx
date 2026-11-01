@@ -19,6 +19,9 @@ import {
 import { Truck } from "lucide-react";
 import { api } from "./produccion/util";
 import CamionParaguay from "./semielaborados/CamionParaguay";
+import Movimientos from "./semielaborados/Movimientos";
+import Alineacion33 from "./semielaborados/Alineacion33";
+import { useAlineacion33 } from "./semielaborados/useAlineacion33";
 
 export default function Semielaborados() {
   const [items, setItems] = useState([]);
@@ -54,6 +57,9 @@ export default function Semielaborados() {
   // MODAL DE FICHA
   const [detailItem, setDetailItem] = useState(null);
   const [verCamion, setVerCamion] = useState(false);
+  const [verAlineacion, setVerAlineacion] = useState(false);
+  const [alineacion, recargarAlineacion] = useAlineacion33();
+  const difsAlineacion = alineacion?.diferencias?.length || 0;
 
   // Cómo se consigue (fábrica / proveedor / Paraguay) y si se le sigue la demanda.
   const clasificar = async (item, cambios) => {
@@ -100,6 +106,17 @@ export default function Semielaborados() {
       console.error("Error al cargar semielaborados:", err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Después de transferir: se actualizan los stocks sin recargar toda la pantalla.
+  const recargarStock = async () => {
+    try {
+      const data = await api(`/api/semielaborados?meses=${mesesHistorial}`);
+      setItems(data);
+      setDetailItem((d) => (d ? data.find((x) => x.id === d.id) || d : d));
+    } catch {
+      /* se ve igual con los números anteriores */
     }
   };
 
@@ -292,6 +309,13 @@ export default function Semielaborados() {
             className="flex-1 md:flex-none flex items-center justify-center gap-2 px-4 py-2 text-sm font-semibold border border-zinc-800 text-zinc-300 hover:border-[#FF5A00] hover:text-white transition-colors cursor-pointer"
           >
             <Truck size={15} /> Camión Paraguay
+          </button>
+          <button
+            onClick={() => setVerAlineacion(true)}
+            className="flex-1 md:flex-none flex items-center justify-center gap-2 px-4 py-2 text-sm font-semibold border border-zinc-800 text-zinc-300 hover:border-[#FF5A00] hover:text-white transition-colors cursor-pointer"
+          >
+            {difsAlineacion > 0 && <span className="w-2 h-2 rounded-full bg-[#FF5A00]" aria-hidden="true" />}
+            33 vs planilla{difsAlineacion > 0 ? ` (${difsAlineacion})` : ""}
           </button>
           <button
             onClick={handleStartSync}
@@ -601,6 +625,7 @@ export default function Semielaborados() {
       ========================================================= */}
 
       {verCamion && <CamionParaguay onClose={() => setVerCamion(false)} />}
+      {verAlineacion && <Alineacion33 estado={alineacion} onClose={() => setVerAlineacion(false)} onCambio={() => { recargarAlineacion(); recargarStock(); }} />}
 
       {/* MODAL FICHA DE SEMIELABORADO */}
       {detailItem && (
@@ -687,6 +712,8 @@ export default function Semielaborados() {
                 ))}
               </div>
             </div>
+
+            <Movimientos item={detailItem} alCambiar={() => { recargarStock(); recargarAlineacion(); }} />
 
             {/* ESPECIFICACIÓN TÉCNICA DEL PEGADO */}
             <div className="bg-black border border-zinc-800 p-4 space-y-3">

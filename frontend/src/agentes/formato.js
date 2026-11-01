@@ -44,6 +44,8 @@ export const TIPOS_AVISO = {
   MP_EXCESO: { texto: "Stock de más", tono: "azul" },
   STOCK_NEGATIVO: { texto: "Stock negativo", tono: "rojo" },
   SEMI_CRITICO: { texto: "Semielaborado crítico", tono: "rojo" },
+  ENTRADA_OTRO_DEPOSITO: { texto: "Entrada de otro depósito", tono: "azul" },
+  DESALINEADO_33: { texto: "33 distinto a la planilla", tono: "naranja" },
   SEMI_BAJO: { texto: "Semielaborado bajo", tono: "amarillo" },
   COMPRA_DEMORADA: { texto: "Compra demorada", tono: "naranja" },
   SOLICITUD_SIN_FIRMA: { texto: "Falta firma", tono: "naranja" },

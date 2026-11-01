@@ -2,7 +2,16 @@
 // Stock del semielaborado según las producciones aprobadas: al aprobar una carga se suman sus piezas buenas
 // y al eliminarla se restan exactamente las mismas (queda registrado cuánto y en qué depósito).
 const DEPOSITOS = ["stock_33", "stock_26", "stock_ayolas", "stock_37"];
-const DEPOSITO_PRODUCCION = DEPOSITOS.includes(process.env.DEPOSITO_PRODUCCION) ? process.env.DEPOSITO_PRODUCCION : "stock_33";
+// Si la máquina no se reconoce, va a este depósito.
+const DEPOSITO_PRODUCCION = DEPOSITOS.includes(process.env.DEPOSITO_PRODUCCION) ? process.env.DEPOSITO_PRODUCCION : "stock_26";
+
+/** Dónde queda lo producido según la máquina: Inyectoras y Hornos → 26; Extrusoras → 37. */
+function depositoDeMaquina(nombre) {
+  const m = String(nombre || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+  if (/^(inyectora|horno)/.test(m)) return "stock_26";
+  if (/^extrusora/.test(m)) return "stock_37";
+  return DEPOSITO_PRODUCCION;
+}
 
 async function asegurarSemiStockCarga(db) {
   await db.query(`
@@ -37,8 +46,9 @@ async function sumarPorCarga(conn, c, buenas) {
   if (ya.length) return 0;
   const semiId = await semiDeCarga(conn, c);
   if (!semiId) return 0;
-  await conn.query(`UPDATE semielaborados SET ${DEPOSITO_PRODUCCION} = COALESCE(${DEPOSITO_PRODUCCION}, 0) + ? WHERE id = ?`, [cantidad, semiId]);
-  await conn.query("INSERT INTO prod_semi_stock_movs (carga_id, semielaborado_id, deposito, cantidad) VALUES (?,?,?,?)", [c.id, semiId, DEPOSITO_PRODUCCION, cantidad]);
+  const dep = depositoDeMaquina(c.maquina);
+  await conn.query(`UPDATE semielaborados SET ${dep} = COALESCE(${dep}, 0) + ? WHERE id = ?`, [cantidad, semiId]);
+  await conn.query("INSERT INTO prod_semi_stock_movs (carga_id, semielaborado_id, deposito, cantidad) VALUES (?,?,?,?)", [c.id, semiId, dep, cantidad]);
   return cantidad;
 }
 
@@ -55,4 +65,4 @@ async function devolverPorCarga(conn, cargaId) {
   return total;
 }
 
-module.exports = { asegurarSemiStockCarga, sumarPorCarga, devolverPorCarga, DEPOSITO_PRODUCCION };
+module.exports = { asegurarSemiStockCarga, sumarPorCarga, devolverPorCarga, depositoDeMaquina, DEPOSITO_PRODUCCION };
