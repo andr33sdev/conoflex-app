@@ -27,6 +27,7 @@ export default function Semielaborados() {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [syncMsg, setSyncMsg] = useState("");
   const [search, setSearch] = useState("");
 
   // PESTAÑAS DE DEPOSITOS
@@ -134,8 +135,10 @@ export default function Semielaborados() {
         headers: { "Content-Type": "application/json" },
       });
 
-      if (res.ok) {
-        const data = await res.json();
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        alert(data.error || "No se pudo leer la planilla. No se cambió nada.");
+      } else {
         setPreviewData(data);
         setIncludeNuevos(true);
         setIncludeModificados(true);
@@ -173,8 +176,13 @@ export default function Semielaborados() {
         }),
       });
 
-      if (res.ok) {
+      const r = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        alert(r.error || "No se pudo aplicar la sincronización.");
+      } else {
         setPreviewData(null);
+        setSyncMsg(`Sincronizado: ${r.actualizados || 0} actualizados${r.creados ? `, ${r.creados} nuevos` : ""}`);
+        setTimeout(() => setSyncMsg(""), 6000);
         fetchItems(mesesHistorial);
       }
     } catch (err) {
@@ -324,6 +332,7 @@ export default function Semielaborados() {
           >
             <RefreshCw size={15} className={isSyncing ? "animate-spin" : ""} /> Sincronizar
           </button>
+          {syncMsg && <span role="status" className="self-center text-xs font-bold text-emerald-300">{syncMsg}</span>}
         </div>
       </div>
 
@@ -902,6 +911,12 @@ export default function Semielaborados() {
                   )}
                 </div>
               </div>
+            )}
+
+            {previewData.sin_planilla?.length > 0 && (
+              <p className="text-[10px] text-zinc-500 uppercase tracking-widest shrink-0">
+                {previewData.sin_planilla.length} {previewData.sin_planilla.length === 1 ? "código de la app no figura" : "códigos de la app no figuran"} en la planilla y no se tocan
+              </p>
             )}
 
             <div className="pt-5 border-t border-zinc-800 flex justify-between items-center shrink-0  ">
