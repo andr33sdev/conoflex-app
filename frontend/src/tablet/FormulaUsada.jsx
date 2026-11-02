@@ -50,9 +50,7 @@ export default function FormulaUsada({ lineas, setLineas, original, version, por
 
   return (
     <div className="rounded-2xl border border-white/[0.07] bg-white/[0.03] p-4">
-      <p className="text-[13px] font-extrabold uppercase tracking-[0.08em] text-zinc-400">Receta</p>
-      <p className="mt-1 text-xl font-extrabold text-white leading-snug">¿Usaron {version ? <>“{version}”</> : "la receta definida"}?</p>
-
+      <p className="text-[13px] font-extrabold uppercase tracking-[0.08em] text-zinc-400">Receta{version ? <> · <span className="text-zinc-200 normal-case tracking-normal">{version}</span></> : ""}</p>
       <div className="mt-3 grid grid-cols-2 gap-3" role="radiogroup" aria-label="¿Usaron la receta definida?">
         <button type="button" role="radio" aria-checked={!otra} onClick={elegirIgual} className={`min-h-[68px] rounded-2xl border-2 text-lg font-extrabold inline-flex items-center justify-center gap-2.5 cursor-pointer transition-colors ${!otra ? "border-emerald-400 bg-emerald-500/15 text-emerald-200" : "border-white/[0.1] bg-[#17171c] text-zinc-400"}`}>
           <Check size={22} strokeWidth={3} /> Sí, la misma
