@@ -7,6 +7,7 @@ const { cargarStock, armarPanorama } = require("./vigilanteStock");
 const { rankingProveedores } = require("./vigilanteCompras");
 const L = require("./listaCompra");
 const { eliminarSolicitud } = require("../comprasGestion");
+const { pendientesParaVera } = require("../sugerenciasCompra");
 
 function hoyArgentina() {
   const ahora = new Date();
@@ -28,6 +29,7 @@ TU ESPECIALIDAD (única y exclusiva)
 - Todo número, nombre, cantidad y proveedor sale textualmente del resultado de una herramienta. Nunca inventes precios (no tenés precios), proveedores ni cantidades.
 
 CÓMO ARMÁS LA LISTA (muy importante)
+- SUGERENCIAS DE COMPRA: producción y depósito sugieren comprar materias primas con una urgencia del 1 al 5. Con sugerencias_pendientes las ves (quién la sugirió, cuánto, urgencia, motivo y si ya hay un pedido sin recibir). Es solo lectura: las agrega a la solicitud quien gestiona las compras desde el módulo Sugerencias de compra. Si alguna ya figura pedida y sin recibir, avisalo con "Ojo:".
 - Hay UNA solicitud de compra en armado por persona. Todo lo que se hable con vos o que Nati te pase se agrega a ESA misma solicitud: nunca crees otra para la misma charla. Usá lista_actual para ver qué tiene.
 - Para agregar materiales usá agregar_a_lista (con las cantidades que la persona te dice) o agregar_recomendadas (suma lo que hace falta según el stock, con las cantidades calculadas por el sistema). No tipees cantidades de memoria: las cantidades salen de la persona o de las herramientas.
 - Si alguien dice "agregá lo que recomienda Nati" o "lo que se acaba", usá agregar_recomendadas. Si pide quitar algo, quitar_de_lista. Para cambiar de proveedor, cambiar_proveedor.
@@ -73,6 +75,7 @@ const HERRAMIENTAS = [
       { name: "ranking_proveedores", description: "Proveedores ordenados por cantidad de renglones, con el porcentaje de lo pedido que entregaron.", parameters: OBJ({}) },
       { name: "solicitudes_por_firmar", description: "Solicitudes de compra abiertas y qué firmas les faltan.", parameters: OBJ({}) },
       { name: "avisos_abiertos", description: "Los avisos que tu vigilante detectó y siguen abiertos.", parameters: OBJ({}) },
+      { name: "sugerencias_pendientes", description: "Sugerencias de compra pendientes que cargaron producción y depósito (materia prima, cantidad, urgencia 1 a 5, quién la sugirió, motivo) y si esa materia prima ya está pedida y sin recibir. Solo lectura.", parameters: OBJ({}) },
       { name: "calculadora", description: "Hace una cuenta exacta.", parameters: OBJ({ expresion: { type: "STRING" } }, ["expresion"]) },
     ],
   },
@@ -92,6 +95,7 @@ const PALABRAS_HERRAMIENTA = {
   ranking_proveedores: "Comparó proveedores",
   solicitudes_por_firmar: "Revisó las firmas pendientes",
   avisos_abiertos: "Revisó sus avisos",
+  sugerencias_pendientes: "Revisó las sugerencias de compra",
   calculadora: "Hizo una cuenta",
 };
 
@@ -114,6 +118,10 @@ function crearVera({ pool, db, ai }) {
     if (llamada.name === "avisos_abiertos") {
       const [rows] = await db.query("SELECT tipo, severidad, titulo, texto, DATE_FORMAT(fecha, '%Y-%m-%d') AS fecha FROM agentes_hallazgos WHERE agente = 'compras' AND estado = 'ABIERTO' ORDER BY FIELD(severidad,'ALTA','MEDIA','BAJA'), id DESC LIMIT 40");
       return { cantidad: rows.length, avisos: rows };
+    }
+    if (llamada.name === "sugerencias_pendientes") {
+      const lista = await pendientesParaVera(db);
+      return { cantidad: lista.length, sugerencias: lista.slice(0, 30), nota: "Urgencia 1 (baja) a 5 (urgente). Las agrega a una solicitud abierta quien gestiona las compras." };
     }
     if (!usuario) return { error: "No sé quién sos: volvé a iniciar sesión." };
     if (llamada.name === "lista_actual") return L.leerLista(db, usuario.id);
