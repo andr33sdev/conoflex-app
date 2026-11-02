@@ -92,9 +92,18 @@ function Receta({ a, bloqueado, onCambio, toast }) {
   );
 }
 
-function Asignacion({ a, maquinas, operarios, bloqueado, choque, onCambio, toast }) {
+function Asignacion({ a, maquinas, operarios, bloqueado, choque, onCambio, toast, compacta }) {
   const [cant, setCant] = useState(String(a.cantidad));
   const [quitar, setQuitar] = useState(false);
+  // Con varios productos en el turno cada uno aparece como una línea; se abre para editar o ver el detalle.
+  const [abierta, setAbierta] = useState(!compacta);
+  const [cantPrev, setCantPrev] = useState(a.cantidad);
+  if (cantPrev !== a.cantidad) {
+    setCantPrev(a.cantidad);
+    setCant(String(a.cantidad));
+  }
+  const faltan = problemasDeTurno([a]).length;
+  const maq = maquinas.find((m) => m.id === a.maquina_id)?.nombre;
 
   const cambiar = async (campoNombre, valor) => {
     try {
@@ -129,10 +138,18 @@ function Asignacion({ a, maquinas, operarios, bloqueado, choque, onCambio, toast
   return (
     <motion.li layout initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.97 }} transition={{ duration: 0.25 }} className="rounded-2xl border border-white/[0.08] bg-[#131317] p-3.5">
       <div className="flex items-start gap-2">
-        <div className="min-w-0 flex-1">
+        <button type="button" onClick={() => setAbierta((v) => !v)} aria-expanded={abierta} className="min-w-0 flex-1 text-left cursor-pointer">
           <p className="text-[15px] font-bold text-white leading-snug"><span className="font-mono text-[11px] font-bold text-[#FFD60A] mr-2">{a.lote}</span>{a.semielaborado_nombre}</p>
-          <p className="text-xs text-zinc-500">{a.semielaborado_codigo}</p>
-        </div>
+          <p className="text-xs text-zinc-500">
+            {abierta ? a.semielaborado_codigo : (
+              <>
+                <span className="tabular-nums">{num(a.real ? a.real.buenas : a.cantidad)} u</span>
+                {maq ? ` · ${maq}` : ""}{a.operario ? ` · ${a.operario}` : ""}
+                {a.real ? " · cargado" : faltan > 0 ? <span className="text-[#FFD60A]"> · faltan datos</span> : ""}
+              </>
+            )}
+          </p>
+        </button>
         {!bloqueado && (
           <button onClick={() => setQuitar((v) => !v)} aria-label="Sacar del turno" className="w-10 h-10 grid place-items-center rounded-xl text-zinc-500 hover:text-rose-300 hover:bg-rose-500/10 cursor-pointer">
             <Trash2 size={17} />
@@ -152,6 +169,8 @@ function Asignacion({ a, maquinas, operarios, bloqueado, choque, onCambio, toast
         )}
       </AnimatePresence>
 
+      {abierta && (
+        <>
       {choque && (
         <p className="mt-3 flex items-start gap-2 text-xs text-[#FFD60A] bg-[#FFD60A]/[0.08] border border-[#FFD60A]/25 rounded-xl px-3 py-2">
           <AlertTriangle size={14} className="mt-0.5 shrink-0" /> Hay otra producción en esta misma máquina y turno.
@@ -218,6 +237,8 @@ function Asignacion({ a, maquinas, operarios, bloqueado, choque, onCambio, toast
       <div className="mt-3">
         <Receta a={a} bloqueado={bloqueado} onCambio={onCambio} toast={toast} />
       </div>
+        </>
+      )}
     </motion.li>
   );
 }
@@ -278,12 +299,15 @@ export default function PanelTurno({ turnoAbierto, plan, maquinas, operarios, on
         ) : (
           <div>
             {asigs.length > 0 && problemas.length > 0 && (
-              <ul className="mb-3 text-xs text-[#FFD60A]/90 space-y-0.5 max-h-24 overflow-y-auto">
-                {problemas.slice(0, 4).map((p) => (
-                  <li key={p}>• {p}</li>
-                ))}
-                {problemas.length > 4 && <li>• y {problemas.length - 4} más…</li>}
-              </ul>
+              problemas.length > 3 ? (
+                <p className="mb-3 text-xs text-[#FFD60A]/90">Faltan datos en {asigs.filter((x) => problemasDeTurno([x]).length).length} de {asigs.length} productos. Abrí cada uno para completarlo.</p>
+              ) : (
+                <ul className="mb-3 text-xs text-[#FFD60A]/90 space-y-0.5">
+                  {problemas.map((p) => (
+                    <li key={p}>• {p}</li>
+                  ))}
+                </ul>
+              )
             )}
             <Boton variante="primario" grande className="w-full" icono={Rocket} onClick={lanzar} disabled={ocupado || asigs.length === 0 || problemas.length > 0}>
               Lanzar a la tablet
@@ -340,7 +364,7 @@ export default function PanelTurno({ turnoAbierto, plan, maquinas, operarios, on
                 <ul className="flex flex-col gap-3">
                   <AnimatePresence initial={false}>
                     {asigs.map((a) => (
-                      <Asignacion key={`${a.id}-${a.cantidad}`} a={a} maquinas={maquinas} operarios={operarios} bloqueado={lanzado} choque={idsChoque.has(a.id)} onCambio={onCambio} toast={toast} />
+                      <Asignacion key={a.id} a={a} maquinas={maquinas} operarios={operarios} bloqueado={lanzado} choque={idsChoque.has(a.id)} onCambio={onCambio} toast={toast} compacta={asigs.length > 2} />
                     ))}
                   </AnimatePresence>
                 </ul>
