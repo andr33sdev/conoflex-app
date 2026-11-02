@@ -11,7 +11,6 @@ function Celda({ fecha, turno, info, asigs, onAbrir, esHoy, ancha }) {
   const est = estadoTurno(info, asigs);
   const sin = info?.sin_produccion;
   const Icono = turno === "NOCHE" ? Moon : Sun;
-  const maxFilas = ancha ? 4 : 2;
 
   return (
     <button
@@ -38,15 +37,24 @@ function Celda({ fecha, turno, info, asigs, onAbrir, esHoy, ancha }) {
 
       {sin ? (
         <span className="text-[11px] text-zinc-500 leading-snug line-clamp-3">{info.motivo || "No se produce en este turno."}</span>
+      ) : asigs.length > 2 ? (
+        // Varios productos: un resumen corto (cuántos y cuántas unidades). El detalle está al abrir el turno.
+        <span className="flex flex-col gap-1 min-w-0 leading-tight">
+          <span className="flex items-baseline justify-between gap-2">
+            <span className="text-[13px] font-extrabold text-white">{asigs.length} productos</span>
+            <span className="text-[11.5px] text-zinc-500 tabular-nums whitespace-nowrap">{num(asigs.reduce((t, a) => t + (a.real ? a.real.buenas : a.cantidad), 0))} u</span>
+          </span>
+          <span className="block text-[12px] text-zinc-300 truncate">{asigs[0].semielaborado_nombre}</span>
+          <span className="block text-[11.5px] font-bold text-zinc-500">+{asigs.length - 1} más</span>
+        </span>
       ) : asigs.length ? (
         <span className="flex flex-col gap-1.5 min-w-0">
-          {asigs.slice(0, maxFilas).map((a) => (
+          {asigs.map((a) => (
             <span key={a.id} className="block min-w-0 leading-tight">
               <span className="block text-[12.5px] font-semibold text-zinc-100 truncate">{a.semielaborado_nombre}</span>
               <span className="block text-[11.5px] text-zinc-500 tabular-nums">{num(a.real ? a.real.buenas : a.cantidad)} u</span>
             </span>
           ))}
-          {asigs.length > maxFilas && <span className="text-[11px] font-bold text-zinc-500">+{asigs.length - maxFilas} más</span>}
         </span>
       ) : (
         <span className="mt-auto mb-auto self-center inline-flex items-center gap-1 text-[11px] text-zinc-700 group-hover:text-[#FF5A00] transition-colors">
