@@ -873,8 +873,8 @@ export default function FicheroModule() {
           }
           .bg-dots-orange, .animate-dots-drift { display: none !important; }
           html body #root .print\\:hidden { display: none !important; }
-          .cf-print-grid { grid-template-rows: none !important; grid-auto-rows: min(30mm, calc(142mm / var(--cf-filas, 6))) !important; }
-          .cf-print-grid > * { height: min(30mm, calc(142mm / var(--cf-filas, 6))) !important; min-height: 0 !important; }
+          .cf-print-grid { grid-template-rows: none !important; grid-auto-rows: min(30mm, calc(126mm / var(--cf-filas, 6))) !important; }
+          .cf-print-grid > * { height: min(30mm, calc(126mm / var(--cf-filas, 6))) !important; min-height: 0 !important; }
           .hoja-operario-impresion {
             display: block !important; page-break-after: always !important; break-after: page !important;
             page-break-inside: avoid !important; break-inside: avoid !important; clear: both !important;
@@ -1240,25 +1240,34 @@ export default function FicheroModule() {
 
               {presentismoMes.tardes.length > 0 && (
                 <div
-                  className={`text-[10px] px-2.5 py-1.5 rounded border print:border-gray-300 ${
+                  className={`text-[10px] px-2.5 py-1.5 print:px-1.5 print:py-0.5 rounded border print:border-gray-300 ${
                     presentismoMes.pierde
                       ? "bg-rose-500/10 border-rose-500/40 text-rose-300 print:text-rose-700"
                       : "bg-amber-500/10 border-amber-500/30 text-amber-300 print:text-amber-700"
                   }`}
                 >
-                  <span className="font-bold uppercase tracking-wider">
-                    Llegadas tarde (más de 5 min): {presentismoMes.tardes.length}
-                  </span>{" "}
-                  —{" "}
-                  {presentismoMes.tardes
-                    .map(
-                      (t) =>
-                        `${t.dia} (${t.ingreso}${t.fuera ? ", fuera de tolerancia" : ""})`,
-                    )
-                    .join(" · ")}
-                  {presentismoMes.pierde
-                    ? ". PIERDE EL PRESENTISMO del mes (3.ª llegada tarde)."
-                    : `. Hasta ${PRESENTISMO.permitidas} por mes; la tercera hace perder el presentismo.`}
+                  <span className="print:hidden">
+                    <span className="font-bold uppercase tracking-wider">
+                      Llegadas tarde (más de 5 min): {presentismoMes.tardes.length}
+                    </span>{" "}
+                    —{" "}
+                    {presentismoMes.tardes
+                      .map(
+                        (t) =>
+                          `${t.dia} (${t.ingreso}${t.fuera ? ", fuera de tolerancia" : ""})`,
+                      )
+                      .join(" · ")}
+                    {presentismoMes.pierde
+                      ? ". PIERDE EL PRESENTISMO del mes (3.ª llegada tarde)."
+                      : `. Hasta ${PRESENTISMO.permitidas} por mes; la tercera hace perder el presentismo.`}
+                  </span>
+                  {/* Al imprimir va en una sola línea corta para que el operario entre en una hoja */}
+                  <span className="hidden print:block whitespace-nowrap overflow-hidden text-ellipsis">
+                    <span className="font-bold uppercase">Llegadas tarde: {presentismoMes.tardes.length}</span>
+                    {" — "}
+                    {presentismoMes.tardes.map((t) => t.dia).join(", ")}
+                    {presentismoMes.pierde ? ". Pierde el presentismo." : ""}
+                  </span>
                 </div>
               )}
             </div>
