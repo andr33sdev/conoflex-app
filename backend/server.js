@@ -34,6 +34,7 @@ const { generarCotizacion } = require("./comercial/cotizador");
 const { crearCorreoCrudo } = require("./comercial/correo");
 const { leerLista, registrarRutasListaPdf } = require("./comercial/listaPdf");
 const { asegurarTablaMovimientos, moverStock, historialMateriaPrima } = require("./stockMovimientos");
+const { crearMateriaPrima } = require("./materiaPrimaAlta");
 const { asegurarComprasStock, buscarMateriaPrima, aplicarRecepcion, norm } = require("./comprasStock");
 const { asegurarColumnaPagoMensual } = require("./escala");
 const { migrarPermisoConnie } = require("./permisos");
@@ -2458,12 +2459,29 @@ app.get("/api/materias-primas", async (req, res) => {
   }
 });
 
+// Alta de una materia prima nueva (código, nombre, unidad, proveedor...).
+app.post("/api/materias-primas", async (req, res) => {
+  try {
+    const [[usuario]] = await db.query("SELECT nombre, email, rol FROM usuarios WHERE id = ?", [req.user?.id]);
+    const r = await crearMateriaPrima(db, req.body || {}, usuario, moverStock);
+    res.status(r.status).json(r.body);
+  } catch (error) {
+    console.error("Error creando materia prima:", error);
+    res.status(500).json({ error: "No se pudo crear la materia prima." });
+  }
+});
+
 // Materia prima contra el plan de producción de la semana: lo que falta producir por su receta contra el stock. Sin estimar demanda.
 app.get("/api/materias-primas/plan-semana", async (req, res) => {
   try {
     const r = await calcularMpSemana(db);
     const id = Number(req.query.id);
-    res.json({ semana: r.semana, materia: r.materias.find((m) => m.id === id) || null, hay_plan: r.materias.length > 0 });
+    res.json({
+      semana: r.semana,
+      materia: r.materias.find((m) => m.id === id) || null,
+      hay_plan: r.materias.length > 0,
+      materias: r.materias.map((m) => ({ id: m.id, necesidad: m.necesidad, stock_despues: m.stock_despues, falta: m.falta })),
+    });
   } catch (error) {
     console.error("Error calculando materia prima del plan:", error);
     res.status(500).json({ error: "No se pudo calcular el plan de la semana." });
