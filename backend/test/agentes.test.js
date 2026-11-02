@@ -209,26 +209,25 @@ test("lía: el prompt pide primera línea corta y markdown prolijo; la liquidaci
 // ---------- Nati (stock) ----------
 const { analizarStock, armarPanorama } = require("../agentes/vigilanteStock");
 const AHORA_N = new Date("2026-10-30T12:00:00").getTime();
-const mp = (id, nombre, stock, demanda, dias) => ({ id, codigo: `C${id}`, nombre, unidad: "KILOS", stock_actual: stock, demanda_mensual: demanda, dias_de_stock: dias });
+// mp del plan de la semana: necesidad = lo que falta producir x receta
+const mp = (id, nombre, stock, necesidad) => ({ id, codigo: `C${id}`, nombre, unidad: "KILOS", stock_actual: stock, necesidad, stock_despues: stock - necesidad, falta: Math.max(0, necesidad - stock), lotes: [{ lote: "L1", cantidad: necesidad }] });
 
-test("nati: detecta críticas, bajas, exceso y stock negativo; ignora lo que no tiene demanda", () => {
+test("nati: de las materias primas solo avisa si el plan de la semana no alcanza o hay stock negativo", () => {
   const h = analizarStock({
     ahoraMs: AHORA_N,
-    mps: [mp(1, "PEAD", 100, 600, 5), mp(2, "Masterbatch", 500, 1000, 15), mp(3, "Pigmento", 9000, 300, 900), mp(4, "Tinta", -20, 10, null), mp(5, "Sin uso", 50, 0, null), mp(6, "OK", 900, 600, 45)],
+    mps: [mp(1, "PEAD", 100, 600), mp(2, "Masterbatch", 5000, 1000), mp(4, "Tinta", -20, 10)],
   });
   const por = Object.fromEntries(h.map((x) => [x.tipo, x]));
-  assert.equal(por.MP_CRITICA.severidad, "ALTA");
-  assert.match(por.MP_CRITICA.titulo, /PEAD: alcanza para 5 días/);
-  assert.equal(por.MP_CRITICA.fecha, "2026-11-04");
-  assert.match(por.MP_CRITICA.texto, /No hay ninguna compra en curso/);
-  assert.equal(por.MP_BAJA.severidad, "MEDIA");
-  assert.equal(por.MP_EXCESO.severidad, "BAJA");
+  assert.equal(por.MP_FALTA_SEMANA.severidad, "ALTA");
+  assert.match(por.MP_FALTA_SEMANA.titulo, /PEAD: no alcanza para terminar la semana/);
+  assert.match(por.MP_FALTA_SEMANA.texto, /No hay ninguna compra en curso/);
   assert.equal(por.STOCK_NEGATIVO.severidad, "ALTA");
-  assert.equal(h.length, 4);
+  assert.ok(!h.some((x) => ["MP_CRITICA", "MP_BAJA", "MP_EXCESO"].includes(x.tipo)));
+  assert.equal(h.length, 2);
 });
 
 test("nati: si hay una compra en curso lo dice, y las claves son estables", () => {
-  const datos = { ahoraMs: AHORA_N, mps: [mp(1, "PEAD", 100, 600, 5)], compras: [{ id: 7, materia_prima_id: 1, articulo: "PEAD", proveedor: "Dow", cantidad_solicitada: 2000, cantidad_recibida: 500, creada: "2026-10-20 10:00:00" }] };
+  const datos = { ahoraMs: AHORA_N, mps: [mp(1, "PEAD", 100, 600)], compras: [{ id: 7, materia_prima_id: 1, articulo: "PEAD", proveedor: "Dow", cantidad_solicitada: 2000, cantidad_recibida: 500, creada: "2026-10-20 10:00:00" }] };
   const a = analizarStock(datos);
   assert.match(a[0].texto, /compra en curso con Dow por 1\.500/);
   assert.deepEqual(analizarStock(datos).map((x) => x.clave), a.map((x) => x.clave));
@@ -251,15 +250,14 @@ test("nati: pedidos internos demorados y compras sin recibir hace semanas", () =
 test("nati: el panorama ordena lo más urgente primero y cuenta los niveles", () => {
   const p = armarPanorama({
     ahoraMs: AHORA_N,
-    mps: [mp(1, "OK", 900, 600, 45), mp(2, "Crítica", 50, 600, 2), mp(3, "Baja", 300, 600, 15)],
+    mps: [mp(1, "OK", 900, 600), mp(2, "Crítica", 50, 600), mp(3, "Justa", 700, 600)],
     semis: [{ codigo: "S1", nombre: "Semi", stock_total: 10, demanda_mensual: 300, dias_de_stock: 1 }],
-    series: new Map([[2, [0, 1, 2]]]),
   });
-  assert.deepEqual(p.materias.map((m) => m.nombre), ["Crítica", "Baja", "OK"]);
+  assert.deepEqual(p.materias.map((m) => m.nombre), ["Crítica", "Justa", "OK"]);
+  assert.equal(p.materias[0].falta, 550);
   assert.equal(p.resumen.criticas, 1);
-  assert.equal(p.resumen.bajas, 1);
+  assert.equal(p.resumen.bajas, 0);
   assert.equal(p.resumen.semis_criticos, 1);
-  assert.deepEqual(p.materias[0].serie, [0, 1, 2]);
 });
 
 test("nati: sus instrucciones la acotan al stock y las herramientas son solo de lectura", () => {

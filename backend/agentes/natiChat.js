@@ -29,7 +29,7 @@ TU ESPECIALIDAD (única y exclusiva)
 - Por tu cuenta SOLO LEÉS el stock: nunca digas que cargaste, descontaste o compraste algo. Lo único que podés hacer es pasarle materiales a Vera con pasar_a_vera (ella arma la solicitud de compra; vos no comprás ni firmás).
 - MODIFICAR STOCK DE MATERIAS PRIMAS: si la persona te pide sumar, restar o dejar en cierta cantidad el stock de una materia prima, usá proponer_ajuste_stock con exactamente lo que pidió. Eso NO modifica nada: arma una propuesta y en el chat aparece un botón para que la persona confirme. Después de usarla decí en una o dos frases qué entendiste (material, operación y cantidad con su unidad, stock actual y stock que quedaría) y que lo confirme con el botón. Nunca digas que ya quedó cargado: recién queda cuando toca el botón. Si falta el material o la cantidad, preguntá antes de usar la herramienta; no adivines. Si la herramienta devuelve un error (por ejemplo, que solo un administrador puede hacerlo), explicáselo tal cual. Solo materias primas: el stock de semielaborados no lo modificás.
 - Todo número, nombre, fecha y cantidad sale textualmente del resultado de una herramienta. Nunca inventes stock, consumos ni proveedores. Si una herramienta no devuelve algo, decí que no lo tenés.
-- "Días de stock" es una estimación: demanda mensual según las ventas de los últimos meses y las ingenierías activas. Aclaralo si la decisión depende de eso.
+- Materias primas: NO se estima demanda en el tiempo. Solo se miran las que están en el plan de producción de la semana: lo que falta producir de cada lote por su receta contra el stock (lo que quedó sin producir al terminar la semana deja de contar). Si una materia prima no está en el plan de la semana, decí que no hay cálculo para ella. Los semielaborados sí usan la demanda de ventas ("días de stock" es una estimación; aclaralo si la decisión depende de eso).
 - Para el estado general usá panorama_stock; para un material puntual consultar_materia_prima; para un semielaborado consultar_semielaborado; para decisiones, que_comprar y que_producir.
 
 ${textoDerivacion(destinos)}
@@ -37,7 +37,7 @@ CÓMO RESPONDER (el formato importa: la persona lee en un chat y quiere poco tex
 - Español rioplatense, cálido, directo. Primero la respuesta, después el detalle. Nada de relleno.
 - PRIMERA LÍNEA = una frase corta y natural (máx. 25 palabras) que resume lo importante, como si la dijeras en voz alta: "Ojo, se te acaban dos materias primas esta semana." Se lee en voz alta: sin símbolos, listas ni números largos.
 - Después de una línea en blanco, los datos en MARKDOWN prolijo:
-  - Comparaciones: tabla markdown (máx. 8 filas, columnas cortas: Material | Stock | Alcanza | Se agota).
+  - Comparaciones: tabla markdown (máx. 8 filas, columnas cortas: Material | Stock | Necesita esta semana | Quedaría).
   - Enumeraciones: lista con "- ", una idea por línea.
   - Respuestas largas: secciones "### Título" (máx. 3) y **negrita** solo para cifras o nombres clave.
 - Mostrá lo más urgente primero (5 a 8 renglones) y ofrecé el resto en una pregunta corta. Nunca vuelques todo.
@@ -49,10 +49,10 @@ CÓMO RESPONDER (el formato importa: la persona lee en un chat y quiere poco tex
 const HERRAMIENTAS = [
   {
     functionDeclarations: [
-      { name: "panorama_stock", description: "Estado general del stock: cuántas materias primas y semielaborados están críticos o bajos, los más urgentes, pedidos internos sin atender y compras abiertas.", parameters: { type: "OBJECT", properties: {} } },
+      { name: "panorama_stock", description: "Estado general del stock: materias primas del plan de la semana que no alcanzan y semielaborados críticos o bajos, los más urgentes, pedidos internos sin atender y compras abiertas.", parameters: { type: "OBJECT", properties: {} } },
       {
         name: "consultar_materia_prima",
-        description: "Detalle de UNA materia prima (por nombre o código, o parte): stock, demanda mensual, consumo real, días que alcanza, fecha estimada de agotamiento, compras pendientes y sus últimos movimientos.",
+        description: "Detalle de UNA materia prima (por nombre o código, o parte): stock, si está en el plan de la semana, cuánto hace falta para lo que falta producir, cuánto quedaría, compras pendientes y sus últimos movimientos.",
         parameters: { type: "OBJECT", properties: { materia_prima: { type: "STRING", description: "Nombre o código (o parte)." } }, required: ["materia_prima"] },
       },
       {
@@ -60,7 +60,7 @@ const HERRAMIENTAS = [
         description: "Detalle de UN semielaborado (por nombre o código, o parte): stock en cada depósito (33, 26, Ayolas, 37), total, demanda mensual, días que alcanza y en qué productos se usa.",
         parameters: { type: "OBJECT", properties: { semielaborado: { type: "STRING", description: "Nombre o código (o parte)." } }, required: ["semielaborado"] },
       },
-      { name: "que_comprar", description: "Materias primas que conviene reponer, ordenadas por urgencia, con cuánto falta para cubrir 1 mes de demanda descontando lo que ya está comprado y sin recibir.", parameters: { type: "OBJECT", properties: { meses: { type: "INTEGER", description: "Meses de cobertura deseada (1 a 3). Por defecto 1." } } } },
+      { name: "que_comprar", description: "Materias primas del plan de la semana que no alcanzan para terminar lo que falta producir, con cuánto falta descontando lo que ya está comprado y sin recibir.", parameters: { type: "OBJECT", properties: {} } },
       { name: "que_producir", description: "Semielaborados que conviene fabricar primero (los que menos días de stock tienen) y cuántas unidades hacen falta para cubrir 1 mes de demanda.", parameters: { type: "OBJECT", properties: { meses: { type: "INTEGER", description: "Meses de cobertura deseada (1 a 3). Por defecto 1." } } } },
       { name: "compras_en_curso", description: "Renglones de solicitudes de compra abiertos: artículo, proveedor, cuánto se pidió, cuánto llegó y hace cuántos días.", parameters: { type: "OBJECT", properties: {} } },
       { name: "pedidos_internos", description: "Pedidos internos de producción al depósito que siguen abiertos (solicitados, atendidos o disponibles) y hace cuánto esperan.", parameters: { type: "OBJECT", properties: {} } },
@@ -173,22 +173,28 @@ function crearNati({ pool, db, ai }) {
       return {
         resumen: pano.resumen,
         umbrales_en_dias: { critico: UMBRALES.critico, bajo: UMBRALES.bajo, semi_critico: UMBRALES.semiCritico, semi_bajo: UMBRALES.semiBajo },
-        materias_mas_urgentes: pano.materias.filter((m) => ["negativo", "critico", "bajo"].includes(m.nivel)).slice(0, 8).map(({ serie, ...m }) => m),
+        materias_del_plan_que_no_alcanzan: pano.materias.filter((m) => ["negativo", "critico"].includes(m.nivel)).slice(0, 8),
+        materias_del_plan_en_orden: pano.materias.filter((m) => m.nivel === "ok").length,
         semielaborados_mas_urgentes: pano.semielaborados.filter((s) => ["critico", "bajo"].includes(s.nivel)).slice(0, 8),
-        nota: "dias = cuántos días alcanza el stock con la demanda mensual estimada.",
+        nota: "Materias primas: solo las del plan de la semana (falta = lo que no alcanza). Semielaborados: dias = cuántos días alcanza el stock con la demanda mensual estimada.",
       };
     }
     if (llamada.name === "consultar_materia_prima") {
       const q = String(args.materia_prima || "");
-      const hallazgos = pano.materias.filter((m) => coincide(q, m.nombre, m.codigo));
-      if (!hallazgos.length) return { error: `No encuentro una materia prima que coincida con "${q}".`, materias_disponibles: pano.materias.map((m) => m.nombre).slice(0, 40) };
+      const [todas] = await pool.query("SELECT id, codigo, nombre, unidad_medida AS unidad, stock_actual FROM materias_primas");
+      const hallazgos = todas.filter((m) => coincide(q, m.nombre, m.codigo));
+      if (!hallazgos.length) return { error: `No encuentro una materia prima que coincida con "${q}".`, materias_disponibles: todas.map((m) => m.nombre).slice(0, 40) };
       if (hallazgos.length > 1) return { error: `"${q}" coincide con varias.`, coincidencias: hallazgos.slice(0, 12).map((m) => m.nombre) };
       const m = hallazgos[0];
+      const plan = pano.materias.find((x) => x.id === m.id);
       const [mov] = await pool.query("SELECT DATE_FORMAT(fecha, '%Y-%m-%d %H:%i') AS fecha, tipo, cantidad, stock_resultante, referencia_texto FROM mp_movimientos WHERE materia_prima_id = ? ORDER BY id DESC LIMIT 8", [m.id]);
       const compras = d.compras.filter((c) => c.materia_prima_id === m.id || sinAcentos(c.articulo) === sinAcentos(m.nombre)).map((c) => ({ proveedor: c.proveedor, pedido: c.cantidad_solicitada, recibido: c.cantidad_recibida, desde: String(c.creada).slice(0, 10) }));
-      const { serie, ...limpio } = m;
-      const consumo30 = serie.reduce((a, b) => a + b, 0);
-      return { ...limpio, consumo_ultimos_30_dias: Math.round(consumo30 * 10) / 10, compras_pendientes: compras, ultimos_movimientos: mov };
+      return {
+        id: m.id, codigo: m.codigo, nombre: m.nombre, unidad: m.unidad, stock: Number(m.stock_actual) || 0,
+        en_el_plan_de_la_semana: !!plan,
+        ...(plan ? { necesidad_para_lo_que_falta_producir: plan.necesidad_semana, stock_que_quedaria: plan.stock_despues, falta: plan.falta, lotes: plan.lotes } : { nota: "No está en el plan de producción de la semana: no hay cálculo para esta materia prima." }),
+        compras_pendientes: compras, ultimos_movimientos: mov,
+      };
     }
     if (llamada.name === "consultar_semielaborado") {
       const q = String(args.semielaborado || "");
@@ -199,13 +205,10 @@ function crearNati({ pool, db, ai }) {
       return { codigo: s.codigo, nombre: s.nombre, stock_total: s.stock_total, stock_por_deposito: s.por_deposito, demanda_mensual: s.demanda_mensual, dias_de_stock: s.dias_de_stock, usado_en: (s.usado_en || []).slice(0, 6) };
     }
     if (llamada.name === "que_comprar") {
-      const meses = Math.min(3, Math.max(1, Number(args.meses) || 1));
       const filas = pano.materias
-        .filter((m) => m.demanda_mensual > 0)
-        .map((m) => ({ nombre: m.nombre, unidad: m.unidad, stock: m.stock, demanda_mensual: m.demanda_mensual, dias: m.dias, nivel: m.nivel, ya_pedido_sin_recibir: m.compra_pendiente, faltante: Math.max(0, Math.round(m.demanda_mensual * meses - m.stock - m.compra_pendiente)) }))
-        .filter((f) => f.faltante > 0)
-        .sort((a, b) => (a.dias ?? 1e9) - (b.dias ?? 1e9));
-      return { cobertura_meses: meses, cantidad: filas.length, materias: filas.slice(0, 12), nota: "faltante = demanda de N meses - stock - lo ya pedido sin recibir." };
+        .map((m) => ({ nombre: m.nombre, unidad: m.unidad, stock: m.stock, necesidad_semana: m.necesidad_semana, ya_pedido_sin_recibir: m.compra_pendiente, faltante: Math.max(0, Math.round(m.falta - m.compra_pendiente)) }))
+        .filter((f) => f.faltante > 0);
+      return { cantidad: filas.length, materias: filas.slice(0, 12), nota: "faltante = lo que necesita lo que falta producir del plan de la semana - stock - lo ya pedido sin recibir. Solo materias primas del plan de la semana." };
     }
     if (llamada.name === "que_producir") {
       const meses = Math.min(3, Math.max(1, Number(args.meses) || 1));
