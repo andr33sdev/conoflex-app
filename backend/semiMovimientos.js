@@ -239,13 +239,23 @@ async function ajustarStock(db, { semielaborado_id, deposito, cantidad, nota, us
 const URL_STOCK_33 = process.env.URL_STOCK_33 || `${BASE}?gid=1240979540&single=true&output=csv`;
 const MIN_DESALINEADO = 20;
 
+/** "1.280" → 1280, "12,5" → 12.5, "1.280,5" → 1280.5, "-4" → -4. null si no es un número. La coma es el decimal (como en la planilla). */
+function numeroPlanilla(txt) {
+  let t = String(txt ?? "").trim().replace(/\s/g, "");
+  if (!t || !/^-?[\d.,]+$/.test(t)) return null;
+  if (/^-?\d{1,3}(\.\d{3})+(,\d+)?$/.test(t)) t = t.replace(/\./g, "").replace(",", ".");
+  else t = t.replace(",", ".");
+  const n = Number(t);
+  return Number.isFinite(n) ? n : null;
+}
+
 /** Stock del 33 que figura en la pestaña STOCK 33 (misma lectura que usa la sincronización: código en A, stock en E). */
 function parsearStockPlanilla(texto) {
   const out = new Map();
   for (const f of filasCSV(texto)) {
     if (f.length < 5 || !f[0]) continue;
-    const v = parseFloat(String(f[4]).replace(",", "."));
-    if (Number.isNaN(v)) continue;
+    const v = numeroPlanilla(f[4]);
+    if (v === null) continue;
     out.set(f[0].toUpperCase().trim(), { nombre: f[1] || f[0], stock: v });
   }
   return out;
@@ -475,6 +485,6 @@ function registrarRutasMovimientos(app, db, { nombreDeUsuario = async (req) => r
 
 module.exports = {
   asegurarMovimientos, parsearHoja, filasCSV, fechaISO, depositoDe, guardarHoja, sincronizarHojas, entradasPendientes,
-  marcarAvisadas, entradasParaRecordar, marcarRecordadas, ajustarStock, compararStock33, parsearStockPlanilla, copiarStock33, correrEspejo33, iniciarEspejo33, MIN_RECORDATORIO,
+  marcarAvisadas, entradasParaRecordar, marcarRecordadas, ajustarStock, compararStock33, parsearStockPlanilla, numeroPlanilla, copiarStock33, correrEspejo33, iniciarEspejo33, MIN_RECORDATORIO,
   transferir, anularTransferencia, ajustesDeLaApp, conAjustesDeLaApp, historial, registrarRutasMovimientos, DEPOSITOS, NOMBRE_DEPOSITO,
 };

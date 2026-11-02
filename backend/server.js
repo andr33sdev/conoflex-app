@@ -28,7 +28,7 @@ const { asegurarTablasFichasPdf, registrarRutasFichasPdf } = require("./comercia
 const importarFichas = require("./comercial/importarFichas");
 const { asegurarColumnasGestion, registrarRutasGestion } = require("./comprasGestion");
 const { asegurarSemis, registrarRutasSemis } = require("./semisGestion");
-const { asegurarMovimientos, registrarRutasMovimientos, conAjustesDeLaApp, sincronizarHojas, iniciarEspejo33 } = require("./semiMovimientos");
+const { asegurarMovimientos, registrarRutasMovimientos, sincronizarHojas, iniciarEspejo33 } = require("./semiMovimientos");
 const { registrarRutasFotos } = require("./comercial/fotos");
 const { generarCotizacion } = require("./comercial/cotizador");
 const { crearCorreoCrudo } = require("./comercial/correo");
@@ -37,6 +37,7 @@ const { asegurarTablaMovimientos, moverStock, historialMateriaPrima } = require(
 const { crearMateriaPrima } = require("./materiaPrimaAlta");
 const { asegurarComprasStock, buscarMateriaPrima, aplicarRecepcion, norm } = require("./comprasStock");
 const { asegurarColumnaPagoMensual } = require("./escala");
+const { leerPlanilla: leerPlanillaStock, compararPlanilla, aplicarPlanilla } = require("./semiSync");
 const { migrarPermisoConnie, migrarPermisoSugerencias } = require("./permisos");
 const { asegurarTablasSugerencias, registrarRutasSugerencias } = require("./sugerenciasCompra");
 require("dotenv").config();
@@ -3039,197 +3040,40 @@ app.put("/api/semielaborados/:id/stock", async (req, res) => {
   }
 });
 
+const traerPlanilla = (u) => fetch(u).then((r) => (r.ok ? r.text() : Promise.reject(new Error(`HTTP ${r.status}`))));
+
+// La planilla manda: lo que se aplica deja cada depósito de la app igual a su pestaña (ver semiSync.js).
 app.post("/api/semielaborados/recargar-sheets", async (req, res) => {
   try {
-    const updatesMap = {};
-    for (const [sucursalKey, csvUrl] of Object.entries(STOCK_URLS)) {
-      if (!csvUrl || csvUrl.startsWith("PEGA_AQUI")) continue;
-      const response = await fetch(csvUrl);
-      if (!response.ok) continue;
-      const lines = (await response.text()).split("\n");
-      for (let line of lines) {
-        const cols = parseCSVLine(line);
-        if (cols.length < 5 || !cols[0]) continue;
-        const codeUpper = cols[0].toUpperCase();
-        if (EXCLUDED_CODES.includes(codeUpper)) continue;
-        const parsedStock = parseFloat(cols[4].replace(",", "."));
-        if (isNaN(parsedStock)) continue;
-        if (!updatesMap[codeUpper]) updatesMap[codeUpper] = {};
-        updatesMap[codeUpper][sucursalKey] = parsedStock;
-      }
-    }
-
-    // La planilla pisa el stock: se le suma encima lo que se movió en la app (producción aprobada y transferencias).
-    // Las salidas/entradas que ya están en la planilla vienen reflejadas en este stock: se registran sin volver a descontar.
-    await sincronizarHojas(db, { aplicar: false }).catch(() => {});
-    await conAjustesDeLaApp(db, updatesMap);
-    const conn = await db.getConnection();
-    try {
-      await conn.beginTransaction();
-      for (const [codeUpper, stocks] of Object.entries(updatesMap)) {
-        await conn.query(
-          `UPDATE semielaborados 
-           SET stock_33 = COALESCE(?, stock_33), 
-               stock_26 = COALESCE(?, stock_26), 
-               stock_ayolas = COALESCE(?, stock_ayolas), 
-               stock_37 = COALESCE(?, stock_37) 
-           WHERE codigo = ?`,
-          [
-            stocks.stock_33 !== undefined ? stocks.stock_33 : null,
-            stocks.stock_26 !== undefined ? stocks.stock_26 : null,
-            stocks.stock_ayolas !== undefined ? stocks.stock_ayolas : null,
-            stocks.stock_37 !== undefined ? stocks.stock_37 : null,
-            codeUpper,
-          ],
-        );
-      }
-      await conn.commit();
-    } catch (err) {
-      await conn.rollback();
-      throw err;
-    } finally {
-      conn.release();
-    }
-
-    res.json({ success: true });
+    const filas = await leerPlanillaStock(STOCK_URLS, { traer: traerPlanilla, excluidos: EXCLUDED_CODES });
+    await sincronizarHojas(db).catch(() => {});
+    const [semis] = await db.query("SELECT * FROM semielaborados");
+    const { modificados } = compararPlanilla(filas, semis);
+    const r = await aplicarPlanilla(db, { nuevos: [], modificados });
+    res.json({ success: true, ...r });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(502).json({ error: error.message });
   }
 });
 
 app.post("/api/semielaborados/previsualizar-sheets", async (req, res) => {
   try {
-    const updatesMap = {};
-
-    for (const [sucursalKey, csvUrl] of Object.entries(STOCK_URLS)) {
-      if (!csvUrl || csvUrl.startsWith("PEGA_AQUI")) continue;
-      const response = await fetch(csvUrl);
-      if (!response.ok) continue;
-      const text = await response.text();
-      const lines = text.split("\n");
-
-      for (let line of lines) {
-        const cols = parseCSVLine(line);
-        if (cols.length < 5 || !cols[0]) continue;
-        const codeUpper = cols[0].toUpperCase().trim();
-        if (EXCLUDED_CODES.includes(codeUpper)) continue;
-
-        const parsedStock = parseFloat(cols[4].replace(",", ".")) || 0;
-
-        if (!updatesMap[codeUpper]) {
-          updatesMap[codeUpper] = {
-            codigo: codeUpper,
-            nombre: cols[1] ? cols[1].trim() : codeUpper,
-            stock_33: 0,
-            stock_26: 0,
-            stock_ayolas: 0,
-            stock_37: 0,
-          };
-        }
-        updatesMap[codeUpper][sucursalKey] = parsedStock;
-      }
-    }
-
-    await sincronizarHojas(db, { aplicar: false }).catch(() => {});
-    await conAjustesDeLaApp(db, updatesMap);
-    const [currentSE] = await db.query("SELECT * FROM semielaborados");
-    const currentMap = {};
-    currentSE.forEach((s) => {
-      currentMap[s.codigo.toUpperCase().trim()] = s;
-    });
-
-    const nuevos = [];
-    const modificados = [];
-
-    for (const [codeUpper, sheetData] of Object.entries(updatesMap)) {
-      const existing = currentMap[codeUpper];
-      if (existing) {
-        const diff33 = sheetData.stock_33 - (existing.stock_33 || 0);
-        const diff26 = sheetData.stock_26 - (existing.stock_26 || 0);
-        const diffAyolas =
-          sheetData.stock_ayolas - (existing.stock_ayolas || 0);
-        const diff37 = sheetData.stock_37 - (existing.stock_37 || 0);
-
-        if (
-          Math.abs(diff33) > 0.001 ||
-          Math.abs(diff26) > 0.001 ||
-          Math.abs(diffAyolas) > 0.001 ||
-          Math.abs(diff37) > 0.001
-        ) {
-          modificados.push({
-            id: existing.id,
-            codigo: existing.codigo,
-            nombre: existing.nombre,
-            actual: {
-              stock_33: existing.stock_33 || 0,
-              stock_26: existing.stock_26 || 0,
-              stock_ayolas: existing.stock_ayolas || 0,
-              stock_37: existing.stock_37 || 0,
-            },
-            nuevo: {
-              stock_33: sheetData.stock_33,
-              stock_26: sheetData.stock_26,
-              stock_ayolas: sheetData.stock_ayolas,
-              stock_37: sheetData.stock_37,
-            },
-          });
-        }
-      } else {
-        nuevos.push(sheetData);
-      }
-    }
-
-    res.json({ nuevos, modificados });
+    const filas = await leerPlanillaStock(STOCK_URLS, { traer: traerPlanilla, excluidos: EXCLUDED_CODES });
+    await sincronizarHojas(db).catch(() => {});
+    const [semis] = await db.query("SELECT * FROM semielaborados");
+    res.json(compararPlanilla(filas, semis));
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(502).json({ error: error.message });
   }
 });
 
 app.post("/api/semielaborados/aplicar-sincronizacion", async (req, res) => {
-  const { nuevos, modificados } = req.body;
-  const conn = await db.getConnection();
-
   try {
-    await conn.beginTransaction();
-
-    if (Array.isArray(nuevos)) {
-      for (const n of nuevos) {
-        await conn.query(
-          "INSERT INTO semielaborados (codigo, nombre, stock_33, stock_26, stock_ayolas, stock_37) VALUES (?, ?, ?, ?, ?, ?)",
-          [
-            n.codigo,
-            n.nombre,
-            n.stock_33 || 0,
-            n.stock_26 || 0,
-            n.stock_ayolas || 0,
-            n.stock_37 || 0,
-          ],
-        );
-      }
-    }
-
-    if (Array.isArray(modificados)) {
-      for (const m of modificados) {
-        await conn.query(
-          "UPDATE semielaborados SET stock_33 = ?, stock_26 = ?, stock_ayolas = ?, stock_37 = ? WHERE id = ?",
-          [
-            m.nuevo.stock_33,
-            m.nuevo.stock_26,
-            m.nuevo.stock_ayolas,
-            m.nuevo.stock_37,
-            m.id,
-          ],
-        );
-      }
-    }
-
-    await conn.commit();
-    res.json({ success: true });
+    const { nuevos, modificados } = req.body || {};
+    const r = await aplicarPlanilla(db, { nuevos: Array.isArray(nuevos) ? nuevos : [], modificados: Array.isArray(modificados) ? modificados : [] });
+    res.json({ success: true, ...r });
   } catch (error) {
-    await conn.rollback();
     res.status(500).json({ error: error.message });
-  } finally {
-    conn.release();
   }
 });
 
