@@ -1,10 +1,10 @@
 "use strict";
 // Movimientos de stock de semielaborados:
 //  - Transferencias entre depósitos hechas en la app (suman en uno y restan en otro).
-//  - Lectura de las pestañas ENTRADA 33 y SALIDA 33 de la planilla. Cada salida nueva descuenta del 33 en el momento (igual que hace la
-//    planilla en STOCK 33); cuando la planilla se sincroniza ya la trae descontada, así que las filas leídas en ese momento no se restan de nuevo.
+//  - Lectura de las pestañas ENTRADA 33 y SALIDA 33 de la planilla (solo para historial y avisos: el stock del 33 lo da la pestaña STOCK 33).
 //    Si ENTRADA 33 viene de otro depósito (26, 37 o Ayolas), Nati avisa.
-//  - La sincronización con la planilla pisa el stock, así que lo que se movió en la app (producción y transferencias) se vuelve a sumar encima.
+//  - El stock del depósito 33 es una COPIA EXACTA de la pestaña STOCK 33: cada 10 minutos se copia tal cual (copiarStock33), y la sincronización
+//    manual tampoco le suma nada encima. Los demás depósitos siguen sumando lo que se movió en la app (producción y transferencias).
 const crypto = require("crypto");
 
 const BASE = "https://docs.google.com/spreadsheets/d/e/2PACX-1vS8kk1oZNfS1AOk6Ylu_rE6uNDdi7BJQBkMFKACCH_dRFpeIsJW8ii5QCdhyKQbSyCaQciC2GgVKLBR/pub";
@@ -146,7 +146,7 @@ function parsearHoja(texto, tipo) {
 }
 
 /** Guarda las filas nuevas. La primera vez que se lee una pestaña, todo lo anterior queda como ya atendido (no avisa del pasado). */
-async function guardarHoja(db, tipo, movimientos, { aplicar = true } = {}) {
+async function guardarHoja(db, tipo, movimientos) {
   const [[{ n }]] = await db.query("SELECT COUNT(*) AS n FROM semi_hoja_movs WHERE tipo = ?", [tipo]);
   const primera = Number(n) === 0;
   const [semis] = await db.query("SELECT id, codigo FROM semielaborados");
@@ -158,21 +158,18 @@ async function guardarHoja(db, tipo, movimientos, { aplicar = true } = {}) {
       [m.clave, m.tipo, m.fecha, m.codigo, m.descripcion, m.cantidad, m.op || null, m.procedencia || null, porCodigo.get(m.codigo) || null, primera ? 1 : 0],
     );
     nuevas += r.affectedRows;
-    // Salida nueva del 33: se descuenta ya (la planilla lo hace en STOCK 33). Nunca baja de cero.
-    if (r.affectedRows && aplicar && !primera && tipo === "SALIDA" && porCodigo.get(m.codigo)) {
-      await db.query("UPDATE semielaborados SET stock_33 = GREATEST(0, COALESCE(stock_33,0) - ?) WHERE id = ?", [m.cantidad, porCodigo.get(m.codigo)]);
-    }
+    // Las salidas ya no descuentan nada: el stock del 33 se copia de la pestaña STOCK 33, que ya las trae descontadas.
   }
   return { nuevas, primera };
 }
 
-async function sincronizarHojas(db, { aplicar = true, traer = (u) => fetch(u).then((r) => (r.ok ? r.text() : Promise.reject(new Error(`HTTP ${r.status}`)))) } = {}) {
+async function sincronizarHojas(db, { traer = (u) => fetch(u).then((r) => (r.ok ? r.text() : Promise.reject(new Error(`HTTP ${r.status}`)))) } = {}) {
   const resultado = {};
   for (const tipo of Object.keys(URLS_HOJA)) {
     try {
       const { movimientos, invalidas, error } = parsearHoja(await traer(URLS_HOJA[tipo]), tipo);
       if (error) { resultado[tipo] = { error }; continue; }
-      resultado[tipo] = { ...(await guardarHoja(db, tipo, movimientos, { aplicar })), filas: movimientos.length, invalidas };
+      resultado[tipo] = { ...(await guardarHoja(db, tipo, movimientos)), filas: movimientos.length, invalidas };
     } catch (e) {
       resultado[tipo] = { error: e.message };
     }
@@ -274,6 +271,66 @@ async function compararStock33(db, { traer = (u) => fetch(u).then((r) => (r.ok ?
   return { comparados: [...hoja.keys()].length, diferencias: dif.map((d) => ({ ...d, persistente: firmes.has(d.codigo) })) };
 }
 
+// ---------- Espejo del 33: la app copia la pestaña STOCK 33 ----------
+const traerTexto = (u) => fetch(u).then((r) => (r.ok ? r.text() : Promise.reject(new Error(`HTTP ${r.status}`))));
+const estadoEspejo = { ultima: null, ok: null, actualizados: 0, comparados: 0, error: null };
+
+/**
+ * Deja el stock del 33 de la app igual al de la pestaña STOCK 33 (código en A, stock en E). Solo toca stock_33 de los semielaborados que
+ * figuran en la planilla; no crea ni borra nada. Si la planilla no se pudo leer o no trae ningún código conocido, no cambia nada.
+ */
+async function copiarStock33(db, { traer = traerTexto } = {}) {
+  const hoja = parsearStockPlanilla(await traer(URL_STOCK_33));
+  const [semis] = await db.query("SELECT id, codigo, nombre, stock_33 FROM semielaborados");
+  const conocidos = semis.filter((s) => hoja.has(String(s.codigo).toUpperCase().trim()));
+  if (!conocidos.length) throw new Error("La pestaña STOCK 33 no trae ningún código conocido: no se cambió nada.");
+  const cambios = [];
+  for (const s of conocidos) {
+    const v = hoja.get(String(s.codigo).toUpperCase().trim()).stock;
+    const antes = Number(s.stock_33) || 0;
+    if (Math.abs(v - antes) > 1e-9) {
+      await db.query("UPDATE semielaborados SET stock_33 = ? WHERE id = ?", [v, s.id]);
+      cambios.push({ codigo: s.codigo, antes, despues: v });
+    }
+  }
+  if (!cambios.length) await db.query("DELETE FROM semi_alineacion").catch(() => {});
+  return { comparados: conocidos.length, actualizados: cambios.length, cambios };
+}
+
+/** Corre el espejo y guarda cómo salió (para mostrarlo). Nunca lanza. */
+async function correrEspejo33(db, opciones) {
+  estadoEspejo.ultima = new Date();
+  try {
+    const r = await copiarStock33(db, opciones);
+    Object.assign(estadoEspejo, { ok: true, error: null, actualizados: r.actualizados, comparados: r.comparados });
+    if (r.actualizados) console.log(`[stock33] copiados ${r.actualizados} de ${r.comparados} códigos desde la planilla`);
+    return r;
+  } catch (e) {
+    Object.assign(estadoEspejo, { ok: false, error: e.message });
+    console.error("[stock33] no se pudo copiar la planilla:", e.message);
+    return null;
+  }
+}
+
+/** Copia el 33 de la planilla al arrancar y después cada `minutos`. STOCK33_ESPEJO_MIN=0 lo apaga. */
+function iniciarEspejo33(db, { minutos = Number(process.env.STOCK33_ESPEJO_MIN ?? 10), arranqueMs = 15000 } = {}) {
+  if (!(minutos > 0)) return null;
+  let corriendo = false;
+  const vuelta = async () => {
+    if (corriendo) return;
+    corriendo = true;
+    try {
+      await correrEspejo33(db);
+    } finally {
+      corriendo = false;
+    }
+  };
+  setTimeout(vuelta, arranqueMs).unref?.();
+  const t = setInterval(vuelta, minutos * 60 * 1000);
+  t.unref?.();
+  return t;
+}
+
 // ---------- Transferencias ----------
 async function transferir(db, { semielaborado_id, desde, hasta, cantidad, nota, usuario }) {
   const cant = Number(cantidad);
@@ -364,13 +421,14 @@ async function ajustesDeLaApp(db) {
   return mapa;
 }
 
-/** Suma lo hecho en la app a los valores que vienen de la planilla ({ CODIGO: { stock_33, ... } }). Solo toca los depósitos que trae la planilla. */
+/** Suma lo hecho en la app a los valores que vienen de la planilla ({ CODIGO: { stock_33, ... } }). Solo toca los depósitos que trae la planilla (el 33 queda tal cual). */
 async function conAjustesDeLaApp(db, valoresPorCodigo) {
   const ajustes = await ajustesDeLaApp(db);
   for (const [codigo, vals] of Object.entries(valoresPorCodigo)) {
     const a = ajustes.get(String(codigo).toUpperCase().trim());
     if (!a) continue;
-    for (const col of Object.values(DEPOSITOS)) if (vals[col] !== undefined && a[col]) vals[col] = Math.max(0, Number(vals[col]) + a[col]);
+    // El 33 es copia exacta de la planilla: no se le suma nada. Los otros depósitos sí conservan lo movido en la app.
+    for (const col of Object.values(DEPOSITOS)) if (col !== "stock_33" && vals[col] !== undefined && a[col]) vals[col] = Math.max(0, Number(vals[col]) + a[col]);
   }
   return valoresPorCodigo;
 }
@@ -406,12 +464,17 @@ function registrarRutasMovimientos(app, db, { nombreDeUsuario = async (req) => r
   app.delete("/api/semielaborados/transferencias/:id", manejar((req) => anularTransferencia(db, Number(req.params.id))));
   app.get("/api/semielaborados/:id/movimientos", manejar((req) => historial(db, Number(req.params.id))));
   app.post("/api/semielaborados/:id/ajustar", manejar(async (req) => ajustarStock(db, { ...req.body, semielaborado_id: Number(req.params.id), usuario: await nombreDeUsuario(req) })));
-  app.get("/api/semielaborados/alineacion-33", manejar(() => compararStock33(db)));
+  app.get("/api/semielaborados/alineacion-33", manejar(async () => ({ ...(await compararStock33(db)), espejo: { ...estadoEspejo } })));
+  app.post("/api/semielaborados/copiar-stock-33", manejar(async () => {
+    const r = await correrEspejo33(db);
+    if (!r) throw Object.assign(new Error(estadoEspejo.error || "No se pudo leer la planilla."), { status: 502 });
+    return { comparados: r.comparados, actualizados: r.actualizados };
+  }));
   app.post("/api/semielaborados/leer-planilla-movimientos", manejar(() => sincronizarHojas(db)));
 }
 
 module.exports = {
   asegurarMovimientos, parsearHoja, filasCSV, fechaISO, depositoDe, guardarHoja, sincronizarHojas, entradasPendientes,
-  marcarAvisadas, entradasParaRecordar, marcarRecordadas, ajustarStock, compararStock33, parsearStockPlanilla, MIN_RECORDATORIO,
+  marcarAvisadas, entradasParaRecordar, marcarRecordadas, ajustarStock, compararStock33, parsearStockPlanilla, copiarStock33, correrEspejo33, iniciarEspejo33, MIN_RECORDATORIO,
   transferir, anularTransferencia, ajustesDeLaApp, conAjustesDeLaApp, historial, registrarRutasMovimientos, DEPOSITOS, NOMBRE_DEPOSITO,
 };
