@@ -28,6 +28,33 @@ test("estadoAsignacion distingue aprobada, pendiente, rechazada y sin cargar", (
   assert.equal(estadoAsignacion([{ estado: "RECHAZADA", total_producido: 50, fallas: 0 }]).estado, "rechazada");
 });
 
+test("una producción cargada en partes por dos operarios suma las partes", () => {
+  const e = estadoAsignacion([
+    { estado: "PENDIENTE", total_producido: 300, fallas: 10, operario: "Pedro" },
+    { estado: "APROBADA", total_producido: 200, fallas: 20, operario: "Juan" },
+    { estado: "RECHAZADA", total_producido: 999, fallas: 0, operario: "Ana" },
+  ]);
+  assert.equal(e.producido, 470);
+  assert.equal(e.fallas, 30);
+  assert.equal(e.estado, "pendiente_de_aprobar");
+  assert.equal(e.cargo, "Pedro, Juan");
+  assert.equal(estadoAsignacion([{ estado: "APROBADA", total_producido: 10, fallas: 0, operario: "A" }, { estado: "APROBADA", total_producido: 5, fallas: 1, operario: "B" }]).estado, "aprobada");
+});
+
+test("partesDe resume las partes vigentes de la más vieja a la más nueva", () => {
+  const { partesDe } = require("../produccionRutas");
+  const r = partesDe([
+    { id: 3, estado: "PENDIENTE", total_producido: 300, fallas: 10, operario: "Pedro" },
+    { id: 2, estado: "RECHAZADA", total_producido: 50, fallas: 0, operario: "Ana" },
+    { id: 1, estado: "APROBADA", total_producido: 200, fallas: 20, operario: "Juan" },
+  ]);
+  assert.deepEqual(r.cargas.map((c) => c.operario), ["Juan", "Pedro"]);
+  assert.equal(r.buenas_total, 470);
+  assert.equal(r.fallas_total, 30);
+  assert.equal(r.carga_estado, "PENDIENTE");
+  assert.equal(partesDe([]).carga_estado, null);
+});
+
 test("la semana trae día por día máquina, operario, cantidad y lo producido", async () => {
   const s = await cargarSemanaDetallada(poolFalso(), new Date("2026-10-28T15:00:00Z")); // miércoles
   assert.equal(s.lunes, "2026-10-26");

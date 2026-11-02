@@ -132,6 +132,22 @@ async function asegurarTablasProduccion(db) {
   }
 }
 
+/**
+ * Partes cargadas de una producción (la misma puede cargarla más de un operario: uno se retira y otro la continúa).
+ * propias: cargas de la asignación, más nueva primero. Devuelve las partes vigentes (sin rechazadas), de la más vieja a la más nueva,
+ * y el estado y totales de conjunto.
+ */
+function partesDe(propias) {
+  const vigentes = propias.filter((c) => c.estado !== "RECHAZADA").reverse();
+  const partes = vigentes.map((c) => ({ id: c.id, operario: c.operario, estado: c.estado, total_producido: Number(c.total_producido), fallas: Number(c.fallas), buenas: Number(c.total_producido) - Number(c.fallas) }));
+  return {
+    cargas: partes,
+    carga_estado: !partes.length ? null : partes.some((c) => c.estado === "PENDIENTE") ? "PENDIENTE" : "APROBADA",
+    buenas_total: partes.reduce((t, c) => t + c.buenas, 0),
+    fallas_total: partes.reduce((t, c) => t + c.fallas, 0),
+  };
+}
+
 function registrarRutasProduccion(app, db, requirePermiso) {
   // Acepta a quien tenga CUALQUIERA de los módulos (ADMIN siempre pasa).
   const requireAlguno = (...ids) => async (req, res, next) => {
@@ -265,7 +281,20 @@ function registrarRutasProduccion(app, db, requirePermiso) {
         "SELECT asignacion_id, estado, operario, total_producido, fallas FROM prod_cargas WHERE asignacion_id IN (?) AND estado <> 'RECHAZADA' ORDER BY id",
         [ids],
       );
-      for (const c of cs) realPorAsig.set(c.asignacion_id, { estado: c.estado, operario: c.operario, total: Number(c.total_producido), fallas: Number(c.fallas), buenas: Number(c.total_producido) - Number(c.fallas) });
+      // Una producción puede tener varias partes (otro operario la continúa): se suman.
+      for (const c of cs) {
+        const buenas = Number(c.total_producido) - Number(c.fallas);
+        const r = realPorAsig.get(c.asignacion_id);
+        if (!r) realPorAsig.set(c.asignacion_id, { estado: c.estado, operario: c.operario, total: Number(c.total_producido), fallas: Number(c.fallas), buenas, partes: 1 });
+        else {
+          r.total += Number(c.total_producido);
+          r.fallas += Number(c.fallas);
+          r.buenas += buenas;
+          r.partes += 1;
+          if (c.estado === "PENDIENTE") r.estado = "PENDIENTE";
+          if (c.operario && !r.operario.split(", ").includes(c.operario)) r.operario += `, ${c.operario}`;
+        }
+      }
     }
     return {
       semana: lunes,
@@ -571,7 +600,7 @@ function registrarRutasProduccion(app, db, requirePermiso) {
               const propias = cargas.filter((c) => c.asignacion_id === a.id);
               const vigente = propias.find((c) => c.estado !== "RECHAZADA") || null;
               const rechazada = !vigente ? propias.find((c) => c.estado === "RECHAZADA") || null : null;
-              return { ...a, es_roto: llevaCiclos(a.receta_proceso, a.maquina_categoria), proceso: a.receta_proceso || null, receta: recetas[a.ingenieria_id] || [], formula: formulas[a.ingenieria_id] || null, carga: vigente ? { ...vigente, formula_usada: parseJSON(vigente.formula_usada) } : null, rechazo: rechazada ? rechazada.motivo_rechazo || "La carga fue rechazada. Volvé a cargarla." : null };
+              return { ...a, es_roto: llevaCiclos(a.receta_proceso, a.maquina_categoria), proceso: a.receta_proceso || null, receta: recetas[a.ingenieria_id] || [], formula: formulas[a.ingenieria_id] || null, carga: vigente ? { ...vigente, formula_usada: parseJSON(vigente.formula_usada) } : null, ...partesDe(propias), rechazo: rechazada ? rechazada.motivo_rechazo || "La carga fue rechazada. Volvé a cargarla." : null };
             }),
         };
       }),
@@ -619,8 +648,10 @@ function registrarRutasProduccion(app, db, requirePermiso) {
     if (v.error) return res.status(400).json({ error: v.error });
     const operario = String(req.body.operario || "").trim().slice(0, 255);
     if (!operario) return res.status(400).json({ error: "Indicá quién cargó la producción." });
+    // Una producción ya cargada solo admite otra carga si se pide expresamente como "otra parte" (otro operario la continúa).
     const [ya] = await db.query("SELECT id FROM prod_cargas WHERE asignacion_id = ? AND estado <> 'RECHAZADA'", [a.id]);
-    if (ya.length) return res.status(409).json({ error: "Esta producción ya fue cargada." });
+    if (ya.length && req.body.otra_parte !== true) return res.status(409).json({ error: "Esta producción ya fue cargada." });
+    if (!ya.length && req.body.otra_parte === true) return res.status(409).json({ error: "Todavía no hay una primera carga de esta producción." });
     const x = v.valores;
     // Los ciclos son solo de rotomoldeo: en las demás máquinas no se registran.
     if (!llevaCiclos(a.receta_proceso, a.maquina_categoria)) x.ciclos = 0;
@@ -786,7 +817,12 @@ function registrarRutasProduccion(app, db, requirePermiso) {
       await conn.query("DELETE FROM prod_cargas WHERE id = ?", [c.id]);
 
       let sacada = false;
+      let quedanPartes = 0;
       if (sacar && c.asignacion_id) {
+        const [[{ n }]] = await conn.query("SELECT COUNT(*) AS n FROM prod_cargas WHERE asignacion_id = ? AND estado <> 'RECHAZADA'", [c.asignacion_id]);
+        quedanPartes = Number(n);
+      }
+      if (sacar && c.asignacion_id && !quedanPartes) {
         const [[a]] = await conn.query(`SELECT id, ${FECHA("fecha")} AS fecha_iso, turno FROM prod_asignaciones WHERE id = ?`, [c.asignacion_id]);
         if (a) {
           await conn.query("DELETE FROM prod_asignaciones WHERE id = ?", [a.id]);
@@ -807,4 +843,4 @@ function registrarRutasProduccion(app, db, requirePermiso) {
   }));
 }
 
-module.exports = { asegurarTablasProduccion, registrarRutasProduccion };
+module.exports = { asegurarTablasProduccion, registrarRutasProduccion, partesDe };
