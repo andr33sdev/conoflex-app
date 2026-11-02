@@ -25,10 +25,11 @@ export const CSS_IMPRESION = `
             display: none !important;
           }
           .print-visible {
-            display: block !important;
+            display: flex !important;
+            flex-direction: column !important; /* las firmas quedan al pie de la hoja aunque sobre espacio arriba */
             width: 100% !important;
             height: auto !important;
-            min-height: 0 !important;
+            min-height: 270mm !important; /* alto útil de un A4 con los márgenes de arriba */
             margin: 0 !important;
             padding: 0 !important;
           }
@@ -45,8 +46,8 @@ export const CSS_IMPRESION = `
           .bloque-firmas-print {
             page-break-inside: avoid !important;
             break-inside: avoid !important; /* NUNCA SE CORTA POR LA MITAD */
-            margin-top: 35px !important;
-            padding-top: 15px !important;
+            margin-top: auto !important; /* empuja las firmas hasta abajo de la hoja */
+            padding-top: 35px !important;
           }
         }
         @media screen {
