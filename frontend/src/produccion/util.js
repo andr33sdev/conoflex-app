@@ -24,6 +24,7 @@ export async function api(path, { method = "GET", body } = {}) {
   if (!res.ok) {
     const e = new Error(json?.error || `Error ${res.status}`);
     e.problemas = json?.problemas || null;
+    e.datos = json;
     e.status = res.status;
     throw e;
   }

@@ -21,6 +21,7 @@ import {
   MessageSquareText,
   LayoutGrid,
   UsersRound,
+  Lightbulb,
 } from "lucide-react";
 
 export const INICIO = {
@@ -120,6 +121,15 @@ export const ALL_MENU_ITEMS = [
     icon: ShoppingCart,
     desc: "Pedidos de compra y su aprobación",
     kw: "sc compras aprobar firma",
+  },
+  {
+    id: "sugerencias-compra",
+    corto: "Sugerencias",
+    grupo: "abastecimiento",
+    label: "Sugerencias de Compra",
+    icon: Lightbulb,
+    desc: "Sugerí qué comprar y con qué urgencia",
+    kw: "sugerir comprar faltante urgencia pedido",
   },
   {
     id: "solicitudes-internas",

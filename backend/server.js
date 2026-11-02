@@ -37,7 +37,8 @@ const { asegurarTablaMovimientos, moverStock, historialMateriaPrima } = require(
 const { crearMateriaPrima } = require("./materiaPrimaAlta");
 const { asegurarComprasStock, buscarMateriaPrima, aplicarRecepcion, norm } = require("./comprasStock");
 const { asegurarColumnaPagoMensual } = require("./escala");
-const { migrarPermisoConnie } = require("./permisos");
+const { migrarPermisoConnie, migrarPermisoSugerencias } = require("./permisos");
+const { asegurarTablasSugerencias, registrarRutasSugerencias } = require("./sugerenciasCompra");
 require("dotenv").config();
 
 const app = express();
@@ -838,6 +839,7 @@ async function initDB() {
     await asegurarSemis(db);
     await asegurarMovimientos(db);
     await asegurarColumnasGestion(db);
+    await asegurarTablasSugerencias(db);
 
     console.log("✅ Estructura MySQL inicializada correctamente.");
   } catch (err) {
@@ -5504,6 +5506,7 @@ const nombreDeUsuario = async (req) => {
 
 // Eliminar una solicitud entera y corregir lo que realmente se pidió (proveedor / cantidad) en un renglón.
 registrarRutasGestion(app, { db, nombreDeUsuario });
+registrarRutasSugerencias(app, { db, requirePermiso, nombreDeUsuario, crearNotificacion });
 registrarRutasSemis(app, { db, nombreDeUsuario });
 registrarRutasMovimientos(app, db, { nombreDeUsuario });
 
@@ -5848,6 +5851,7 @@ const agentes = registrarRutasAgentes(app, {
 app.listen(PORT, () => {
   console.log(`🚀 Servidor Conoflex unificado ejecutándose en puerto ${PORT}`);
   migrarPermisoConnie(db);
+  migrarPermisoSugerencias(db);
   iniciarEspejo33(db); // el stock del 33 se copia de la planilla (STOCK 33) cada 10 minutos
   connie.calentarEsquema();
   asegurarPush(db)

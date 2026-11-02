@@ -24,6 +24,7 @@ const LaboratorioEnsamblaje = lazy(() => import("./LaboratorioEnsamblaje"));
 const LaboratorioAR = lazy(() => import("./LaboratorioAR"));
 const VisorAR = lazy(() => import("./VisorAR"));
 const SolicitudesCompraModule = lazy(() => import("./SolicitudesCompraModule"));
+const SugerenciasCompra = lazy(() => import("./SugerenciasCompra"));
 const FirmaSolicitudPublica = lazy(() => import("./FirmaSolicitudPublica"));
 const Agentes = lazy(() => import("./Agentes"));
 import { itemPorId, veLaboratorio, tieneAlgunAgente } from "./menu";
@@ -54,6 +55,7 @@ const PRECARGA = {
   "lab-ar": () => import("./LaboratorioAR"),
   "visor-ar": () => import("./VisorAR"),
   "solicitudes-compra": () => import("./SolicitudesCompraModule"),
+  "sugerencias-compra": () => import("./SugerenciasCompra"),
   agentes: () => import("./Agentes"),
 };
 
@@ -214,6 +216,9 @@ function AppInterna() {
 
       {hasAccess("solicitudes-compra") &&
         activeModule === "solicitudes-compra" && <SolicitudesCompraModule />}
+
+      {hasAccess("sugerencias-compra") &&
+        activeModule === "sugerencias-compra" && <SugerenciasCompra />}
 
       {hasAccess("semielaborados") && activeModule === "semielaborados" && (
         <Semielaborados
