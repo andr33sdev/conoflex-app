@@ -3,7 +3,7 @@
 // si cambia una regla hay que cambiarla en los dos lugares (hay un test de paridad).
 //
 //  - Hora diurna 06:00–21:00; nocturna 21:00–06:00 con +13,33%.
-//  - Jornada normal: 9 hs desde el ingreso; el resto es extra al 50%.
+//  - Jornada normal: 9 hs desde el ingreso (8 en las categorías administrativas Nivel_1 a Nivel_5); el resto es extra al 50%.
 //  - Turno que ingresa un sábado: hasta las 13:00 todo extra al 50%. Un turno que ingresa
 //    de lunes a viernes mantiene sus primeras 9 hs normales aunque pasen al sábado.
 //  - Sábados desde las 13:00, domingos y feriados: todo extra al 100%.
@@ -27,11 +27,18 @@ export function valorHoraOrdinaria(valorEscala, mensual) {
 
 export const REGLAS = {
   jornadaNormalHoras: 9,
+  jornadaAdministrativaHoras: 8,
   nocturnoDesde: 21,
   nocturnoHasta: 6,
   recargoNocturno: 0.1333,
   sabadoCorteHora: 13,
 };
+
+/** Horas normales de la jornada según la categoría (código o nombre): Nivel_1 a Nivel_5 = 8, el resto 9. Espejo de backend/liquidacion.js. */
+export function jornadaNormalDe(...codigosONombres) {
+  const adm = codigosONombres.some((c) => /^NIVEL[\s_-]?[1-5]$/i.test(String(c || "").trim()));
+  return adm ? REGLAS.jornadaAdministrativaHoras : REGLAS.jornadaNormalHoras;
+}
 
 const F_NOCT = 1 + REGLAS.recargoNocturno;
 export const FACTORES = {
@@ -60,7 +67,7 @@ export function ingresoRedondeado(entradaTs) {
  * entradaTs / salidaTs en ms. ajuste: { horaInicio, horasNormales, todasExtra } | null
  * Devuelve minutos por categoría (min), inicio/fin computados y el total.
  */
-export function liquidarTurnoMinutos({ entradaTs, salidaTs, esFeriado = () => false, ajuste = null }) {
+export function liquidarTurnoMinutos({ entradaTs, salidaTs, esFeriado = () => false, ajuste = null, jornadaHoras = REGLAS.jornadaNormalHoras }) {
   let inicio;
   if (ajuste && ajuste.horaInicio) {
     const [ph, pm] = String(ajuste.horaInicio).split(":").map(Number);
@@ -75,7 +82,7 @@ export function liquidarTurnoMinutos({ entradaTs, salidaTs, esFeriado = () => fa
   totalMin = Math.floor(totalMin / 30) * 30;
 
   const limiteNormalMin =
-    ((ajuste && ajuste.horasNormales) || REGLAS.jornadaNormalHoras) * 60;
+    ((ajuste && ajuste.horasNormales) || jornadaHoras || REGLAS.jornadaNormalHoras) * 60;
   const todasExtra = !!(ajuste && ajuste.todasExtra);
   const entradaSabado = new Date(entradaTs).getDay() === 6;
 

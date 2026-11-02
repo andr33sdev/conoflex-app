@@ -135,7 +135,8 @@ function ajustesDe(ctx, nombre) {
     if (a.nombre_operario !== nombre) continue;
     out[a.fecha] = {
       horaInicio: a.hora_inicio_pactada || null,
-      horasNormales: a.horas_normales != null ? Number(a.horas_normales) : null,
+      // 9 es el valor "estándar" que guarda el Fichero: no pisa la jornada de la categoría (8 en Nivel_1 a Nivel_5).
+      horasNormales: a.horas_normales != null && Number(a.horas_normales) !== 9 ? Number(a.horas_normales) : null,
       todasExtra: !!a.todas_extra,
     };
   }

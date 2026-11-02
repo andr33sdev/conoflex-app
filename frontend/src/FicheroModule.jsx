@@ -33,6 +33,7 @@ import {
   HORAS_MENSUALES,
   esMensual,
   evaluarIngreso,
+  jornadaNormalDe,
   liquidarTurnoMinutos,
   PRESENTISMO,
   valorHoraOrdinaria,
@@ -385,7 +386,9 @@ export default function FicheroModule() {
         entradaTs: dEnt.getTime(),
         salidaTs: dSal.getTime(),
         esFeriado: (f) => !!feriadosGlobales[f],
-        ajuste,
+        // Un ajuste guardado como "estándar" (9) no pisa la jornada de la categoría.
+        ajuste: ajuste && ajuste.horasNormales === 9 && !ajuste.todasExtra ? { ...ajuste, horasNormales: null } : ajuste,
+        jornadaHoras: jornadaNormalDe(asignaciones[nombreOp]), // Nivel_1 a Nivel_5: 8 hs
       });
       const hs = (cat) => (liq.min[cat] || 0) / 60;
 
@@ -414,7 +417,7 @@ export default function FicheroModule() {
         tieneAjuste: !!ajuste,
       };
     },
-    [feriadosGlobales, ajustesDias],
+    [feriadosGlobales, ajustesDias, asignaciones],
   );
 
   const calcularDatosCalendario = useCallback(
@@ -1845,7 +1848,7 @@ export default function FicheroModule() {
                         onChange={() => setFormTipoHoras("ESTANDAR")}
                         className="accent-[#FF5A00]"
                       />
-                      <span>Estándar (9 horas normales)</span>
+                      <span>Estándar (según la categoría)</span>
                     </label>
 
                     <label className="flex items-center gap-2 cursor-pointer">
