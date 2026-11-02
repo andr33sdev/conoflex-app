@@ -28,7 +28,7 @@ const { asegurarTablasFichasPdf, registrarRutasFichasPdf } = require("./comercia
 const importarFichas = require("./comercial/importarFichas");
 const { asegurarColumnasGestion, registrarRutasGestion } = require("./comprasGestion");
 const { asegurarSemis, registrarRutasSemis } = require("./semisGestion");
-const { asegurarMovimientos, registrarRutasMovimientos, conAjustesDeLaApp, sincronizarHojas } = require("./semiMovimientos");
+const { asegurarMovimientos, registrarRutasMovimientos, conAjustesDeLaApp, sincronizarHojas, iniciarEspejo33 } = require("./semiMovimientos");
 const { registrarRutasFotos } = require("./comercial/fotos");
 const { generarCotizacion } = require("./comercial/cotizador");
 const { crearCorreoCrudo } = require("./comercial/correo");
@@ -5852,6 +5852,7 @@ app.listen(PORT, () => {
   console.log(`🚀 Servidor Conoflex unificado ejecutándose en puerto ${PORT}`);
   migrarPermisoConnie(db);
   migrarPermisoSugerencias(db);
+  iniciarEspejo33(db); // el stock del 33 se copia de la planilla (STOCK 33) cada 10 minutos
   connie.calentarEsquema();
   asegurarPush(db)
     .then(() => alCrearNotificacion((n) => enviarPush(db, n)))
