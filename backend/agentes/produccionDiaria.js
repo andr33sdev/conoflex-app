@@ -14,10 +14,18 @@ function hoyArgentina(ahora = new Date()) {
 const sumarDias = (iso, k) => P.sumarDias(iso, k);
 const nombreDia = (iso) => DIAS[P.parseISO(iso).getUTCDay()];
 
-/** Estado de una asignación según sus cargas (la carga vigente es la más nueva que no fue rechazada). */
+/** Estado de una asignación según sus cargas: suma las partes vigentes (no rechazadas); si alguna espera aprobación, queda pendiente. */
 function estadoAsignacion(cargas) {
-  const vigente = cargas.find((c) => c.estado !== "RECHAZADA");
-  if (vigente) return { estado: vigente.estado === "APROBADA" ? "aprobada" : "pendiente_de_aprobar", producido: n0(vigente.total_producido) - n0(vigente.fallas), fallas: n0(vigente.fallas), cargo: vigente.operario };
+  const vigentes = cargas.filter((c) => c.estado !== "RECHAZADA");
+  if (vigentes.length) {
+    const nombres = [...new Set(vigentes.map((c) => c.operario).filter(Boolean))];
+    return {
+      estado: vigentes.some((c) => c.estado === "PENDIENTE") ? "pendiente_de_aprobar" : "aprobada",
+      producido: vigentes.reduce((t, c) => t + n0(c.total_producido) - n0(c.fallas), 0),
+      fallas: vigentes.reduce((t, c) => t + n0(c.fallas), 0),
+      cargo: nombres.length ? nombres.join(", ") : null,
+    };
+  }
   if (cargas.length) return { estado: "rechazada", producido: 0, fallas: 0, cargo: null };
   return { estado: "sin_cargar", producido: 0, fallas: 0, cargo: null };
 }

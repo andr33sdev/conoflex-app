@@ -15,6 +15,7 @@ import {
   Minimize2,
   Moon,
   PencilLine,
+  Plus,
   Send,
   Sun,
   User,
@@ -58,13 +59,13 @@ function Reloj() {
 }
 
 function Estado({ a }) {
-  if (a.carga?.estado === "APROBADA")
+  if (a.carga_estado === "APROBADA")
     return (
       <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 px-3 py-1 text-sm font-bold text-emerald-300">
         <CheckCircle2 size={16} /> Aprobada
       </span>
     );
-  if (a.carga?.estado === "PENDIENTE")
+  if (a.carga_estado === "PENDIENTE")
     return (
       <span className="inline-flex items-center gap-1.5 rounded-full bg-[#FFD60A]/15 border border-[#FFD60A]/30 px-3 py-1 text-sm font-bold text-[#FFD60A]">
         <Clock size={16} /> Enviada · esperando aprobación
@@ -86,8 +87,9 @@ function Estado({ a }) {
 
 function Tarjeta({ a, i, onCargar }) {
   const c = a.carga;
-  const lista = c?.estado === "APROBADA";
-  const buenas = c ? c.total_producido - c.fallas : 0;
+  const lista = a.carga_estado === "APROBADA";
+  const puedeCorregir = c?.estado === "PENDIENTE";
+  const otraParte = () => onCargar({ ...a, _otra: true });
   return (
     <motion.article
       layout
@@ -141,30 +143,48 @@ function Tarjeta({ a, i, onCargar }) {
         </div>
       )}
 
-      {c && (
-        <div className="mt-4 rounded-2xl bg-white/[0.04] px-4 py-3 flex flex-wrap gap-x-6 gap-y-1 text-base text-zinc-300">
-          <span>
-            <b className="text-emerald-300 tabular-nums">{num(buenas)}</b>{" "}
-            buenas
-          </span>
-          <span>
-            <b className="text-rose-300 tabular-nums">{num(c.fallas)}</b> fallas
-          </span>
+      {a.cargas?.length > 0 && (
+        <div className="mt-4 rounded-2xl bg-white/[0.04] px-4 py-3 text-base text-zinc-300">
+          {a.cargas.map((p) => (
+            <p key={p.id} className="flex flex-wrap items-baseline gap-x-2">
+              <b className="text-white">{p.operario}</b>
+              <span>
+                cargó <b className="text-emerald-300 tabular-nums">{num(p.buenas)}</b> buenas
+                {p.fallas > 0 && (
+                  <>
+                    {" "}· <b className="text-rose-300 tabular-nums">{num(p.fallas)}</b> fallas
+                  </>
+                )}
+              </span>
+            </p>
+          ))}
+          {a.cargas.length > 1 && (
+            <p className="mt-1 pt-1 border-t border-white/[0.08] text-sm text-zinc-400">
+              Total: <b className="text-white tabular-nums">{num(a.buenas_total)}</b> buenas
+            </p>
+          )}
         </div>
       )}
 
       <div className="mt-auto pt-6">
-        {lista ? (
-          <p className="text-center text-base font-semibold text-emerald-300/80 py-4">
-            Ya está cargada y aprobada. ¡Gracias!
-          </p>
-        ) : c ? (
-          <button
-            onClick={() => onCargar(a)}
-            className="w-full min-h-[64px] rounded-2xl border border-white/[0.14] bg-white/[0.05] text-lg font-bold text-white inline-flex items-center justify-center gap-3 hover:bg-white/[0.1] active:scale-[0.99] transition-all cursor-pointer"
-          >
-            <PencilLine size={22} /> Corregir lo que cargué
-          </button>
+        {c ? (
+          <div className="flex flex-col gap-3">
+            {lista && <p className="text-center text-base font-semibold text-emerald-300/80 pt-1">Ya está cargada y aprobada. ¡Gracias!</p>}
+            {puedeCorregir && (
+              <button
+                onClick={() => onCargar(a)}
+                className="w-full min-h-[64px] rounded-2xl border border-white/[0.14] bg-white/[0.05] text-lg font-bold text-white inline-flex items-center justify-center gap-3 hover:bg-white/[0.1] active:scale-[0.99] transition-all cursor-pointer"
+              >
+                <PencilLine size={22} /> Corregir lo que cargué
+              </button>
+            )}
+            <button
+              onClick={otraParte}
+              className="w-full min-h-[56px] rounded-2xl border border-dashed border-[#FF5A00]/50 text-base font-bold text-[#ff8a4d] inline-flex items-center justify-center gap-2 hover:bg-[#FF5A00]/10 active:scale-[0.99] transition-all cursor-pointer"
+            >
+              <Plus size={20} /> Cargar otra parte
+            </button>
+          </div>
         ) : (
           <button
             onClick={() => onCargar(a)}
@@ -362,7 +382,7 @@ export default function CargaProduccion() {
   const resumen = (tn) => {
     const x = dato?.turnos.find((y) => y.turno === tn);
     if (!x || !x.lanzado || x.sin_produccion) return null;
-    const pend = x.asignaciones.filter((a) => !a.carga).length;
+    const pend = x.asignaciones.filter((a) => !a.carga_estado).length;
     return pend;
   };
 
@@ -532,8 +552,8 @@ export default function CargaProduccion() {
                 />
               ) : (
                 <>
-                  {t.asignaciones.every((a) => a.carga) &&
-                    (t.asignaciones.every((a) => a.carga.estado === "APROBADA") ? (
+                  {t.asignaciones.every((a) => a.carga_estado) &&
+                    (t.asignaciones.every((a) => a.carga_estado === "APROBADA") ? (
                       <motion.div
                         initial={{ opacity: 0, y: -8 }}
                         animate={{ opacity: 1, y: 0 }}

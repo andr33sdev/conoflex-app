@@ -53,23 +53,27 @@ function SiNo({ si, no, cambiando, onSi, onNo }) {
 }
 
 function Cuerpo({ a, operarios, onCerrar, onGuardado, toast }) {
-  const previa = a.carga && a.carga.estado === "PENDIENTE" ? a.carga : null;
+  // "Otra parte": otro operario continúa la misma producción. Se parte de lo que cargó el anterior (material, kg, color) y solo cambian cantidades y nombre.
+  const otra = !!a._otra;
+  const base = otra ? a.carga : null;
+  const previa = !otra && a.carga && a.carga.estado === "PENDIENTE" ? a.carga : null;
+  const origen = previa || base;
   const mem = leerMemoria()[a.modelo_codigo] || {};
   const [f, setF] = useState({
-    operario: previa?.operario || a.operario || "",
+    operario: otra ? "" : previa?.operario || a.operario || "",
     ciclos: previa ? String(previa.ciclos || "") : "",
     buenas: previa ? String(previa.total_producido - previa.fallas) : "",
     fallas: previa ? String(previa.fallas) : "",
-    kg: previa ? String(previa.kg_por_producto || "") : a.formula?.peso ? String(a.formula.peso) : mem.kg || "",
-    color: previa?.color ?? mem.color ?? "",
-    material: previa?.codigo_material ?? mem.material ?? (a.receta[0]?.codigo || ""),
+    kg: origen ? String(origen.kg_por_producto || "") : a.formula?.peso ? String(a.formula.peso) : mem.kg || "",
+    color: origen?.color ?? mem.color ?? "",
+    material: origen?.codigo_material ?? mem.material ?? (a.receta[0]?.codigo || ""),
   });
-  const [lineas, setLineas] = useState(() => lineasIniciales(previa?.formula_usada?.lineas?.length ? previa.formula_usada.lineas : a.formula?.lineas));
+  const [lineas, setLineas] = useState(() => lineasIniciales(origen?.formula_usada?.lineas?.length ? origen.formula_usada.lineas : a.formula?.lineas));
   const conFormula = !!a.formula || lineas.length > 0;
   const kgOriginal = useState(f.kg)[0];
   const [kgCambia, setKgCambia] = useState(false);
   const [materialCambia, setMaterialCambia] = useState(false);
-  const [otroNombre, setOtroNombre] = useState(false);
+  const [otroNombre, setOtroNombre] = useState(otra);
   const [intento, setIntento] = useState(false);
   const [enviando, setEnviando] = useState(false);
   const [hecho, setHecho] = useState(false);
@@ -132,6 +136,7 @@ function Cuerpo({ a, operarios, onCerrar, onGuardado, toast }) {
       codigo_material: conFormula ? lineas.map((l) => l.codigo).join(" + ") : f.material,
       formula_usada: formula,
       observaciones: previa?.observaciones || "",
+      ...(otra ? { otra_parte: true } : {}),
     };
     try {
       if (previa) await api(`/api/prod/cargas/${previa.id}`, { method: "PUT", body });
@@ -233,11 +238,11 @@ function Cuerpo({ a, operarios, onCerrar, onGuardado, toast }) {
           <p className="text-[13px] font-extrabold uppercase tracking-[0.08em] text-zinc-400">Carga</p>
           <p className="mt-1 text-3xl font-extrabold text-white">{f.operario || "—"}</p>
         </div>
-        <SiNo si="Sí, soy yo" no="No soy yo" cambiando={otroNombre} onSi={() => setOtroNombre(false)} onNo={() => setOtroNombre(true)} />
+        {!otra && <SiNo si="Sí, soy yo" no="No soy yo" cambiando={otroNombre} onSi={() => setOtroNombre(false)} onNo={() => setOtroNombre(true)} />}
         {otroNombre && (
           <div className="flex flex-wrap gap-2">
             {nombres.map((o) => (
-              <button key={o} type="button" onClick={() => { set("operario")(o); setOtroNombre(false); }} className={`min-h-[52px] px-5 rounded-2xl text-base font-bold border transition-colors cursor-pointer ${f.operario === o ? "bg-[#FF5A00] text-black border-[#FF5A00]" : "bg-[#17171c] text-zinc-200 border-white/[0.1] hover:border-white/30"}`}>
+              <button key={o} type="button" onClick={() => { set("operario")(o); setOtroNombre(otra); }} className={`min-h-[52px] px-5 rounded-2xl text-base font-bold border transition-colors cursor-pointer ${f.operario === o ? "bg-[#FF5A00] text-black border-[#FF5A00]" : "bg-[#17171c] text-zinc-200 border-white/[0.1] hover:border-white/30"}`}>
                 {o}
               </button>
             ))}
@@ -300,8 +305,8 @@ function Cuerpo({ a, operarios, onCerrar, onGuardado, toast }) {
 
 export default function FormularioCarga({ asignacion, operarios, onCerrar, onGuardado, toast }) {
   return (
-    <Drawer abierto={!!asignacion} onCerrar={onCerrar} titulo={asignacion ? asignacion.maquina || "Sin máquina" : ""} subtitulo={asignacion ? `${asignacion.modelo_nombre} · ${asignacion.lote}` : ""}>
-      {asignacion && <Cuerpo key={asignacion.id} a={asignacion} operarios={operarios} onCerrar={onCerrar} onGuardado={onGuardado} toast={toast} />}
+    <Drawer abierto={!!asignacion} onCerrar={onCerrar} titulo={asignacion ? asignacion.maquina || "Sin máquina" : ""} subtitulo={asignacion ? `${asignacion.modelo_nombre} · ${asignacion.lote}${asignacion._otra ? " · otra parte" : ""}` : ""}>
+      {asignacion && <Cuerpo key={`${asignacion.id}${asignacion._otra ? "-otra" : ""}`} a={asignacion} operarios={operarios} onCerrar={onCerrar} onGuardado={onGuardado} toast={toast} />}
     </Drawer>
   );
 }
