@@ -4,7 +4,7 @@
 // REGLAS (definidas por la empresa):
 //  - Hora diurna: de 06:00 a 21:00. Hora nocturna: de 21:00 a 06:00, con un
 //    recargo base de 13,33% sobre la hora diurna.
-//  - Jornada normal: 9 horas desde el ingreso. De ahí en más son horas extra
+//  - Jornada normal: 9 horas desde el ingreso (8 en las categorías administrativas Nivel_1 a Nivel_5). De ahí en más son horas extra
 //    hasta que el operario se retira.
 //  - Extras sobre horas comunes: 50% sobre la hora diurna o nocturna, según corresponda.
 //    Pasadas las 9 hs de jornada, y TODAS las horas de un turno que ingresa un
@@ -27,6 +27,8 @@
 
 const REGLAS = {
   jornadaNormalHoras: 9,
+  // Categorías administrativas (Nivel_1 a Nivel_5): la jornada normal es de 8 hs.
+  jornadaAdministrativaHoras: 8,
   nocturnoDesde: 21, // 21:00
   nocturnoHasta: 6, // 06:00
   recargoNocturno: 0.1333,
@@ -148,7 +150,13 @@ function ingresoRedondeado(entradaTs) {
   return d.getTime();
 }
 
-function liquidarTurno({ entradaTs, salidaTs, esFeriado = () => false, ajuste = null, valorHora = 0, redondeo = true, mensual = false }) {
+/** Horas normales de la jornada según la categoría (código o nombre): Nivel_1 a Nivel_5 = 8, el resto 9. */
+function jornadaNormalDe(...codigosONombres) {
+  const adm = codigosONombres.some((c) => /^NIVEL[\s_-]?[1-5]$/i.test(String(c || "").trim()));
+  return adm ? REGLAS.jornadaAdministrativaHoras : REGLAS.jornadaNormalHoras;
+}
+
+function liquidarTurno({ entradaTs, salidaTs, esFeriado = () => false, ajuste = null, valorHora = 0, redondeo = true, mensual = false, jornadaHoras = REGLAS.jornadaNormalHoras }) {
   // Categoría mensual: las horas normales ya están en el sueldo; solo se paga su recargo nocturno.
   const factorPago = (cat) => (mensual && cat.startsWith("normal") ? CATEGORIAS[cat].factor - 1 : CATEGORIAS[cat].factor);
   let inicio = entradaTs;
@@ -165,7 +173,7 @@ function liquidarTurno({ entradaTs, salidaTs, esFeriado = () => false, ajuste = 
   const salidaMin = Math.floor(salidaTs / 60000) * 60000;
   let totalMin = Math.max(0, Math.floor((salidaMin - inicio) / 60000));
   if (redondeo) totalMin = Math.floor(totalMin / 30) * 30;
-  const limiteNormalMin = ((ajuste && ajuste.horasNormales) || REGLAS.jornadaNormalHoras) * 60;
+  const limiteNormalMin = ((ajuste && ajuste.horasNormales) || jornadaHoras || REGLAS.jornadaNormalHoras) * 60;
   const todasExtra = !!(ajuste && ajuste.todasExtra);
   // Un turno que ingresa un sábado no tiene horas normales; uno que ingresa de lunes a viernes
   // conserva sus primeras 9 hs normales aunque crucen la medianoche hacia el sábado.
@@ -277,7 +285,7 @@ function notasDelDia({ feriado, ajuste }) {
  * valorHoraDe(fecha) -> valor hora diurno vigente ese día.
  */
 function liquidarPeriodo({
-  fichadas, fechasIncluidas, feriados = new Set(), ajustes = {}, valorHoraDe = () => 0, mensualDe = () => false, detalle = "completo",
+  fichadas, fechasIncluidas, feriados = new Set(), ajustes = {}, valorHoraDe = () => 0, mensualDe = () => false, detalle = "completo", jornadaHoras = REGLAS.jornadaNormalHoras,
 }) {
   const esFeriado = (f) => (feriados instanceof Set ? feriados.has(f) : !!feriados[f]);
   const getAj = (f) => (ajustes instanceof Map ? ajustes.get(f) : ajustes[f]) || null;
@@ -303,7 +311,7 @@ function liquidarPeriodo({
     }
     const vh = valorHoraDe(t.fecha) || 0;
     const ajuste = getAj(t.fecha);
-    const liq = liquidarTurno({ entradaTs: t.entradaTs, salidaTs: t.salidaTs, esFeriado, ajuste, valorHora: vh, mensual: !!mensualDe(t.fecha) });
+    const liq = liquidarTurno({ entradaTs: t.entradaTs, salidaTs: t.salidaTs, esFeriado, ajuste, valorHora: vh, mensual: !!mensualDe(t.fecha), jornadaHoras });
     const notas = notasDelDia({ feriado: esFeriado(t.fecha), ajuste });
 
     minTotal += liq.minutosTotales;
@@ -359,5 +367,5 @@ function liquidarPeriodo({
 }
 
 module.exports = {
-  REGLAS, CATEGORIAS, DIAS, ingresoRedondeado, emparejarTurnos, liquidarTurno, liquidarPeriodo, redondear,
+  REGLAS, CATEGORIAS, DIAS, jornadaNormalDe, ingresoRedondeado, emparejarTurnos, liquidarTurno, liquidarPeriodo, redondear,
 };

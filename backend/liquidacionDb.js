@@ -2,7 +2,7 @@
 // Carga de datos (fichadas, feriados, ajustes, escala de valor hora) y liquidación.
 const { HORAS_MENSUALES, esMensual, valorHoraOrdinaria, asegurarColumnaPagoMensual } = require("./escala");
 const { analizarPresentismo } = require("./presentismo");
-const { emparejarTurnos, liquidarPeriodo, liquidarTurno, redondear, REGLAS, CATEGORIAS, DIAS } = require("./liquidacion");
+const { emparejarTurnos, liquidarPeriodo, liquidarTurno, redondear, REGLAS, CATEGORIAS, DIAS, jornadaNormalDe } = require("./liquidacion");
 
 const sinAcentos = (s) => String(s).normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().trim();
 const pad = (n) => String(n).padStart(2, "0");
@@ -143,7 +143,7 @@ function ajustesDe(ctx, nombre) {
 }
 
 const NOTA_REGLAS =
-  "Reglas de Conoflex: hora diurna 06:00–21:00, nocturna 21:00–06:00 con +13,33%; jornada normal de 9 hs desde el ingreso, el resto es extra al 50% (sobre la hora diurna o nocturna que corresponda); si el turno ingresa un sábado, hasta las 13:00 todas las horas son extra al 50% (un turno que ingresa de lunes a viernes mantiene sus primeras 9 hs normales aunque crucen al sábado); sábados desde las 13:00, domingos y feriados todo es extra al 100%; sin tope de horas extra. Operarios MENSUALES (categoría con sueldo mensual): la hora normal ordinaria es el sueldo mensual / 180 y los recargos se aplican sobre esa hora; las horas normales ya están en el sueldo. Un turno dura desde el ingreso hasta la primera salida registrada (hasta 30 hs después, p. ej. entra 19:00 y sale 17:00 del día siguiente = 22 hs seguidas). Cada minuto se clasifica por su fecha y hora reales y cada turno se asigna al día en que ingresó. Redondeo: ingreso de :45 a :10 va a la hora en punto (06:57 -> 07:00, 07:08 -> 07:00; de :11 a :44 se respeta) y la duración se cuenta en bloques de media hora completos (salida 19:08 con ingreso 07:00 = 12 hs).";
+  "Reglas de Conoflex: hora diurna 06:00–21:00, nocturna 21:00–06:00 con +13,33%; jornada normal de 9 hs desde el ingreso (8 hs en las categorías administrativas Nivel_1 a Nivel_5), el resto es extra al 50% (sobre la hora diurna o nocturna que corresponda); si el turno ingresa un sábado, hasta las 13:00 todas las horas son extra al 50% (un turno que ingresa de lunes a viernes mantiene sus primeras 9 hs normales aunque crucen al sábado); sábados desde las 13:00, domingos y feriados todo es extra al 100%; sin tope de horas extra. Operarios MENSUALES (categoría con sueldo mensual): la hora normal ordinaria es el sueldo mensual / 180 y los recargos se aplican sobre esa hora; las horas normales ya están en el sueldo. Un turno dura desde el ingreso hasta la primera salida registrada (hasta 30 hs después, p. ej. entra 19:00 y sale 17:00 del día siguiente = 22 hs seguidas). Cada minuto se clasifica por su fecha y hora reales y cada turno se asigna al día en que ingresó. Redondeo: ingreso de :45 a :10 va a la hora en punto (06:57 -> 07:00, 07:08 -> 07:00; de :11 a :44 se respeta) y la duración se cuenta en bloques de media hora completos (salida 19:08 con ingreso 07:00 = 12 hs).";
 
 async function liquidarDesdeBD(pool, { operario, mes, quincena, desde, hasta, fechas, detalle, solo_con_categoria, solo_extras } = {}) {
   const rango = resolverFechas({ fechas, desde, hasta, mes, quincena });
@@ -204,6 +204,7 @@ async function liquidarDesdeBD(pool, { operario, mes, quincena, desde, hasta, fe
       ajustes: ajustesDe(ctx, nombre),
       valorHoraDe: vh.valorHoraDe,
       mensualDe: vh.mensualDe,
+      jornadaHoras: jornadaNormalDe(codigo, ctx.categorias.get(codigo)),
       detalle: operario ? modoDetalle : "compacto",
     });
     const ref = infoValor(ctx, codigo, rango.hasta);
@@ -337,6 +338,7 @@ async function simularTurno(pool, { fecha, entrada, salida, valor_hora, sueldo_m
     pago = descripcionPago({ mensual: true, valorEscala: Number(sueldo_mensual), valorHora: vh });
   }
   let categoria = null;
+  let jornadaHoras = REGLAS.jornadaNormalHoras;
   if (operario) {
     const nombres = [...ctx.asignaciones.keys()];
     const q = sinAcentos(operario);
@@ -344,6 +346,7 @@ async function simularTurno(pool, { fecha, entrada, salida, valor_hora, sueldo_m
     if (hit.length !== 1) return { error: hit.length ? `"${operario}" coincide con varios operarios: ${hit.join(", ")}.` : `No encuentro al operario "${operario}" con categoría asignada.` };
     const codigo = ctx.asignaciones.get(hit[0]);
     categoria = `${hit[0]} – ${ctx.categorias.get(codigo) || codigo}`;
+    jornadaHoras = jornadaNormalDe(codigo, ctx.categorias.get(codigo));
     const info = infoValor(ctx, codigo, fecha);
     vh = info ? info.valorHora : 0;
     mensual = !!info?.mensual;
@@ -356,7 +359,7 @@ async function simularTurno(pool, { fecha, entrada, salida, valor_hora, sueldo_m
   const liq = liquidarTurno({
     entradaTs, salidaTs, esFeriado: (f) => feriadosSet.has(f),
     ajuste: { horaInicio: null, horasNormales: horas_normales ? Number(horas_normales) : null, todasExtra: !!todas_extra },
-    valorHora: vh, mensual,
+    valorHora: vh, mensual, jornadaHoras,
   });
   return {
     fecha, dia: DIAS[new Date(y, m - 1, d).getDay()], entrada, salida,

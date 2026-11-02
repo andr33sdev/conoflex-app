@@ -1,7 +1,7 @@
 "use strict";
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { liquidarTurno, liquidarPeriodo, emparejarTurnos, CATEGORIAS } = require("../liquidacion");
+const { liquidarTurno, liquidarPeriodo, emparejarTurnos, CATEGORIAS, jornadaNormalDe } = require("../liquidacion");
 const { normalizarGrafico, graficoDesdeTabla } = require("../graficos");
 const { calcular } = require("../calculadora");
 const { resolverFechas, elegirPeriodo } = require("../liquidacionDb");
@@ -24,6 +24,25 @@ test("factores de las categorías", () => {
   assert.ok(Math.abs(CATEGORIAS.extra50_nocturna.factor - 1.69995) < 1e-9);
   assert.equal(CATEGORIAS.extra100_diurna.factor, 2);
   assert.ok(Math.abs(CATEGORIAS.extra100_nocturna.factor - 2.2666) < 1e-9);
+});
+
+test("categorías administrativas (Nivel_1 a Nivel_5): 8 hs normales; el resto 9", () => {
+  for (const c of ["NIVEL_1", "Nivel_3", "NIVEL_5", "nivel 2"]) assert.equal(jornadaNormalDe(c), 8, c);
+  for (const c of ["OFICIAL", "NIVEL_6", "NIVEL_10", "", null, "ADMINISTRATIVAS"]) assert.equal(jornadaNormalDe(c), 9, String(c));
+  assert.equal(jornadaNormalDe("X", "Nivel_4"), 8, "también por nombre");
+  // 07 a 17: administrativa = 8 normales y 2 extra; el resto = 9 normales y 1 extra
+  const adm = turno("2026-10-05", "07:00", "2026-10-05", "17:00", { jornadaHoras: 8 });
+  assert.equal(horas(adm, "normal_diurna"), 8);
+  assert.equal(horas(adm, "extra50_diurna"), 2);
+  const otro = turno("2026-10-05", "07:00", "2026-10-05", "17:00");
+  assert.equal(horas(otro, "normal_diurna"), 9);
+  assert.equal(horas(otro, "extra50_diurna"), 1);
+  // un ajuste manual del día manda sobre la categoría
+  const aj = turno("2026-10-05", "07:00", "2026-10-05", "17:00", { jornadaHoras: 8, ajuste: { horasNormales: 9 } });
+  assert.equal(horas(aj, "normal_diurna"), 9);
+  // sábados, domingos y feriados siguen siendo todo al 100% / 50%
+  const dom = turno("2026-10-11", "07:00", "2026-10-11", "17:00", { jornadaHoras: 8 });
+  assert.equal(horas(dom, "extra100_diurna"), 10);
 });
 
 test("lunes 07 a 16 (9 hs): todo normal diurno", () => {
