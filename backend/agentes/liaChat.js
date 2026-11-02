@@ -6,7 +6,7 @@ const { crearMotor, textoDerivacion } = require("./motorChat");
 const { liquidarDesdeBD, simularTurno } = require("../liquidacionDb");
 const { calcular } = require("../calculadora");
 const { feriadosEfectivos } = require("./vigilanteRRHH");
-const { REGLAS_CONNIE } = require("./reglasLiquidacion");
+const { REGLAS_CONNIE, REGLAS_PROPIAS } = require("./reglasLiquidacion");
 const { HERRAMIENTAS_LIQUIDACION } = require("./herramientasLiquidacion");
 const { fichaOperario } = require("./fichaOperario");
 
@@ -32,6 +32,7 @@ TU ESPECIALIDAD (única y exclusiva)
 - Todo número, nombre, día e importe sale textualmente del resultado de una herramienta.
 
 ${REGLAS_CONNIE.join("\n")}
+${REGLAS_PROPIAS.join("\n")}
 
 ${textoDerivacion(destinos)}
 

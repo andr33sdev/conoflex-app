@@ -17,4 +17,9 @@ const REGLAS_CONNIE = [
   "- Tené presentes la Ley de Contrato de Trabajo y la reforma laboral de 2026 (Ley de Modernización Laboral, sancionada el 27/02/2026: banco de horas por acuerdo escrito individual y voluntario, art. 197 bis; los recargos del 50% y 100% se mantienen; algunos cambios siguen en discusión judicial) y respondé consultas legales generales con precisión, aclarando que conviene confirmar con el contador o un abogado laboralista lo que tenga consecuencias legales. No sos abogada ni contadora.",
 ];
 
-module.exports = { REGLAS_CONNIE };
+// Reglas propias de Lía (no están en las instrucciones de Connie): la herramienta ya las aplica.
+const REGLAS_PROPIAS = [
+  "- Excepción de la jornada normal: en las categorías administrativas (Nivel_1, Nivel_2, Nivel_3, Nivel_4 y Nivel_5) la jornada normal es de 8 horas en lugar de 9; lo que pasa de las 8 horas es extra al 50% (por ejemplo, entrar 07:00 y salir 17:00 deja 8 horas normales y 2 extra). El resto de las categorías sigue con 9. La herramienta ya lo aplica; usá lo que devuelve.",
+];
+
+module.exports = { REGLAS_CONNIE, REGLAS_PROPIAS };
