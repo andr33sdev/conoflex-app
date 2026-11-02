@@ -152,9 +152,9 @@ export default function HistorialMateriaPrima({ item, abierto, onCerrar, vistaIn
   }, [movs]);
 
   return (
-    <Drawer abierto={abierto} onCerrar={onCerrar} titulo={item?.nombre || item?.codigo || "Materia prima"} subtitulo={`${item?.codigo || ""} · ${vista === "demanda" ? "Demanda y reposición" : "Historial de movimientos"}`} ancho="sm:w-[600px] lg:w-[680px]">
+    <Drawer abierto={abierto} onCerrar={onCerrar} titulo={item?.nombre || item?.codigo || "Materia prima"} subtitulo={`${item?.codigo || ""} · ${vista === "demanda" ? "Plan de la semana" : "Historial de movimientos"}`} ancho="sm:w-[600px] lg:w-[680px]">
       <div className="flex gap-1 p-1 rounded-2xl bg-white/[0.04] border border-white/[0.07] mb-4" role="tablist" aria-label="Vista">
-        {[["historial", "Historial"], ["demanda", "Demanda"]].map(([id2, t]) => (
+        {[["historial", "Historial"], ["demanda", "Esta semana"]].map(([id2, t]) => (
           <button key={id2} role="tab" aria-selected={vista === id2} onClick={() => setVista(id2)} className={`flex-1 min-h-[40px] rounded-xl text-sm font-bold cursor-pointer transition-colors ${vista === id2 ? "bg-[#FF5A00] text-white" : "text-zinc-400 hover:text-white"}`}>{t}</button>
         ))}
       </div>

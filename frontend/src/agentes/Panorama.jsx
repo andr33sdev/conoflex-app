@@ -36,6 +36,29 @@ function Dato({ titulo, valor, detalle, onClick }) {
 }
 
 /** Una fila: nombre, estado y cuánto alcanza. El resto (stock, consumo, depósitos) aparece al abrirla. */
+function FilaMP({ x, onPreguntar }) {
+  const [abierta, setAbierta] = useState(false);
+  const falta = x.nivel === "critico" || x.nivel === "negativo";
+  return (
+    <li className="py-3">
+      <button onClick={() => setAbierta((v) => !v)} aria-expanded={abierta} className="w-full text-left">
+        <span className="flex items-baseline gap-2">
+          <span className="text-[15px] font-semibold text-white leading-snug break-words min-w-0">{x.nombre}</span>
+          <span className={`ml-auto shrink-0 text-[12.5px] font-semibold ${falta ? "text-[#ff8a4d]" : "text-zinc-500"}`}>{x.nivel === "negativo" ? "Stock negativo" : falta ? `Faltan ${fmt(x.falta, 1)} ${x.unidad}` : "Alcanza"}</span>
+        </span>
+      </button>
+      {abierta && (
+        <div className="mt-2.5 space-y-1 text-[13px] text-zinc-400">
+          <p>Hay <b className="text-zinc-200 font-semibold tabular-nums">{fmt(x.stock, 1)}</b> {x.unidad} · lo que falta producir usa <b className="text-zinc-200 font-semibold tabular-nums">{fmt(x.necesidad_semana, 1)}</b> · quedarían <b className="text-zinc-200 font-semibold tabular-nums">{fmt(x.stock_despues, 1)}</b></p>
+          {x.compra_pendiente > 0 && <p className="text-zinc-500">Ya pedido: {fmt(x.compra_pendiente)} {x.unidad}</p>}
+          {x.lotes?.length > 0 && <p className="text-zinc-500">Lotes: {x.lotes.map((l) => l.lote).join(", ")}</p>}
+          {falta && <button onClick={() => onPreguntar(`Faltan ${x.nombre} para la semana: ¿cuánto debería pedir?`)} className="mt-1 text-[13px] font-semibold text-zinc-300 hover:text-white underline underline-offset-2">Preguntarle a Nati</button>}
+        </div>
+      )}
+    </li>
+  );
+}
+
 function Fila({ x, esMP, onPreguntar }) {
   const [abierta, setAbierta] = useState(false);
   const n = NIVELES[x.nivel] || NIVELES.ok;
@@ -73,7 +96,7 @@ export default function Panorama({ datos, error, onPreguntar }) {
 
   const lista = useMemo(() => {
     const base = ver === "materias" ? datos?.materias || [] : datos?.semielaborados || [];
-    if (filtro === "urgente") return base.filter((x) => ["negativo", "critico", "bajo"].includes(x.nivel));
+    if (filtro === "urgente") return base.filter((x) => ["negativo", "critico", ...(ver === "semis" ? ["bajo"] : [])].includes(x.nivel));
     if (filtro === "exceso") return base.filter((x) => x.nivel === "exceso");
     return base;
   }, [datos, filtro, ver]);
@@ -92,24 +115,24 @@ export default function Panorama({ datos, error, onPreguntar }) {
 
       <div className="flex flex-wrap items-center gap-2">
         <div role="tablist" className="flex gap-1 p-1 rounded-xl bg-white/[0.04]">
-          <Pastilla activo={ver === "materias"} onClick={() => setVer("materias")}>Materias primas</Pastilla>
+          <Pastilla activo={ver === "materias"} onClick={() => setVer("materias")}>Materias primas de la semana</Pastilla>
           <Pastilla activo={ver === "semis"} onClick={() => setVer("semis")}>Semielaborados</Pastilla>
         </div>
         <div className="flex gap-1 ml-auto">
           <Pastilla activo={filtro === "urgente"} onClick={() => setFiltro("urgente")}>Lo urgente</Pastilla>
           <Pastilla activo={filtro === "todo"} onClick={() => setFiltro("todo")}>Todo</Pastilla>
-          <Pastilla activo={filtro === "exceso"} onClick={() => setFiltro("exceso")}>De sobra</Pastilla>
+          {ver === "semis" && <Pastilla activo={filtro === "exceso"} onClick={() => setFiltro("exceso")}>De sobra</Pastilla>}
         </div>
       </div>
 
       {lista.length === 0 ? (
         <div className="py-14 text-center">
-          <p className="text-[15px] font-semibold text-white">{filtro === "urgente" ? "Nada urgente en el depósito" : "No hay nada para mostrar acá"}</p>
+          <p className="text-[15px] font-semibold text-white">{filtro === "urgente" ? (ver === "materias" ? "Las materias primas alcanzan para lo que falta producir" : "Nada urgente en el depósito") : ver === "materias" ? "No hay plan de producción para esta semana" : "No hay nada para mostrar acá"}</p>
           {filtro !== "urgente" && <p className="mt-1 text-sm text-zinc-500">Probá con otro filtro.</p>}
         </div>
       ) : (
         <ul className="divide-y divide-white/[0.06]">
-          {lista.slice(0, 60).map((x) => <Fila key={x.id ?? x.codigo} x={x} esMP={ver === "materias"} onPreguntar={onPreguntar} />)}
+          {lista.slice(0, 60).map((x) => ver === "materias" ? <FilaMP key={x.id} x={x} onPreguntar={onPreguntar} /> : <Fila key={x.codigo} x={x} esMP={false} onPreguntar={onPreguntar} />)}
         </ul>
       )}
     </div>

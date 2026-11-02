@@ -14,7 +14,7 @@ const { crearConnie } = require("./connie");
 const { asegurarTablasAgentes, registrarRutasAgentes, iniciarVigilantes } = require("./agentes");
 const { sinCita: sinCitaMail, notasTexto: notasVentasTexto, validarDescuento, ERROR_DESCUENTO, sugerirDescuento, ejemplosEnviadosTexto } = require("./agentes/ventasMails");
 const { registrarObservaciones } = require("./agentes/ventasAprendizaje");
-const { demandaMateriasPrimas } = require("./demanda");
+const { calcularMpSemana } = require("./mpPlanSemanal");
 const { separarDuplicadas, asegurarTablaDuplicadas } = require("./fichero");
 const { asegurarTablasProduccion, registrarRutasProduccion } = require("./produccionRutas");
 const { asegurarTablaReflectivas, registrarRutasReflectivas } = require("./reflectivasRutas");
@@ -2458,20 +2458,15 @@ app.get("/api/materias-primas", async (req, res) => {
   }
 });
 
-// Demanda de materias primas (ventas de N meses abiertas por receta) contra el stock actual.
-app.get("/api/materias-primas/demanda", async (req, res) => {
+// Materia prima contra el plan de producción de la semana: lo que falta producir por su receta contra el stock. Sin estimar demanda.
+app.get("/api/materias-primas/plan-semana", async (req, res) => {
   try {
-    const r = await demandaMateriasPrimas(db, {
-      meses: req.query.meses,
-      materia_prima: req.query.q,
-      materia_prima_id: req.query.id,
-      solo_con_demanda: req.query.todas === "1" ? false : undefined,
-    });
-    if (r.error) return res.status(404).json({ error: r.error });
-    res.json(r);
+    const r = await calcularMpSemana(db);
+    const id = Number(req.query.id);
+    res.json({ semana: r.semana, materia: r.materias.find((m) => m.id === id) || null, hay_plan: r.materias.length > 0 });
   } catch (error) {
-    console.error("Error calculando demanda de materias primas:", error);
-    res.status(500).json({ error: "No se pudo calcular la demanda." });
+    console.error("Error calculando materia prima del plan:", error);
+    res.status(500).json({ error: "No se pudo calcular el plan de la semana." });
   }
 });
 

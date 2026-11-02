@@ -42,6 +42,7 @@ export const TIPOS_AVISO = {
   MP_CRITICA: { texto: "Stock crítico", tono: "rojo" },
   MP_BAJA: { texto: "Stock bajo", tono: "amarillo" },
   MP_EXCESO: { texto: "Stock de más", tono: "azul" },
+  MP_FALTA_SEMANA: { texto: "No alcanza esta semana", tono: "rojo" },
   STOCK_NEGATIVO: { texto: "Stock negativo", tono: "rojo" },
   SEMI_CRITICO: { texto: "Semielaborado crítico", tono: "rojo" },
   ENTRADA_OTRO_DEPOSITO: { texto: "Entrada de otro depósito", tono: "azul" },

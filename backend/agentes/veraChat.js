@@ -62,12 +62,12 @@ const HERRAMIENTAS = [
     functionDeclarations: [
       { name: "lista_actual", description: "Muestra la solicitud de compra que está en armado (la lista): renglones, cantidades, proveedores.", parameters: OBJ({}) },
       { name: "agregar_a_lista", description: "Agrega materiales con cantidades a la solicitud de compra en armado (la crea si no hay). Si el material ya estaba, corrige su cantidad (o la suma con sumar=true).", parameters: OBJ({ items: ITEMS, sumar: { type: "BOOLEAN", description: "true para sumar a lo que ya había en lugar de reemplazar." } }, ["items"]) },
-      { name: "agregar_recomendadas", description: "Agrega a la lista, con las cantidades calculadas por el sistema, las materias primas que hace falta comprar (faltante = demanda de N meses - stock - lo ya pedido). Por defecto solo las críticas y bajas.", parameters: OBJ({ meses: { type: "INTEGER", description: "Meses de cobertura (1 a 3). Por defecto 1." }, solo_urgentes: { type: "BOOLEAN", description: "true (por defecto) agrega solo críticas y bajas; false agrega todo lo que falte." } }) },
+      { name: "agregar_recomendadas", description: "Agrega a la lista, con las cantidades calculadas por el sistema, las materias primas del plan de la semana que no alcanzan para terminar lo que falta producir (faltante = necesidad - stock - lo ya pedido). No estima demanda en el tiempo.", parameters: OBJ({ meses: { type: "INTEGER", description: "No se usa." }, solo_urgentes: { type: "BOOLEAN", description: "No se usa (por defecto) agrega solo críticas y bajas; false agrega todo lo que falte." } }) },
       { name: "quitar_de_lista", description: "Quita una materia prima de la lista en armado.", parameters: OBJ({ materia_prima: { type: "STRING" } }, ["materia_prima"]) },
       { name: "cambiar_proveedor", description: "Cambia el proveedor de un renglón de la lista en armado.", parameters: OBJ({ materia_prima: { type: "STRING" }, proveedor: { type: "STRING" } }, ["materia_prima", "proveedor"]) },
       { name: "cerrar_lista", description: "Da por completa la lista: la solicitud queda lista para las firmas en el módulo Solicitudes de Compra y la próxima vez se arma una nueva.", parameters: OBJ({}) },
       { name: "eliminar_lista", description: "Elimina por completo la lista de compra en armado (la solicitud y todos sus renglones). Usala SOLO si la persona pide explícitamente borrar/eliminar toda la lista; para sacar un material usá quitar_de_lista.", parameters: OBJ({}) },
-      { name: "que_comprar", description: "Calcula qué materias primas conviene reponer (sin agregarlas a la lista), con cuánto falta para cubrir N meses.", parameters: OBJ({ meses: { type: "INTEGER" } }) },
+      { name: "que_comprar", description: "Calcula qué materias primas del plan de la semana no alcanzan (sin agregarlas a la lista) y cuánto falta.", parameters: OBJ({}) },
       { name: "compras_en_curso", description: "Renglones de solicitudes de compra pedidos y sin recibir completos: artículo, proveedor, cuánto se pidió y llegó, hace cuántos días.", parameters: OBJ({ proveedor: { type: "STRING", description: "Filtrar por proveedor (opcional)." } }) },
       { name: "ficha_proveedor", description: "Historia de un proveedor: qué se le compra, cumplimiento de lo pedido, pendientes.", parameters: OBJ({ proveedor: { type: "STRING" } }, ["proveedor"]) },
       { name: "ranking_proveedores", description: "Proveedores ordenados por cantidad de renglones, con el porcentaje de lo pedido que entregaron.", parameters: OBJ({}) },
@@ -95,13 +95,12 @@ const PALABRAS_HERRAMIENTA = {
   calculadora: "Hizo una cuenta",
 };
 
-/** Cuánto falta comprar de cada materia prima (misma cuenta que usa Nati). */
-function faltantes(pano, meses, soloUrgentes) {
+/** Cuánto falta comprar de cada materia prima del plan de la semana (misma cuenta que usa Nati). Sin estimar demanda en el tiempo. */
+function faltantes(pano) {
   return pano.materias
-    .filter((m) => m.demanda_mensual > 0)
-    .map((m) => ({ id: m.id, codigo: m.codigo, nombre: m.nombre, unidad: m.unidad, stock: m.stock, demanda_mensual: m.demanda_mensual, dias: m.dias, nivel: m.nivel, ya_pedido_sin_recibir: m.compra_pendiente, faltante: Math.max(0, Math.round(m.demanda_mensual * meses - m.stock - m.compra_pendiente)) }))
-    .filter((f) => f.faltante > 0 && (!soloUrgentes || ["negativo", "critico", "bajo"].includes(f.nivel)))
-    .sort((a, b) => (a.dias ?? 1e9) - (b.dias ?? 1e9));
+    .map((m) => ({ id: m.id, codigo: m.codigo, nombre: m.nombre, unidad: m.unidad, stock: m.stock, necesidad_semana: m.necesidad_semana, nivel: m.nivel, ya_pedido_sin_recibir: m.compra_pendiente, faltante: Math.max(0, Math.round(m.falta - m.compra_pendiente)) }))
+    .filter((f) => f.faltante > 0)
+    .sort((a, b) => b.faltante - a.faltante);
 }
 const prioridadDe = (nivel) => (nivel === "negativo" || nivel === "critico" ? 5 : nivel === "bajo" ? 4 : 3);
 
@@ -123,11 +122,15 @@ function crearVera({ pool, db, ai }) {
 
     if (["agregar_a_lista", "agregar_recomendadas", "quitar_de_lista", "cambiar_proveedor", "que_comprar"].includes(llamada.name)) {
       const pano = await materias();
+      // Para anotar o quitar un material se busca entre TODAS las materias primas (no solo las del plan de la semana).
+      const [todasMp] = await pool.query("SELECT id, codigo, nombre, unidad_medida AS unidad, stock_actual AS stock FROM materias_primas");
+      const nivelPlan = new Map(pano.materias.map((m) => [m.id, m.nivel]));
+      const catalogo = todasMp.map((m) => ({ ...m, nivel: nivelPlan.get(m.id) || "ok" }));
       if (llamada.name === "agregar_a_lista") {
         const aAgregar = [];
         const noEncontrados = [];
         for (const it of (Array.isArray(args.items) ? args.items : []).slice(0, 30)) {
-          const r = L.resolverMateria(pano.materias, it.materia_prima);
+          const r = L.resolverMateria(catalogo, it.materia_prima);
           if (r.error) noEncontrados.push({ pedido: it.materia_prima, problema: r.error, ...(r.coincidencias ? { coincidencias: r.coincidencias } : {}) });
           else aAgregar.push({ materia: r.materia, cantidad: it.cantidad, proveedor: it.proveedor, prioridad: prioridadDe(r.materia.nivel), sumar: args.sumar === true });
         }
@@ -136,18 +139,16 @@ function crearVera({ pool, db, ai }) {
         return { ...res, ...(noEncontrados.length ? { no_agregados: noEncontrados } : {}), lista: await L.leerLista(db, usuario.id) };
       }
       if (llamada.name === "agregar_recomendadas") {
-        const meses = Math.min(3, Math.max(1, Number(args.meses) || 1));
-        const fl = faltantes(pano, meses, args.solo_urgentes !== false);
-        if (!fl.length) return { ok: true, mensaje: "No hay nada urgente para comprar ahora.", lista: await L.leerLista(db, usuario.id) };
+        const fl = faltantes(pano);
+        if (!fl.length) return { ok: true, mensaje: "Con el plan de la semana, todas las materias primas alcanzan: no hay nada para comprar.", lista: await L.leerLista(db, usuario.id) };
         const res = await L.agregarALista(db, usuario, fl.slice(0, 20).map((f) => ({ materia: f, cantidad: f.faltante, prioridad: prioridadDe(f.nivel), sumar: false })));
-        return { ...res, cobertura_meses: meses, lista: await L.leerLista(db, usuario.id) };
+        return { ...res, lista: await L.leerLista(db, usuario.id) };
       }
       if (llamada.name === "que_comprar") {
-        const meses = Math.min(3, Math.max(1, Number(args.meses) || 1));
-        const fl = faltantes(pano, meses, false);
-        return { cobertura_meses: meses, cantidad: fl.length, materias: fl.slice(0, 12).map(({ id, ...x }) => x) }; // eslint-disable-line no-unused-vars
+        const fl = faltantes(pano);
+        return { cantidad: fl.length, materias: fl.slice(0, 12).map(({ id, ...x }) => x), nota: "Solo materias primas del plan de la semana: lo que falta producir por su receta contra el stock, menos lo ya pedido sin recibir." }; // eslint-disable-line no-unused-vars
       }
-      const r = L.resolverMateria(pano.materias, args.materia_prima);
+      const r = L.resolverMateria(catalogo, args.materia_prima);
       if (r.error) return r;
       return llamada.name === "quitar_de_lista" ? L.quitarDeLista(db, usuario, r.materia) : L.cambiarProveedor(db, usuario, r.materia, args.proveedor);
     }

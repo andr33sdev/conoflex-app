@@ -1,8 +1,10 @@
 "use strict";
 // Vigilante de Nati (stock y depósito): mira materias primas, semielaborados, compras en curso y solicitudes internas
 // y detecta lo que hay que atender ANTES de que falte. El análisis es puro (se testea sin base de datos);
-// `cargarStock` es quien lee la base con las mismas funciones de demanda que usa Connie.
-const { demandaMateriasPrimas, demandaSemielaborados } = require("../demanda");
+// `cargarStock` es quien lee la base. Las materias primas se miran SOLO contra el plan de producción de la semana (lo que falta fabricar
+// por su receta contra el stock), sin estimar demanda en el tiempo; los semielaborados usan la demanda de siempre.
+const { demandaSemielaborados } = require("../demanda");
+const { calcularMpSemana } = require("../mpPlanSemanal");
 const { entradasPendientes } = require("../semiMovimientos");
 
 const DIA = 86400000;
@@ -55,28 +57,22 @@ function analizarStock({ mps = [], semis = [], internas = [], compras = [], entr
     compras.filter((c) => (c.materia_prima_id && c.materia_prima_id === mp.id) || String(c.articulo || "").trim().toLowerCase() === String(mp.nombre || "").trim().toLowerCase());
   const pendiente = (cs) => cs.reduce((a, c) => a + Math.max(0, Number(c.cantidad_solicitada || 0) - Number(c.cantidad_recibida || 0)), 0);
 
+  // Materias primas: solo las que están en el plan de la semana (mps ya viene filtrado por el plan).
   for (const mp of mps) {
     const stock = Number(mp.stock_actual) || 0;
-    const demanda = Number(mp.demanda_mensual) || 0;
-    const dias = mp.dias_de_stock;
     const u = mp.unidad || "";
     const cs = compraDe(mp);
-    const falta = pendiente(cs);
+    const pend = pendiente(cs);
     const compraTxt = cs.length
-      ? `Hay una compra en curso${cs[0].proveedor ? ` con ${cs[0].proveedor}` : ""} por ${fmt(falta, 0)} ${u} sin recibir.`
+      ? `Hay una compra en curso${cs[0].proveedor ? ` con ${cs[0].proveedor}` : ""} por ${fmt(pend, 0)} ${u} sin recibir.`
       : "No hay ninguna compra en curso para este material.";
     if (stock < 0) {
       out.push({ clave: `stock-neg:${mp.id}`, tipo: "STOCK_NEGATIVO", severidad: "ALTA", titulo: `${mp.nombre} figura con stock negativo`, texto: `El sistema marca ${fmt(stock, 2)} ${u}. Eso pasa cuando se descuenta producción sin haber cargado el ingreso: conviene corregir la carga.`, operario: mp.nombre, fecha: null });
       continue;
     }
-    if (!(demanda > 0) || dias == null) continue;
-    const agota = iso(ahoraMs + dias * DIA);
-    if (dias <= UMBRALES.critico) {
-      out.push({ clave: `mp-crit:${mp.id}`, tipo: "MP_CRITICA", severidad: "ALTA", titulo: `${mp.nombre}: alcanza para ${dias <= 0 ? "menos de un día" : dias === 1 ? "1 día" : `${dias} días`}`, texto: `Quedan ${fmt(stock, 1)} ${u} y se consumen unos ${fmt(demanda, 0)} ${u} por mes: se agotaría hacia el ${fechaCorta(agota)}. ${compraTxt}`, operario: mp.nombre, fecha: agota });
-    } else if (dias <= UMBRALES.bajo) {
-      out.push({ clave: `mp-baja:${mp.id}`, tipo: "MP_BAJA", severidad: "MEDIA", titulo: `${mp.nombre}: alcanza para ${dias} días`, texto: `Quedan ${fmt(stock, 1)} ${u} (demanda ${fmt(demanda, 0)} ${u}/mes). ${compraTxt}`, operario: mp.nombre, fecha: agota });
-    } else if (dias >= UMBRALES.exceso) {
-      out.push({ clave: `mp-exceso:${mp.id}`, tipo: "MP_EXCESO", severidad: "BAJA", titulo: `${mp.nombre}: stock para ${Math.round(dias / 30)} meses`, texto: `Hay ${fmt(stock, 0)} ${u} y se usan unos ${fmt(demanda, 0)} ${u} por mes. Es plata inmovilizada: no hace falta comprar más por ahora.`, operario: mp.nombre, fecha: null });
+    if (Number(mp.falta) > 0) {
+      const lotes = (mp.lotes || []).slice(0, 3).map((l) => l.lote).join(", ");
+      out.push({ clave: `mp-falta-semana:${mp.id}`, tipo: "MP_FALTA_SEMANA", severidad: "ALTA", titulo: `${mp.nombre}: no alcanza para terminar la semana`, texto: `Para lo que falta producir del plan${lotes ? ` (${lotes})` : ""} se necesitan ${fmt(mp.necesidad, 1)} ${u} y hay ${fmt(stock, 1)}: faltan ${fmt(mp.falta, 1)} ${u}. ${compraTxt}`, operario: mp.nombre, fecha: null });
     }
   }
 
@@ -122,19 +118,18 @@ function armarPanorama({ mps = [], semis = [], series = new Map(), internas = []
       .filter((c) => (c.materia_prima_id && c.materia_prima_id === mp.id) || String(c.articulo || "").trim().toLowerCase() === String(mp.nombre || "").trim().toLowerCase())
       .reduce((a, c) => a + Math.max(0, Number(c.cantidad_solicitada || 0) - Number(c.cantidad_recibida || 0)), 0);
   const orden = { negativo: 0, critico: 1, bajo: 2, ok: 3, exceso: 4, sin_demanda: 5 };
+  // Solo materias primas del plan de la semana: "critico" = no alcanza para lo que falta producir.
   const materias = mps
     .map((m) => {
       const stock = Number(m.stock_actual) || 0;
-      const demanda = Number(m.demanda_mensual) || 0;
-      const nivel = nivelDe({ stock, dias: m.dias_de_stock, demanda });
-      const falta = pendiente(m);
+      const nivel = stock < 0 ? "negativo" : Number(m.falta) > 0 ? "critico" : "ok";
       return {
-        id: m.id, codigo: m.codigo, nombre: m.nombre, unidad: m.unidad || "", stock: num(stock, 1), demanda_mensual: num(demanda, 1),
-        dias: m.dias_de_stock ?? null, agota: m.dias_de_stock != null && demanda > 0 ? iso(ahoraMs + m.dias_de_stock * DIA) : null,
-        nivel, compra_pendiente: num(falta, 0), serie: series.get(m.id) || [],
+        id: m.id, codigo: m.codigo, nombre: m.nombre, unidad: m.unidad || "", stock: num(stock, 1),
+        necesidad_semana: num(m.necesidad, 1), stock_despues: num(m.stock_despues, 1), falta: num(m.falta, 1),
+        lotes: (m.lotes || []).slice(0, 8), nivel, compra_pendiente: num(pendiente(m), 0),
       };
     })
-    .sort((a, b) => orden[a.nivel] - orden[b.nivel] || (a.dias ?? 1e9) - (b.dias ?? 1e9));
+    .sort((a, b) => orden[a.nivel] - orden[b.nivel] || a.stock_despues - b.stock_despues);
   const semielaborados = semis
     .map((s) => ({
       codigo: s.codigo, nombre: s.nombre, stock_total: num(s.stock_total, 0), por_deposito: s.por_deposito || null, demanda_mensual: num(s.demanda_mensual, 1), dias: s.dias_de_stock ?? null,
@@ -149,7 +144,7 @@ function armarPanorama({ mps = [], semis = [], series = new Map(), internas = []
     materias,
     semielaborados,
     resumen: {
-      materias: materias.length, criticas: cuenta(materias, "critico") + cuenta(materias, "negativo"), bajas: cuenta(materias, "bajo"),
+      materias: materias.length, criticas: cuenta(materias, "critico") + cuenta(materias, "negativo"), bajas: 0,
       semis_criticos: cuentaFabrica("critico"), semis_bajos: cuentaFabrica("bajo"),
       internas_pendientes: internas.filter((r) => String(r.estado).toUpperCase() === "SOLICITADO").length,
       compras_abiertas: compras.length,
@@ -159,8 +154,8 @@ function armarPanorama({ mps = [], semis = [], series = new Map(), internas = []
 
 /** Lee todo lo necesario de la base. */
 async function cargarStock(pool, { ahoraMs = Date.now() } = {}) {
-  const dm = await demandaMateriasPrimas(pool, { meses: 3, solo_con_demanda: false });
-  const mps = dm.materias_primas || [];
+  const plan = await calcularMpSemana(pool, { ahora: new Date(ahoraMs) });
+  const mps = plan.materias;
   const ds = await demandaSemielaborados(pool, { meses: 3, solo_con_demanda: false });
   let filas;
   try {
@@ -183,21 +178,10 @@ async function cargarStock(pool, { ahoraMs = Date.now() } = {}) {
   } catch {
     [compras] = await pool.query(SQL_COMPRAS(false)); // todavía no existe la tabla de listas
   }
-  // Consumo diario (30 días) para dibujar la tendencia de cada materia prima.
   const series = new Map();
-  try {
-    const [mov] = await pool.query(
-      "SELECT materia_prima_id AS id, DATEDIFF(CURDATE(), DATE(fecha)) AS atras, SUM(-cantidad) AS total FROM mp_movimientos WHERE tipo IN ('CONSUMO_PRODUCCION','REVERSA_PRODUCCION') AND fecha >= DATE_SUB(CURDATE(), INTERVAL 29 DAY) GROUP BY materia_prima_id, DATEDIFF(CURDATE(), DATE(fecha))",
-    );
-    for (const r of mov) {
-      const arr = series.get(r.id) || Array(30).fill(0);
-      if (r.atras >= 0 && r.atras < 30) arr[29 - r.atras] = Math.max(0, num(r.total, 1));
-      series.set(r.id, arr);
-    }
-  } catch { /* sin movimientos todavía */ }
   let entradas = [];
   try { entradas = await entradasPendientes(pool); } catch { /* todavía sin lectura de la planilla */ }
-  return { mps, semis, internas, compras, series, entradas, ahoraMs };
+  return { mps, semis, internas, compras, series, entradas, semana: plan.semana, ahoraMs };
 }
 
 module.exports = { seFabricaYSeSigue, analizarStock, armarPanorama, cargarStock, nivelDe, UMBRALES };
