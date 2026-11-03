@@ -40,6 +40,7 @@ const { asegurarColumnaPagoMensual } = require("./escala");
 const { leerPlanilla: leerPlanillaStock, compararPlanilla, aplicarPlanilla } = require("./semiSync");
 const { migrarPermisoConnie, migrarPermisoSugerencias } = require("./permisos");
 const { asegurarTablasSugerencias, registrarRutasSugerencias } = require("./sugerenciasCompra");
+const { asegurarTablaClientesNuevos, registrarRutasClientesNuevos } = require("./clientesNuevos");
 require("dotenv").config();
 
 const app = express();
@@ -841,6 +842,7 @@ async function initDB() {
     await asegurarMovimientos(db);
     await asegurarColumnasGestion(db);
     await asegurarTablasSugerencias(db);
+    await asegurarTablaClientesNuevos(db);
 
     console.log("✅ Estructura MySQL inicializada correctamente.");
   } catch (err) {
@@ -5351,6 +5353,7 @@ const nombreDeUsuario = async (req) => {
 // Eliminar una solicitud entera y corregir lo que realmente se pidió (proveedor / cantidad) en un renglón.
 registrarRutasGestion(app, { db, nombreDeUsuario });
 registrarRutasSugerencias(app, { db, requirePermiso, nombreDeUsuario, crearNotificacion });
+registrarRutasClientesNuevos(app, { db, requirePermiso, nombreDeUsuario, ai, modelo: process.env.CONNIE_MODELO || "gemini-2.5-flash" });
 registrarRutasSemis(app, { db, nombreDeUsuario });
 registrarRutasMovimientos(app, db, { nombreDeUsuario });
 

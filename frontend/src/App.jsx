@@ -5,6 +5,7 @@ import Login from "./Login";
 const AdminUsuarios = lazy(() => import("./AdminUsuarios"));
 const Inventory = lazy(() => import("./Inventory"));
 const Proveedores = lazy(() => import("./Proveedores"));
+const ClientesNuevos = lazy(() => import("./ClientesNuevos"));
 const Semielaborados = lazy(() => import("./Semielaborados"));
 const Reflectivas = lazy(() => import("./Reflectivas"));
 const Metricas = lazy(() => import("./Metricas"));
@@ -56,6 +57,7 @@ const PRECARGA = {
   "visor-ar": () => import("./VisorAR"),
   "solicitudes-compra": () => import("./SolicitudesCompraModule"),
   "sugerencias-compra": () => import("./SugerenciasCompra"),
+  "clientes-nuevos": () => import("./ClientesNuevos"),
   agentes: () => import("./Agentes"),
 };
 
@@ -219,6 +221,9 @@ function AppInterna() {
 
       {hasAccess("sugerencias-compra") &&
         activeModule === "sugerencias-compra" && <SugerenciasCompra />}
+
+      {hasAccess("clientes-nuevos") &&
+        activeModule === "clientes-nuevos" && <ClientesNuevos />}
 
       {hasAccess("semielaborados") && activeModule === "semielaborados" && (
         <Semielaborados
