@@ -22,6 +22,7 @@ import {
   LayoutGrid,
   UsersRound,
   Lightbulb,
+  Radar,
 } from "lucide-react";
 
 export const INICIO = {
@@ -157,6 +158,15 @@ export const ALL_MENU_ITEMS = [
     icon: Truck,
     desc: "Preparar y despachar lo vendido",
     kw: "despacho envios",
+  },
+  {
+    id: "clientes-nuevos",
+    corto: "Clientes",
+    grupo: "comercial",
+    label: "Clientes nuevos",
+    icon: Radar,
+    desc: "La IA busca licitaciones, obras y empresas para vender",
+    kw: "clientes nuevos prospectos licitaciones obras oportunidades vender",
   },
   {
     id: "comercial",

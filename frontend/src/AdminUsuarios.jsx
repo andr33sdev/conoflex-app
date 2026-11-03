@@ -28,6 +28,7 @@ const MODULOS_SISTEMA = [
   { id: "despachar-pedidos", nombre: "Despachar Pedidos" },
   { id: "comercial", nombre: "IA Comercial" },
   { id: "sugerencias-compra", nombre: "Sugerencias de Compra" },
+  { id: "clientes-nuevos", nombre: "Clientes nuevos" },
   { id: "solicitudes-internas", nombre: "Solicitudes Internas" },
   { id: "planta-online", nombre: "Planta On-Line" },
   { id: "control-asistencia", nombre: "Control Asistencia" },
