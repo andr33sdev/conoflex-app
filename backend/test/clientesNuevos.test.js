@@ -102,7 +102,7 @@ test("ejecutarBusqueda: si falla una búsqueda sigue con las otras y lo avisa; s
   const r = await C.ejecutarBusqueda({ ai: aiFalsa({ estructura, fallaSegmento: 1 }), fecha: "2026-11-03", resolver: sinResolver });
   assert.deepEqual(r.segmentos_sin_resultado, ["Obras viales y proyectos nuevos"]);
   const todas = { models: { generateContent: async () => { throw new Error("sin cuota"); } } };
-  await assert.rejects(() => C.ejecutarBusqueda({ ai: todas }), /No se pudo buscar en internet: sin cuota/);
+  await assert.rejects(() => C.ejecutarBusqueda({ ai: todas }), /sin cuota/);
 });
 
 test("ejecutarBusqueda: si la IA no devuelve datos ordenables, avisa", async () => {

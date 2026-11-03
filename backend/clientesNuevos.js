@@ -183,6 +183,33 @@ const textoDe = (r) => {
   }
 };
 
+
+// ---------- reintentos y mensajes de error ----------
+const TRANSITORIO = /\b(429|500|502|503|504)\b|DEADLINE_EXCEEDED|UNAVAILABLE|RESOURCE_EXHAUSTED|timed? ?out|timeout|aborted|fetch failed|ECONNRESET|ETIMEDOUT|socket hang up|overloaded/i;
+const ESPERAS = [2500, 7000];
+/** Repite una llamada a Gemini si falló por algo pasajero (tiempo agotado, servicio saturado). */
+async function conReintentos(fn, { esperas = ESPERAS } = {}) {
+  for (let i = 0; ; i++) {
+    try {
+      return await fn();
+    } catch (e) {
+      const t = `${e?.status || ""} ${e?.message || ""}`;
+      if (i >= esperas.length || !TRANSITORIO.test(t)) throw e;
+      await new Promise((r) => setTimeout(r, esperas[i]));
+    }
+  }
+}
+/** Convierte el error técnico de Gemini en un texto que se entienda. */
+function mensajeAmable(e) {
+  const t = `${e?.status || ""} ${e?.message || e || ""}`;
+  if (/DEADLINE_EXCEEDED|timed? ?out|timeout|\b504\b|aborted/i.test(t)) return "Google tardó demasiado en responder. Probá de nuevo en unos minutos.";
+  if (/429|RESOURCE_EXHAUSTED|quota/i.test(t)) return "Se alcanzó el límite de uso de la IA por ahora. Probá de nuevo más tarde.";
+  if (/\b(500|502|503)\b|UNAVAILABLE|overloaded/i.test(t)) return "El servicio de la IA está saturado. Probá de nuevo en unos minutos.";
+  if (/API key|PERMISSION_DENIED|UNAUTHENTICATED|\b40[13]\b/i.test(t)) return "La clave de la IA no es válida o no tiene permiso. Avisale a quien administra el sistema.";
+  const msg = String(e?.message || e || "").trim();
+  return msg.startsWith("{") ? "La búsqueda falló por un error de la IA. Probá de nuevo." : msg.slice(0, 300) || "La búsqueda falló. Probá de nuevo.";
+}
+
 const clave = (o) => sinAcentos(`${o.organizacion}|${o.titulo}`).replace(/[^a-z0-9|]+/g, " ").trim();
 
 const esISO = (f) => /^\d{4}-\d{2}-\d{2}$/.test(String(f || "")) && !Number.isNaN(Date.parse(f));
@@ -199,11 +226,11 @@ async function ejecutarBusqueda({ ai, modelo = "gemini-2.5-flash", productos = [
   const activos = segmentosActivos(ctx);
   const resultados = await Promise.allSettled(
     activos.map(async (s) => {
-      const r = await ai.models.generateContent({
+      const r = await conReintentos(() => ai.models.generateContent({
         model: modelo,
         contents: [{ role: "user", parts: [{ text: armarBusqueda(s, ctx) }] }],
         config: { tools: [{ googleSearch: {} }], temperature: 0.2, httpOptions: { timeout: 120000 } },
-      });
+      }));
       const texto = textoDe(r).trim();
       const bloques = partirBloques(texto).map((b, i) => ({ ...b, id: `${s.id}-${i + 1}`, segmento: s.id, fuentes: fuentesDeBloque(b, r) }));
       return { id: s.id, titulo: s.titulo, texto, bloques, fuentes: fuentesDe(r) };
@@ -213,7 +240,7 @@ async function ejecutarBusqueda({ ai, modelo = "gemini-2.5-flash", productos = [
   const fallidos = activos.filter((s, i) => resultados[i].status === "rejected" || !resultados[i].value?.texto).map((s) => s.titulo);
   if (!buenos.length) {
     const causa = resultados.find((r) => r.status === "rejected")?.reason?.message;
-    throw new Error(`No se pudo buscar en internet${causa ? `: ${String(causa).slice(0, 160)}` : "."}`);
+    throw new Error(causa ? mensajeAmable({ message: causa }) : "No se pudo buscar en internet. Probá de nuevo.");
   }
 
   // Si un segmento no vino separado en oportunidades, se manda entero como un solo bloque.
@@ -222,11 +249,11 @@ async function ejecutarBusqueda({ ai, modelo = "gemini-2.5-flash", productos = [
   const fuentesSegmento = new Map(buenos.map((b) => [b.id, b.fuentes]));
 
   progreso("Ordenando lo encontrado…");
-  const est = await ai.models.generateContent({
+  const est = await conReintentos(() => ai.models.generateContent({
     model: modelo,
     contents: [{ role: "user", parts: [{ text: armarEstructura(bloques) }] }],
-    config: { responseMimeType: "application/json", responseSchema: ESQUEMA, temperature: 0, httpOptions: { timeout: 90000 } },
-  });
+    config: { responseMimeType: "application/json", responseSchema: ESQUEMA, temperature: 0, httpOptions: { timeout: 150000 } },
+  }));
   const datos = extraerJSON(textoDe(est));
   if (!datos || !Array.isArray(datos.oportunidades)) throw new Error("La búsqueda terminó pero no pude ordenar los resultados. Probá de nuevo.");
 
@@ -393,7 +420,7 @@ async function ejecutarCompetencia({ ai, modelo = "gemini-2.5-flash", productos 
         "Escribí cada caso en prosa corta y separalo del siguiente con una línea que contenga solamente =====",
         "Reglas: usá solo lo que encuentres en fuentes reales; no inventes empresas, montos ni fechas; si un dato no figura escribí 'no figura'. Respondé en español, sin introducción.",
       ].join("\n\n");
-      const r = await ai.models.generateContent({ model: modelo, contents: [{ role: "user", parts: [{ text: prompt }] }], config: { tools: [{ googleSearch: {} }], temperature: 0.2, httpOptions: { timeout: 120000 } } });
+      const r = await conReintentos(() => ai.models.generateContent({ model: modelo, contents: [{ role: "user", parts: [{ text: prompt }] }], config: { tools: [{ googleSearch: {} }], temperature: 0.2, httpOptions: { timeout: 120000 } } }));
       const texto = textoDe(r).trim();
       const bloques = partirBloques(texto).map((b, i) => ({ ...b, id: `${t.id}-${i + 1}`, fuentes: fuentesDeBloque(b, r) }));
       return { id: t.id, titulo: t.titulo, texto, bloques, fuentes: fuentesDe(r) };
@@ -402,18 +429,19 @@ async function ejecutarCompetencia({ ai, modelo = "gemini-2.5-flash", productos 
   const buenos = resultados.filter((r) => r.status === "fulfilled" && r.value.texto).map((r) => r.value);
   if (!buenos.length) {
     const causa = resultados.find((r) => r.status === "rejected")?.reason?.message;
-    throw new Error(`No se pudo buscar en internet${causa ? `: ${String(causa).slice(0, 160)}` : "."}`);
+    throw new Error(causa ? mensajeAmable({ message: causa }) : "No se pudo buscar en internet. Probá de nuevo.");
   }
   const bloques = buenos.flatMap((b) => (b.bloques.length ? b.bloques : [{ id: `${b.id}-1`, texto: b.texto, fuentes: [] }]));
   const porId = new Map(bloques.map((b) => [b.id, b]));
   const fuentesTema = new Map(buenos.map((b) => [b.id, b.fuentes]));
 
   progreso("Ordenando lo encontrado…");
-  const est = await ai.models.generateContent({
+  const est = await conReintentos(() => ai.models.generateContent({
     model: modelo,
     contents: [{ role: "user", parts: [{ text: `Convertí estos bloques de resultados en datos estructurados. Quedate SOLO con lo que está en el texto: no inventes empresas, montos ni direcciones. Indicá el código del bloque de cada dato. Las conclusiones tienen que salir de los datos (por ejemplo, precios de referencia, quién gana más, en qué provincias hay poca competencia).\n\n${bloques.map((b) => `[${b.id}]\n${b.texto}`).join("\n\n=====\n\n")}` }] }],
-    config: { responseMimeType: "application/json", responseSchema: ESQUEMA_COMPETENCIA, temperature: 0, httpOptions: { timeout: 90000 } },
-  });
+    config: { responseMimeType: "application/json", responseSchema: ESQUEMA_COMPETENCIA, temperature: 0, httpOptions: { timeout: 150000 } },
+  }));
+
   const datos = extraerJSON(textoDe(est));
   if (!datos || !Array.isArray(datos.adjudicaciones) || !Array.isArray(datos.competidores)) throw new Error("La búsqueda terminó pero no pude ordenar los resultados. Probá de nuevo.");
 
@@ -451,10 +479,10 @@ async function ejecutarCompetencia({ ai, modelo = "gemini-2.5-flash", productos 
 async function revisarLicitacion({ ai, modelo = "gemini-2.5-flash", oportunidad, fecha = hoyAR() }) {
   const o = oportunidad;
   const prompt = `Hoy es ${fecha}. Revisá el estado ACTUAL de esta licitación u oportunidad de compra en Argentina: "${o.titulo}" de ${o.organizacion}${o.provincia ? ` (${o.provincia})` : ""}${o.fecha ? `. Fecha conocida: ${o.fecha}` : ""}. ¿Hubo prórroga de la fecha, cambios en el pliego, circulares, adjudicación, cancelación u otra novedad? Respondé en máximo 2 frases con lo que encuentres en fuentes reales. Si no encontrás novedades confirmadas respondé exactamente: SIN NOVEDADES.`;
-  const r = await ai.models.generateContent({ model: modelo, contents: [{ role: "user", parts: [{ text: prompt }] }], config: { tools: [{ googleSearch: {} }], temperature: 0.1, httpOptions: { timeout: 60000 } } });
+  const r = await conReintentos(() => ai.models.generateContent({ model: modelo, contents: [{ role: "user", parts: [{ text: prompt }] }], config: { tools: [{ googleSearch: {} }], temperature: 0.1, httpOptions: { timeout: 60000 } } }));
   const t = textoDe(r).trim();
   if (!t || /^sin novedades/i.test(t)) return null;
   return t.slice(0, 500);
 }
 
-module.exports = { SEGMENTOS, armarBusqueda, armarEstructura, extraerJSON, fuentesDe, partirBloques, fuentesDeBloque, resolverUrl, ejecutarBusqueda, ejecutarCompetencia, rankingGanadores, revisarLicitacion, normEmpresa, clave, hoyAR, sinAcentos };
+module.exports = { conReintentos, mensajeAmable, SEGMENTOS, armarBusqueda, armarEstructura, extraerJSON, fuentesDe, partirBloques, fuentesDeBloque, resolverUrl, ejecutarBusqueda, ejecutarCompetencia, rankingGanadores, revisarLicitacion, normEmpresa, clave, hoyAR, sinAcentos };

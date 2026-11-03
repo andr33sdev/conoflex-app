@@ -289,6 +289,7 @@ export default function ClientesNuevos() {
             <button onClick={() => setVista(null)} className="min-h-[40px] px-3.5 rounded-xl bg-white/10 font-bold inline-flex items-center gap-2 cursor-pointer hover:bg-white/20"><RotateCcw size={14} /> Volver a la última</button>
           </div>
         )}
+        {base.fallo_reciente && !vista && <div role="alert" className="mb-4 rounded-2xl border border-[#FF5A00]/30 bg-[#FF5A00]/10 px-4 py-3 text-sm text-orange-100">La última búsqueda no pudo completarse: {base.fallo_reciente} Te muestro la anterior.</div>}
         <Resumen texto={r.resumen} />
         {r.segmentos_sin_resultado?.length > 0 && <p className="mt-3 text-sm text-[#ff8a4d]">No pude buscar: {r.segmentos_sin_resultado.join(", ")}. Probá de nuevo para completarlo.</p>}
         {ops.length === 0 ? (
