@@ -2,73 +2,21 @@
 // la Argentina, y muestra las novedades ordenadas de más a menos urgentes.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, LayoutGroup, MotionConfig, motion } from "framer-motion";
-import { ArrowUpRight, Calendar, ChevronDown, Loader2, MapPin, Package, Radar, Search, Sparkles } from "lucide-react";
+import { ChevronDown, Loader2, Radar, Search, Sparkles } from "lucide-react";
 import { api } from "./produccion/util";
 import { useToast } from "./produccion/useToast";
 import { Vacio } from "./produccion/ui";
+import Tarjeta from "./clientes/Tarjeta";
+import { SEGMENTOS, cuando, diasHasta } from "./clientes/util";
 
 const EASE = [0.22, 1, 0.36, 1];
-const SEGMENTOS = { licitaciones: "Licitaciones", obras: "Obras", empresas: "Empresas" };
-const PRIORIDAD = {
-  1: { t: "Ir ya", clase: "bg-[#FF5A00]/15 text-[#ff8a4d] border-[#FF5A00]/40" },
-  2: { t: "Interesante", clase: "bg-[#FFD60A]/10 text-[#FFD60A] border-[#FFD60A]/30" },
-  3: { t: "A futuro", clase: "bg-white/[0.05] text-zinc-400 border-white/[0.1]" },
-};
 
-const cuando = (iso) => {
-  if (!iso) return "";
-  const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? "" : d.toLocaleString("es-AR", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
-};
-
-/** Convierte en enlace lo que parezca una web o un mail dentro del contacto. */
-function Contacto({ texto }) {
-  const t = String(texto || "").trim();
-  if (!t || /^no figura/i.test(t)) return <span className="text-zinc-600">No figura</span>;
-  const partes = t.split(/(https?:\/\/\S+|[\w.+-]+@[\w-]+\.[\w.-]+|(?:www\.)[\w-]+\.[\w./-]+)/g);
+function Cifra({ n, t, tono = "text-white" }) {
   return (
-    <span className="break-words">
-      {partes.map((p, i) => {
-        if (/^https?:\/\//.test(p) || /^www\./.test(p)) return <a key={i} href={p.startsWith("http") ? p : `https://${p}`} target="_blank" rel="noreferrer noopener" className="text-[#ff8a4d] hover:underline">{p}</a>;
-        if (/@/.test(p) && /^[\w.+-]+@/.test(p)) return <a key={i} href={`mailto:${p}`} className="text-[#ff8a4d] hover:underline">{p}</a>;
-        return <span key={i}>{p}</span>;
-      })}
-    </span>
-  );
-}
-
-function Dato({ icono: Icono, titulo, children }) {
-  return (
-    <div className="min-w-0">
-      <span className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-[0.08em] text-zinc-500"><Icono size={13} /> {titulo}</span>
-      <div className="mt-1 text-sm text-zinc-200 leading-snug">{children}</div>
+    <div className="rounded-2xl border border-white/[0.08] bg-white/[0.03] px-4 py-3.5">
+      <span className={`block text-3xl font-extrabold tabular-nums leading-none ${tono}`}>{n}</span>
+      <span className="block mt-1.5 text-xs font-bold text-zinc-500">{t}</span>
     </div>
-  );
-}
-
-function Tarjeta({ o, i }) {
-  const p = PRIORIDAD[o.prioridad] || PRIORIDAD[2];
-  return (
-    <motion.article layout initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, ease: EASE, delay: Math.min(i, 8) * 0.04 }} className="rounded-3xl border border-white/[0.08] bg-[#0d0d10] p-5 sm:p-6">
-      <div className="flex flex-wrap items-center gap-2">
-        <span className={`rounded-full border px-2.5 py-0.5 text-xs font-bold ${p.clase}`}>{p.t}</span>
-        {o.nueva && <span className="rounded-full bg-emerald-500/15 border border-emerald-500/30 px-2.5 py-0.5 text-xs font-bold text-emerald-300">Nueva</span>}
-        <span className="text-xs font-bold text-zinc-500">{SEGMENTOS[o.segmento] || "Oportunidad"}</span>
-        {o.confianza === "baja" && <span className="text-xs text-zinc-500">· dato a confirmar</span>}
-      </div>
-      <h3 className="mt-3 text-lg sm:text-xl font-extrabold text-white leading-snug">{o.titulo}</h3>
-      <p className="mt-1 text-[15px] text-zinc-400">
-        <b className="text-zinc-200 font-bold">{o.organizacion}</b>
-        {o.provincia && <span className="inline-flex items-center gap-1 ml-2 text-zinc-500"><MapPin size={13} /> {o.provincia}</span>}
-      </p>
-      <p className="mt-3 text-[15px] text-zinc-300 leading-relaxed">{o.que_paso}</p>
-      <div className="mt-4 grid gap-4 sm:grid-cols-2 pt-4 border-t border-white/[0.06]">
-        {o.producto && <Dato icono={Package} titulo="Qué ofrecerle">{o.producto}</Dato>}
-        {o.fecha && <Dato icono={Calendar} titulo="Fecha">{o.fecha}</Dato>}
-        <Dato icono={ArrowUpRight} titulo="Contacto"><Contacto texto={o.contacto} /></Dato>
-        {o.fuente && <Dato icono={Search} titulo="Visto en">{o.fuente}</Dato>}
-      </div>
-    </motion.article>
   );
 }
 
@@ -78,6 +26,7 @@ export default function ClientesNuevos() {
   const [error, setError] = useState("");
   const [iniciando, setIniciando] = useState(false);
   const [filtro, setFiltro] = useState("todas");
+  const [provincia, setProvincia] = useState("");
   const [fuentes, setFuentes] = useState(false);
   const aviso = useRef(null);
 
@@ -113,11 +62,22 @@ export default function ClientesNuevos() {
     return () => clearInterval(id);
   }, [buscando, cargar, toast]);
 
+  const copiar = async (texto) => {
+    try {
+      await navigator.clipboard.writeText(texto);
+      return true;
+    } catch {
+      toast("No pude copiar. Seleccioná el texto y copialo a mano.", "error");
+      return false;
+    }
+  };
+
   const buscar = async () => {
     setIniciando(true);
     try {
       await api("/api/clientes-nuevos/buscar", { method: "POST", body: {} });
       setFiltro("todas");
+      setProvincia("");
       await cargar();
     } catch (e) {
       toast(e.message, "error");
@@ -129,11 +89,13 @@ export default function ClientesNuevos() {
   const r = dato?.estado === "LISTO" ? dato.resultado : null;
   const ops = useMemo(() => r?.oportunidades || [], [r]);
   const cuentas = useMemo(() => {
-    const c = { todas: ops.length, nuevas: ops.filter((o) => o.nueva).length };
+    const c = { todas: ops.length, nuevas: ops.filter((o) => o.nueva).length, ya: ops.filter((o) => o.prioridad === 1).length, pronto: ops.filter((o) => { const d = diasHasta(o.fecha_iso); return o.fecha_tipo === "cierre" && d !== null && d >= 0 && d <= 15; }).length };
     for (const k of Object.keys(SEGMENTOS)) c[k] = ops.filter((o) => o.segmento === k).length;
     return c;
   }, [ops]);
-  const visibles = ops.filter((o) => (filtro === "todas" ? true : filtro === "nuevas" ? o.nueva : o.segmento === filtro));
+  const provincias = useMemo(() => [...new Set(ops.map((o) => o.provincia).filter(Boolean))].sort((a, b) => a.localeCompare(b, "es")), [ops]);
+  const provActiva = provincias.includes(provincia) ? provincia : "";
+  const visibles = ops.filter((o) => (filtro === "todas" ? true : filtro === "nuevas" ? o.nueva : o.segmento === filtro) && (!provActiva || o.provincia === provActiva));
   const PILDORAS = [{ v: "todas", t: "Todas" }, ...(cuentas.nuevas > 0 && cuentas.nuevas < cuentas.todas ? [{ v: "nuevas", t: "Nuevas" }] : []), ...Object.entries(SEGMENTOS).filter(([k]) => cuentas[k] > 0).map(([v, t]) => ({ v, t }))];
   const ultimaListaFecha = dato?.estado === "LISTO" ? cuando(dato.terminado_at) : "";
   const fallo = dato?.estado === "ERROR" ? dato.error : "";
@@ -181,24 +143,39 @@ export default function ClientesNuevos() {
                       <div className="mt-6"><Vacio icono={Search} titulo="No encontré oportunidades esta vez" texto="Probá de nuevo en unos días: las licitaciones y obras cambian todo el tiempo." /></div>
                     ) : (
                       <>
-                        {PILDORAS.length > 2 && (
-                          <LayoutGroup id="cn-pildoras">
-                            <div className="mt-6 flex gap-2 overflow-x-auto no-scrollbar -mx-1 px-1" role="tablist" aria-label="Filtro">
-                              {PILDORAS.map((p) => {
-                                const sel = filtro === p.v;
-                                return (
-                                  <button key={p.v} role="tab" aria-selected={sel} onClick={() => setFiltro(p.v)} className={`relative shrink-0 min-h-[40px] px-4 rounded-full text-sm font-bold cursor-pointer border transition-colors ${sel ? "border-transparent text-black" : "border-white/[0.09] text-zinc-400 hover:text-white bg-white/[0.03]"}`}>
-                                    {sel && <motion.span layoutId="cn-fondo" className="absolute inset-0 rounded-full bg-[#FFD60A]" transition={{ duration: 0.35, ease: EASE }} />}
-                                    <span className="relative inline-flex items-center gap-2">{p.t}<span className={`tabular-nums text-xs ${sel ? "text-black/70" : "text-zinc-600"}`}>{cuentas[p.v]}</span></span>
-                                  </button>
-                                );
-                              })}
-                            </div>
-                          </LayoutGroup>
-                        )}
-                        <div className="mt-5 flex flex-col gap-4">
-                          {visibles.map((o, i) => <Tarjeta key={o.clave || i} o={o} i={i} />)}
+                        <div className="mt-5 grid grid-cols-2 sm:grid-cols-4 gap-3">
+                          <Cifra n={cuentas.todas} t="Oportunidades" />
+                          <Cifra n={cuentas.ya} t="Para ir ya" tono="text-[#ff8a4d]" />
+                          <Cifra n={cuentas.pronto} t="Cierran en 15 días" tono="text-[#FFD60A]" />
+                          <Cifra n={cuentas.nuevas} t="Nuevas desde la última" tono="text-emerald-300" />
                         </div>
+                        <div className="mt-6 flex flex-wrap items-center gap-3">
+                          {PILDORAS.length > 2 && (
+                            <LayoutGroup id="cn-pildoras">
+                              <div className="flex gap-2 overflow-x-auto no-scrollbar -mx-1 px-1 min-w-0" role="tablist" aria-label="Filtro">
+                                {PILDORAS.map((p) => {
+                                  const sel = filtro === p.v;
+                                  return (
+                                    <button key={p.v} role="tab" aria-selected={sel} onClick={() => setFiltro(p.v)} className={`relative shrink-0 min-h-[40px] px-4 rounded-full text-sm font-bold cursor-pointer border transition-colors ${sel ? "border-transparent text-black" : "border-white/[0.09] text-zinc-400 hover:text-white bg-white/[0.03]"}`}>
+                                      {sel && <motion.span layoutId="cn-fondo" className="absolute inset-0 rounded-full bg-[#FFD60A]" transition={{ duration: 0.35, ease: EASE }} />}
+                                      <span className="relative inline-flex items-center gap-2">{p.t}<span className={`tabular-nums text-xs ${sel ? "text-black/70" : "text-zinc-600"}`}>{cuentas[p.v]}</span></span>
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </LayoutGroup>
+                          )}
+                          {provincias.length > 1 && (
+                            <select value={provActiva} onChange={(e) => setProvincia(e.target.value)} aria-label="Provincia" className="sm:ml-auto min-h-[40px] rounded-xl bg-white/[0.05] border border-white/[0.09] px-3 text-sm font-bold text-zinc-200 outline-none focus:border-[#FF5A00]/60 cursor-pointer">
+                              <option value="" className="bg-[#111]">Todas las provincias</option>
+                              {provincias.map((x) => <option key={x} value={x} className="bg-[#111]">{x}</option>)}
+                            </select>
+                          )}
+                        </div>
+                        <div className="mt-5 flex flex-col gap-5">
+                          {visibles.length === 0 ? <p className="py-10 text-center text-zinc-500">No hay oportunidades con ese filtro.</p> : visibles.map((o, i) => <Tarjeta key={o.clave || i} o={o} i={i} onCopiar={copiar} />)}
+                        </div>
+                        {r.vencidas_descartadas > 0 && <p className="mt-4 text-sm text-zinc-600">{r.vencidas_descartadas} {r.vencidas_descartadas === 1 ? "licitación ya cerrada no se muestra" : "licitaciones ya cerradas no se muestran"}.</p>}
                       </>
                     )}
                     {r.fuentes?.length > 0 && (
