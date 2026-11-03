@@ -14,6 +14,7 @@ import {
   Maximize2,
   Minimize2,
   Moon,
+  BookOpen,
   PencilLine,
   Plus,
   Send,
@@ -33,6 +34,7 @@ import {
 } from "./produccion/util";
 import { Drawer } from "./produccion/ui";
 import FormularioCarga from "./tablet/FormularioCarga";
+import RecetaProduccion from "./tablet/RecetaProduccion";
 
 const suave = [0.2, 0.8, 0.2, 1];
 
@@ -85,7 +87,7 @@ function Estado({ a }) {
   );
 }
 
-function Tarjeta({ a, i, onCargar }) {
+function Tarjeta({ a, i, onCargar, onReceta }) {
   const c = a.carga;
   const lista = a.carga_estado === "APROBADA";
   const puedeCorregir = c?.estado === "PENDIENTE";
@@ -119,7 +121,6 @@ function Tarjeta({ a, i, onCargar }) {
         <p className="text-2xl font-bold text-white leading-snug">{a.modelo_nombre}</p>
         <p className="mt-1 text-sm text-zinc-500">
           Lote <span className="font-mono text-zinc-300">{a.lote}</span>
-          {a.receta.length > 0 && <> · Material {a.receta.map((r) => r.codigo).join(" + ")}</>}
         </p>
       </div>
 
@@ -133,6 +134,14 @@ function Tarjeta({ a, i, onCargar }) {
           <span className="truncate">{a.operario || "—"}</span>
         </p>
       </div>
+
+      <button
+        type="button"
+        onClick={() => onReceta(a)}
+        className="mt-4 w-full min-h-[52px] rounded-2xl border border-white/[0.12] bg-white/[0.04] text-base font-bold text-zinc-100 inline-flex items-center justify-center gap-2.5 hover:bg-white/[0.09] active:scale-[0.99] transition-all cursor-pointer"
+      >
+        <BookOpen size={20} className="text-[#FFD60A]" /> Ver receta
+      </button>
 
       {a.rechazo && (
         <div className="mt-4 rounded-2xl bg-rose-500/10 border border-rose-500/30 px-4 py-3 text-base text-rose-100">
@@ -311,6 +320,7 @@ export default function CargaProduccion() {
   const [version, setVersion] = useState(0);
   const [operarios, setOperarios] = useState([]);
   const [cargando, setCargando] = useState(null);
+  const [receta, setReceta] = useState(null);
   const [pantallaCompleta, setPantallaCompleta] = useState(false);
   const { mostrar: toast, nodo: toastNodo } = useToast();
   const clave = `${fecha}|${version}`;
@@ -583,7 +593,7 @@ export default function CargaProduccion() {
                     ))}
                   <div className="grid gap-5 lg:grid-cols-2 2xl:grid-cols-3">
                     {t.asignaciones.map((a, i) => (
-                      <Tarjeta key={a.id} a={a} i={i} onCargar={setCargando} />
+                      <Tarjeta key={a.id} a={a} i={i} onCargar={setCargando} onReceta={setReceta} />
                     ))}
                   </div>
                   <ComentarioTurno
@@ -599,6 +609,7 @@ export default function CargaProduccion() {
           </AnimatePresence>
         )}
 
+        <RecetaProduccion asignacion={receta} onCerrar={() => setReceta(null)} />
         <FormularioCarga
           asignacion={cargando}
           operarios={operarios}
