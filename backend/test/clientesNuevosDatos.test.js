@@ -228,3 +228,29 @@ test("exportes: el PDF y el Excel se arman aunque falten datos", () => {
   const c = { resultado: { resumen: "", conclusiones: [], ranking: [], adjudicaciones: [], competidores: [] } };
   assert.equal(X.pdfCompetencia(c).subarray(0, 5).toString(), "%PDF-");
 });
+
+test("reintentos: repite lo pasajero, no lo definitivo, y los errores se explican", async () => {
+  const N = require("../clientesNuevos");
+  let n = 0;
+  const ok = await N.conReintentos(async () => { if (++n < 3) throw new Error('{"error":{"code":504,"status":"DEADLINE_EXCEEDED"}}'); return "listo"; }, { esperas: [1, 1] });
+  assert.equal(ok, "listo");
+  assert.equal(n, 3);
+  let m = 0;
+  await assert.rejects(N.conReintentos(async () => { m++; throw new Error("API key not valid"); }, { esperas: [1, 1] }));
+  assert.equal(m, 1);
+  await assert.rejects(N.conReintentos(async () => { throw new Error("504"); }, { esperas: [1] }));
+  assert.match(N.mensajeAmable(new Error('{"error":{"code":504,"message":"The request timed out.","status":"DEADLINE_EXCEEDED"}}')), /tardó demasiado/);
+  assert.match(N.mensajeAmable(new Error("429 RESOURCE_EXHAUSTED")), /límite de uso/);
+  assert.doesNotMatch(N.mensajeAmable(new Error('{"error":{"code":418}}')), /\{/);
+});
+
+test("si la última búsqueda falló, se muestra la anterior buena con el aviso", async () => {
+  await conBase(async ({ pool, http }) => {
+    await pool.query("INSERT INTO clientes_nuevos_busquedas (tipo, origen, estado, resultado, terminado_at) VALUES ('OPORTUNIDADES','MANUAL','LISTO', ?, NOW())", [JSON.stringify({ resumen: "Buena", oportunidades: [] })]);
+    await pool.query("INSERT INTO clientes_nuevos_busquedas (tipo, origen, estado, error, terminado_at) VALUES ('OPORTUNIDADES','MANUAL','ERROR','Google tardó demasiado en responder.', NOW())");
+    const u = (await http("GET", "/api/clientes-nuevos/ultima")).json;
+    assert.equal(u.estado, "LISTO");
+    assert.equal(u.resultado.resumen, "Buena");
+    assert.match(u.fallo_reciente, /tardó demasiado/);
+  });
+});

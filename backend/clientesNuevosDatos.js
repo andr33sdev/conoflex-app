@@ -147,6 +147,11 @@ async function hidratar(db, b) {
 
 async function ultimaBusqueda(db, tipo = "OPORTUNIDADES") {
   const [r] = await db.query("SELECT * FROM clientes_nuevos_busquedas WHERE tipo = ? ORDER BY id DESC LIMIT 1", [tipo]);
+  // Si la última falló pero hubo una buena antes, se muestra la buena y se avisa del fallo (no se pierde lo que ya había).
+  if (r[0]?.estado === "ERROR") {
+    const [ok] = await db.query("SELECT * FROM clientes_nuevos_busquedas WHERE tipo = ? AND estado = 'LISTO' ORDER BY id DESC LIMIT 1", [tipo]);
+    if (ok[0]) return { ...(await hidratar(db, filaBusqueda(ok[0]))), fallo_reciente: r[0].error || "La última búsqueda falló." };
+  }
   return hidratar(db, filaBusqueda(r[0]));
 }
 
@@ -300,7 +305,8 @@ async function iniciarTrabajo(db, { tipo, origen = "MANUAL", quien = "Usuario", 
       }
     } catch (e) {
       console.error(`[clientes-nuevos] ${tipo}:`, e.message);
-      await db.query("UPDATE clientes_nuevos_busquedas SET estado = 'ERROR', progreso = NULL, error = ?, terminado_at = NOW() WHERE id = ?", [String(e.message || "Error").slice(0, 490), id]).catch(() => {});
+      const amable = N.mensajeAmable(e);
+      await db.query("UPDATE clientes_nuevos_busquedas SET estado = 'ERROR', progreso = NULL, error = ?, terminado_at = NOW() WHERE id = ?", [amable.slice(0, 490), id]).catch(() => {});
     }
   };
   return { id, correr };
