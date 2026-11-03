@@ -40,7 +40,7 @@ const { asegurarColumnaPagoMensual } = require("./escala");
 const { leerPlanilla: leerPlanillaStock, compararPlanilla, aplicarPlanilla } = require("./semiSync");
 const { migrarPermisoConnie, migrarPermisoSugerencias } = require("./permisos");
 const { asegurarTablasSugerencias, registrarRutasSugerencias } = require("./sugerenciasCompra");
-const { asegurarTablaClientesNuevos, registrarRutasClientesNuevos } = require("./clientesNuevos");
+const { asegurarTablaClientesNuevos, registrarRutasClientesNuevos, iniciarBusquedaSemanal } = require("./clientesNuevosDatos");
 require("dotenv").config();
 
 const app = express();
@@ -5353,7 +5353,13 @@ const nombreDeUsuario = async (req) => {
 // Eliminar una solicitud entera y corregir lo que realmente se pidió (proveedor / cantidad) en un renglón.
 registrarRutasGestion(app, { db, nombreDeUsuario });
 registrarRutasSugerencias(app, { db, requirePermiso, nombreDeUsuario, crearNotificacion });
-registrarRutasClientesNuevos(app, { db, requirePermiso, nombreDeUsuario, ai, modelo: process.env.CONNIE_MODELO || "gemini-2.5-flash" });
+const modeloClientesNuevos = process.env.CONNIE_MODELO || "gemini-2.5-flash";
+// Los mensajes sugeridos quedan como BORRADOR en Gmail: no existe ninguna ruta que los envíe.
+const crearBorradorNuevo = async ({ para, asunto, html }) => {
+  const gmail = gmailAutenticado();
+  await gmail.users.drafts.create({ userId: "me", requestBody: crearCorreoCrudo({ to: para, asunto, html, sinRe: true }) });
+};
+registrarRutasClientesNuevos(app, { db, requirePermiso, nombreDeUsuario, ai, modelo: modeloClientesNuevos, crearNotificacion, crearBorrador: crearBorradorNuevo });
 registrarRutasSemis(app, { db, nombreDeUsuario });
 registrarRutasMovimientos(app, db, { nombreDeUsuario });
 
@@ -5700,6 +5706,7 @@ app.listen(PORT, () => {
   migrarPermisoConnie(db);
   migrarPermisoSugerencias(db);
   iniciarEspejo33(db); // el stock del 33 se copia de la planilla (STOCK 33) cada 10 minutos
+  iniciarBusquedaSemanal(db, { ai, modelo: modeloClientesNuevos, crearNotificacion }); // clientes nuevos: búsqueda automática los lunes y avisos de cierres
   connie.calentarEsquema();
   asegurarPush(db)
     .then(() => alCrearNotificacion((n) => enviarPush(db, n)))

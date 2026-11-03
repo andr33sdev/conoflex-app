@@ -6,11 +6,12 @@ const cabeceraAsunto = (s) => (/^[\x20-\x7e]*$/.test(s) ? s : `=?UTF-8?B?${Buffe
 const urlSafe = (b64) => b64.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 
 /**
- * @param {{to:string, asunto:string, html:string, threadId?:string, adjunto?:{nombre:string, datos:Buffer}}} cfg
+ * @param {{to:string, asunto:string, html:string, threadId?:string, adjunto?:{nombre:string, datos:Buffer}, sinRe?:boolean}} cfg (sinRe: mail nuevo, no una respuesta)
  * @returns {{message:{raw:string, threadId?:string}}} listo para gmail.users.drafts.create({ requestBody })
  */
-function crearCorreoCrudo({ to, asunto, html, threadId, adjunto }) {
-  const subject = cabeceraAsunto(`Re: ${String(asunto || "Presupuesto Conoflex Argentina").replace(/^Re:\s*/i, "")}`);
+function crearCorreoCrudo({ to, asunto, html, threadId, adjunto, sinRe = false }) {
+  const limpio = String(asunto || "Presupuesto Conoflex Argentina").replace(/^Re:\s*/i, "");
+  const subject = cabeceraAsunto(sinRe ? limpio : `Re: ${limpio}`);
   const cuerpo = base64En76(Buffer.from(html, "utf8"));
   let lineas;
   if (adjunto && adjunto.datos?.length) {
