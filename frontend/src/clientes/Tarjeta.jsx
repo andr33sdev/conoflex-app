@@ -1,9 +1,9 @@
 import { useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { ArrowUpRight, Banknote, Building2, Check, ChevronDown, Clock, Copy, Globe, Landmark, MapPin, Package, Route, Sparkle, Target } from "lucide-react";
-import { PRIORIDAD, SEGMENTOS, dominio, reloj } from "./util";
+import { ArrowUpRight, Banknote, Bell, BellRing, Building2, Check, ChevronDown, Clock, Copy, Globe, Landmark, Loader2, Mail, MapPin, Newspaper, Package, Route, Sparkle, Target, UserMinus } from "lucide-react";
+import { ESTADOS, PRIORIDAD, SEGMENTOS, dominio, reloj } from "./util";
 
-const ICONO = { licitaciones: Landmark, obras: Route, empresas: Building2 };
+const ICONO = { licitaciones: Landmark, obras: Route, empresas: Building2, parecidos: Building2 };
 const EASE = [0.22, 1, 0.36, 1];
 
 /** Convierte en enlace lo que parezca una web o un mail. */
@@ -31,9 +31,25 @@ function Bloque({ icono: Icono, titulo, children }) {
   );
 }
 
-export default function Tarjeta({ o, i, onCopiar }) {
+const primerMail = (t) => (String(t || "").match(/[\w.+-]+@[\w-]+\.[\w.-]+/) || [""])[0];
+
+export default function Tarjeta({ o, i, onCopiar, onCambiar, onBorrador }) {
   const [abierta, setAbierta] = useState(false);
   const [copiado, setCopiado] = useState(false);
+  const [menu, setMenu] = useState(false);
+  const [nota, setNota] = useState(o.nota || "");
+  const [mensaje, setMensaje] = useState(o.mensaje || "");
+  const [para, setPara] = useState(primerMail(o.contacto));
+  const [enviando, setEnviando] = useState(false);
+  const [hecho, setHecho] = useState(false);
+  const est = ESTADOS[o.estado] || ESTADOS.PENDIENTE;
+
+  const guardarBorrador = async () => {
+    setEnviando(true);
+    const ok = await onBorrador(o.id, { para, mensaje });
+    setEnviando(false);
+    if (ok) setHecho(true);
+  };
   const p = PRIORIDAD[o.prioridad] || PRIORIDAD[2];
   const Icono = ICONO[o.segmento] || Building2;
   const rel = reloj(o);
@@ -53,6 +69,8 @@ export default function Tarjeta({ o, i, onCopiar }) {
       <div className="p-5 sm:p-7 pl-6 sm:pl-8">
         <div className="flex flex-wrap items-center gap-2">
           <span className={`rounded-full border px-3 py-1 text-xs font-extrabold ${p.chip}`}>{p.t}</span>
+          {o.estado && o.estado !== "PENDIENTE" && <span className={`rounded-full border px-3 py-1 text-xs font-extrabold ${est.chip}`}>{est.t}</span>}
+          {o.relacion === "dormido" && <span className="inline-flex items-center gap-1.5 rounded-full border border-violet-400/40 bg-violet-400/10 px-3 py-1 text-xs font-extrabold text-violet-300"><UserMinus size={13} /> Dejó de comprarnos</span>}
           {o.nueva && <span className="rounded-full bg-emerald-500/15 border border-emerald-500/30 px-3 py-1 text-xs font-extrabold text-emerald-300">Nueva</span>}
           <span className="inline-flex items-center gap-1.5 text-xs font-bold text-zinc-500"><Icono size={14} /> {SEGMENTOS[o.segmento] || "Oportunidad"}</span>
           {rel && <span className={`sm:ml-auto inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-extrabold ${rel.clase}`}><Clock size={13} /> {rel.t}</span>}
@@ -77,6 +95,13 @@ export default function Tarjeta({ o, i, onCopiar }) {
           </div>
         )}
 
+        {o.novedad && (
+          <div className="mt-4 rounded-2xl border border-sky-400/25 bg-sky-400/[0.06] p-4">
+            <span className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-[0.1em] text-sky-300"><Newspaper size={13} /> Novedad</span>
+            <p className="mt-2 text-sm text-zinc-200 leading-relaxed">{o.novedad}</p>
+          </div>
+        )}
+
         <div className="mt-5 pt-4 border-t border-white/[0.06] flex flex-wrap items-center gap-x-5 gap-y-3">
           <div className="flex flex-wrap items-center gap-2 min-w-0 mr-auto">
             <span className="text-[11px] font-bold uppercase tracking-[0.1em] text-zinc-500">Visto en</span>
@@ -88,13 +113,30 @@ export default function Tarjeta({ o, i, onCopiar }) {
             ))}
             {fuentes.length > 3 && <span className="text-xs font-bold text-zinc-500">+{fuentes.length - 3}</span>}
           </div>
-          <div className="flex items-center gap-2 w-full sm:w-auto">
+          <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+            <div className="relative">
+              <button onClick={() => setMenu((v) => !v)} aria-expanded={menu} aria-haspopup="menu" className="min-h-[44px] px-4 rounded-xl border border-white/[0.12] bg-white/[0.04] text-sm font-bold text-zinc-100 hover:bg-white/[0.09] inline-flex items-center gap-1.5 cursor-pointer">
+                Marcar <ChevronDown size={15} className={`transition-transform ${menu ? "rotate-180" : ""}`} />
+              </button>
+              {menu && (
+                <div role="menu" className="absolute z-20 bottom-full mb-2 left-0 w-48 rounded-2xl border border-white/[0.12] bg-[#16161a] p-1.5 shadow-2xl">
+                  {Object.entries(ESTADOS).map(([k, v]) => (
+                    <button key={k} role="menuitem" onClick={() => { setMenu(false); onCambiar(o.id, { estado: k }); }} className={`w-full min-h-[40px] px-3 rounded-xl text-left text-sm font-bold flex items-center justify-between cursor-pointer hover:bg-white/[0.07] ${k === "DESCARTADA" ? "text-rose-300" : "text-zinc-200"}`}>
+                      {v.t}{(o.estado || "PENDIENTE") === k && <Check size={15} />}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            <button onClick={() => onCambiar(o.id, { siguiendo: !o.siguiendo })} aria-pressed={!!o.siguiendo} title="Te avisa cuando se acerca el cierre y busca novedades" className={`min-h-[44px] px-4 rounded-xl border text-sm font-bold inline-flex items-center gap-1.5 cursor-pointer ${o.siguiendo ? "border-[#FFD60A]/50 bg-[#FFD60A]/12 text-[#FFD60A]" : "border-white/[0.12] bg-white/[0.04] text-zinc-200 hover:bg-white/[0.09]"}`}>
+              {o.siguiendo ? <BellRing size={16} /> : <Bell size={16} />} {o.siguiendo ? "Siguiendo" : "Seguir"}
+            </button>
             {o.url && (
-              <a href={o.url} target="_blank" rel="noreferrer noopener" className="flex-1 sm:flex-none min-h-[44px] px-4 rounded-xl bg-[#FFD60A] text-black text-sm font-extrabold inline-flex items-center justify-center gap-1.5 hover:bg-white transition-colors">
+              <a href={o.url} target="_blank" rel="noreferrer noopener" className="min-h-[44px] px-4 rounded-xl bg-[#FFD60A] text-black text-sm font-extrabold inline-flex items-center justify-center gap-1.5 hover:bg-white transition-colors">
                 Abrir fuente <ArrowUpRight size={16} />
               </a>
             )}
-            <button onClick={() => setAbierta((v) => !v)} aria-expanded={abierta} className="flex-1 sm:flex-none min-h-[44px] px-4 rounded-xl border border-white/[0.12] bg-white/[0.04] text-sm font-bold text-zinc-200 hover:bg-white/[0.09] inline-flex items-center justify-center gap-1.5 cursor-pointer">
+            <button onClick={() => setAbierta((v) => !v)} aria-expanded={abierta} className="min-h-[44px] px-4 rounded-xl border border-white/[0.12] bg-white/[0.04] text-sm font-bold text-zinc-200 hover:bg-white/[0.09] inline-flex items-center justify-center gap-1.5 cursor-pointer">
               {abierta ? "Ver menos" : "Ver detalle"} <ChevronDown size={16} className={`transition-transform ${abierta ? "rotate-180" : ""}`} />
             </button>
           </div>
@@ -124,9 +166,20 @@ export default function Tarjeta({ o, i, onCopiar }) {
                       {copiado ? <Check size={15} className="text-emerald-300" /> : <Copy size={15} />} {copiado ? "Copiado" : "Copiar"}
                     </button>
                   </div>
-                  <p className="mt-3 text-[15px] text-zinc-300 leading-relaxed whitespace-pre-line">{o.mensaje}</p>
+                  <textarea value={mensaje} onChange={(e) => { setMensaje(e.target.value); setHecho(false); }} rows={7} aria-label="Mensaje sugerido" className="mt-3 w-full rounded-xl bg-white/[0.04] border border-white/[0.08] p-3 text-[15px] text-zinc-200 leading-relaxed outline-none focus:border-[#FF5A00]/60 resize-y" />
+                  <div className="mt-3 flex flex-wrap items-center gap-2">
+                    <input value={para} onChange={(e) => { setPara(e.target.value); setHecho(false); }} type="email" inputMode="email" placeholder="Mail del destinatario" aria-label="Mail del destinatario" className="flex-1 min-w-[200px] min-h-[44px] rounded-xl bg-white/[0.05] border border-white/[0.09] px-3 text-sm text-zinc-100 outline-none focus:border-[#FF5A00]/60" />
+                    <button onClick={guardarBorrador} disabled={enviando || !para.trim() || !mensaje.trim()} className="min-h-[44px] px-4 rounded-xl bg-white/[0.08] border border-white/[0.14] text-sm font-bold text-white inline-flex items-center gap-2 hover:bg-white/[0.14] cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed">
+                      {enviando ? <Loader2 size={15} className="animate-spin" /> : hecho ? <Check size={15} className="text-emerald-300" /> : <Mail size={15} />} {hecho ? "Borrador guardado" : "Dejar borrador en Gmail"}
+                    </button>
+                  </div>
+                  <p className="mt-2 text-xs text-zinc-600">Queda como borrador en tu Gmail para que lo revises: no se envía nada solo.</p>
                 </div>
               )}
+              <div className="mt-3 rounded-2xl border border-white/[0.08] bg-white/[0.03] p-4">
+                <label htmlFor={`nota-${o.id}`} className="text-[11px] font-bold uppercase tracking-[0.1em] text-zinc-500">Mi nota</label>
+                <textarea id={`nota-${o.id}`} value={nota} onChange={(e) => setNota(e.target.value)} onBlur={() => nota !== (o.nota || "") && onCambiar(o.id, { nota })} rows={2} maxLength={500} placeholder="Con quién hablaste, qué quedó pendiente…" className="mt-2 w-full rounded-xl bg-black/30 border border-white/[0.08] p-3 text-sm text-zinc-200 outline-none focus:border-[#FF5A00]/60 resize-y placeholder:text-zinc-600" />
+              </div>
               {o.confianza === "baja" && <p className="mt-3 text-xs text-[#ff8a4d]">Dato poco verificable: confirmalo antes de actuar.</p>}
             </motion.div>
           )}

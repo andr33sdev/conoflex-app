@@ -7,35 +7,46 @@ const SEGMENTOS = [
   {
     id: "licitaciones",
     titulo: "Licitaciones y compras públicas",
-    busqueda:
+    busqueda: () =>
       "Licitaciones, concursos de precios y compras públicas ABIERTAS o RECIENTES en Argentina (municipios, provincias, Vialidad Nacional y provincial, concesionarias viales, organismos de tránsito y seguridad vial) donde se compren productos como los nuestros: conos, topes, separadores de carril, delineadores, topes de estacionamiento, bandas reductoras de velocidad, señalización vial. Revisá portales de compras (COMPR.AR, portales provinciales y municipales, Boletín Oficial) y noticias.",
   },
   {
     id: "obras",
     titulo: "Obras viales y proyectos nuevos",
-    busqueda:
-      "Obras viales, repavimentaciones, autopistas, rutas, ciclovías, playas de estacionamiento, parques industriales, aeropuertos y puertos ANUNCIADAS o EN EJECUCIÓN en Argentina, que van a necesitar señalización y seguridad vial temporal o permanente. Indicá quién es la empresa contratista o el organismo a cargo, para poder venderles.",
+    busqueda: (ctx) =>
+      "Obras viales, repavimentaciones, autopistas, rutas, ciclovías, playas de estacionamiento, parques industriales, aeropuertos y puertos ANUNCIADAS o EN EJECUCIÓN en Argentina, que van a necesitar señalización y seguridad vial temporal o permanente. Indicá quién es la empresa contratista o el organismo a cargo, para poder venderles." +
+      (ctx.dormidos?.length ? ` Si en esas obras aparece alguna de estas empresas (clientes que dejaron de comprarnos), destacalo: ${ctx.dormidos.slice(0, 25).join(", ")}.` : ""),
   },
   {
     id: "empresas",
     titulo: "Empresas del rubro",
-    busqueda:
+    busqueda: () =>
       "Empresas argentinas que podrían ser clientes o revendedores de productos de seguridad vial: constructoras viales, empresas de señalización, distribuidores y mayoristas de seguridad vial, corralones y ferreterías industriales grandes, concesionarias de peaje, empresas de logística y de estacionamiento. Priorizá las que aparezcan en noticias recientes, ampliaciones o contrataciones.",
   },
+  {
+    id: "parecidos",
+    titulo: "Parecidas a tus mejores clientes",
+    activo: (ctx) => (ctx.mejoresClientes || []).length > 0,
+    busqueda: (ctx) =>
+      `Empresas argentinas SIMILARES (mismo rubro, tamaño y tipo de compra) a estos clientes que ya nos compran bien: ${ctx.mejoresClientes.map((c) => `${c.cliente}${c.articulos?.length ? ` (compra ${c.articulos.slice(0, 3).join(", ")})` : ""}`).join("; ")}. Buscá empresas parecidas que no sean ellas, de cualquier provincia, que estén creciendo o contratando.`,
+  },
 ];
+const segmentosActivos = (ctx) => SEGMENTOS.filter((s) => !s.activo || s.activo(ctx));
 
 const hoyAR = () => new Date(Date.now() - 3 * 3600 * 1000).toISOString().slice(0, 10);
 const sinAcentos = (t) => String(t || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().trim();
 
-function armarBusqueda(segmento, { productos = [], clientes = [], fecha = hoyAR() } = {}) {
+function armarBusqueda(segmento, ctx = {}) {
+  const { productos = [], clientes = [], excluir = [], fecha = hoyAR() } = ctx;
   return [
     `Hoy es ${fecha}. Trabajás para una fábrica argentina de productos plásticos de seguridad vial (inyección y rotomoldeo).`,
     productos.length ? `Lo que fabrica: ${productos.slice(0, 40).join(", ")}.` : "Fabrica bases de conos, topes, separadores de carril, topes de estacionamiento y puntas de cono.",
-    `Tarea: encontrar NOVEDADES DEL MOMENTO (últimos 60 días, o abiertas hoy) en TODA la Argentina. ${segmento.busqueda}`,
+    `Tarea: encontrar NOVEDADES DEL MOMENTO (últimos 60 días, o abiertas hoy) en TODA la Argentina. ${segmento.busqueda(ctx)}`,
     "Para cada oportunidad escribí, en prosa corta: organización o empresa, provincia/ciudad, qué pasó o por qué es una oportunidad, fecha clave (cierre de la licitación, inicio de obra o fecha de la noticia, con día/mes/año si figura), monto o presupuesto si figura, y la web, mail o teléfono SOLO si aparece en las fuentes (copiá la dirección web completa si la viste).",
     "Separá cada oportunidad de la siguiente con una línea que contenga solamente =====",
     "Reglas: usá solo lo que encuentres en fuentes reales; no inventes empresas, fechas ni contactos; si un dato no figura escribí 'no figura'. Prefiero 6 a 10 oportunidades verificables antes que muchas dudosas.",
     clientes.length ? `No incluyas a estas empresas, que YA son clientes: ${clientes.slice(0, 120).join(", ")}.` : "",
+    excluir.length ? `Tampoco incluyas estas, que ya fueron descartadas: ${excluir.slice(0, 80).join(", ")}.` : "",
     "Respondé en español, en una lista, sin introducción.",
   ].filter(Boolean).join("\n\n");
 }
@@ -50,7 +61,8 @@ const ESQUEMA = {
         type: "OBJECT",
         properties: {
           bloque: { type: "STRING", description: "El código entre corchetes del bloque de donde sale (ej: licitaciones-2)." },
-          segmento: { type: "STRING", description: "licitaciones, obras o empresas" },
+          segmento: { type: "STRING", description: "licitaciones, obras, empresas o parecidos (el mismo del código del bloque)" },
+          relacion: { type: "STRING", description: "'dormido' si la organización es una de las empresas clientes que dejaron de comprarnos; vacío si no." },
           titulo: { type: "STRING", description: "Una línea que diga qué es (ej: 'Licitación de conos y balizas para rutas provinciales')." },
           organizacion: { type: "STRING" },
           provincia: { type: "STRING", description: "Solo el nombre de la provincia (ej: Santa Fe, Buenos Aires, CABA). Vacío si no figura." },
@@ -181,13 +193,15 @@ const limpio = (v, max) => String(v ?? "").trim().slice(0, max);
  * Corre la búsqueda completa. progreso(texto) avisa en qué paso va.
  * deps: { ai, modelo, productos, clientes, anteriores: [claves de la búsqueda previa], progreso, resolver }
  */
-async function ejecutarBusqueda({ ai, modelo = "gemini-2.5-flash", productos = [], clientes = [], anteriores = [], progreso = () => {}, fecha = hoyAR(), resolver = resolverUrl }) {
+async function ejecutarBusqueda({ ai, modelo = "gemini-2.5-flash", productos = [], clientes = [], mejoresClientes = [], dormidos = [], excluir = [], anteriores = [], progreso = () => {}, fecha = hoyAR(), resolver = resolverUrl }) {
   progreso("Buscando en internet: licitaciones, obras y empresas…");
+  const ctx = { productos, clientes, mejoresClientes, dormidos, excluir, fecha };
+  const activos = segmentosActivos(ctx);
   const resultados = await Promise.allSettled(
-    SEGMENTOS.map(async (s) => {
+    activos.map(async (s) => {
       const r = await ai.models.generateContent({
         model: modelo,
-        contents: [{ role: "user", parts: [{ text: armarBusqueda(s, { productos, clientes, fecha }) }] }],
+        contents: [{ role: "user", parts: [{ text: armarBusqueda(s, ctx) }] }],
         config: { tools: [{ googleSearch: {} }], temperature: 0.2, httpOptions: { timeout: 120000 } },
       });
       const texto = textoDe(r).trim();
@@ -196,7 +210,7 @@ async function ejecutarBusqueda({ ai, modelo = "gemini-2.5-flash", productos = [
     }),
   );
   const buenos = resultados.filter((r) => r.status === "fulfilled" && r.value.texto).map((r) => r.value);
-  const fallidos = SEGMENTOS.filter((s, i) => resultados[i].status === "rejected" || !resultados[i].value?.texto).map((s) => s.titulo);
+  const fallidos = activos.filter((s, i) => resultados[i].status === "rejected" || !resultados[i].value?.texto).map((s) => s.titulo);
   if (!buenos.length) {
     const causa = resultados.find((r) => r.status === "rejected")?.reason?.message;
     throw new Error(`No se pudo buscar en internet${causa ? `: ${String(causa).slice(0, 160)}` : "."}`);
@@ -225,7 +239,7 @@ async function ejecutarBusqueda({ ai, modelo = "gemini-2.5-flash", productos = [
     if (!k || vistas.has(k)) continue;
     vistas.add(k);
     const bloque = porId.get(String(o.bloque || "").trim());
-    const segmento = ["licitaciones", "obras", "empresas"].includes(o.segmento) ? o.segmento : bloque?.segmento || "empresas";
+    const segmento = ["licitaciones", "obras", "empresas", "parecidos"].includes(o.segmento) ? o.segmento : bloque?.segmento || "empresas";
     const fechaIso = esISO(o.fecha_iso) ? o.fecha_iso : "";
     // Una licitación que ya cerró no sirve: no se muestra.
     if (segmento === "licitaciones" && o.fecha_tipo === "cierre" && fechaIso && fechaIso < fecha) {
@@ -252,6 +266,7 @@ async function ejecutarBusqueda({ ai, modelo = "gemini-2.5-flash", productos = [
       fecha_iso: fechaIso,
       fecha_tipo: ["cierre", "inicio", "noticia"].includes(o.fecha_tipo) ? o.fecha_tipo : "",
       monto: limpio(o.monto, 80),
+      relacion: o.relacion === "dormido" ? "dormido" : "",
       contacto: limpio(o.contacto, 300) || "no figura",
       url: urlDirecta,
       fuentes,
@@ -291,102 +306,155 @@ async function ejecutarBusqueda({ ai, modelo = "gemini-2.5-flash", productos = [
   };
 }
 
-async function asegurarTablaClientesNuevos(db) {
-  await db.query(`
-    CREATE TABLE IF NOT EXISTS clientes_nuevos_busquedas (
-      id INT AUTO_INCREMENT PRIMARY KEY,
-      estado VARCHAR(15) NOT NULL DEFAULT 'BUSCANDO',
-      progreso VARCHAR(200) NULL,
-      resultado LONGTEXT NULL,
-      error VARCHAR(500) NULL,
-      creado_por VARCHAR(120) NULL,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      terminado_at DATETIME NULL
-    )`);
-  // Si el servidor se reinició a mitad de una búsqueda, queda como cortada.
-  await db.query("UPDATE clientes_nuevos_busquedas SET estado = 'ERROR', error = 'Se cortó por un reinicio del servidor.', terminado_at = NOW() WHERE estado = 'BUSCANDO'");
-}
+// ---------- Competencia: quién gana las licitaciones y quiénes son los competidores ----------
+const TEMAS_COMPETENCIA = [
+  {
+    id: "adjudicaciones",
+    titulo: "Licitaciones adjudicadas",
+    busqueda:
+      "Licitaciones y compras públicas de conos, balizas, separadores de carril, delineadores, topes de estacionamiento y señalización vial que ya fueron ADJUDICADAS en Argentina en los últimos 12 meses. Por cada una: organismo, provincia, qué se compró, EMPRESA GANADORA, monto adjudicado, precio unitario si figura y fecha. Revisá COMPR.AR, portales provinciales y municipales, Boletín Oficial y noticias.",
+  },
+  {
+    id: "fabricantes",
+    titulo: "Fabricantes y proveedores",
+    busqueda:
+      "Fabricantes y proveedores argentinos de productos de seguridad vial (conos, separadores de carril, delineadores, topes, señalización) que compiten con una fábrica de plásticos por inyección y rotomoldeo. Por cada uno: empresa, provincia, productos que vende, página web y qué lo destaca.",
+  },
+];
 
-const leerFila = (f) => {
-  if (!f) return null;
-  let resultado = null;
-  try {
-    resultado = f.resultado ? JSON.parse(f.resultado) : null;
-  } catch {
-    resultado = null;
-  }
-  return { id: f.id, estado: f.estado, progreso: f.progreso, error: f.error, creado_por: f.creado_por, created_at: f.created_at, terminado_at: f.terminado_at, resultado };
+const ESQUEMA_COMPETENCIA = {
+  type: "OBJECT",
+  properties: {
+    resumen: { type: "STRING", description: "2 o 3 frases con lo más importante del panorama competitivo." },
+    conclusiones: { type: "ARRAY", items: { type: "STRING" }, description: "3 a 5 conclusiones prácticas para competir (precios de referencia, quién domina, dónde hay lugar). Solo lo que surge del texto." },
+    adjudicaciones: {
+      type: "ARRAY",
+      items: {
+        type: "OBJECT",
+        properties: {
+          bloque: { type: "STRING", description: "Código entre corchetes del bloque de donde sale." },
+          organismo: { type: "STRING" },
+          provincia: { type: "STRING" },
+          objeto: { type: "STRING", description: "Qué se compró." },
+          ganador: { type: "STRING", description: "Empresa que ganó. Vacío si no figura." },
+          monto: { type: "STRING" },
+          precio_unitario: { type: "STRING", description: "Precio por unidad si figura (ej: '$12.500 por cono')." },
+          fecha: { type: "STRING" },
+          fecha_iso: { type: "STRING", description: "AAAA-MM-DD si es exacta; vacío si no." },
+        },
+        required: ["bloque", "organismo", "objeto"],
+      },
+    },
+    competidores: {
+      type: "ARRAY",
+      items: {
+        type: "OBJECT",
+        properties: {
+          bloque: { type: "STRING" },
+          empresa: { type: "STRING" },
+          provincia: { type: "STRING" },
+          que_vende: { type: "STRING" },
+          web: { type: "STRING", description: "Dirección web si figura en el texto." },
+          fortaleza: { type: "STRING", description: "Qué lo destaca, en una frase." },
+        },
+        required: ["bloque", "empresa"],
+      },
+    },
+  },
+  required: ["resumen", "adjudicaciones", "competidores"],
 };
 
-async function ultimaBusqueda(db) {
-  const [r] = await db.query("SELECT * FROM clientes_nuevos_busquedas ORDER BY id DESC LIMIT 1");
-  return leerFila(r[0]);
-}
+const normEmpresa = (t) => sinAcentos(t).replace(/\b(s\.?a\.?|s\.?r\.?l\.?|s\.?a\.?s\.?|sociedad anonima|ute|u\.t\.e\.?)\b/g, " ").replace(/[^a-z0-9]+/g, " ").trim();
 
-async function contextoDeLaEmpresa(db) {
-  let productos = [];
-  let clientes = [];
-  try {
-    const [p] = await db.query("SELECT DISTINCT nombre FROM productos WHERE nombre IS NOT NULL AND nombre <> '' ORDER BY nombre LIMIT 60");
-    productos = p.map((x) => x.nombre);
-  } catch {
-    /* sin catálogo cargado */
+/** Cuántas licitaciones ganó cada empresa, con sus provincias y montos. */
+function rankingGanadores(adjudicaciones) {
+  const mapa = new Map();
+  for (const a of adjudicaciones) {
+    const k = normEmpresa(a.ganador);
+    if (!k) continue;
+    const e = mapa.get(k) || { empresa: a.ganador, victorias: 0, provincias: new Set(), ejemplos: [] };
+    e.victorias++;
+    if (a.provincia) e.provincias.add(a.provincia);
+    e.ejemplos.push(a);
+    mapa.set(k, e);
   }
-  try {
-    const [c] = await db.query("SELECT cliente, COUNT(*) AS n FROM pedidos WHERE cliente IS NOT NULL AND cliente <> '' GROUP BY cliente ORDER BY n DESC LIMIT 150");
-    clientes = c.map((x) => x.cliente);
-  } catch {
-    /* sin pedidos */
+  return [...mapa.values()]
+    .map((e) => ({ empresa: e.empresa, victorias: e.victorias, provincias: [...e.provincias], ejemplos: e.ejemplos.slice(0, 4) }))
+    .sort((a, b) => b.victorias - a.victorias || a.empresa.localeCompare(b.empresa, "es"));
+}
+
+async function ejecutarCompetencia({ ai, modelo = "gemini-2.5-flash", productos = [], progreso = () => {}, fecha = hoyAR(), resolver = resolverUrl }) {
+  progreso("Buscando adjudicaciones y competidores…");
+  const resultados = await Promise.allSettled(
+    TEMAS_COMPETENCIA.map(async (t) => {
+      const prompt = [
+        `Hoy es ${fecha}. Trabajás para una fábrica argentina de productos plásticos de seguridad vial${productos.length ? ` (${productos.slice(0, 25).join(", ")})` : ""}.`,
+        `Tarea: ${t.busqueda}`,
+        "Escribí cada caso en prosa corta y separalo del siguiente con una línea que contenga solamente =====",
+        "Reglas: usá solo lo que encuentres en fuentes reales; no inventes empresas, montos ni fechas; si un dato no figura escribí 'no figura'. Respondé en español, sin introducción.",
+      ].join("\n\n");
+      const r = await ai.models.generateContent({ model: modelo, contents: [{ role: "user", parts: [{ text: prompt }] }], config: { tools: [{ googleSearch: {} }], temperature: 0.2, httpOptions: { timeout: 120000 } } });
+      const texto = textoDe(r).trim();
+      const bloques = partirBloques(texto).map((b, i) => ({ ...b, id: `${t.id}-${i + 1}`, fuentes: fuentesDeBloque(b, r) }));
+      return { id: t.id, titulo: t.titulo, texto, bloques, fuentes: fuentesDe(r) };
+    }),
+  );
+  const buenos = resultados.filter((r) => r.status === "fulfilled" && r.value.texto).map((r) => r.value);
+  if (!buenos.length) {
+    const causa = resultados.find((r) => r.status === "rejected")?.reason?.message;
+    throw new Error(`No se pudo buscar en internet${causa ? `: ${String(causa).slice(0, 160)}` : "."}`);
   }
-  return { productos, clientes };
+  const bloques = buenos.flatMap((b) => (b.bloques.length ? b.bloques : [{ id: `${b.id}-1`, texto: b.texto, fuentes: [] }]));
+  const porId = new Map(bloques.map((b) => [b.id, b]));
+  const fuentesTema = new Map(buenos.map((b) => [b.id, b.fuentes]));
+
+  progreso("Ordenando lo encontrado…");
+  const est = await ai.models.generateContent({
+    model: modelo,
+    contents: [{ role: "user", parts: [{ text: `Convertí estos bloques de resultados en datos estructurados. Quedate SOLO con lo que está en el texto: no inventes empresas, montos ni direcciones. Indicá el código del bloque de cada dato. Las conclusiones tienen que salir de los datos (por ejemplo, precios de referencia, quién gana más, en qué provincias hay poca competencia).\n\n${bloques.map((b) => `[${b.id}]\n${b.texto}`).join("\n\n=====\n\n")}` }] }],
+    config: { responseMimeType: "application/json", responseSchema: ESQUEMA_COMPETENCIA, temperature: 0, httpOptions: { timeout: 90000 } },
+  });
+  const datos = extraerJSON(textoDe(est));
+  if (!datos || !Array.isArray(datos.adjudicaciones) || !Array.isArray(datos.competidores)) throw new Error("La búsqueda terminó pero no pude ordenar los resultados. Probá de nuevo.");
+
+  const fuentesDelBloque = (id) => {
+    const b = porId.get(String(id || "").trim());
+    if (b?.fuentes?.length) return { fuentes: b.fuentes, aproximadas: false };
+    const tema = String(id || "").split("-")[0];
+    return { fuentes: (fuentesTema.get(tema) || []).slice(0, 3), aproximadas: true };
+  };
+  const adjudicaciones = datos.adjudicaciones.filter((a) => limpio(a.objeto, 5)).map((a) => ({
+    organismo: limpio(a.organismo, 160), provincia: limpio(a.provincia, 60), objeto: limpio(a.objeto, 300), ganador: limpio(a.ganador, 160), monto: limpio(a.monto, 80),
+    precio_unitario: limpio(a.precio_unitario, 100), fecha: limpio(a.fecha, 80), fecha_iso: esISO(a.fecha_iso) ? a.fecha_iso : "", ...(({ fuentes, aproximadas }) => ({ fuentes, fuentes_aproximadas: aproximadas && fuentes.length > 0 }))(fuentesDelBloque(a.bloque)),
+  }));
+  const competidores = datos.competidores.filter((c) => limpio(c.empresa, 2)).map((c) => ({
+    empresa: limpio(c.empresa, 160), provincia: limpio(c.provincia, 60), que_vende: limpio(c.que_vende, 300), web: /^https?:\/\/\S+$/.test(limpio(c.web, 300)) && porId.get(String(c.bloque || "").trim())?.texto?.includes(limpio(c.web, 300)) ? limpio(c.web, 300) : "", fortaleza: limpio(c.fortaleza, 300), ...(({ fuentes, aproximadas }) => ({ fuentes, fuentes_aproximadas: aproximadas && fuentes.length > 0 }))(fuentesDelBloque(c.bloque)),
+  }));
+
+  progreso("Comprobando los enlaces…");
+  const unicas = [...new Set([...adjudicaciones, ...competidores].flatMap((o) => o.fuentes.map((f) => f.url)))].slice(0, 60);
+  const real = new Map();
+  for (let i = 0; i < unicas.length; i += 8) {
+    const tanda = await Promise.all(unicas.slice(i, i + 8).map((u) => resolver(u)));
+    tanda.forEach((r, j) => real.set(unicas[i + j], r));
+  }
+  const conReal = (f) => {
+    const r = real.get(f.url);
+    return r ? { titulo: r.titulo || f.titulo, url: r.url } : f;
+  };
+  const adj = adjudicaciones.map((a) => ({ ...a, fuentes: a.fuentes.map(conReal) }));
+  const comp = competidores.map((c) => ({ ...c, fuentes: c.fuentes.map(conReal) }));
+  return { resumen: limpio(datos.resumen, 600), conclusiones: lista(datos.conclusiones, 6), ranking: rankingGanadores(adj), adjudicaciones: adj, competidores: comp, fecha };
 }
 
-const EN_CURSO_MAX_MS = 10 * 60 * 1000;
-
-function registrarRutasClientesNuevos(app, { db, requirePermiso, nombreDeUsuario, ai, modelo }) {
-  const PERMISO = requirePermiso("clientes-nuevos");
-
-  app.get("/api/clientes-nuevos/ultima", PERMISO, async (req, res) => {
-    try {
-      res.json((await ultimaBusqueda(db)) || null);
-    } catch (e) {
-      console.error("[clientes-nuevos] ultima:", e.message);
-      res.status(500).json({ error: "No pude cargar la última búsqueda." });
-    }
-  });
-
-  app.post("/api/clientes-nuevos/buscar", PERMISO, async (req, res) => {
-    try {
-      const actual = await ultimaBusqueda(db);
-      if (actual?.estado === "BUSCANDO" && Date.now() - new Date(actual.created_at).getTime() < EN_CURSO_MAX_MS) return res.status(202).json({ id: actual.id, ya_buscando: true });
-      const quien = (await nombreDeUsuario(req)) || "Usuario";
-      const [ins] = await db.query("INSERT INTO clientes_nuevos_busquedas (estado, progreso, creado_por) VALUES ('BUSCANDO', 'Empezando…', ?)", [quien]);
-      const id = ins.insertId;
-      res.status(202).json({ id });
-
-      // Sigue en segundo plano: la pantalla pregunta cada tanto cómo va.
-      (async () => {
-        try {
-          const prev = actual?.estado === "LISTO" ? (actual.resultado?.oportunidades || []).map((o) => o.clave).filter(Boolean) : [];
-          const ctx = await contextoDeLaEmpresa(db);
-          const resultado = await ejecutarBusqueda({
-            ai,
-            modelo,
-            ...ctx,
-            anteriores: prev,
-            progreso: (t) => db.query("UPDATE clientes_nuevos_busquedas SET progreso = ? WHERE id = ?", [t.slice(0, 190), id]).catch(() => {}),
-          });
-          await db.query("UPDATE clientes_nuevos_busquedas SET estado = 'LISTO', progreso = NULL, resultado = ?, terminado_at = NOW() WHERE id = ?", [JSON.stringify(resultado), id]);
-        } catch (e) {
-          console.error("[clientes-nuevos] búsqueda:", e.message);
-          await db.query("UPDATE clientes_nuevos_busquedas SET estado = 'ERROR', progreso = NULL, error = ?, terminado_at = NOW() WHERE id = ?", [String(e.message || "Error").slice(0, 490), id]).catch(() => {});
-        }
-      })();
-    } catch (e) {
-      console.error("[clientes-nuevos] buscar:", e.message);
-      if (!res.headersSent) res.status(500).json({ error: "No pude iniciar la búsqueda." });
-    }
-  });
+/** Revisa en internet si una licitación seguida tuvo novedades (prórroga, circular, adjudicación...). Devuelve el texto o null. */
+async function revisarLicitacion({ ai, modelo = "gemini-2.5-flash", oportunidad, fecha = hoyAR() }) {
+  const o = oportunidad;
+  const prompt = `Hoy es ${fecha}. Revisá el estado ACTUAL de esta licitación u oportunidad de compra en Argentina: "${o.titulo}" de ${o.organizacion}${o.provincia ? ` (${o.provincia})` : ""}${o.fecha ? `. Fecha conocida: ${o.fecha}` : ""}. ¿Hubo prórroga de la fecha, cambios en el pliego, circulares, adjudicación, cancelación u otra novedad? Respondé en máximo 2 frases con lo que encuentres en fuentes reales. Si no encontrás novedades confirmadas respondé exactamente: SIN NOVEDADES.`;
+  const r = await ai.models.generateContent({ model: modelo, contents: [{ role: "user", parts: [{ text: prompt }] }], config: { tools: [{ googleSearch: {} }], temperature: 0.1, httpOptions: { timeout: 60000 } } });
+  const t = textoDe(r).trim();
+  if (!t || /^sin novedades/i.test(t)) return null;
+  return t.slice(0, 500);
 }
 
-module.exports = { SEGMENTOS, armarBusqueda, armarEstructura, extraerJSON, fuentesDe, partirBloques, fuentesDeBloque, resolverUrl, ejecutarBusqueda, asegurarTablaClientesNuevos, ultimaBusqueda, registrarRutasClientesNuevos };
+module.exports = { SEGMENTOS, armarBusqueda, armarEstructura, extraerJSON, fuentesDe, partirBloques, fuentesDeBloque, resolverUrl, ejecutarBusqueda, ejecutarCompetencia, rankingGanadores, revisarLicitacion, normEmpresa, clave, hoyAR, sinAcentos };

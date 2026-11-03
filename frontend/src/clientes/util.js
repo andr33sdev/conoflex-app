@@ -1,4 +1,26 @@
-export const SEGMENTOS = { licitaciones: "Licitaciones", obras: "Obras", empresas: "Empresas" };
+export const SEGMENTOS = { licitaciones: "Licitaciones", obras: "Obras", empresas: "Empresas", parecidos: "Parecidas a tus mejores clientes" };
+
+export const ESTADOS = {
+  PENDIENTE: { t: "Sin revisar", chip: "border-white/[0.12] text-zinc-300 bg-white/[0.04]" },
+  INTERESA: { t: "Me interesa", chip: "border-[#FFD60A]/40 text-[#FFD60A] bg-[#FFD60A]/10" },
+  CONTACTADA: { t: "Contactada", chip: "border-sky-400/40 text-sky-300 bg-sky-400/10" },
+  GANADA: { t: "Ganada", chip: "border-emerald-400/40 text-emerald-300 bg-emerald-400/10" },
+  DESCARTADA: { t: "Descartar", chip: "border-rose-400/40 text-rose-300 bg-rose-400/10" },
+};
+
+const sinTildes = (t) => String(t || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+
+/** Id del mapa (AR-B, AR-C…) para el nombre de provincia que escribió la IA; "" si no se reconoce. */
+export function idProvincia(nombre, provincias) {
+  const n = sinTildes(nombre);
+  if (!n) return "";
+  if (/\b(caba|capital federal|ciudad autonoma|ciudad de buenos aires)\b/.test(n)) return "AR-C";
+  if (/\btierra del fuego\b/.test(n)) return "AR-V";
+  const hit = provincias.find((p) => sinTildes(p.nombre) === n) || provincias.find((p) => n.includes(sinTildes(p.nombre)) || sinTildes(p.nombre).includes(n));
+  if (hit) return hit.id;
+  if (/\bsgo\b|santiago/.test(n)) return provincias.find((p) => /santiago/i.test(p.nombre))?.id || "";
+  return "";
+}
 
 export const PRIORIDAD = {
   1: { t: "Ir ya", barra: "bg-[#FF5A00]", chip: "bg-[#FF5A00]/15 text-[#ff8a4d] border-[#FF5A00]/40" },
