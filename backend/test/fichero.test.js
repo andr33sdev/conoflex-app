@@ -53,3 +53,17 @@ test("ventana 0 desactiva el filtro", () => {
   const { nuevos } = separarDuplicadas([f(1, "08:00:00"), f(2, "08:00:01")], [], 0);
   assert.equal(nuevos.length, 2);
 });
+
+test("ultimoRecDelReloj: ignora las filas manuales, cuenta las duplicadas y admite forzar el punto de partida", async () => {
+  const { ultimoRecDelReloj, REC_MANUAL_DESDE } = require("../fichero");
+  const consultas = [];
+  const db = (g, d) => ({ query: async (sql, params) => { consultas.push([sql, params]); return [[{ ultimo_rec: sql.includes("fichadas_duplicadas") ? d : g }]]; } });
+  assert.equal(await ultimoRecDelReloj(db(21024, 21023), undefined), 21024);
+  assert.equal(await ultimoRecDelReloj(db(100, 250), ""), 250);
+  assert.equal(await ultimoRecDelReloj(db(null, null), undefined), 0);
+  assert.ok(consultas.every(([sql, p]) => /rec_no < \?/.test(sql) && p[0] === REC_MANUAL_DESDE));
+  assert.equal(await ultimoRecDelReloj(db(21024, 21023), "20967"), 20967);
+  assert.equal(await ultimoRecDelReloj(db(21024, 21023), "abc"), 21024);
+  const sinTabla = { query: async (sql) => { if (sql.includes("duplicadas")) throw new Error("no existe"); return [[{ ultimo_rec: 7 }]]; } };
+  assert.equal(await ultimoRecDelReloj(sinTabla, undefined), 7);
+});

@@ -59,4 +59,27 @@ async function asegurarTablaDuplicadas(db) {
   );
 }
 
-module.exports = { VENTANA_SEG, separarDuplicadas, asegurarTablaDuplicadas };
+// Las fichadas cargadas a mano usan números de registro (rec_no) a partir de acá, lejos de los que
+// asigna el reloj. Así no pisan los del reloj ni cuentan para saber "hasta dónde se leyó".
+const REC_MANUAL_DESDE = 4000000000;
+
+/**
+ * Último rec_no del RELOJ que ya está procesado (guardado o descartado como duplicado).
+ * Ignora las filas cargadas a mano. `forzado` (variable FICHERO_ULTIMO_FORZADO) sirve para pedirle
+ * al reloj de nuevo todo lo posterior a ese número: lo que ya está guardado se ignora solo.
+ */
+async function ultimoRecDelReloj(db, forzado = process.env.FICHERO_ULTIMO_FORZADO) {
+  const f = Number(forzado);
+  if (forzado !== undefined && forzado !== "" && Number.isFinite(f) && f >= 0) return Math.floor(f);
+  const [rows] = await db.query("SELECT MAX(rec_no) AS ultimo_rec FROM fichadas WHERE rec_no < ?", [REC_MANUAL_DESDE]);
+  let ultimo = Number(rows[0]?.ultimo_rec) || 0;
+  try {
+    const [dup] = await db.query("SELECT MAX(rec_no) AS ultimo_rec FROM fichadas_duplicadas WHERE rec_no < ?", [REC_MANUAL_DESDE]);
+    ultimo = Math.max(ultimo, Number(dup[0]?.ultimo_rec) || 0);
+  } catch {
+    /* la tabla aún no existe: no hay duplicadas */
+  }
+  return ultimo;
+}
+
+module.exports = { VENTANA_SEG, REC_MANUAL_DESDE, separarDuplicadas, asegurarTablaDuplicadas, ultimoRecDelReloj };
