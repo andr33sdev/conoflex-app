@@ -5073,7 +5073,20 @@ app.get("/api/fichero/cierre", requirePermiso("control-asistencia"), async (req,
   }
 });
 
-// ---------- Legajo por operario (solo administración): resumen por rango, producción y sanciones ----------
+// ---------- Legajo por operario (solo roles ADMIN y PRODUCCION): resumen por rango, producción y sanciones ----------
+// El rol se consulta en la base (no en el token), igual que requireAdmin.
+const ROLES_LEGAJO = ["ADMIN", "PRODUCCION"];
+async function requireLegajo(req, res, next) {
+  try {
+    const [rows] = await db.query("SELECT rol FROM usuarios WHERE id = ?", [req.user?.id]);
+    const rol = String(rows[0]?.rol || "").toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    if (!ROLES_LEGAJO.includes(rol)) return res.status(403).json({ error: "El legajo solo lo pueden ver los roles Administrador y Producción." });
+    next();
+  } catch (error) {
+    console.error("Error verificando acceso al legajo:", error);
+    res.status(500).json({ error: "No se pudo verificar el rol." });
+  }
+}
 const subirLegajo = multer({ storage: multer.memoryStorage(), limits: { fileSize: legajo.MAX_ARCHIVO, files: 5 } });
 const conArchivos = (req, res, next) =>
   subirLegajo.array("archivos", 5)(req, res, (e) => {
@@ -5085,28 +5098,28 @@ const responderLegajo = (res, error) => {
   console.error("Error en el legajo:", error);
   return res.status(500).json({ error: "No se pudo completar la operación." });
 };
-app.get("/api/legajo/operarios", requireAdmin, async (req, res) => {
+app.get("/api/legajo/operarios", requireLegajo, async (req, res) => {
   try {
     res.json(await legajo.listarLegajos(db));
   } catch (error) {
     responderLegajo(res, error);
   }
 });
-app.get("/api/legajo/resumen", requireAdmin, async (req, res) => {
+app.get("/api/legajo/resumen", requireLegajo, async (req, res) => {
   try {
     res.json(await legajo.resumenLegajo(db, { operario: req.query.operario, desde: req.query.desde, hasta: req.query.hasta }));
   } catch (error) {
     responderLegajo(res, error);
   }
 });
-app.get("/api/legajo/sanciones", requireAdmin, async (req, res) => {
+app.get("/api/legajo/sanciones", requireLegajo, async (req, res) => {
   try {
     res.json(await legajo.leerSanciones(db, String(req.query.operario || "").trim()));
   } catch (error) {
     responderLegajo(res, error);
   }
 });
-app.post("/api/legajo/sanciones", requireAdmin, conArchivos, async (req, res) => {
+app.post("/api/legajo/sanciones", requireLegajo, conArchivos, async (req, res) => {
   try {
     const b = req.body || {};
     res.json(await legajo.crearSancion(db, { operario: b.operario, fecha: b.fecha, motivo: b.motivo, detalle: b.detalle, suspension_desde: b.suspension_desde, suspension_hasta: b.suspension_hasta, archivos: req.files || [], usuario: await nombreAdmin(req) }));
@@ -5114,21 +5127,21 @@ app.post("/api/legajo/sanciones", requireAdmin, conArchivos, async (req, res) =>
     responderLegajo(res, error);
   }
 });
-app.post("/api/legajo/sanciones/:id/archivos", requireAdmin, conArchivos, async (req, res) => {
+app.post("/api/legajo/sanciones/:id/archivos", requireLegajo, conArchivos, async (req, res) => {
   try {
     res.json(await legajo.adjuntarArchivos(db, { sancion_id: Number(req.params.id), archivos: req.files || [], usuario: await nombreAdmin(req) }));
   } catch (error) {
     responderLegajo(res, error);
   }
 });
-app.post("/api/legajo/sanciones/:id/anular", requireAdmin, async (req, res) => {
+app.post("/api/legajo/sanciones/:id/anular", requireLegajo, async (req, res) => {
   try {
     res.json(await legajo.anularSancion(db, { id: Number(req.params.id), motivo: req.body?.motivo, usuario: await nombreAdmin(req) }));
   } catch (error) {
     responderLegajo(res, error);
   }
 });
-app.get("/api/legajo/archivos/:id", requireAdmin, async (req, res) => {
+app.get("/api/legajo/archivos/:id", requireLegajo, async (req, res) => {
   try {
     const a = await legajo.archivoPorId(db, Number(req.params.id));
     res.setHeader("Content-Type", a.tipo);
@@ -5139,7 +5152,7 @@ app.get("/api/legajo/archivos/:id", requireAdmin, async (req, res) => {
     responderLegajo(res, error);
   }
 });
-app.delete("/api/legajo/archivos/:id", requireAdmin, async (req, res) => {
+app.delete("/api/legajo/archivos/:id", requireLegajo, async (req, res) => {
   try {
     res.json(await legajo.quitarArchivo(db, Number(req.params.id)));
   } catch (error) {
