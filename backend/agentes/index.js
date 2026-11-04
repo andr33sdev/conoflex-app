@@ -16,6 +16,7 @@ const { crearSofi } = require("./seguimientoChat");
 const { decisionProduccion } = require("./produccionDecision");
 const { listarOperarios, fichaOperario } = require("./fichaOperario");
 const { confirmarPropuesta, cancelarPropuesta } = require("./ajusteStock");
+const { confirmarPasar26, cancelarPasar26 } = require("./pasarSemis");
 const { armarTemario, olvidarTemario } = require("./temario");
 const { asegurarTablaReuniones, hacerReunion, ultimaReunion, iniciarReunion, ahoraAR } = require("./reunion");
 const { preguntarOficina } = require("./oficina");
@@ -818,6 +819,13 @@ function registrarRutasAgentes(app, { db, pool, ai, mails = null, seguimiento = 
     try {
       const usuario = await quien(req);
       if (!usuario || !(await tienePermiso(usuario, "agente:stock"))) return res.status(403).json({ error: "No tenés acceso a Nati." });
+      if (req.body?.tipo === "transferencia") {
+        if (req.body?.cancelar) return res.json(cancelarPasar26({ usuario, token: req.body?.token }));
+        const t = await confirmarPasar26({ db, usuario, token: req.body?.token });
+        if (t.error) return res.status(t.status || 400).json({ error: t.error });
+        if (t.hechas.length) await registrarActividad(db, "stock", "PASO_26_33", `Pasó ${t.hechas.length} ${t.hechas.length === 1 ? "semielaborado" : "semielaborados"} del 26 al 33`, t.hechas.map((h) => `${h.nombre}: ${h.cantidad}`).join(" · ").slice(0, 400), usuario.nombre).catch(() => {});
+        return res.json({ success: true, ...t });
+      }
       if (req.body?.cancelar) return res.json(cancelarPropuesta({ usuario, token: req.body?.token }));
       const r = await confirmarPropuesta({ db, usuario, token: req.body?.token });
       if (r.error) return res.status(r.status || 400).json({ error: r.error });

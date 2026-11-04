@@ -33,6 +33,48 @@ function TarjetaAjuste({ c, onAceptar, onCancelar }) {
   );
 }
 
+
+/** Confirmación del paso de semielaborados del 26 al 33: lista lo que Nati encontró en la planilla y no hace nada hasta que se toca el botón. */
+function TarjetaTransferencia({ c, onAceptar, onCancelar }) {
+  const n = c.items.length;
+  const pendiente = c.estado === "pendiente" || c.estado === "enviando";
+  const r = c.resultado;
+  return (
+    <div className="mt-3 rounded-xl border border-white/[0.14] bg-white/[0.04] p-3.5" role="group" aria-label="Confirmar paso del 26 al 33">
+      <p className="text-[12px] font-semibold uppercase tracking-wide text-zinc-500">Del 26 al 33 · falta tu confirmación</p>
+      <ul className="mt-2 flex flex-col gap-2">
+        {c.items.map((i) => (
+          <li key={i.semielaborado_id} className="rounded-lg bg-black/30 px-3 py-2">
+            <p className="text-[14.5px] font-bold text-white">{i.nombre} <span className="font-semibold text-zinc-500">· {i.codigo}</span></p>
+            <p className="text-[13.5px] text-zinc-300">Pasar <b className="text-white">{num(i.cantidad)}</b> · 26: {num(i.stock26)} → <b className="text-white">{num(i.stock26Nuevo)}</b> · 33: {num(i.stock33)} → <b className="text-white">{num(i.stock33Nuevo)}</b></p>
+            <p className="text-[12.5px] text-zinc-500">Entrada{i.entradas.length === 1 ? "" : "s"} de la planilla: {i.entradas.map((e) => `${num(e.cantidad)}${e.fecha ? ` (${e.fecha.slice(8, 10)}/${e.fecha.slice(5, 7)})` : ""}`).join(", ")}</p>
+          </li>
+        ))}
+      </ul>
+      {pendiente ? (
+        <div className="mt-3 flex flex-wrap gap-2">
+          <button onClick={onAceptar} disabled={c.estado === "enviando"} className="inline-flex items-center gap-2 min-h-[42px] px-4 rounded-lg bg-[#FF5A00] hover:bg-[#ff6d1f] text-[14px] font-bold text-black disabled:opacity-60">
+            {c.estado === "enviando" ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} strokeWidth={3} />} Sí, pasar {n === 1 ? "este" : `estos ${n}`} al 33
+          </button>
+          <button onClick={onCancelar} disabled={c.estado === "enviando"} className="inline-flex items-center gap-1.5 min-h-[42px] px-3 rounded-lg bg-white/[0.07] hover:bg-white/[0.12] text-[13.5px] font-semibold text-zinc-200 disabled:opacity-60">
+            <X size={15} /> No
+          </button>
+        </div>
+      ) : c.estado === "hecho" && r ? (
+        <div className="mt-3 text-[13.5px] font-semibold">
+          {r.hechas.length > 0 && <p className="text-emerald-400">Listo: pasé {r.hechas.length === 1 ? "1 semielaborado" : `${r.hechas.length} semielaborados`} del 26 al 33.</p>}
+          {r.omitidas.length > 0 && <p className="text-zinc-400">Ya estaba pasado: {r.omitidas.map((o) => o.nombre).join(", ")}.</p>}
+          {r.fallidas.length > 0 && <p className="text-red-400">No pude pasar: {r.fallidas.map((o) => `${o.nombre} (${o.motivo})`).join("; ")}</p>}
+        </div>
+      ) : (
+        <p className={`mt-3 text-[13.5px] font-semibold ${c.estado === "error" ? "text-red-400" : "text-zinc-400"}`}>
+          {c.estado === "cancelado" ? "No se pasó nada." : c.error || "No se pudo pasar."}
+        </p>
+      )}
+    </div>
+  );
+}
+
 /** Confirmación de una regla comercial que Cami propuso: no se guarda hasta que se toca el botón. */
 function TarjetaNota({ c, onAceptar, onCancelar }) {
   return (
@@ -108,7 +150,7 @@ export default function Chat({ perfil, estado, mensajes, enviando, texto, onText
                         </button>
                       </div>
                     )}
-                    {m.confirmacion && ((m.confirmacion.tipo === "nota" || m.confirmacion.tipo === "decision") ? <TarjetaNota c={m.confirmacion} onAceptar={() => onConfirmar?.(i, true)} onCancelar={() => onConfirmar?.(i, false)} /> : <TarjetaAjuste c={m.confirmacion} onAceptar={() => onConfirmar?.(i, true)} onCancelar={() => onConfirmar?.(i, false)} />)}
+                    {m.confirmacion && (m.confirmacion.tipo === "transferencia" ? <TarjetaTransferencia c={m.confirmacion} onAceptar={() => onConfirmar?.(i, true)} onCancelar={() => onConfirmar?.(i, false)} /> : (m.confirmacion.tipo === "nota" || m.confirmacion.tipo === "decision") ? <TarjetaNota c={m.confirmacion} onAceptar={() => onConfirmar?.(i, true)} onCancelar={() => onConfirmar?.(i, false)} /> : <TarjetaAjuste c={m.confirmacion} onAceptar={() => onConfirmar?.(i, true)} onCancelar={() => onConfirmar?.(i, false)} />)}
                     {!m.error && m.texto && (
                       <div className="mt-2 flex items-center gap-1 -ml-2">
                         {m.herramientas?.filter((h) => h.nombre === "liquidar_horas" && h.ok && h.args).slice(-1).map((h) => (
