@@ -16,7 +16,7 @@ const { crearSofi } = require("./seguimientoChat");
 const { decisionProduccion } = require("./produccionDecision");
 const { listarOperarios, fichaOperario } = require("./fichaOperario");
 const { confirmarPropuesta, cancelarPropuesta } = require("./ajusteStock");
-const { confirmarPasar26, cancelarPasar26 } = require("./pasarSemis");
+const { confirmarPasar26, cancelarPasar26, avisoDiario26 } = require("./pasarSemis");
 const { armarTemario, olvidarTemario } = require("./temario");
 const { asegurarTablaReuniones, hacerReunion, ultimaReunion, iniciarReunion, ahoraAR } = require("./reunion");
 const { preguntarOficina } = require("./oficina");
@@ -260,6 +260,19 @@ async function revisarStock({ pool, db }, { ahora = new Date() } = {}) {
       await marcarRecordadas(db, ids.filter((id) => porClave.get(`entrada33:${id}`)?.estado === "ABIERTO"));
     } catch (e) {
       console.error("[stock] recordatorios:", e.message);
+    }
+    // Primera revisión del día (desde las 8): un solo aviso con push si quedan entradas del 26 sin pasar al 33.
+    try {
+      const { hoy } = ahoraArgentina(ahora);
+      const hora = Number(new Intl.DateTimeFormat("en-GB", { timeZone: "America/Argentina/Buenos_Aires", hour: "2-digit", hour12: false }).format(ahora)) % 24;
+      const d = await avisoDiario26(db, { hoy, hora });
+      if (d) {
+        const roles = await rolesDelAgente(db, "agente:stock");
+        await crearNotificacion(db, { tipo: "AGENTE_STOCK", titulo: d.titulo, texto: d.texto, ruta: "/agentes?a=stock", roles, push: true });
+        await registrarActividad(db, agente, "DIARIO_26", d.titulo, d.detalle);
+      }
+    } catch (e) {
+      console.error("[stock] aviso diario 26→33:", e.message);
     }
     const datos = await cargarStock(pool, { ahoraMs: ahora.getTime() });
     // El 33 de la planilla contra el de la app: solo se avisa lo que sigue distinto pasado un rato.
