@@ -8,6 +8,7 @@ const { cargarStock, armarPanorama, nivelDe, UMBRALES } = require("./vigilanteSt
 const { faltantes, prioridadDe } = require("./veraChat");
 const L = require("./listaCompra");
 const { armarPropuesta } = require("./ajusteStock");
+const { armarPropuestaPasar26 } = require("./pasarSemis");
 
 function hoyArgentina() {
   const ahora = new Date();
@@ -28,6 +29,7 @@ TU ESPECIALIDAD (única y exclusiva)
 - Si te piden algo de otra área (sueldos, horas, fichadas, ventas, precios, rentabilidad), decilo con amabilidad en una línea. No lo resuelvas.
 - Por tu cuenta SOLO LEÉS el stock: nunca digas que cargaste, descontaste o compraste algo. Lo único que podés hacer es pasarle materiales a Vera con pasar_a_vera (ella arma la solicitud de compra; vos no comprás ni firmás).
 - MODIFICAR STOCK DE MATERIAS PRIMAS: si la persona te pide sumar, restar o dejar en cierta cantidad el stock de una materia prima, usá proponer_ajuste_stock con exactamente lo que pidió. Eso NO modifica nada: arma una propuesta y en el chat aparece un botón para que la persona confirme. Después de usarla decí en una o dos frases qué entendiste (material, operación y cantidad con su unidad, stock actual y stock que quedaría) y que lo confirme con el botón. Nunca digas que ya quedó cargado: recién queda cuando toca el botón. Si falta el material o la cantidad, preguntá antes de usar la herramienta; no adivines. Si la herramienta devuelve un error (por ejemplo, que solo un administrador puede hacerlo), explicáselo tal cual. Solo materias primas: el stock de semielaborados no lo modificás.
+- PASAR SEMIELABORADOS DEL 26 AL 33: si te preguntan qué hay que pasar del 26 al 33 (o qué movimientos faltan hacer en la app), usá pasar_26_a_33. Lee la planilla en ese momento, te dice qué entradas al 33 vinieron del 26 y todavía no se pasaron en la app, y deja la propuesta lista para confirmar con un botón. Contale a la persona qué encontraste y ofrecele hacerlo: nunca digas que lo pasaste; recién se hace cuando toca el botón. Si no hay nada pendiente, decilo. Si algún semielaborado no tiene stock suficiente en el 26 o no se reconoce el código, avisalo aparte (no se propone).
 - Todo número, nombre, fecha y cantidad sale textualmente del resultado de una herramienta. Nunca inventes stock, consumos ni proveedores. Si una herramienta no devuelve algo, decí que no lo tenés.
 - Materias primas: NO se estima demanda en el tiempo. Solo se miran las que están en el plan de producción de la semana: lo que falta producir de cada lote por su receta contra el stock (lo que quedó sin producir al terminar la semana deja de contar). Si una materia prima no está en el plan de la semana, decí que no hay cálculo para ella. Los semielaborados sí usan la demanda de ventas ("días de stock" es una estimación; aclaralo si la decisión depende de eso).
 - Para el estado general usá panorama_stock; para un material puntual consultar_materia_prima; para un semielaborado consultar_semielaborado; para decisiones, que_comprar y que_producir.
@@ -92,6 +94,7 @@ const HERRAMIENTAS = [
           required: ["materia_prima", "operacion", "cantidad"],
         },
       },
+      { name: "pasar_26_a_33", description: "Lee la planilla (ENTRADA 33) en este momento y arma la lista de semielaborados que entraron al 33 desde el 26 y todavía no se pasaron en la app. NO modifica nada: deja una propuesta que la persona confirma con un botón en el chat. Usala cuando pregunten qué hay que pasar del 26 al 33.", parameters: { type: "OBJECT", properties: {} } },
       { name: "calculadora", description: "Hace una cuenta exacta. Usala para cualquier operación aritmética.", parameters: { type: "OBJECT", properties: { expresion: { type: "STRING", description: "Expresión, ej: (1200 - 340) / 30" } }, required: ["expresion"] } },
     ],
   },
@@ -105,6 +108,7 @@ const PALABRAS_HERRAMIENTA = {
   que_producir: "Calculó qué fabricar",
   pasar_a_vera: "Le pasó materiales a Vera",
   proponer_ajuste_stock: "Preparó un ajuste de stock para confirmar",
+  pasar_26_a_33: "Revisó la planilla: entradas del 26 al 33",
   compras_en_curso: "Revisó las compras en curso",
   pedidos_internos: "Revisó los pedidos internos",
   avisos_abiertos: "Revisó sus avisos",
@@ -156,6 +160,24 @@ function crearNati({ pool, db, ai }) {
       uso.derivacion = { agente: "compras", nombre: vera.nombre, puesto: vera.puesto, pregunta: "Mostrame la lista de compra que tenés armada y decime qué falta definir.", motivo: `Nati le pasó ${n} ${n === 1 ? "material" : "materiales"} a la solicitud #${res.solicitud_id}` };
       uso.texto = `Le pasó ${n} a Vera`;
       return { ok: true, solicitud_id: res.solicitud_id, solicitud_nueva: res.solicitud_nueva, agregados: res.agregados, actualizados: res.actualizados, ...(noEncontrados.length ? { no_encontrados: noEncontrados } : {}), instruccion: "Decile a la persona en la primera línea que se los pasaste a Vera, mostrá en tabla lo que pasaste (material, cantidad) y que Vera lo ve en su lista. No digas que se compró ni que está firmada." };
+    }
+    if (llamada.name === "pasar_26_a_33") {
+      if (ctx.modo === "oficina") return { error: "Esto se pide hablando directo con Nati, para poder confirmarlo con el botón." };
+      const r = await armarPropuestaPasar26({ db: pool, usuario: ctx.usuario });
+      if (r.error) return r;
+      if (r.propuesta) {
+        uso.confirmacion = r.propuesta;
+        uso.texto = `Preparó el paso de ${r.propuesta.items.length} ${r.propuesta.items.length === 1 ? "semielaborado" : "semielaborados"} del 26 al 33`;
+      }
+      return {
+        pendiente_de_confirmacion: !!r.propuesta,
+        planilla_leida_ahora: r.planilla_leida_ahora,
+        ...(r.error_planilla ? { no_pude_leer_la_planilla_ahora: r.error_planilla } : {}),
+        a_pasar: (r.propuesta?.items || []).map((i) => ({ codigo: i.codigo, nombre: i.nombre, cantidad: i.cantidad, stock_26_hoy: i.stock26, stock_33_hoy: i.stock33, entradas: i.entradas.map((e) => ({ fecha: e.fecha, cantidad: e.cantidad, op: e.op })) })),
+        no_alcanzan_en_el_26: r.no_alcanzan,
+        codigo_no_reconocido: r.sin_codigo,
+        instruccion: r.propuesta ? "Contale qué entradas encontraste y ofrecele hacerlo; avisale que lo confirma con el botón de abajo. No digas que ya lo pasaste." : "No hay entradas del 26 pendientes de pasar. Decilo y, si hay no_alcanzan_en_el_26 o codigo_no_reconocido, avisalo.",
+      };
     }
     if (llamada.name === "proponer_ajuste_stock") {
       if (ctx.modo === "oficina") return { error: "Los ajustes de stock se piden hablando directo con Nati, para poder confirmarlos con el botón." };

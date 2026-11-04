@@ -185,8 +185,8 @@ export default function Pantalla({ agente, usuario, pregunta, onPreguntaUsada, o
     poner({ estado: "enviando" });
     try {
       const url = c.tipo === "nota" || c.tipo === "decision" ? "/api/agentes/ventas/confirmar-nota" : "/api/agentes/stock/confirmar";
-      const r = await api(url, { method: "POST", body: { token: c.token, cancelar: !aceptar } });
-      poner(aceptar ? { estado: "hecho", stockFinal: r.stock_actual } : { estado: "cancelado" });
+      const r = await api(url, { method: "POST", body: { token: c.token, cancelar: !aceptar, ...(c.tipo === "transferencia" ? { tipo: "transferencia" } : {}) } });
+      poner(aceptar ? { estado: "hecho", stockFinal: r.stock_actual, resultado: c.tipo === "transferencia" ? r : undefined } : { estado: "cancelado" });
       if (aceptar) setVersion((v) => v + 1);
     } catch (e) {
       poner({ estado: "error", error: e.message });
