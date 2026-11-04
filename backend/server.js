@@ -17,6 +17,7 @@ const { registrarObservaciones } = require("./agentes/ventasAprendizaje");
 const { calcularMpSemana } = require("./mpPlanSemanal");
 const { separarDuplicadas, asegurarTablaDuplicadas, ultimoRecDelReloj } = require("./fichero");
 const { crearFichadaManual, cambiarTipoFichada, quitarFichada } = require("./fichadasManuales");
+const legajo = require("./legajo");
 const { asegurarTablasProduccion, registrarRutasProduccion } = require("./produccionRutas");
 const { asegurarTablaReflectivas, registrarRutasReflectivas } = require("./reflectivasRutas");
 const { asegurarTablasIngenieria, registrarRutasIngenieria } = require("./ingenieriasRutas");
@@ -5047,6 +5048,80 @@ app.delete("/api/fichero/fichadas/:id", requireAdmin, async (req, res) => {
     res.json(await quitarFichada(db, { id: Number(req.params.id), motivo: req.query?.motivo, usuario: await nombreAdmin(req) }));
   } catch (error) {
     responderFichada(res, error);
+  }
+});
+
+// ---------- Legajo por operario (solo administración): resumen por rango, producción y sanciones ----------
+const subirLegajo = multer({ storage: multer.memoryStorage(), limits: { fileSize: legajo.MAX_ARCHIVO, files: 5 } });
+const conArchivos = (req, res, next) =>
+  subirLegajo.array("archivos", 5)(req, res, (e) => {
+    if (!e) return next();
+    res.status(e.code === "LIMIT_FILE_SIZE" ? 413 : 400).json({ error: e.code === "LIMIT_FILE_SIZE" ? "Un archivo pesa más de 6 MB." : "No se pudieron recibir los archivos." });
+  });
+const responderLegajo = (res, error) => {
+  if (error.status) return res.status(error.status).json({ error: error.message });
+  console.error("Error en el legajo:", error);
+  return res.status(500).json({ error: "No se pudo completar la operación." });
+};
+app.get("/api/legajo/operarios", requireAdmin, async (req, res) => {
+  try {
+    res.json(await legajo.listarLegajos(db));
+  } catch (error) {
+    responderLegajo(res, error);
+  }
+});
+app.get("/api/legajo/resumen", requireAdmin, async (req, res) => {
+  try {
+    res.json(await legajo.resumenLegajo(db, { operario: req.query.operario, desde: req.query.desde, hasta: req.query.hasta }));
+  } catch (error) {
+    responderLegajo(res, error);
+  }
+});
+app.get("/api/legajo/sanciones", requireAdmin, async (req, res) => {
+  try {
+    res.json(await legajo.leerSanciones(db, String(req.query.operario || "").trim()));
+  } catch (error) {
+    responderLegajo(res, error);
+  }
+});
+app.post("/api/legajo/sanciones", requireAdmin, conArchivos, async (req, res) => {
+  try {
+    const b = req.body || {};
+    res.json(await legajo.crearSancion(db, { operario: b.operario, fecha: b.fecha, motivo: b.motivo, detalle: b.detalle, suspension_desde: b.suspension_desde, suspension_hasta: b.suspension_hasta, archivos: req.files || [], usuario: await nombreAdmin(req) }));
+  } catch (error) {
+    responderLegajo(res, error);
+  }
+});
+app.post("/api/legajo/sanciones/:id/archivos", requireAdmin, conArchivos, async (req, res) => {
+  try {
+    res.json(await legajo.adjuntarArchivos(db, { sancion_id: Number(req.params.id), archivos: req.files || [], usuario: await nombreAdmin(req) }));
+  } catch (error) {
+    responderLegajo(res, error);
+  }
+});
+app.post("/api/legajo/sanciones/:id/anular", requireAdmin, async (req, res) => {
+  try {
+    res.json(await legajo.anularSancion(db, { id: Number(req.params.id), motivo: req.body?.motivo, usuario: await nombreAdmin(req) }));
+  } catch (error) {
+    responderLegajo(res, error);
+  }
+});
+app.get("/api/legajo/archivos/:id", requireAdmin, async (req, res) => {
+  try {
+    const a = await legajo.archivoPorId(db, Number(req.params.id));
+    res.setHeader("Content-Type", a.tipo);
+    res.setHeader("Content-Disposition", `inline; filename*=UTF-8''${encodeURIComponent(a.nombre)}`);
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.send(a.contenido);
+  } catch (error) {
+    responderLegajo(res, error);
+  }
+});
+app.delete("/api/legajo/archivos/:id", requireAdmin, async (req, res) => {
+  try {
+    res.json(await legajo.quitarArchivo(db, Number(req.params.id)));
+  } catch (error) {
+    responderLegajo(res, error);
   }
 });
 

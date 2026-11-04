@@ -40,6 +40,7 @@ import {
   PRESENTISMO,
   valorHoraOrdinaria,
 } from "./liquidacionTurno";
+import Legajo from "./legajo/Legajo";
 const API_BASE_URL = import.meta.env?.VITE_API_URL || "";
 const getApiUrl = (path) =>
   `${API_BASE_URL}${path.startsWith("/") ? path : "/" + path}`;
@@ -75,6 +76,7 @@ export default function FicheroModule() {
   const [asignaciones, setAsignaciones] = useState({});
   const [periodoEscalaActivo, setPeriodoEscalaActivo] = useState("2026-10");
   const [modalCategoriasAbierto, setModalCategoriasAbierto] = useState(false);
+  const [legajoAbierto, setLegajoAbierto] = useState(false);
 
   // Feriados globales { [fechaISO]: boolean }
   const [feriadosGlobales, setFeriadosGlobales] = useState({});
@@ -1088,6 +1090,16 @@ export default function FicheroModule() {
                       <Square size={11} />
                       <span>Destildar</span>
                     </button>
+                    {esAdminAsistencia && (
+                      <button
+                        onClick={() => setLegajoAbierto(true)}
+                        className="text-[9px] font-bold uppercase tracking-wider text-[#FF5A00] bg-[#FF5A00]/10 border border-[#FF5A00]/30 hover:bg-[#FF5A00]/20 px-2 py-0.5 rounded cursor-pointer transition-colors flex items-center gap-1"
+                        title="Legajo: resumen por fechas, producción y amonestaciones"
+                      >
+                        <Users size={11} />
+                        <span>Legajo</span>
+                      </button>
+                    )}
                   </div>
                 </div>
 
@@ -1952,6 +1964,8 @@ export default function FicheroModule() {
           </div>
         </div>
       )}
+
+      {legajoAbierto && <Legajo operarioInicial={operarioSeleccionado} onCerrar={() => setLegajoAbierto(false)} />}
 
       {/* MODAL: ASIGNACIÓN DE CATEGORÍAS */}
       {modalCategoriasAbierto && (
