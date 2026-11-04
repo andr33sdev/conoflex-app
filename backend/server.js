@@ -11,12 +11,13 @@ const path = require("path");
 const jwt = require("jsonwebtoken");
 const crypto = require("crypto");
 const { crearConnie } = require("./connie");
-const { asegurarTablasAgentes, registrarRutasAgentes, iniciarVigilantes } = require("./agentes");
+const { asegurarTablasAgentes, registrarRutasAgentes, iniciarVigilantes, ahoraArgentina } = require("./agentes");
+const { cierreQuincena } = require("./cierreQuincena");
 const { sinCita: sinCitaMail, notasTexto: notasVentasTexto, validarDescuento, ERROR_DESCUENTO, sugerirDescuento, ejemplosEnviadosTexto } = require("./agentes/ventasMails");
 const { registrarObservaciones } = require("./agentes/ventasAprendizaje");
 const { calcularMpSemana } = require("./mpPlanSemanal");
 const { separarDuplicadas, asegurarTablaDuplicadas, ultimoRecDelReloj } = require("./fichero");
-const { crearFichadaManual, cambiarTipoFichada, quitarFichada } = require("./fichadasManuales");
+const { crearFichadaManual, cambiarTipoFichada, quitarFichada, listarAuditoria } = require("./fichadasManuales");
 const legajo = require("./legajo");
 const { asegurarTablasProduccion, registrarRutasProduccion } = require("./produccionRutas");
 const { asegurarTablaReflectivas, registrarRutasReflectivas } = require("./reflectivasRutas");
@@ -5048,6 +5049,27 @@ app.delete("/api/fichero/fichadas/:id", requireAdmin, async (req, res) => {
     res.json(await quitarFichada(db, { id: Number(req.params.id), motivo: req.query?.motivo, usuario: await nombreAdmin(req) }));
   } catch (error) {
     responderFichada(res, error);
+  }
+});
+
+app.get("/api/fichero/auditoria", requireAdmin, async (req, res) => {
+  try {
+    res.json(await listarAuditoria(db, { nombre: String(req.query.operario || "").slice(0, 150), limite: req.query.limite }));
+  } catch (error) {
+    responderFichada(res, error);
+  }
+});
+
+// Cierre de quincena: qué falta resolver por operario antes de liquidar.
+app.get("/api/fichero/cierre", requirePermiso("control-asistencia"), async (req, res) => {
+  try {
+    const { hoy, ahoraMs } = ahoraArgentina(new Date());
+    const r = await cierreQuincena(db, { mes: String(req.query.mes || ""), quincena: req.query.quincena, hoy, ahoraMs });
+    if (r.error) return res.status(r.status || 400).json({ error: r.error });
+    res.json(r);
+  } catch (error) {
+    console.error("Error en el cierre de quincena:", error);
+    res.status(500).json({ error: "No se pudo armar el cierre." });
   }
 });
 

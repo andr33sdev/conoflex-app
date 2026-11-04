@@ -2,6 +2,16 @@ import { useCallback, useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { api } from "../produccion/util";
 import { cuando, fechaCorta, TIPOS_AVISO } from "./formato";
+import { pedirIrAlDia } from "../asistencia/irAlDia";
+
+const TIPOS_CON_DIA = new Set(["SIN_SALIDA", "SIN_INGRESO", "POSIBLE_FALTA"]);
+
+/** Va a Control Asistencia con el día del aviso ya abierto, para corregir la fichada ahí mismo. */
+function abrirDiaEnAsistencia(h) {
+  pedirIrAlDia(h.operario, String(h.fecha).slice(0, 10));
+  window.history.pushState({}, "", "/control-asistencia");
+  window.dispatchEvent(new PopStateEvent("popstate"));
+}
 
 const ESTADO_TXT = { RESUELTO: "Resuelto", JUSTIFICADA: "Justificada", DESCARTADA: "Descartado" };
 const SEV = { ALTA: "Urgente", MEDIA: "", BAJA: "" };
@@ -33,6 +43,9 @@ function Aviso({ h, onCambiar, ocupado }) {
           )}
           {abierto && !justificando && (
             <div className="mt-2.5 flex flex-wrap gap-1.5 -ml-1">
+              {TIPOS_CON_DIA.has(h.tipo) && h.operario && h.fecha && (
+                <button onClick={() => abrirDiaEnAsistencia(h)} disabled={ocupado} className={`${btn} bg-[#FF5A00] text-white hover:bg-[#ff6e1f]`}>Abrir el día</button>
+              )}
               {h.tipo === "POSIBLE_FALTA" && (
                 <button onClick={() => setJustificando(true)} disabled={ocupado} className={`${btn} bg-white text-black hover:bg-zinc-200`}>Justificar falta</button>
               )}
