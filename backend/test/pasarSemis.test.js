@@ -15,7 +15,7 @@ test("Nati: lee la planilla, propone lo que vino del 26 y lo pasa recién al con
     pool = mysql.createPool({ host: process.env.TEST_DB_HOST || "localhost", user: process.env.TEST_DB_USER || "root", password: process.env.TEST_DB_PASSWORD || "", database: process.env.TEST_DB_NAME || "test" });
     await pool.query("SELECT 1");
   } catch { if (pool) await pool.end().catch(() => {}); return; }
-  const limpiar = async () => { for (const t of ["semi_transferencias", "semi_hoja_movs", "semi_ajustes", "semi_alineacion", "prod_semi_stock_movs", "semielaborados"]) await pool.query(`DROP TABLE IF EXISTS ${t}`); };
+  const limpiar = async () => { for (const t of ["semi_transferencias", "semi_hoja_movs", "agentes_actividad", "semi_ajustes", "semi_alineacion", "prod_semi_stock_movs", "semielaborados"]) await pool.query(`DROP TABLE IF EXISTS ${t}`); };
   try {
     await limpiar();
     await pool.query("CREATE TABLE semielaborados (id INT AUTO_INCREMENT PRIMARY KEY, codigo VARCHAR(50), nombre VARCHAR(100), stock_33 DOUBLE DEFAULT 0, stock_26 DOUBLE DEFAULT 0, stock_ayolas DOUBLE DEFAULT 0, stock_37 DOUBLE DEFAULT 0)");
@@ -42,6 +42,29 @@ test("Nati: lee la planilla, propone lo que vino del 26 y lo pasa recién al con
     assert.deepEqual(r.sin_codigo.map((x) => x.codigo), ["ZZ9"]);
     // Proponer no cambia nada.
     assert.equal(await st(1, "stock_26"), 100);
+
+    // Filtros: por fecha y por producto; lo que queda afuera sigue pendiente.
+    const iso = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, "0")}-${String(hoy.getDate()).padStart(2, "0")}`;
+    const fh = await P.armarPropuestaPasar26({ db: pool, usuario: admin, leerPlanilla: false, filtro: { desde: iso, hasta: iso, codigo: "ab1" } });
+    assert.equal(fh.propuesta.items[0].cantidad, 45);
+    const manana = new Date(hoy.getTime() + 86400000);
+    const isoM = `${manana.getFullYear()}-${String(manana.getMonth() + 1).padStart(2, "0")}-${String(manana.getDate()).padStart(2, "0")}`;
+    const fm = await P.armarPropuestaPasar26({ db: pool, usuario: admin, leerPlanilla: false, filtro: { desde: isoM } });
+    assert.equal(fm.vacio, true);
+    assert.ok(fm.entradas_fuera_del_filtro >= 3);
+    const fp = await P.armarPropuestaPasar26({ db: pool, usuario: admin, leerPlanilla: false, filtro: { codigo: "tope" } });
+    assert.equal(fp.vacio, true); // CD2 no alcanza
+    assert.equal(fp.no_alcanzan[0].codigo, "CD2");
+
+    // Aviso diario: nada antes de las 8, uno solo por día y solo si hay pendientes.
+    await pool.query("CREATE TABLE IF NOT EXISTS agentes_actividad (id INT AUTO_INCREMENT PRIMARY KEY, agente VARCHAR(30), tipo VARCHAR(20), titulo VARCHAR(255), detalle TEXT NULL, usuario VARCHAR(120) NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)");
+    await pool.query("DELETE FROM agentes_actividad");
+    assert.equal(await P.avisoDiario26(pool, { hoy: iso, hora: 7 }), null);
+    const av = await P.avisoDiario26(pool, { hoy: iso, hora: 9 });
+    assert.match(av.titulo, /3 semielaborados|2 semielaborados/);
+    await pool.query("INSERT INTO agentes_actividad (agente, tipo, titulo, detalle) VALUES ('stock','DIARIO_26','x',?)", [iso]);
+    assert.equal(await P.avisoDiario26(pool, { hoy: iso, hora: 10 }), null);
+    assert.ok(await P.avisoDiario26(pool, { hoy: isoM, hora: 10 }));
 
     // Otra persona no puede confirmar la propuesta; cancelar la deja sin efecto.
     assert.equal((await P.confirmarPasar26({ db: pool, usuario: otro, token: r.propuesta.token })).status, 404);
