@@ -63,6 +63,11 @@ test("fichadas manuales: rec_no ordenado, cambio de tipo, quitar y auditoría", 
     assert.deepEqual(aud.map((x) => x.accion), ["ALTA", "ALTA", "TIPO", "QUITAR", "QUITAR", "ALTA"]);
     assert.equal(aud[0].motivo, "Olvidó fichar");
     assert.equal(aud[0].usuario, u);
+    const hist = await F.listarAuditoria(pool, { nombre: "Juan" });
+    assert.equal(hist.length, 6);
+    assert.equal(hist[0].accion, "ALTA"); // el más nuevo primero
+    assert.equal(hist[5].despues.tipo, "SALIDA");
+    assert.equal((await F.listarAuditoria(pool, { nombre: "Otro" })).length, 0);
   } finally {
     await limpiar();
     await pool.end();
