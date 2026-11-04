@@ -28,6 +28,8 @@ import {
   Clock,
 } from "lucide-react";
 
+import FichadasDelDia from "./asistencia/FichadasDelDia";
+import { esAdminLocal } from "./asistencia/esAdmin";
 import {
   FACTORES,
   HORAS_MENSUALES,
@@ -586,6 +588,19 @@ export default function FicheroModule() {
       return nuevo;
     });
   };
+
+  // Fichadas del día abierto en el modal (más la madrugada siguiente, que es la salida del turno noche).
+  const esAdminAsistencia = useMemo(() => esAdminLocal(), []);
+  const fichadasDelDiaConfig = useMemo(() => {
+    if (!diaConfigurando || !operarioSeleccionado) return [];
+    const dia = diaConfigurando.fechaISO;
+    return fichadas
+      .filter((f) => f.nombre === operarioSeleccionado)
+      .map((f) => ({ f, t: formatearFechaHora(f.fecha_hora) }))
+      .filter(({ t }) => t.fechaISO === dia || (t.fechaISO > dia && t.fechaISO <= new Date(new Date(`${dia}T12:00:00`).getTime() + 86400000).toISOString().slice(0, 10) && t.horaNum < 12))
+      .sort((a, b) => a.t.timestamp - b.t.timestamp)
+      .map(({ f, t }) => ({ id: f.id, tipo: f.tipo, hora: t.horaVisual.slice(0, 5), fechaISO: t.fechaISO, manual: f.metodo === "Manual", otroDia: t.fechaISO !== dia }));
+  }, [diaConfigurando, operarioSeleccionado, fichadas]);
 
   const abrirConfiguracionDia = (celda) => {
     if (!celda) return;
@@ -1794,7 +1809,16 @@ export default function FicheroModule() {
               </button>
             </div>
 
-            <div className="p-5 flex flex-col gap-5 text-xs">
+            <div className="p-5 flex flex-col gap-5 text-xs overflow-y-auto max-h-[70vh]">
+              {esAdminAsistencia && (
+                <FichadasDelDia
+                  key={`${operarioSeleccionado}_${diaConfigurando.fechaISO}`}
+                  operario={operarioSeleccionado}
+                  fechaISO={diaConfigurando.fechaISO}
+                  fichadas={fichadasDelDiaConfig}
+                  alCambiar={() => cargarFichadas(true)}
+                />
+              )}
               <div className="bg-purple-950/20 border border-purple-800/40 p-3.5 rounded-lg">
                 <label className="flex items-start gap-3 cursor-pointer">
                   <input
