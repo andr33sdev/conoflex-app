@@ -16,8 +16,15 @@ function limpiarVencidas(ahora = Date.now()) {
 }
 
 /** Las entradas al 33 que vinieron del 26 y siguen sin pasarse en la app, agrupadas por semielaborado. */
-async function pendientesDel26(db, { dias = DIAS_BUSQUEDA } = {}) {
-  const entradas = (await entradasPendientes(db, { dias })).filter((e) => e.deposito === "26");
+async function pendientesDel26(db, { dias = DIAS_BUSQUEDA, desde = null, hasta = null, codigo = null } = {}) {
+  const todas = (await entradasPendientes(db, { dias })).filter((e) => e.deposito === "26");
+  const q = codigo ? String(codigo).normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().trim() : "";
+  const entradas = todas.filter((e) => {
+    if (desde && e.fecha < desde) return false;
+    if (hasta && e.fecha > hasta) return false;
+    if (q && !`${e.codigo} ${e.nombre}`.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().includes(q)) return false;
+    return true;
+  });
   const [filas] = await db.query("SELECT id, codigo, nombre, stock_26, stock_33 FROM semielaborados");
   const porCodigo = new Map(filas.map((s) => [String(s.codigo).toUpperCase().trim(), s]));
   const grupos = new Map();
@@ -33,14 +40,14 @@ async function pendientesDel26(db, { dias = DIAS_BUSQUEDA } = {}) {
     g.entradas.push({ id: e.id, fecha: e.fecha, cantidad: Number(e.cantidad), op: e.op || null });
     grupos.set(s.id, g);
   }
-  return { grupos: [...grupos.values()], noEncontradas };
+  return { grupos: [...grupos.values()], noEncontradas, fueraDelFiltro: todas.length - entradas.length };
 }
 
 /**
  * Lee la planilla ahora, arma la lista y deja una propuesta para confirmar.
  * Devuelve { error } | { vacio, ... } | { propuesta, ... }.
  */
-async function armarPropuestaPasar26({ db, usuario, leerPlanilla = true, traer = null, ahora = Date.now() }) {
+async function armarPropuestaPasar26({ db, usuario, leerPlanilla = true, traer = null, ahora = Date.now(), filtro = {} }) {
   if (!esAdmin(usuario)) return { error: "Solo un administrador puede pasar stock entre depósitos. Pedile a un administrador que lo confirme." };
   let planillaLeida = false;
   let errorPlanilla = null;
@@ -54,10 +61,11 @@ async function armarPropuestaPasar26({ db, usuario, leerPlanilla = true, traer =
       errorPlanilla = e.message;
     }
   }
-  const { grupos, noEncontradas } = await pendientesDel26(db);
+  const iso = (v) => (/^\d{4}-\d{2}-\d{2}$/.test(String(v || "")) ? String(v) : null);
+  const { grupos, noEncontradas, fueraDelFiltro } = await pendientesDel26(db, { desde: iso(filtro.desde), hasta: iso(filtro.hasta), codigo: filtro.codigo || null });
   const pasables = grupos.filter((g) => g.stock26 + 1e-9 >= g.cantidad);
   const noAlcanzan = grupos.filter((g) => g.stock26 + 1e-9 < g.cantidad).map((g) => ({ codigo: g.codigo, nombre: g.nombre, cantidad: g.cantidad, stock26: g.stock26 }));
-  const base = { planilla_leida_ahora: planillaLeida, ...(errorPlanilla ? { error_planilla: errorPlanilla } : {}), no_alcanzan: noAlcanzan, sin_codigo: noEncontradas, total_pendientes: grupos.length };
+  const base = { planilla_leida_ahora: planillaLeida, ...(errorPlanilla ? { error_planilla: errorPlanilla } : {}), no_alcanzan: noAlcanzan, sin_codigo: noEncontradas, total_pendientes: grupos.length, entradas_fuera_del_filtro: fueraDelFiltro };
   if (!pasables.length) return { vacio: true, ...base };
   limpiarVencidas(ahora);
   const token = crypto.randomBytes(12).toString("hex");
@@ -99,4 +107,25 @@ function cancelarPasar26({ usuario, token }) {
   return { ok: true };
 }
 
-module.exports = { pendientesDel26, armarPropuestaPasar26, confirmarPasar26, cancelarPasar26, DIAS_BUSQUEDA };
+const HORA_AVISO = 8; // Argentina: el aviso sale en la primera revisión desde esta hora
+
+/**
+ * Aviso diario: si hay entradas del 26 sin pasar (según lo último que leyó de la planilla) y hoy todavía no avisó,
+ * devuelve el texto para la notificación. No lee la planilla: la revisión de Nati ya la acaba de leer.
+ * hoy = 'YYYY-MM-DD' y hora = 0..23 en Argentina.
+ */
+async function avisoDiario26(db, { hoy, hora }) {
+  if (hora < HORA_AVISO) return null;
+  const [ya] = await db.query("SELECT id FROM agentes_actividad WHERE agente = 'stock' AND tipo = 'DIARIO_26' AND detalle = ? LIMIT 1", [hoy]);
+  if (ya.length) return null;
+  const { grupos } = await pendientesDel26(db);
+  if (!grupos.length) return null;
+  const unidades = grupos.reduce((a, g) => a + g.cantidad, 0);
+  const n = grupos.length;
+  const num = (v) => Math.round(v).toLocaleString("es-AR");
+  const titulo = n === 1 ? "Nati: tenés 1 semielaborado del 26 sin pasar al 33" : `Nati: tenés ${n} semielaborados del 26 sin pasar al 33`;
+  const texto = `Son ${num(unidades)} u. que la planilla ya tomó del 26. Entrá a Nati y pedile que los pase: vos decidís con un botón.`;
+  return { titulo, texto, detalle: hoy, n, unidades };
+}
+
+module.exports = { avisoDiario26, HORA_AVISO, pendientesDel26, armarPropuestaPasar26, confirmarPasar26, cancelarPasar26, DIAS_BUSQUEDA };
