@@ -16,6 +16,7 @@ const { sinCita: sinCitaMail, notasTexto: notasVentasTexto, validarDescuento, ER
 const { registrarObservaciones } = require("./agentes/ventasAprendizaje");
 const { calcularMpSemana } = require("./mpPlanSemanal");
 const { separarDuplicadas, asegurarTablaDuplicadas, ultimoRecDelReloj } = require("./fichero");
+const { crearFichadaManual, cambiarTipoFichada, quitarFichada } = require("./fichadasManuales");
 const { asegurarTablasProduccion, registrarRutasProduccion } = require("./produccionRutas");
 const { asegurarTablaReflectivas, registrarRutasReflectivas } = require("./reflectivasRutas");
 const { asegurarTablasIngenieria, registrarRutasIngenieria } = require("./ingenieriasRutas");
@@ -5009,6 +5010,43 @@ app.get("/api/fichero/historial", async (req, res) => {
     return res.json(rows);
   } catch (error) {
     return res.status(500).json({ error: error.message });
+  }
+});
+
+// Corrección de fichadas desde la web (solo administración). Ver fichadasManuales.js.
+const nombreAdmin = async (req) => {
+  try {
+    const [r] = await db.query("SELECT nombre FROM usuarios WHERE id = ?", [req.user?.id]);
+    return r[0]?.nombre || `usuario ${req.user?.id}`;
+  } catch {
+    return `usuario ${req.user?.id}`;
+  }
+};
+const responderFichada = (res, error) => {
+  if (error.status) return res.status(error.status).json({ error: error.message });
+  console.error("Error en corrección de fichadas:", error);
+  return res.status(500).json({ error: "No se pudo guardar el cambio." });
+};
+app.post("/api/fichero/fichadas/manual", requireAdmin, async (req, res) => {
+  try {
+    const { nombre, fecha_hora, tipo, motivo } = req.body || {};
+    res.json(await crearFichadaManual(db, { nombre, fecha_hora, tipo, motivo, usuario: await nombreAdmin(req) }));
+  } catch (error) {
+    responderFichada(res, error);
+  }
+});
+app.patch("/api/fichero/fichadas/:id/tipo", requireAdmin, async (req, res) => {
+  try {
+    res.json(await cambiarTipoFichada(db, { id: Number(req.params.id), tipo: req.body?.tipo, motivo: req.body?.motivo, usuario: await nombreAdmin(req) }));
+  } catch (error) {
+    responderFichada(res, error);
+  }
+});
+app.delete("/api/fichero/fichadas/:id", requireAdmin, async (req, res) => {
+  try {
+    res.json(await quitarFichada(db, { id: Number(req.params.id), motivo: req.query?.motivo, usuario: await nombreAdmin(req) }));
+  } catch (error) {
+    responderFichada(res, error);
   }
 });
 
