@@ -30,6 +30,9 @@ import {
 
 import FichadasDelDia from "./asistencia/FichadasDelDia";
 import { esAdminLocal } from "./asistencia/esAdmin";
+import CierreQuincena from "./asistencia/CierreQuincena";
+import HistorialCambios from "./asistencia/HistorialCambios";
+import { leerIrAsistencia, consumirIrAlDia } from "./asistencia/irAlDia";
 import {
   FACTORES,
   HORAS_MENSUALES,
@@ -90,9 +93,14 @@ export default function FicheroModule() {
     useState(9);
 
   // Calendario y Días Tildados para Extras
-  const [operarioSeleccionado, setOperarioSeleccionado] = useState(null);
+  // Si se llegó desde un aviso (Lía) o desde el cierre de quincena, arranca en ese operario y mes y abre el día.
+  const [irAlDia, setIrAlDia] = useState(leerIrAsistencia);
+  const [configCargada, setConfigCargada] = useState(false);
+  const [modalCierre, setModalCierre] = useState(false);
+  const [modalHistorial, setModalHistorial] = useState(false);
+  const [operarioSeleccionado, setOperarioSeleccionado] = useState(() => irAlDia?.operario || null);
   const [mesCalendario, setMesCalendario] = useState(() => {
-    const hoy = new Date();
+    const hoy = irAlDia ? new Date(`${irAlDia.fecha}T12:00:00`) : new Date();
     return { anio: hoy.getFullYear(), mes: hoy.getMonth() };
   });
   const [diasTildadosExtras, setDiasTildadosExtras] = useState({});
@@ -174,6 +182,8 @@ export default function FicheroModule() {
       }
     } catch (err) {
       console.error("Error cargando configuración de días:", err);
+    } finally {
+      setConfigCargada(true);
     }
   }, []);
 
@@ -625,6 +635,26 @@ export default function FicheroModule() {
     }
   };
 
+  // Abre el día pedido apenas están cargadas las fichadas y la configuración.
+  useEffect(() => {
+    if (!irAlDia || loading || !configCargada) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    abrirConfiguracionDia({ fechaISO: irAlDia.fecha });
+    consumirIrAlDia();
+    setIrAlDia(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [irAlDia, loading, configCargada]);
+
+  // Desde el cierre de quincena: ir a ese operario, mes y día.
+  const abrirDiaDe = (nombre, fechaISO) => {
+    const f = new Date(`${fechaISO}T12:00:00`);
+    setModalCierre(false);
+    setOperarioSeleccionado(nombre);
+    setMesCalendario({ anio: f.getFullYear(), mes: f.getMonth() });
+    setVista("calendario");
+    setIrAlDia({ operario: nombre, fecha: fechaISO });
+  };
+
   const guardarConfiguracionDia = async () => {
     if (!diaConfigurando) return;
     const fechaISO = diaConfigurando.fechaISO;
@@ -961,6 +991,28 @@ export default function FicheroModule() {
               <span className="hidden 2xl:inline">ASIGNAR </span>CATEGORÍAS
             </span>
           </button>
+
+          <button
+            onClick={() => setModalCierre(true)}
+            title="Cierre de quincena: qué falta resolver antes de liquidar"
+            aria-label="Cierre de quincena"
+            className="bg-[#18181b] hover:bg-[#27272a] border border-zinc-700 text-white font-bold uppercase tracking-widest text-[10px] px-2 sm:px-3.5 py-2.5 rounded flex items-center justify-center gap-1.5 sm:gap-2 transition-colors cursor-pointer shadow-sm"
+          >
+            <CheckSquare size={14} className="text-[#FF5A00] shrink-0" />
+            <span className="hidden 2xl:inline">CIERRE</span>
+          </button>
+
+          {esAdminAsistencia && (
+            <button
+              onClick={() => setModalHistorial(true)}
+              title="Quién cambió qué en las fichadas"
+              aria-label="Cambios en las fichadas"
+              className="bg-[#18181b] hover:bg-[#27272a] border border-zinc-700 text-white font-bold uppercase tracking-widest text-[10px] px-2 sm:px-3.5 py-2.5 rounded flex items-center justify-center gap-1.5 sm:gap-2 transition-colors cursor-pointer shadow-sm"
+            >
+              <Clock size={14} className="text-[#FF5A00] shrink-0" />
+              <span className="hidden 2xl:inline">CAMBIOS</span>
+            </button>
+          )}
 
           <button
             onClick={() => {
@@ -1789,6 +1841,18 @@ export default function FicheroModule() {
           </div>
         </div>
       )}
+
+      {modalCierre && (
+        <CierreQuincena
+          onCerrar={() => setModalCierre(false)}
+          onAbrirDia={abrirDiaDe}
+          onAbrirCategorias={() => {
+            setModalCierre(false);
+            setModalCategoriasAbierto(true);
+          }}
+        />
+      )}
+      {modalHistorial && <HistorialCambios operario={operarioSeleccionado} onCerrar={() => setModalHistorial(false)} />}
 
       {/* MODAL: CONFIGURAR DÍA */}
       {diaConfigurando && (

@@ -121,4 +121,17 @@ async function quitarFichada(db, { id, motivo, usuario }) {
   return { ok: true, id: f.id, manual };
 }
 
-module.exports = { crearFichadaManual, cambiarTipoFichada, quitarFichada, siguienteRecManual, normalizarFechaHora, asegurarAuditoria };
+/** Últimos cambios hechos a mano (más nuevos primero); con `nombre` solo los de ese operario. */
+async function listarAuditoria(db, { nombre = "", limite = 100 } = {}) {
+  await asegurarAuditoria(db);
+  const lim = Math.min(Math.max(Number(limite) || 100, 1), 500);
+  const [rows] = await db.query(
+    `SELECT id, accion, rec_no, nombre, antes, despues, motivo, usuario, DATE_FORMAT(creado_en, '%Y-%m-%d %H:%i') AS cuando
+       FROM fichadas_auditoria ${nombre ? "WHERE nombre = ?" : ""} ORDER BY id DESC LIMIT ?`,
+    nombre ? [nombre, lim] : [lim],
+  );
+  const leer = (t) => { try { return t ? JSON.parse(t) : null; } catch { return null; } };
+  return rows.map((r) => ({ ...r, antes: leer(r.antes), despues: leer(r.despues) }));
+}
+
+module.exports = { listarAuditoria, crearFichadaManual, cambiarTipoFichada, quitarFichada, siguienteRecManual, normalizarFechaHora, asegurarAuditoria };
