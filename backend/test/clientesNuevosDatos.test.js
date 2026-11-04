@@ -54,7 +54,7 @@ const estComp = {
   competidores: [{ bloque: "fabricantes-1", empresa: "Vialplast", provincia: "Buenos Aires", que_vende: "Conos", fortaleza: "Precio" }],
 };
 
-const TABLAS = ["clientes_nuevos_eventos", "clientes_nuevos_oportunidades", "clientes_nuevos_busquedas", "notificaciones_leidas", "notificaciones", "pedidos", "productos"];
+const TABLAS = ["clientes_nuevos_competidores_conocidos", "clientes_nuevos_eventos", "clientes_nuevos_oportunidades", "clientes_nuevos_busquedas", "notificaciones_leidas", "notificaciones", "pedidos", "productos"];
 
 async function conBase(fn) {
   let mysql;
@@ -216,7 +216,7 @@ test("búsqueda automática: corre solo los lunes por la mañana y una vez por s
     const [b] = await pool.query("SELECT origen, estado, n_total FROM clientes_nuevos_busquedas WHERE id = ?", [id]);
     assert.deepEqual([b[0].origen, b[0].estado, b[0].n_total], ["AUTO", "LISTO", 2]);
     const [n] = await pool.query("SELECT texto FROM notificaciones WHERE titulo = 'Novedades de clientes nuevos'");
-    assert.match(n[0].texto, /2 oportunidades nuevas, 1 para ir ya/);
+    assert.match(n[0].texto, /2 oportunidades nuevas, 2 para ir ya/);
     assert.equal(await D.vueltaAutomatica(pool, deps, { ahora: lunes }), null); // ya corrió esta semana
   });
 });
@@ -252,5 +252,75 @@ test("si la última búsqueda falló, se muestra la anterior buena con el aviso"
     assert.equal(u.estado, "LISTO");
     assert.equal(u.resultado.resumen, "Buena");
     assert.match(u.fallo_reciente, /tardó demasiado/);
+  });
+});
+
+// ---------- vigencia y competencia: nada viejo, nada nuestro ----------
+const N = require("../clientesNuevos");
+const aiSimple = (estructura) => ({ models: { generateContent: async (p) => (p.config.tools ? respuesta("Bloque de prueba con datos suficientes para el armado de la oportunidad real.\n=====\nOtro bloque de prueba con datos suficientes para armar la otra oportunidad.\n=====\nTercer bloque de prueba con datos suficientes para armar una tercera oportunidad.\n=====\nCuarto bloque con datos suficientes para armar una cuarta oportunidad de prueba.") : { text: JSON.stringify(estructura) }) } });
+const sinRes = async (u) => ({ url: u, titulo: null });
+
+test("vigencia: se ocultan licitaciones cerradas y noticias viejas; las vigentes salen ordenadas por cierre", async () => {
+  const hoy = "2026-11-04";
+  const base = { que_paso: "x", organizacion: "Org", prioridad: 2, productos: [] };
+  const r = await N.ejecutarBusqueda({
+    ai: aiSimple({ resumen: "ok", oportunidades: [
+      { ...base, bloque: "licitaciones-1", segmento: "licitaciones", titulo: "Cierra en 17 días", organizacion: "A", fecha_iso: "2026-11-21", fecha_tipo: "cierre" },
+      { ...base, bloque: "licitaciones-2", segmento: "licitaciones", titulo: "Cierra en 3 días", organizacion: "B", fecha_iso: "2026-11-07", fecha_tipo: "cierre" },
+      { ...base, bloque: "licitaciones-3", segmento: "licitaciones", titulo: "Ya cerró", organizacion: "C", fecha_iso: "2026-10-01", fecha_tipo: "cierre" },
+      { ...base, bloque: "licitaciones-4", segmento: "licitaciones", titulo: "Cierra lejos", organizacion: "D", fecha_iso: "2027-03-01", fecha_tipo: "cierre" },
+    ] }),
+    fecha: hoy, resolver: sinRes,
+  });
+  assert.deepEqual(r.oportunidades.map((o) => o.titulo), ["Cierra en 3 días", "Cierra en 17 días", "Cierra lejos"]);
+  assert.deepEqual(r.oportunidades.map((o) => o.prioridad), [1, 1, 2]); // cierre en 21 días o menos = ir ya
+  assert.equal(r.vencidas_descartadas, 1);
+  const v = await N.ejecutarBusqueda({
+    ai: aiSimple({ resumen: "ok", oportunidades: [
+      { ...base, bloque: "empresas-1", segmento: "empresas", titulo: "Noticia de 2025", organizacion: "E", fecha_iso: "2025-06-10", fecha_tipo: "noticia" },
+      { ...base, bloque: "empresas-2", segmento: "empresas", titulo: "Publicada hace 90 días", organizacion: "F", fecha_noticia_iso: "2026-08-01" },
+      { ...base, bloque: "empresas-3", segmento: "empresas", titulo: "Publicada hace 10 días", organizacion: "G", fecha_noticia_iso: "2026-10-25" },
+      { ...base, bloque: "obras-1", segmento: "obras", titulo: "Obra que arrancó hace 5 meses", organizacion: "H", fecha_iso: "2026-06-01", fecha_tipo: "inicio" },
+      { ...base, bloque: "obras-2", segmento: "obras", titulo: "Obra que arranca en diciembre", organizacion: "I", fecha_iso: "2026-12-01", fecha_tipo: "inicio" },
+    ] }),
+    fecha: hoy, resolver: sinRes,
+  });
+  assert.deepEqual(v.oportunidades.map((o) => o.titulo).sort(), ["Obra que arranca en diciembre", "Publicada hace 10 días"]);
+  assert.equal(v.viejas_descartadas, 3);
+  assert.equal(v.oportunidades.find((o) => o.organizacion === "G").publicada, "2026-10-25");
+});
+
+test("competencia: sin Conoflex, sin los que ya conocés, sin novedades viejas ni sin novedad", async () => {
+  const hoy = "2026-11-04";
+  const ai = aiSimple({
+    resumen: "ok", conclusiones: [],
+    adjudicaciones: [
+      { bloque: "adjudicaciones-1", organismo: "Vialidad", objeto: "Conos", ganador: "Vialplast S.A.", fecha_iso: "2026-09-01" },
+      { bloque: "adjudicaciones-2", organismo: "Muni", objeto: "Conos viejos", ganador: "Vialplast", fecha_iso: "2025-05-01" },
+      { bloque: "adjudicaciones-3", organismo: "Muni 2", objeto: "Conos nuestros", ganador: "Conoflex SA", fecha_iso: "2026-10-01" },
+    ],
+    competidores: [
+      { bloque: "movimientos-1", empresa: "Plásticos Nuevos SRL", provincia: "Córdoba", novedad: "Abrió una planta de conos en octubre", fecha_iso: "2026-10-10" },
+      { bloque: "movimientos-2", empresa: "Conoflex", novedad: "Somos nosotros", fecha_iso: "2026-10-10" },
+      { bloque: "movimientos-3", empresa: "Vieja Conocida S.A.", novedad: "Inauguró algo", fecha_iso: "2026-10-12" },
+      { bloque: "movimientos-1", empresa: "Sin Novedad SA", novedad: "", fecha_iso: "" },
+      { bloque: "movimientos-2", empresa: "Novedad Vieja SA", novedad: "Abrió", fecha_iso: "2026-01-02" },
+    ],
+  });
+  const r = await N.ejecutarCompetencia({ ai, fecha: hoy, conocidos: ["Vieja Conocida"], resolver: sinRes });
+  assert.deepEqual(r.competidores.map((c) => c.empresa), ["Plásticos Nuevos SRL"]);
+  assert.equal(r.competidores[0].novedad, "Abrió una planta de conos en octubre");
+  assert.deepEqual(r.adjudicaciones.map((a) => a.objeto).sort(), ["Conos", "Conos nuestros"]);
+  assert.deepEqual(r.ranking.map((g) => g.empresa), ["Vialplast S.A."]); // nosotros no figuramos como competidor
+});
+
+test('"ya lo conozco": el competidor desaparece del reporte guardado y no vuelve', async () => {
+  await conBase(async ({ pool, http }) => {
+    const resultado = { resumen: "", conclusiones: [], ranking: [], adjudicaciones: [], competidores: [{ empresa: "Plásticos Nuevos SRL", novedad: "Abrió" }, { empresa: "Otra SA", novedad: "Amplió" }] };
+    await pool.query("INSERT INTO clientes_nuevos_busquedas (tipo, origen, estado, resultado, terminado_at) VALUES ('COMPETENCIA','MANUAL','LISTO', ?, NOW())", [JSON.stringify(resultado)]);
+    assert.equal((await http("GET", "/api/clientes-nuevos/ultima?tipo=COMPETENCIA")).json.resultado.competidores.length, 2);
+    assert.equal((await http("POST", "/api/clientes-nuevos/competidores/conocido", { empresa: " " })).status, 400);
+    assert.equal((await http("POST", "/api/clientes-nuevos/competidores/conocido", { empresa: "Plásticos Nuevos S.R.L." })).json.ok, true);
+    assert.deepEqual((await http("GET", "/api/clientes-nuevos/ultima?tipo=COMPETENCIA")).json.resultado.competidores.map((c) => c.empresa), ["Otra SA"]);
   });
 });

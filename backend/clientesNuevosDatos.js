@@ -38,6 +38,14 @@ async function asegurarTablaClientesNuevos(db) {
   await asegurarColumna(db, "clientes_nuevos_busquedas", "n_ya", "INT NULL");
   await asegurarColumna(db, "clientes_nuevos_busquedas", "n_nuevas", "INT NULL");
   await db.query(`
+    CREATE TABLE IF NOT EXISTS clientes_nuevos_competidores_conocidos (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      nombre_norm VARCHAR(160) NOT NULL,
+      nombre VARCHAR(200) NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE KEY uq_nombre (nombre_norm)
+    )`);
+  await db.query(`
     CREATE TABLE IF NOT EXISTS clientes_nuevos_oportunidades (
       id INT AUTO_INCREMENT PRIMARY KEY,
       organizacion VARCHAR(200) NOT NULL,
@@ -145,6 +153,21 @@ async function hidratar(db, b) {
   return b;
 }
 
+/** Nombres de competidores que ya se marcaron como "ya lo conozco". */
+async function competidoresConocidos(db) {
+  const [r] = await db.query("SELECT nombre FROM clientes_nuevos_competidores_conocidos ORDER BY id DESC LIMIT 200");
+  return r.map((x) => x.nombre);
+}
+
+/** Al reporte de competencia se le sacan los que ya se marcaron como conocidos (al instante, sin buscar de nuevo). */
+async function sinConocidos(db, b) {
+  if (b?.tipo !== "COMPETENCIA" || !b.resultado?.competidores) return b;
+  const conocidos = new Set((await competidoresConocidos(db)).map(N.normEmpresa));
+  if (!conocidos.size) return b;
+  b.resultado = { ...b.resultado, competidores: b.resultado.competidores.filter((c) => !conocidos.has(N.normEmpresa(c.empresa))) };
+  return b;
+}
+
 async function ultimaBusqueda(db, tipo = "OPORTUNIDADES") {
   const [r] = await db.query("SELECT * FROM clientes_nuevos_busquedas WHERE tipo = ? ORDER BY id DESC LIMIT 1", [tipo]);
   // Si la última falló pero hubo una buena antes, se muestra la buena y se avisa del fallo (no se pierde lo que ya había).
@@ -152,7 +175,7 @@ async function ultimaBusqueda(db, tipo = "OPORTUNIDADES") {
     const [ok] = await db.query("SELECT * FROM clientes_nuevos_busquedas WHERE tipo = ? AND estado = 'LISTO' ORDER BY id DESC LIMIT 1", [tipo]);
     if (ok[0]) return { ...(await hidratar(db, filaBusqueda(ok[0]))), fallo_reciente: r[0].error || "La última búsqueda falló." };
   }
-  return hidratar(db, filaBusqueda(r[0]));
+  return sinConocidos(db, await hidratar(db, filaBusqueda(r[0])));
 }
 
 // ---------- lo que sabemos de la empresa (para orientar y filtrar la búsqueda) ----------
@@ -297,7 +320,7 @@ async function iniciarTrabajo(db, { tipo, origen = "MANUAL", quien = "Usuario", 
         await avisarCierres(db, crearNotificacion).catch(() => {});
       } else if (tipo === "COMPETENCIA") {
         const ctx = await contextoDeLaEmpresa(db);
-        const resultado = await (ejecutores.competencia || N.ejecutarCompetencia)({ ai, modelo, productos: ctx.productos, progreso });
+        const resultado = await (ejecutores.competencia || N.ejecutarCompetencia)({ ai, modelo, productos: ctx.productos, conocidos: await competidoresConocidos(db), progreso });
         await terminar(resultado, { total: resultado.adjudicaciones.length, ya: resultado.ranking.length, nuevas: resultado.competidores.length });
       } else {
         const resultado = await revisarSeguimiento(db, { ai, modelo, crearNotificacion, progreso, revisar: ejecutores.revisar });
@@ -395,7 +418,7 @@ function registrarRutasClientesNuevos(app, { db, requirePermiso, nombreDeUsuario
     try {
       const [r] = await db.query("SELECT * FROM clientes_nuevos_busquedas WHERE id = ?", [req.params.id]);
       if (!r[0]) return res.status(404).json({ error: "Esa búsqueda no existe." });
-      res.json(await hidratar(db, filaBusqueda(r[0])));
+      res.json(await sinConocidos(db, await hidratar(db, filaBusqueda(r[0]))));
     } catch (e) {
       falla(res, e, "No pude cargar esa búsqueda.");
     }
@@ -466,6 +489,19 @@ function registrarRutasClientesNuevos(app, { db, requirePermiso, nombreDeUsuario
       res.json(r.map((f) => ({ ...(parsear(f.datos) || {}), id: f.id, estado: "DESCARTADA" })));
     } catch (e) {
       falla(res, e, "No pude cargar las descartadas.");
+    }
+  });
+
+  // "Ya lo conozco": ese competidor deja de aparecer en los reportes de competencia.
+  app.post("/api/clientes-nuevos/competidores/conocido", PERMISO, async (req, res) => {
+    try {
+      const nombre = String(req.body?.empresa || "").trim().slice(0, 200);
+      const norm = N.normEmpresa(nombre).slice(0, 160);
+      if (!norm) return res.status(400).json({ error: "Falta el nombre de la empresa." });
+      await db.query("INSERT IGNORE INTO clientes_nuevos_competidores_conocidos (nombre_norm, nombre) VALUES (?,?)", [norm, nombre]);
+      res.json({ ok: true });
+    } catch (e) {
+      falla(res, e, "No pude guardar el cambio.");
     }
   });
 
