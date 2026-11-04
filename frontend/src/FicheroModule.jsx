@@ -29,7 +29,7 @@ import {
 } from "lucide-react";
 
 import FichadasDelDia from "./asistencia/FichadasDelDia";
-import { esAdminLocal } from "./asistencia/esAdmin";
+import { esAdminLocal, puedeVerLegajo } from "./asistencia/esAdmin";
 import CierreQuincena from "./asistencia/CierreQuincena";
 import HistorialCambios from "./asistencia/HistorialCambios";
 import { leerIrAsistencia, consumirIrAlDia } from "./asistencia/irAlDia";
@@ -603,6 +603,7 @@ export default function FicheroModule() {
 
   // Fichadas del día abierto en el modal (más la madrugada siguiente, que es la salida del turno noche).
   const esAdminAsistencia = useMemo(() => esAdminLocal(), []);
+  const puedeLegajo = useMemo(() => puedeVerLegajo(), []);
   const fichadasDelDiaConfig = useMemo(() => {
     if (!diaConfigurando || !operarioSeleccionado) return [];
     const dia = diaConfigurando.fechaISO;
@@ -1142,7 +1143,7 @@ export default function FicheroModule() {
                       <Square size={11} />
                       <span>Destildar</span>
                     </button>
-                    {esAdminAsistencia && (
+                    {puedeLegajo && (
                       <button
                         onClick={() => setLegajoAbierto(true)}
                         className="text-[9px] font-bold uppercase tracking-wider text-[#FF5A00] bg-[#FF5A00]/10 border border-[#FF5A00]/30 hover:bg-[#FF5A00]/20 px-2 py-0.5 rounded cursor-pointer transition-colors flex items-center gap-1"
