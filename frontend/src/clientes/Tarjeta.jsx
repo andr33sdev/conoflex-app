@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { ArrowUpRight, Banknote, Bell, BellRing, Building2, Check, ChevronDown, Clock, Copy, Globe, Landmark, Loader2, Mail, MapPin, Newspaper, Package, Route, Sparkle, Target, UserMinus } from "lucide-react";
-import { ESTADOS, PRIORIDAD, SEGMENTOS, dominio, reloj } from "./util";
+import { ESTADOS, PRIORIDAD, SEGMENTOS, dominio, hace, reloj } from "./util";
 
 const ICONO = { licitaciones: Landmark, obras: Route, empresas: Building2, parecidos: Building2 };
 const EASE = [0.22, 1, 0.36, 1];
@@ -81,6 +81,7 @@ export default function Tarjeta({ o, i, onCopiar, onCambiar, onBorrador }) {
           <b className="text-zinc-200 font-bold">{o.organizacion}</b>
           {o.provincia && <span className="inline-flex items-center gap-1.5"><MapPin size={14} className="text-zinc-500" /> {o.provincia}</span>}
           {o.monto && <span className="inline-flex items-center gap-1.5 text-emerald-300 font-bold"><Banknote size={15} /> {o.monto}</span>}
+          {o.publicada && <span className="text-sm text-zinc-500">Publicada: {hace(o.publicada).toLowerCase()}</span>}
         </div>
 
         {(o.productos?.length > 0 || o.argumento) && (

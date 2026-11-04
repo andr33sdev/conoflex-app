@@ -8,20 +8,20 @@ const SEGMENTOS = [
     id: "licitaciones",
     titulo: "Licitaciones y compras públicas",
     busqueda: () =>
-      "Licitaciones, concursos de precios y compras públicas ABIERTAS o RECIENTES en Argentina (municipios, provincias, Vialidad Nacional y provincial, concesionarias viales, organismos de tránsito y seguridad vial) donde se compren productos como los nuestros: conos, topes, separadores de carril, delineadores, topes de estacionamiento, bandas reductoras de velocidad, señalización vial. Revisá portales de compras (COMPR.AR, portales provinciales y municipales, Boletín Oficial) y noticias.",
+      `Licitaciones, concursos de precios y compras públicas que HOY estén ABIERTAS (con fecha de cierre o de apertura de ofertas posterior a hoy) o que se vayan a abrir en los próximos días, en Argentina (municipios, provincias, universidades, Vialidad Nacional y provincial, concesionarias viales, organismos de tránsito y seguridad vial) donde se compren productos como los nuestros: conos, topes, separadores de carril, delineadores, topes de estacionamiento, bandas reductoras de velocidad, señalización vial. Revisá portales de compras (COMPR.AR, portales provinciales y municipales, Boletín Oficial) y noticias. Indicá SIEMPRE la fecha de cierre. Poné primero las que cierran más pronto. NO incluyas licitaciones ya cerradas, adjudicadas o de años anteriores.`,
   },
   {
     id: "obras",
     titulo: "Obras viales y proyectos nuevos",
     busqueda: (ctx) =>
-      "Obras viales, repavimentaciones, autopistas, rutas, ciclovías, playas de estacionamiento, parques industriales, aeropuertos y puertos ANUNCIADAS o EN EJECUCIÓN en Argentina, que van a necesitar señalización y seguridad vial temporal o permanente. Indicá quién es la empresa contratista o el organismo a cargo, para poder venderles." +
+      "Obras viales, repavimentaciones, autopistas, rutas, ciclovías, playas de estacionamiento, parques industriales, aeropuertos y puertos que EMPIEZAN pronto, se ADJUDICARON o se anunciaron en las últimas semanas, o están en licitación, en Argentina, y que van a necesitar señalización y seguridad vial temporal o permanente. NO incluyas obras terminadas ni noticias viejas: solo lo que todavía puede comprar productos. Indicá quién es la empresa contratista o el organismo a cargo, para poder venderles." +
       (ctx.dormidos?.length ? ` Si en esas obras aparece alguna de estas empresas (clientes que dejaron de comprarnos), destacalo: ${ctx.dormidos.slice(0, 25).join(", ")}.` : ""),
   },
   {
     id: "empresas",
     titulo: "Empresas del rubro",
     busqueda: () =>
-      "Empresas argentinas que podrían ser clientes o revendedores de productos de seguridad vial: constructoras viales, empresas de señalización, distribuidores y mayoristas de seguridad vial, corralones y ferreterías industriales grandes, concesionarias de peaje, empresas de logística y de estacionamiento. Priorizá las que aparezcan en noticias recientes, ampliaciones o contrataciones.",
+      "NOVEDADES RECIENTES de empresas argentinas que podrían ser clientes o revendedores de productos de seguridad vial: empresas del rubro que ACABAN de abrir o inauguraron planta o sucursal, que anunciaron una expansión o inversión, que ganaron obras o contratos, que buscan proveedores o que están por empezar un proyecto (constructoras viales, empresas de señalización, distribuidores y mayoristas de seguridad vial, corralones y ferreterías industriales grandes, concesionarias de peaje, logística y estacionamiento). También rumores y anuncios de proyectos que todavía no salieron a licitación. Solo noticias del último mes y medio: nada viejo.",
   },
   {
     id: "parecidos",
@@ -31,6 +31,11 @@ const SEGMENTOS = [
       `Empresas argentinas SIMILARES (mismo rubro, tamaño y tipo de compra) a estos clientes que ya nos compran bien: ${ctx.mejoresClientes.map((c) => `${c.cliente}${c.articulos?.length ? ` (compra ${c.articulos.slice(0, 3).join(", ")})` : ""}`).join("; ")}. Buscá empresas parecidas que no sean ellas, de cualquier provincia, que estén creciendo o contratando.`,
   },
 ];
+// Qué tan viejo puede ser algo para seguir mostrándose (en días). Lo que pasa de ahí se oculta.
+const VENTANAS = { noticia: 45, obra: 60, adjudicacion: 270, movimiento: 120 };
+const restarDias = (iso, n) => new Date(Date.parse(`${iso}T00:00:00Z`) - n * 86400000).toISOString().slice(0, 10);
+const sumarDias = (iso, n) => restarDias(iso, -n);
+
 const segmentosActivos = (ctx) => SEGMENTOS.filter((s) => !s.activo || s.activo(ctx));
 
 const hoyAR = () => new Date(Date.now() - 3 * 3600 * 1000).toISOString().slice(0, 10);
@@ -41,10 +46,10 @@ function armarBusqueda(segmento, ctx = {}) {
   return [
     `Hoy es ${fecha}. Trabajás para una fábrica argentina de productos plásticos de seguridad vial (inyección y rotomoldeo).`,
     productos.length ? `Lo que fabrica: ${productos.slice(0, 40).join(", ")}.` : "Fabrica bases de conos, topes, separadores de carril, topes de estacionamiento y puntas de cono.",
-    `Tarea: encontrar NOVEDADES DEL MOMENTO (últimos 60 días, o abiertas hoy) en TODA la Argentina. ${segmento.busqueda(ctx)}`,
-    "Para cada oportunidad escribí, en prosa corta: organización o empresa, provincia/ciudad, qué pasó o por qué es una oportunidad, fecha clave (cierre de la licitación, inicio de obra o fecha de la noticia, con día/mes/año si figura), monto o presupuesto si figura, y la web, mail o teléfono SOLO si aparece en las fuentes (copiá la dirección web completa si la viste).",
+    `Tarea: encontrar NOVEDADES DEL MOMENTO en TODA la Argentina: solo lo ocurrido desde el ${restarDias(fecha, VENTANAS.noticia)} en adelante, o licitaciones abiertas hoy. Nada de 2025 ni de meses atrás. ${segmento.busqueda(ctx)}`,
+    "Para cada oportunidad escribí, en prosa corta: organización o empresa, provincia/ciudad, qué pasó o por qué es una oportunidad, fecha clave (cierre de la licitación, inicio de obra o fecha de la noticia, con día/mes/año si figura) y la FECHA DE PUBLICACIÓN de la fuente, monto o presupuesto si figura, y la web, mail o teléfono SOLO si aparece en las fuentes (copiá la dirección web completa si la viste).",
     "Separá cada oportunidad de la siguiente con una línea que contenga solamente =====",
-    "Reglas: usá solo lo que encuentres en fuentes reales; no inventes empresas, fechas ni contactos; si un dato no figura escribí 'no figura'. Prefiero 6 a 10 oportunidades verificables antes que muchas dudosas.",
+    "Reglas: usá solo lo que encuentres en fuentes reales; no inventes empresas, fechas ni contactos; si un dato no figura escribí 'no figura'. Prefiero 6 a 10 oportunidades verificables y vigentes antes que muchas dudosas. Si algo es viejo o ya terminó, no lo incluyas.",
     clientes.length ? `No incluyas a estas empresas, que YA son clientes: ${clientes.slice(0, 120).join(", ")}.` : "",
     excluir.length ? `Tampoco incluyas estas, que ya fueron descartadas: ${excluir.slice(0, 80).join(", ")}.` : "",
     "Respondé en español, en una lista, sin introducción.",
@@ -74,6 +79,7 @@ const ESQUEMA = {
           fecha: { type: "STRING", description: "La fecha clave escrita en lenguaje natural (ej: 'Cierra el 12/11/2026'). Vacío si no figura." },
           fecha_iso: { type: "STRING", description: "La misma fecha en formato AAAA-MM-DD si es una fecha exacta; vacío si no." },
           fecha_tipo: { type: "STRING", description: "cierre, inicio o noticia" },
+          fecha_noticia_iso: { type: "STRING", description: "Fecha de PUBLICACIÓN de la noticia o aviso, AAAA-MM-DD, si figura en el texto; vacío si no." },
           monto: { type: "STRING", description: "Monto o presupuesto si figura (ej: '$85.000.000'); vacío si no." },
           contacto: { type: "STRING", description: "Mail, teléfono o web de contacto que figure; 'no figura' si no se encontró." },
           url_directa: { type: "STRING", description: "Una dirección web completa (http...) que aparezca TEXTUALMENTE en el bloque (portal, pliego o noticia). Vacío si no hay ninguna." },
@@ -261,6 +267,7 @@ async function ejecutarBusqueda({ ai, modelo = "gemini-2.5-flash", productos = [
   const vistas = new Set();
   const armadas = [];
   let vencidas = 0;
+  let viejas = 0;
   for (const o of datos.oportunidades) {
     const k = clave(o);
     if (!k || vistas.has(k)) continue;
@@ -271,6 +278,15 @@ async function ejecutarBusqueda({ ai, modelo = "gemini-2.5-flash", productos = [
     // Una licitación que ya cerró no sirve: no se muestra.
     if (segmento === "licitaciones" && o.fecha_tipo === "cierre" && fechaIso && fechaIso < fecha) {
       vencidas++;
+      continue;
+    }
+    // Lo que ya pasó o es de hace mucho no sirve: se oculta. Las licitaciones se miran por su cierre; el resto, por la fecha de la noticia.
+    const noticiaIso = esISO(o.fecha_noticia_iso) ? o.fecha_noticia_iso : "";
+    const tipoFecha = ["cierre", "inicio", "noticia"].includes(o.fecha_tipo) ? o.fecha_tipo : "";
+    const referencia = noticiaIso || (tipoFecha !== "cierre" ? fechaIso : "");
+    const ventana = segmento === "obras" ? VENTANAS.obra : VENTANAS.noticia;
+    if ((referencia && referencia < restarDias(fecha, ventana)) || (segmento !== "licitaciones" && tipoFecha === "cierre" && fechaIso && fechaIso < fecha)) {
+      viejas++;
       continue;
     }
     let fuentes = bloque?.fuentes || [];
@@ -291,14 +307,15 @@ async function ejecutarBusqueda({ ai, modelo = "gemini-2.5-flash", productos = [
       mensaje: limpio(o.mensaje, 1200),
       fecha: limpio(o.fecha, 120),
       fecha_iso: fechaIso,
-      fecha_tipo: ["cierre", "inicio", "noticia"].includes(o.fecha_tipo) ? o.fecha_tipo : "",
+      fecha_tipo: tipoFecha,
+      publicada: noticiaIso,
       monto: limpio(o.monto, 80),
       relacion: o.relacion === "dormido" ? "dormido" : "",
       contacto: limpio(o.contacto, 300) || "no figura",
       url: urlDirecta,
       fuentes,
       fuentes_aproximadas: aproximada && fuentes.length > 0,
-      prioridad: [1, 2, 3].includes(Number(o.prioridad)) ? Number(o.prioridad) : 2,
+      prioridad: segmento === "licitaciones" && tipoFecha === "cierre" && fechaIso && fechaIso >= fecha && fechaIso <= sumarDias(fecha, 21) ? 1 : [1, 2, 3].includes(Number(o.prioridad)) ? Number(o.prioridad) : 2,
       confianza: ["alta", "media", "baja"].includes(o.confianza) ? o.confianza : "media",
       nueva: !previas.has(k),
       clave: k,
@@ -321,7 +338,9 @@ async function ejecutarBusqueda({ ai, modelo = "gemini-2.5-flash", productos = [
     const fuentes = o.fuentes.map(conReal);
     return { ...o, fuentes, url: o.url || fuentes[0]?.url || "" };
   });
-  oportunidades.sort((a, b) => a.prioridad - b.prioridad || Number(b.nueva) - Number(a.nueva) || String(a.fecha_iso || "9").localeCompare(String(b.fecha_iso || "9")));
+  // Primero lo que vence antes; después lo más reciente.
+  const cierraPronto = (o) => (o.fecha_tipo === "cierre" && o.fecha_iso ? o.fecha_iso : "9999");
+  oportunidades.sort((a, b) => a.prioridad - b.prioridad || cierraPronto(a).localeCompare(cierraPronto(b)) || Number(b.nueva) - Number(a.nueva) || String(b.publicada || "").localeCompare(String(a.publicada || "")));
 
   return {
     resumen: limpio(datos.resumen, 600),
@@ -329,6 +348,7 @@ async function ejecutarBusqueda({ ai, modelo = "gemini-2.5-flash", productos = [
     fuentes: buenos.flatMap((b) => b.fuentes.map((f) => ({ ...conReal(f), segmento: b.id }))),
     segmentos_sin_resultado: fallidos,
     vencidas_descartadas: vencidas,
+    viejas_descartadas: viejas,
     fecha,
   };
 }
@@ -339,13 +359,13 @@ const TEMAS_COMPETENCIA = [
     id: "adjudicaciones",
     titulo: "Licitaciones adjudicadas",
     busqueda:
-      "Licitaciones y compras públicas de conos, balizas, separadores de carril, delineadores, topes de estacionamiento y señalización vial que ya fueron ADJUDICADAS en Argentina en los últimos 12 meses. Por cada una: organismo, provincia, qué se compró, EMPRESA GANADORA, monto adjudicado, precio unitario si figura y fecha. Revisá COMPR.AR, portales provinciales y municipales, Boletín Oficial y noticias.",
+      "Licitaciones y compras públicas de conos, balizas, separadores de carril, delineadores, topes de estacionamiento y señalización vial que fueron ADJUDICADAS en Argentina en los últimos 9 meses (priorizá las más recientes; nada de 2025). Por cada una: organismo, provincia, qué se compró, EMPRESA GANADORA, monto adjudicado, precio unitario si figura y fecha. Revisá COMPR.AR, portales provinciales y municipales, Boletín Oficial y noticias.",
   },
   {
-    id: "fabricantes",
-    titulo: "Fabricantes y proveedores",
-    busqueda:
-      "Fabricantes y proveedores argentinos de productos de seguridad vial (conos, separadores de carril, delineadores, topes, señalización) que compiten con una fábrica de plásticos por inyección y rotomoldeo. Por cada uno: empresa, provincia, productos que vende, página web y qué lo destaca.",
+    id: "movimientos",
+    titulo: "Movimientos de la competencia",
+    busqueda: (ctx) =>
+      `NOVEDADES de los últimos 90 días de empresas que compiten con una fábrica argentina de productos plásticos de seguridad vial (conos, separadores de carril, delineadores, topes, señalización): empresas NUEVAS del rubro que abrieron o empezaron a vender, ampliaciones o plantas nuevas, productos nuevos, licitaciones que ganaron hace poco, importadores nuevos, cambios de precio. Por cada una: empresa, provincia, QUÉ pasó, FECHA de la novedad, productos que vende, web y qué la destaca. NO incluyas a las empresas históricas y conocidas del rubro si no tienen una novedad concreta de estos meses, ni a Conoflex (somos nosotros).${ctx.conocidos?.length ? ` Tampoco incluyas a estas, que ya conocemos: ${ctx.conocidos.slice(0, 60).join(", ")}.` : ""}`,
   },
 ];
 
@@ -381,6 +401,8 @@ const ESQUEMA_COMPETENCIA = {
           empresa: { type: "STRING" },
           provincia: { type: "STRING" },
           que_vende: { type: "STRING" },
+          novedad: { type: "STRING", description: "QUÉ pasó (abrió, amplió, lanzó un producto, ganó una licitación...). Vacío si el texto no cuenta una novedad concreta." },
+          fecha_iso: { type: "STRING", description: "Fecha de la novedad AAAA-MM-DD si figura; vacío si no." },
           web: { type: "STRING", description: "Dirección web si figura en el texto." },
           fortaleza: { type: "STRING", description: "Qué lo destaca, en una frase." },
         },
@@ -391,6 +413,8 @@ const ESQUEMA_COMPETENCIA = {
   required: ["resumen", "adjudicaciones", "competidores"],
 };
 
+/** Somos nosotros: no es un competidor. */
+const esCompetidorPropio = (nombre) => /conoflex|cono\s*flex/.test(sinAcentos(nombre));
 const normEmpresa = (t) => sinAcentos(t).replace(/\b(s\.?a\.?|s\.?r\.?l\.?|s\.?a\.?s\.?|sociedad anonima|ute|u\.t\.e\.?)\b/g, " ").replace(/[^a-z0-9]+/g, " ").trim();
 
 /** Cuántas licitaciones ganó cada empresa, con sus provincias y montos. */
@@ -398,7 +422,7 @@ function rankingGanadores(adjudicaciones) {
   const mapa = new Map();
   for (const a of adjudicaciones) {
     const k = normEmpresa(a.ganador);
-    if (!k) continue;
+    if (!k || esCompetidorPropio(a.ganador)) continue;
     const e = mapa.get(k) || { empresa: a.ganador, victorias: 0, provincias: new Set(), ejemplos: [] };
     e.victorias++;
     if (a.provincia) e.provincias.add(a.provincia);
@@ -410,13 +434,13 @@ function rankingGanadores(adjudicaciones) {
     .sort((a, b) => b.victorias - a.victorias || a.empresa.localeCompare(b.empresa, "es"));
 }
 
-async function ejecutarCompetencia({ ai, modelo = "gemini-2.5-flash", productos = [], progreso = () => {}, fecha = hoyAR(), resolver = resolverUrl }) {
+async function ejecutarCompetencia({ ai, modelo = "gemini-2.5-flash", productos = [], conocidos = [], progreso = () => {}, fecha = hoyAR(), resolver = resolverUrl }) {
   progreso("Buscando adjudicaciones y competidores…");
   const resultados = await Promise.allSettled(
     TEMAS_COMPETENCIA.map(async (t) => {
       const prompt = [
         `Hoy es ${fecha}. Trabajás para una fábrica argentina de productos plásticos de seguridad vial${productos.length ? ` (${productos.slice(0, 25).join(", ")})` : ""}.`,
-        `Tarea: ${t.busqueda}`,
+        `Tarea: ${typeof t.busqueda === "function" ? t.busqueda({ conocidos }) : t.busqueda}`,
         "Escribí cada caso en prosa corta y separalo del siguiente con una línea que contenga solamente =====",
         "Reglas: usá solo lo que encuentres en fuentes reales; no inventes empresas, montos ni fechas; si un dato no figura escribí 'no figura'. Respondé en español, sin introducción.",
       ].join("\n\n");
@@ -438,7 +462,7 @@ async function ejecutarCompetencia({ ai, modelo = "gemini-2.5-flash", productos 
   progreso("Ordenando lo encontrado…");
   const est = await conReintentos(() => ai.models.generateContent({
     model: modelo,
-    contents: [{ role: "user", parts: [{ text: `Convertí estos bloques de resultados en datos estructurados. Quedate SOLO con lo que está en el texto: no inventes empresas, montos ni direcciones. Indicá el código del bloque de cada dato. Las conclusiones tienen que salir de los datos (por ejemplo, precios de referencia, quién gana más, en qué provincias hay poca competencia).\n\n${bloques.map((b) => `[${b.id}]\n${b.texto}`).join("\n\n=====\n\n")}` }] }],
+    contents: [{ role: "user", parts: [{ text: `Convertí estos bloques de resultados en datos estructurados. Quedate SOLO con lo que está en el texto: no inventes empresas, montos ni direcciones. Indicá el código del bloque de cada dato. En competidores incluí SOLO a las empresas de las que el texto cuenta una novedad concreta (qué pasó y cuándo); si no hay novedad, no las incluyas. Las conclusiones tienen que salir de los datos (por ejemplo, precios de referencia, quién gana más, en qué provincias hay poca competencia).\n\n${bloques.map((b) => `[${b.id}]\n${b.texto}`).join("\n\n=====\n\n")}` }] }],
     config: { responseMimeType: "application/json", responseSchema: ESQUEMA_COMPETENCIA, temperature: 0, httpOptions: { timeout: 150000 } },
   }));
 
@@ -451,11 +475,13 @@ async function ejecutarCompetencia({ ai, modelo = "gemini-2.5-flash", productos 
     const tema = String(id || "").split("-")[0];
     return { fuentes: (fuentesTema.get(tema) || []).slice(0, 3), aproximadas: true };
   };
-  const adjudicaciones = datos.adjudicaciones.filter((a) => limpio(a.objeto, 5)).map((a) => ({
+  const adjudicaciones = datos.adjudicaciones.filter((a) => limpio(a.objeto, 5) && !(esISO(a.fecha_iso) && a.fecha_iso < restarDias(fecha, VENTANAS.adjudicacion))).map((a) => ({
     organismo: limpio(a.organismo, 160), provincia: limpio(a.provincia, 60), objeto: limpio(a.objeto, 300), ganador: limpio(a.ganador, 160), monto: limpio(a.monto, 80),
     precio_unitario: limpio(a.precio_unitario, 100), fecha: limpio(a.fecha, 80), fecha_iso: esISO(a.fecha_iso) ? a.fecha_iso : "", ...(({ fuentes, aproximadas }) => ({ fuentes, fuentes_aproximadas: aproximadas && fuentes.length > 0 }))(fuentesDelBloque(a.bloque)),
   }));
-  const competidores = datos.competidores.filter((c) => limpio(c.empresa, 2)).map((c) => ({
+  const conocidosNorm = new Set(conocidos.map(normEmpresa));
+  const competidores = datos.competidores.filter((c) => limpio(c.empresa, 2) && limpio(c.novedad, 5) && !esCompetidorPropio(c.empresa) && !conocidosNorm.has(normEmpresa(c.empresa)) && !(esISO(c.fecha_iso) && c.fecha_iso < restarDias(fecha, VENTANAS.movimiento))).map((c) => ({
+    novedad: limpio(c.novedad, 300), fecha_iso: esISO(c.fecha_iso) ? c.fecha_iso : "",
     empresa: limpio(c.empresa, 160), provincia: limpio(c.provincia, 60), que_vende: limpio(c.que_vende, 300), web: /^https?:\/\/\S+$/.test(limpio(c.web, 300)) && porId.get(String(c.bloque || "").trim())?.texto?.includes(limpio(c.web, 300)) ? limpio(c.web, 300) : "", fortaleza: limpio(c.fortaleza, 300), ...(({ fuentes, aproximadas }) => ({ fuentes, fuentes_aproximadas: aproximadas && fuentes.length > 0 }))(fuentesDelBloque(c.bloque)),
   }));
 
@@ -485,4 +511,4 @@ async function revisarLicitacion({ ai, modelo = "gemini-2.5-flash", oportunidad,
   return t.slice(0, 500);
 }
 
-module.exports = { conReintentos, mensajeAmable, SEGMENTOS, armarBusqueda, armarEstructura, extraerJSON, fuentesDe, partirBloques, fuentesDeBloque, resolverUrl, ejecutarBusqueda, ejecutarCompetencia, rankingGanadores, revisarLicitacion, normEmpresa, clave, hoyAR, sinAcentos };
+module.exports = { VENTANAS, restarDias, esCompetidorPropio, conReintentos, mensajeAmable, SEGMENTOS, armarBusqueda, armarEstructura, extraerJSON, fuentesDe, partirBloques, fuentesDeBloque, resolverUrl, ejecutarBusqueda, ejecutarCompetencia, rankingGanadores, revisarLicitacion, normEmpresa, clave, hoyAR, sinAcentos };

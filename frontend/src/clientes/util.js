@@ -63,3 +63,15 @@ export const dominio = (url) => {
     return String(url || "");
   }
 };
+
+/** "Hace 5 días", "Hoy", "Ayer" para una fecha AAAA-MM-DD. */
+export function hace(iso) {
+  const d = diasHasta(iso);
+  if (d === null) return "";
+  if (d > 0) return `En ${d} ${d === 1 ? "día" : "días"}`;
+  if (d === 0) return "Hoy";
+  if (d === -1) return "Ayer";
+  if (d > -30) return `Hace ${-d} días`;
+  const m = Math.round(-d / 30);
+  return `Hace ${m} ${m === 1 ? "mes" : "meses"}`;
+}

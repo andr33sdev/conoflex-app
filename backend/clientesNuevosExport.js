@@ -150,10 +150,10 @@ function pdfCompetencia(b) {
     }
   }
   if (r.competidores?.length) {
-    d.titulo("Competidores");
+    d.titulo("Movimientos de la competencia");
     for (const c of r.competidores) {
-      d.parrafo(`${c.empresa}${c.provincia ? ` · ${c.provincia}` : ""}`, { size: 10.5, negrita: true, color: "#14141a", despues: 1 });
-      d.parrafo([c.que_vende, c.fortaleza && `Fortaleza: ${c.fortaleza}`, c.web].filter(Boolean).join(" · "), { size: 9.5, color: "#444444", despues: 5 });
+      d.parrafo(`${c.empresa}${c.provincia ? ` · ${c.provincia}` : ""}${c.fecha_iso ? ` · ${c.fecha_iso}` : ""}`, { size: 10.5, negrita: true, color: "#14141a", despues: 1 });
+      d.parrafo([c.novedad, c.que_vende, c.fortaleza && `Fortaleza: ${c.fortaleza}`, c.web].filter(Boolean).join(" · "), { size: 9.5, color: "#444444", despues: 5 });
     }
   }
   return d.cerrar();
@@ -187,7 +187,7 @@ function xlsxCompetencia(b) {
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, hoja((r.ranking || []).map((e) => ({ Empresa: e.empresa, "Licitaciones ganadas": e.victorias, Provincias: (e.provincias || []).join(", ") })), [36, 20, 40]), "Ranking");
   XLSX.utils.book_append_sheet(wb, hoja((r.adjudicaciones || []).map((a) => ({ Organismo: a.organismo, Provincia: a.provincia, Objeto: a.objeto, Ganador: a.ganador, Monto: a.monto, "Precio unitario": a.precio_unitario, Fecha: a.fecha, "Visto en": (a.fuentes || []).map((f) => f.url).join(" | ") })), [34, 16, 50, 30, 18, 22, 14, 60]), "Adjudicaciones");
-  XLSX.utils.book_append_sheet(wb, hoja((r.competidores || []).map((c) => ({ Empresa: c.empresa, Provincia: c.provincia, "Qué vende": c.que_vende, Fortaleza: c.fortaleza, Web: c.web, "Visto en": (c.fuentes || []).map((f) => f.url).join(" | ") })), [32, 16, 50, 46, 30, 60]), "Competidores");
+  XLSX.utils.book_append_sheet(wb, hoja((r.competidores || []).map((c) => ({ Empresa: c.empresa, Provincia: c.provincia, Novedad: c.novedad, Fecha: c.fecha_iso, "Qué vende": c.que_vende, Fortaleza: c.fortaleza, Web: c.web, "Visto en": (c.fuentes || []).map((f) => f.url).join(" | ") })), [32, 16, 46, 12, 50, 46, 30, 60]), "Competidores");
   return XLSX.write(wb, { type: "buffer", bookType: "xlsx" });
 }
 

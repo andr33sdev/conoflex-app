@@ -197,6 +197,16 @@ export default function ClientesNuevos() {
     }
   }, [toast]);
 
+  const conocido = useCallback(async (empresa) => {
+    try {
+      await api("/api/clientes-nuevos/competidores/conocido", { method: "POST", body: { empresa } });
+      setComp((d) => (d?.resultado?.competidores ? { ...d, resultado: { ...d.resultado, competidores: d.resultado.competidores.filter((x) => x.empresa !== empresa) } } : d));
+      toast("Listo: no te lo vuelvo a mostrar.", "ok");
+    } catch (e) {
+      toast(e.message, "error");
+    }
+  }, [toast]);
+
   const abrirDescartadas = async () => {
     if (descartadas) return setDescartadas(null);
     try {
@@ -257,15 +267,15 @@ export default function ClientesNuevos() {
 
   const accion = pestaña === "competencia" ? { tipo: "COMPETENCIA", t: rc ? "Buscar de nuevo" : "Buscar competencia", Icono: Swords } : pestaña === "seguimiento" ? { tipo: "SEGUIMIENTO", t: "Revisar novedades", Icono: Radar } : { tipo: "OPORTUNIDADES", t: r ? "Buscar de nuevo" : "Buscar novedades", Icono: Radar };
   const exportable = pestaña === "competencia" ? comp?.estado === "LISTO" && comp.id : pestaña === "novedades" ? r && base.id : null;
-  const subtitulo = pestaña === "competencia" ? (rc ? `Última búsqueda: ${cuando(comp.terminado_at)}` : "Quién gana las licitaciones y quiénes compiten con vos.") : dato?.estado === "LISTO" ? `Última búsqueda: ${cuando(dato.terminado_at)}` : "Licitaciones, obras y empresas de toda la Argentina.";
+  const subtitulo = pestaña === "competencia" ? (rc ? `Última búsqueda: ${cuando(comp.terminado_at)}` : "Quién ganó licitaciones hace poco y qué empresas nuevas se mueven en el rubro.") : dato?.estado === "LISTO" ? `Última búsqueda: ${cuando(dato.terminado_at)}` : "Licitaciones, obras y empresas de toda la Argentina.";
   const tipoEnCurso = trabajo?.tipo;
   const corriendo = iniciando || enCurso;
 
   const cuerpo = () => {
     if (pestaña === "competencia") {
       if (enCurso && tipoEnCurso === "COMPETENCIA") return <Buscando trabajo={trabajo} />;
-      if (rc) return <><Resumen texto={rc.resumen} /><div className="mt-6"><Competencia r={rc} /></div><Aviso /></>;
-      return <Vacio icono={Swords} titulo="Todavía no buscaste la competencia" texto="La IA revisa licitaciones ya adjudicadas y empresas del rubro: quién gana, a qué precio y dónde." />;
+      if (rc) return <><Resumen texto={rc.resumen} /><div className="mt-6"><Competencia r={rc} onConocido={conocido} /></div><Aviso /></>;
+      return <Vacio icono={Swords} titulo="Todavía no buscaste la competencia" texto="La IA revisa licitaciones adjudicadas hace poco y los movimientos de empresas del rubro: quién gana, a qué precio y quién se está moviendo." />;
     }
     if (pestaña === "seguimiento") {
       if (enCurso && tipoEnCurso === "SEGUIMIENTO") return <Buscando trabajo={trabajo} />;
@@ -277,7 +287,7 @@ export default function ClientesNuevos() {
       return (
         <>
           {(fallo || error) && <div role="alert" className="mb-5 rounded-2xl border border-rose-500/30 bg-rose-500/10 p-4 text-sm text-rose-100">{fallo || error}</div>}
-          <Vacio icono={Radar} titulo="Todavía no buscaste novedades" texto="Apretá el botón y la IA revisa internet: licitaciones abiertas, obras viales y empresas del rubro de toda la Argentina." />
+          <Vacio icono={Radar} titulo="Todavía no buscaste novedades" texto="Apretá el botón y la IA revisa internet: licitaciones abiertas por vencer, obras que arrancan y empresas del rubro que se mueven, en toda la Argentina." />
         </>
       );
     }
@@ -335,7 +345,7 @@ export default function ClientesNuevos() {
                 </div>
               </>
             )}
-            {r.vencidas_descartadas > 0 && <p className="mt-4 text-sm text-zinc-600">{r.vencidas_descartadas} {r.vencidas_descartadas === 1 ? "licitación ya cerrada no se muestra" : "licitaciones ya cerradas no se muestran"}.</p>}
+            {(r.vencidas_descartadas > 0 || r.viejas_descartadas > 0) && <p className="mt-4 text-sm text-zinc-600">Se ocultaron {(r.vencidas_descartadas || 0) + (r.viejas_descartadas || 0)} resultados que ya cerraron o eran viejos.</p>}
           </>
         )}
         <div className="mt-4">
