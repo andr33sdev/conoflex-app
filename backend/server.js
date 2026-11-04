@@ -15,7 +15,7 @@ const { asegurarTablasAgentes, registrarRutasAgentes, iniciarVigilantes } = requ
 const { sinCita: sinCitaMail, notasTexto: notasVentasTexto, validarDescuento, ERROR_DESCUENTO, sugerirDescuento, ejemplosEnviadosTexto } = require("./agentes/ventasMails");
 const { registrarObservaciones } = require("./agentes/ventasAprendizaje");
 const { calcularMpSemana } = require("./mpPlanSemanal");
-const { separarDuplicadas, asegurarTablaDuplicadas } = require("./fichero");
+const { separarDuplicadas, asegurarTablaDuplicadas, ultimoRecDelReloj } = require("./fichero");
 const { asegurarTablasProduccion, registrarRutasProduccion } = require("./produccionRutas");
 const { asegurarTablaReflectivas, registrarRutasReflectivas } = require("./reflectivasRutas");
 const { asegurarTablasIngenieria, registrarRutasIngenieria } = require("./ingenieriasRutas");
@@ -4907,21 +4907,8 @@ app.post("/api/fichero/asignar-categoria", async (req, res) => {
 // 1. Obtener el último N° de registro almacenado en la base de datos
 app.get("/api/fichero/ultimo", async (req, res) => {
   try {
-    const [rows] = await db.query(
-      "SELECT MAX(rec_no) AS ultimo_rec FROM fichadas",
-    );
-    let ultimo = rows[0]?.ultimo_rec || 0;
-    // Las marcas descartadas como duplicadas también cuentan como "ya leídas",
-    // si no el script las volvería a pedir al reloj en cada ciclo.
-    try {
-      const [dup] = await db.query(
-        "SELECT MAX(rec_no) AS ultimo_rec FROM fichadas_duplicadas",
-      );
-      ultimo = Math.max(ultimo, dup[0]?.ultimo_rec || 0);
-    } catch {
-      /* la tabla aún no existe: no hay duplicadas */
-    }
-    return res.json({ ultimo_rec: ultimo });
+    // Las marcas descartadas como duplicadas también cuentan como "ya leídas" y las cargadas a mano no cuentan.
+    return res.json({ ultimo_rec: await ultimoRecDelReloj(db) });
   } catch (error) {
     console.error("Error al consultar último registro:", error);
     return res.status(500).json({ error: error.message });
