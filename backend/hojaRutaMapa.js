@@ -18,6 +18,7 @@ async function asegurarTablasMapa(db) {
   )`);
   const [cols] = await db.query("SHOW COLUMNS FROM hoja_ruta_geo LIKE 'aprox'");
   if (!cols.length) await db.query("ALTER TABLE hoja_ruta_geo ADD COLUMN aprox TINYINT NOT NULL DEFAULT 0");
+  await db.query("DELETE FROM hoja_ruta_geo WHERE lat = 0 AND lng = 0"); // ubicaciones inválidas (0,0) guardadas por error
   await db.query(`CREATE TABLE IF NOT EXISTS hoja_ruta_config (
     clave VARCHAR(60) NOT NULL PRIMARY KEY,
     valor VARCHAR(300) NULL
@@ -252,9 +253,10 @@ async function buscarDirecciones(db, texto, { fetchFn, consultarUltimoRecurso = 
 /** La persona eligió dónde queda una dirección: se guarda como ubicación exacta. */
 async function fijarUbicacion(db, direccion, lat, lng) {
   const dir = limpiar(direccion, 300);
-  const la = Number(lat), lo = Number(lng);
+  const vacio = (v) => v === null || v === undefined || String(v).trim() === ""; // Number(null) daba 0 y dejaba el pin en (0,0)
+  const la = vacio(lat) ? NaN : Number(lat), lo = vacio(lng) ? NaN : Number(lng);
   if (!claveDireccion(dir)) throw err(400, "Falta la dirección.");
-  if (!Number.isFinite(la) || !Number.isFinite(lo) || Math.abs(la) > 90 || Math.abs(lo) > 180) throw err(400, "La ubicación no es válida.");
+  if (!Number.isFinite(la) || !Number.isFinite(lo) || Math.abs(la) > 90 || Math.abs(lo) > 180 || (la === 0 && lo === 0)) throw err(400, "La ubicación no es válida.");
   await db.query(
     "INSERT INTO hoja_ruta_geo (clave, direccion, lat, lng, aprox, consultado_en) VALUES (?,?,?,?,0,NOW()) ON DUPLICATE KEY UPDATE lat=VALUES(lat), lng=VALUES(lng), aprox=0, consultado_en=NOW()",
     [claveDireccion(dir), dir, la, lo],

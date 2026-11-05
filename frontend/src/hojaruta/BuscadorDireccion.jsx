@@ -85,6 +85,7 @@ export default function BuscadorDireccion({ valor, onCambiar, onElegir, fijarPar
   }, [valor]);
 
   const guardar = async (texto, lat, lng, c) => {
+    if (!Number.isFinite(Number(lat)) || lat === null || lng === null) { setError("Esa coincidencia no trae ubicación. Elegí otra o marcala en el mapa."); return; }
     setGuardando(true); setError("");
     try {
       await pedir("/api/hoja-ruta/ubicacion", { method: "POST", body: { direccion: texto, lat, lng } });
