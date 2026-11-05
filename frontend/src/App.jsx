@@ -17,6 +17,7 @@ const CargaProduccion = lazy(() => import("./CargaProduccion"));
 const ComercialIA = lazy(() => import("./ComercialIA"));
 const SolicitudesInternas = lazy(() => import("./SolicitudesInternas"));
 const DespacharPedidos = lazy(() => import("./DespacharPedidos"));
+const HojaRuta = lazy(() => import("./hojaruta/HojaRuta"));
 const Pedidos = lazy(() => import("./Pedidos"));
 const FicheroModule = lazy(() => import("./FicheroModule"));
 const LaboratorioEnsamblaje = lazy(() => import("./LaboratorioEnsamblaje"));
@@ -46,6 +47,7 @@ const PRECARGA = {
   comercial: () => import("./ComercialIA"),
   "solicitudes-internas": () => import("./SolicitudesInternas"),
   "despachar-pedidos": () => import("./DespacharPedidos"),
+  "hoja-de-ruta": () => import("./hojaruta/HojaRuta"),
   pedidos: () => import("./Pedidos"),
   "control-asistencia": () => import("./FicheroModule"),
   "lab-ensamblaje": () => import("./LaboratorioEnsamblaje"),
@@ -264,6 +266,10 @@ function AppInterna() {
 
       {activeModule === "despachar-pedidos" && (
         <DespacharPedidos usuarioActual={usuarioActual} />
+      )}
+
+      {hasAccess("hoja-de-ruta") && activeModule === "hoja-de-ruta" && (
+        <HojaRuta usuarioActual={usuarioActual} />
       )}
 
       {hasAccess("carga-produccion") && activeModule === "carga-produccion" && (

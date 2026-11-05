@@ -26,6 +26,7 @@ const MODULOS_SISTEMA = [
   { id: "carga-produccion", nombre: "Carga Producción" },
   { id: "pedidos", nombre: "Pedidos" },
   { id: "despachar-pedidos", nombre: "Despachar Pedidos" },
+  { id: "hoja-de-ruta", nombre: "Hoja de ruta (despachos)" },
   { id: "comercial", nombre: "IA Comercial" },
   { id: "sugerencias-compra", nombre: "Sugerencias de Compra" },
   { id: "clientes-nuevos", nombre: "Clientes nuevos" },
