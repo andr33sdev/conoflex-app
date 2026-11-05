@@ -15,12 +15,10 @@ const Ingenieria = lazy(() => import("./Ingenieria"));
 const PlanificacionProduccion = lazy(() => import("./PlanificacionProduccion"));
 const CargaProduccion = lazy(() => import("./CargaProduccion"));
 const ComercialIA = lazy(() => import("./ComercialIA"));
-const ProduccionPlanta = lazy(() => import("./ProduccionPlanta"));
 const SolicitudesInternas = lazy(() => import("./SolicitudesInternas"));
 const DespacharPedidos = lazy(() => import("./DespacharPedidos"));
 const Pedidos = lazy(() => import("./Pedidos"));
 const FicheroModule = lazy(() => import("./FicheroModule"));
-const SimuladorLogistica = lazy(() => import("./SimuladorLogistica"));
 const LaboratorioEnsamblaje = lazy(() => import("./LaboratorioEnsamblaje"));
 const LaboratorioAR = lazy(() => import("./LaboratorioAR"));
 const VisorAR = lazy(() => import("./VisorAR"));
@@ -28,7 +26,7 @@ const SolicitudesCompraModule = lazy(() => import("./SolicitudesCompraModule"));
 const SugerenciasCompra = lazy(() => import("./SugerenciasCompra"));
 const FirmaSolicitudPublica = lazy(() => import("./FirmaSolicitudPublica"));
 const Agentes = lazy(() => import("./Agentes"));
-import { itemPorId, veLaboratorio, tieneAlgunAgente } from "./menu";
+import { itemPorId, tieneAlgunAgente } from "./menu";
 import PantallaCarga, { CargandoModulo } from "./PantallaCarga";
 import { olvidarUsuarioTema, sincronizarTema } from "./tema";
 
@@ -46,12 +44,10 @@ const PRECARGA = {
   planificacion: () => import("./PlanificacionProduccion"),
   "carga-produccion": () => import("./CargaProduccion"),
   comercial: () => import("./ComercialIA"),
-  "planta-online": () => import("./ProduccionPlanta"),
   "solicitudes-internas": () => import("./SolicitudesInternas"),
   "despachar-pedidos": () => import("./DespacharPedidos"),
   pedidos: () => import("./Pedidos"),
   "control-asistencia": () => import("./FicheroModule"),
-  "simulador-carga": () => import("./SimuladorLogistica"),
   "lab-ensamblaje": () => import("./LaboratorioEnsamblaje"),
   "lab-ar": () => import("./LaboratorioAR"),
   "visor-ar": () => import("./VisorAR"),
@@ -122,9 +118,7 @@ function AppInterna() {
 
   useEffect(() => {
     if (usuarioActual && usuarioActual.rol?.toUpperCase() !== "ADMIN") {
-      // EXCEPCIÓN: Permitir siempre el acceso a los módulos experimentales 3D/AR
-      const esLab = ["visor-ar", "lab-ar", "lab-ensamblaje", "simulador-carga"].includes(activeModule);
-      if (activeModule === "inicio" || (activeModule === "agentes" && tieneAlgunAgente(usuarioActual)) || (esLab && veLaboratorio(usuarioActual))) {
+      if (activeModule === "inicio" || (activeModule === "agentes" && tieneAlgunAgente(usuarioActual))) {
         return;
       }
 
@@ -242,18 +236,9 @@ function AppInterna() {
         <Reflectivas key={reloadKey} usuarioActual={usuarioActual} />
       )}
 
-      {/* ========================================================
-          MÓDULOS LIBERADOS PARA PRUEBAS (SIN hasAccess) 
-          ======================================================== */}
-      {veLaboratorio(usuarioActual) && (
-        <>
-          {activeModule === "simulador-carga" && <SimuladorLogistica />}
-          {activeModule === "lab-ensamblaje" && <LaboratorioEnsamblaje />}
-          {activeModule === "lab-ar" && <LaboratorioAR />}
-          {activeModule === "visor-ar" && <VisorAR />}
-        </>
-      )}
-      {/* ======================================================== */}
+      {hasAccess("lab-ensamblaje") && activeModule === "lab-ensamblaje" && <LaboratorioEnsamblaje />}
+      {hasAccess("lab-ar") && activeModule === "lab-ar" && <LaboratorioAR />}
+      {hasAccess("visor-ar") && activeModule === "visor-ar" && <VisorAR />}
 
       {hasAccess("metricas") && activeModule === "metricas" && (
         <Metricas key={reloadKey} />
@@ -289,9 +274,6 @@ function AppInterna() {
         <ComercialIA />
       )}
 
-      {hasAccess("planta-online") && activeModule === "planta-online" && (
-        <ProduccionPlanta />
-      )}
       </Suspense>
     </Layout>
   );
