@@ -180,6 +180,54 @@ async function buscarOp(db, opTexto) {
   return { op, encontrada: !!cliente, cliente, fecha_op: fechaOp, articulos, ya_cargados: ya };
 }
 
+// Un pedido está sin despachar cuando su "despacho" en la planilla de ventas está vacío (misma regla que Despachar Pedidos).
+const SIN_DESPACHO = "(despacho IS NULL OR TRIM(despacho) = '' OR TRIM(despacho) = '-' OR UPPER(despacho) LIKE '%SIN DESPACHAR%')";
+const NO_CANCELADO = "(estado IS NULL OR UPPER(TRIM(estado)) NOT LIKE 'CANCELAD%')";
+
+/**
+ * Clientes con pedidos sin despachar (según estado_pedidos) y sus OP. Se busca por cliente, no por OP.
+ * Por cada OP solo cuentan sus renglones sin despachar, de la versión más reciente de la OP.
+ * `exacto`: el nombre completo del cliente (para traer sus OP después de elegirlo).
+ */
+async function pedidosPendientes(db, { q = "", exacto = false } = {}) {
+  const texto = limpiar(q, 120).toLowerCase();
+  if (texto.length < 2) return [];
+  let rows;
+  try {
+    [rows] = await db.query(
+      `SELECT op, cliente, modelo, detalles, cantidad, DATE_FORMAT(fecha, '%Y-%m-%d') AS fecha
+         FROM estado_pedidos
+        WHERE ${exacto ? "LOWER(TRIM(cliente)) = ?" : "LOWER(cliente) LIKE ?"} AND ${SIN_DESPACHO} AND ${NO_CANCELADO}
+          AND op IS NOT NULL AND TRIM(op) <> ''
+        ORDER BY fecha DESC, id DESC LIMIT 800`,
+      [exacto ? texto : `%${texto.replace(/[%_]/g, "")}%`],
+    );
+  } catch { return []; } // sin planilla de ventas
+  if (!rows.length) return [];
+  // La versión vigente de cada OP: la de fecha más reciente (las anteriores son de OP viejas con el mismo número).
+  const opsCrudas = [...new Set(rows.map((r) => r.op))];
+  const [vigentes] = await db.query("SELECT op, DATE_FORMAT(MAX(fecha), '%Y-%m-%d') AS mx FROM estado_pedidos WHERE op IN (?) GROUP BY op", [opsCrudas]);
+  const mx = Object.fromEntries(vigentes.map((v) => [v.op, v.mx]));
+  const clientes = new Map();
+  for (const r of rows) {
+    if (mx[r.op] && r.fecha && r.fecha !== mx[r.op]) continue;
+    const k = r.cliente.trim().toLowerCase();
+    if (!clientes.has(k)) clientes.set(k, { cliente: r.cliente.trim(), ops: new Map() });
+    const ops = clientes.get(k).ops;
+    const num = normalizarOp(r.op);
+    if (!ops.has(num)) ops.set(num, { op: num, fecha: r.fecha, articulos: [] });
+    ops.get(num).articulos.push({ modelo: r.modelo || r.detalles || "Artículo sin especificar", cantidad: Number(r.cantidad) || 0 });
+  }
+  const lista = [...clientes.values()].sort((a, b) => a.cliente.localeCompare(b.cliente, "es")).slice(0, exacto ? 1 : 8)
+    .map((c) => ({ cliente: c.cliente, ops: [...c.ops.values()].sort((a, b) => String(b.fecha).localeCompare(String(a.fecha))).slice(0, 40) }));
+  const todas = lista.flatMap((c) => c.ops.map((o) => o.op));
+  if (todas.length) {
+    const [ya] = await db.query(`SELECT op, DATE_FORMAT(fecha_despacho, '%Y-%m-%d') AS fecha_despacho, estado, creado_por FROM hoja_ruta WHERE op IN (?) AND estado <> 'CANCELADO' ORDER BY fecha_despacho`, [todas]);
+    for (const c of lista) for (const o of c.ops) o.ya = ya.filter((y) => y.op === o.op).map(({ fecha_despacho, estado, creado_por }) => ({ fecha_despacho, estado, creado_por }));
+  }
+  return lista;
+}
+
 /** Quiénes cargaron despachos (para el filtro "cargó"). */
 async function quienesCargaron(db) {
   const [rows] = await db.query("SELECT DISTINCT creado_por FROM hoja_ruta WHERE creado_por IS NOT NULL AND creado_por <> '' ORDER BY creado_por");
@@ -202,6 +250,9 @@ function registrarRutasHojaRuta(app, db, requirePermiso) {
       res.json({ despachos: await listarDespachos(db, { desde: req.query.desde, hasta: req.query.hasta, estado: req.query.estado, cargo: req.query.cargo }), cargadores: await quienesCargaron(db) });
     } catch (e) { salir(res, e); }
   });
+  app.get("/api/hoja-ruta/pendientes", acceso, async (req, res) => {
+    try { res.json({ clientes: await pedidosPendientes(db, { q: req.query.q, exacto: req.query.exacto === "1" }) }); } catch (e) { salir(res, e); }
+  });
   app.get("/api/hoja-ruta/op/:op", acceso, async (req, res) => {
     try { res.json(await buscarOp(db, req.params.op)); } catch (e) { salir(res, e); }
   });
@@ -218,4 +269,4 @@ function registrarRutasHojaRuta(app, db, requirePermiso) {
   });
 }
 
-module.exports = { asegurarTablaHojaRuta, validarDespacho, normalizarOp, listarDespachos, crearDespacho, editarDespacho, cambiarEstado, buscarOp, quienesCargaron, registrarRutasHojaRuta, TIPOS, ESTADOS };
+module.exports = { pedidosPendientes, asegurarTablaHojaRuta, validarDespacho, normalizarOp, listarDespachos, crearDespacho, editarDespacho, cambiarEstado, buscarOp, quienesCargaron, registrarRutasHojaRuta, TIPOS, ESTADOS };
