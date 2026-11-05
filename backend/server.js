@@ -217,8 +217,8 @@ app.use(requireAuth);
 registrarRutasProduccion(app, db, requirePermiso);
 registrarRutasReflectivas(app, db, requirePermiso, requireAdmin);
 registrarRutasIngenieria(app, db, requirePermiso, requireAdmin);
+registrarRutasMapa(app, db, requirePermiso, requireAdmin); // antes que la hoja de ruta: sus rutas fijas (origen, ruta…) no deben caer en /:id
 registrarRutasHojaRuta(app, db, requirePermiso);
-registrarRutasMapa(app, db, requirePermiso, requireAdmin);
 registrarRutasNotificaciones(app, db);
 registrarRutasPush(app, db);
 registrarRutasCatalogo(app, { db, autenticarToken, autorizarRoles });

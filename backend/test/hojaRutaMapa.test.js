@@ -110,3 +110,67 @@ test("hoja de ruta con base real: clientes habituales, ubicación guardada, mapa
     await pool.end();
   }
 });
+
+test("rutas: la planta no cae en /:id, se buscan coincidencias y se elige ubicación (servidor real + Nominatim simulado)", async () => {
+  let pool;
+  try {
+    pool = mysql.createPool({ host: process.env.TEST_DB_HOST || "localhost", user: process.env.TEST_DB_USER || "root", password: process.env.TEST_DB_PASSWORD || "", database: process.env.TEST_DB_NAME || "test" });
+    await pool.query("SELECT 1");
+  } catch { if (pool) await pool.end().catch(() => {}); return; }
+  const express = require("express");
+  const consultasQ = [];
+  const fake = express();
+  fake.get("/search", (req, res) => {
+    const q = String(req.query.q);
+    consultasQ.push(q);
+    if (/3798/.test(q)) return res.json([]); // la altura exacta no está en el mapa
+    if (/Per[oó]n/.test(q)) return res.json([{ lat: "-34.6500", lon: "-58.6200", display_name: "x", address: { road: "Avenida Presidente Perón", city: "Morón", state: "Buenos Aires" } }, { lat: "-34.6600", lon: "-58.6300", display_name: "y", address: { road: "Avenida Presidente Perón", suburb: "Haedo", city: "Morón", state: "Buenos Aires" } }]);
+    res.json([]);
+  });
+  const fs = fake.listen(0);
+  process.env.NOMINATIM_URL = `http://127.0.0.1:${fs.address().port}`;
+  try {
+    for (const t of ["hoja_ruta", "hoja_ruta_geo", "hoja_ruta_config"]) await pool.query(`DROP TABLE IF EXISTS ${t}`);
+    await H.asegurarTablaHojaRuta(pool);
+    await pool.query("CREATE TABLE IF NOT EXISTS usuarios (id INT PRIMARY KEY, nombre VARCHAR(100), rol VARCHAR(30))");
+    await pool.query("CREATE TABLE hoja_ruta_geo (clave VARCHAR(300) NOT NULL PRIMARY KEY, direccion VARCHAR(300) NOT NULL, lat DECIMAL(10,7) NULL, lng DECIMAL(10,7) NULL, consultado_en DATETIME DEFAULT CURRENT_TIMESTAMP)"); // tabla de la versión anterior (sin 'aprox')
+    await M.asegurarTablasMapa(pool); // la actualiza sin perder nada
+    const app = express(); app.use(express.json());
+    const pasa = (q, r, n) => n();
+    M.registrarRutasMapa(app, pool, () => pasa, pasa);
+    H.registrarRutasHojaRuta(app, pool, () => pasa);
+    app.use((req, res) => res.status(404).json({ error: "no" }));
+    const s = app.listen(0);
+    const base = `http://127.0.0.1:${s.address().port}`;
+    const llamar = async (m, ruta, body) => { const r = await fetch(base + ruta, { method: m, headers: { "Content-Type": "application/json" }, body: body ? JSON.stringify(body) : undefined }); return [r.status, await r.json()]; };
+    try {
+      let [st, d] = await llamar("PUT", "/api/hoja-ruta/origen", { direccion: "Av. Pres. Perón 3798, Morón" });
+      assert.equal(st, 200); // antes caía en /:id y daba 500
+      assert.equal(d.origen.lat, -34.65);
+      assert.ok(consultasQ.some((q) => /Avenida Presidente/.test(q))); // abreviaturas expandidas
+      [st, d] = await llamar("GET", "/api/hoja-ruta/buscar-direccion?q=" + encodeURIComponent("Av. Pres. Perón 3798, Morón"));
+      assert.equal(st, 200);
+      assert.equal(d.coincidencias.length, 2);
+      assert.match(d.coincidencias[0].texto, /Avenida Presidente Perón, Morón/);
+      assert.equal(d.coincidencias[0].aprox, true); // sin altura
+      const elegida = d.coincidencias[1];
+      // lo elegido ya queda ubicado sin volver a consultar
+      const antes = consultasQ.length;
+      const u = await M.ubicar(pool, elegida.texto, { consultar: async () => { throw new Error("no debería consultar"); } });
+      assert.equal(u.estado, "ok"); assert.equal(consultasQ.length, antes);
+      // elegir ubicación para una dirección que no se encontraba
+      [st, d] = await llamar("POST", "/api/hoja-ruta/ubicacion", { direccion: "Calle rara 5", lat: -34.7, lng: -58.5 });
+      assert.equal(st, 200);
+      assert.equal((await M.ubicar(pool, "calle rara 5", { soloCache: true })).lat, -34.7);
+      [st] = await llamar("POST", "/api/hoja-ruta/ubicacion", { direccion: "x", lat: "abc", lng: 1 });
+      assert.equal(st, 400);
+      // las rutas con número siguen funcionando
+      [st, d] = await llamar("PUT", "/api/hoja-ruta/99999", { op: "1" });
+      assert.equal(st, 404);
+    } finally { s.close(); }
+  } finally {
+    fs.close(); delete process.env.NOMINATIM_URL;
+    for (const t of ["hoja_ruta", "hoja_ruta_geo", "hoja_ruta_config"]) await pool.query(`DROP TABLE IF EXISTS ${t}`);
+    await pool.end();
+  }
+});
