@@ -18,7 +18,7 @@ async function asegurarTablasMapa(db) {
   )`);
   const [cols] = await db.query("SHOW COLUMNS FROM hoja_ruta_geo LIKE 'aprox'");
   if (!cols.length) await db.query("ALTER TABLE hoja_ruta_geo ADD COLUMN aprox TINYINT NOT NULL DEFAULT 0");
-  await db.query("DELETE FROM hoja_ruta_geo WHERE lat = 0 AND lng = 0"); // ubicaciones inválidas (0,0) guardadas por error
+  await db.query("DELETE FROM hoja_ruta_geo WHERE lat IS NOT NULL AND NOT (lat BETWEEN -56 AND -21 AND lng BETWEEN -74 AND -53)"); // ubicaciones fuera de Argentina (ej. 0,0) guardadas por error
   await db.query(`CREATE TABLE IF NOT EXISTS hoja_ruta_config (
     clave VARCHAR(60) NOT NULL PRIMARY KEY,
     valor VARCHAR(300) NULL
@@ -129,7 +129,7 @@ async function buscarGeoref(q, { fetchFn } = {}) {
     if (intentos.every((r) => r.status === "rejected")) throw intentos[0].reason; // servicio caído ≠ sin coincidencias
     crudas = await consultar(null).catch(() => []);
   }
-  const salida = crudas.filter((x) => Number.isFinite(Number(x.ubicacion?.lat)) && Number.isFinite(Number(x.ubicacion?.lon))).map((x) => {
+  const salida = crudas.filter((x) => x.ubicacion?.lat != null && x.ubicacion?.lon != null && enAR(Number(x.ubicacion.lat), Number(x.ubicacion.lon))).map((x) => {
     const loc = x.localidad_censal?.nombre, dep = x.departamento?.nombre, prov = x.provincia?.nombre;
     const calle = `${titulo(x.calle?.nombre)}${x.altura?.valor ? ` ${x.altura.valor}` : ""}`;
     const puntos = [loc, dep].filter(Boolean).reduce((a, n) => a + (resto.includes(normTxt(n)) ? 1 : 0), 0);
@@ -149,7 +149,7 @@ async function buscarPhoton(q, { fetchFn } = {}) {
     const calle = p.street || (p.osm_key === "highway" ? p.name : null);
     const texto = calle ? unir(`${calle}${p.housenumber ? ` ${p.housenumber}` : ""}`, ...zona) : unir(p.name, ...zona.slice(1));
     return { texto, lat: Number(lat), lng: Number(lng), aprox: !p.housenumber, fuente: "photon" };
-  }).filter((x) => x.texto && Number.isFinite(x.lat) && Number.isFinite(x.lng));
+  }).filter((x) => x.texto && Number.isFinite(x.lat) && Number.isFinite(x.lng) && enAR(x.lat, x.lng));
 }
 
 /** Google Places (opcional, con clave): devuelve sugerencias; las coordenadas se piden recién al elegir una. */
@@ -274,7 +274,7 @@ async function ubicar(db, direccion, { fetchFn, soloCache = false, consultar = c
   if (!clave) return { estado: "sin_direccion" };
   const [rows] = await db.query("SELECT lat, lng, aprox, (consultado_en < NOW() - INTERVAL 1 HOUR) AS vieja FROM hoja_ruta_geo WHERE clave = ?", [clave]);
   const g = rows[0];
-  if (g && g.lat != null) return { estado: "ok", lat: Number(g.lat), lng: Number(g.lng), aprox: !!g.aprox };
+  if (g && g.lat != null && enAR(Number(g.lat), Number(g.lng))) return { estado: "ok", lat: Number(g.lat), lng: Number(g.lng), aprox: !!g.aprox };
   if (g && !g.vieja) return { estado: "no_encontrada" };
   if (soloCache) return { estado: "pendiente" };
   let r;
