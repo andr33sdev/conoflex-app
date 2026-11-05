@@ -6,7 +6,6 @@ import {
   BarChart3,
   CalendarDays,
   ClipboardCheck,
-  Activity,
   Bot,
   ClipboardList,
   ShieldCheck,
@@ -59,15 +58,6 @@ export const ALL_MENU_ITEMS = [
     icon: ClipboardCheck,
     desc: "Registrá lo producido en cada turno",
     kw: "produccion turno",
-  },
-  {
-    id: "planta-online",
-    corto: "Planta",
-    grupo: "produccion",
-    label: "Planta On-Line",
-    icon: Activity,
-    desc: "Qué está pasando en planta ahora",
-    kw: "planta vivo tiempo real",
   },
   {
     id: "ingenieria",
@@ -230,16 +220,6 @@ export const ALL_MENU_ITEMS = [
   },
 
   {
-    id: "simulador-carga",
-    corto: "Simulador",
-    grupo: "laboratorio",
-    label: "Simulador 3D Carga",
-    icon: Truck,
-    desc: "Simulá la carga de un camión en 3D",
-    kw: "camion logistica",
-    libre: true,
-  },
-  {
     id: "lab-ensamblaje",
     corto: "Lab 3D",
     grupo: "laboratorio",
@@ -247,7 +227,6 @@ export const ALL_MENU_ITEMS = [
     icon: Wrench,
     desc: "Armado de productos en 3D",
     kw: "ensamblaje",
-    libre: true,
   },
   {
     id: "lab-ar",
@@ -257,7 +236,6 @@ export const ALL_MENU_ITEMS = [
     icon: ScanFace,
     desc: "Realidad aumentada manual",
     kw: "webxr",
-    libre: true,
   },
   {
     id: "visor-ar",
@@ -267,14 +245,9 @@ export const ALL_MENU_ITEMS = [
     icon: Smartphone,
     desc: "Visor de realidad aumentada",
     kw: "realidad aumentada",
-    libre: true,
     highlight: true,
   },
 ];
-
-// Roles que no ven el conjunto Laboratorio 3D y AR (el resto de los roles sí, como siempre).
-const ROLES_SIN_LABORATORIO = ["OPERARIO"];
-export const veLaboratorio = (usuario) => !ROLES_SIN_LABORATORIO.includes(String(usuario?.rol || "").trim().toUpperCase());
 
 /** Agentes que tiene habilitados el usuario (permisos "agente:<id>"; ADMIN y "*" ven todos). */
 export function agentesPermitidos(usuario, todos = []) {
@@ -296,7 +269,6 @@ export function itemsPermitidos(usuario) {
     if (rol === "ADMIN") return true;
     if (it.adminOnly) return false;
     if (it.porAgente) return tieneAlgunAgente(usuario);
-    if (it.libre) return it.grupo !== "laboratorio" || veLaboratorio(usuario);
     return permisos.includes(it.id) || permisos.includes("*");
   });
 }
