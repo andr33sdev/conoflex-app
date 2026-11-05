@@ -359,20 +359,26 @@ async function guardarOrigen(db, direccion, deps = {}) {
   return { direccion: dir, lat: u.lat, lng: u.lng };
 }
 
-/** Clientes que ya se cargaron alguna vez, con los datos de su última carga. */
+/** Nombre de cliente comparable: sin tildes, mayúsculas, puntos ni espacios ("S.R.L" = "S R L" = "srl"). */
+const claveCliente = (t) => String(t || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "");
+
+/** Clientes que ya se cargaron alguna vez, con los datos de su última carga (la más reciente no cancelada; si todas están canceladas, la última). */
 async function clientesHabituales(db, { q = "", exacto = false } = {}) {
-  const texto = limpiar(q, 120).toLowerCase();
-  if (!texto) return [];
+  const buscado = claveCliente(limpiar(q, 120));
+  if (!buscado) return [];
   const [rows] = await db.query(
-    `SELECT h.cliente, h.tipo_entrega, h.direccion, h.transporte_nombre, h.contacto_nombre, h.contacto_telefono, h.observaciones, h.op AS ultimo_op,
-            DATE_FORMAT(h.fecha_despacho, '%Y-%m-%d') AS ultima_fecha
-       FROM hoja_ruta h
-       JOIN (SELECT MAX(id) AS mid FROM hoja_ruta WHERE estado <> 'CANCELADO' GROUP BY LOWER(TRIM(cliente))) m ON h.id = m.mid
-      WHERE ${exacto ? "LOWER(TRIM(h.cliente)) = ?" : "LOWER(h.cliente) LIKE ?"}
-      ORDER BY h.cliente LIMIT 8`,
-    [exacto ? texto : `%${texto.replace(/[%_]/g, "")}%`],
+    `SELECT cliente, tipo_entrega, direccion, transporte_nombre, contacto_nombre, contacto_telefono, observaciones, estado, op AS ultimo_op,
+            DATE_FORMAT(fecha_despacho, '%Y-%m-%d') AS ultima_fecha
+       FROM hoja_ruta ORDER BY id DESC LIMIT 3000`,
   );
-  return rows;
+  const porCliente = new Map();
+  for (const r of rows) {
+    const k = claveCliente(r.cliente);
+    if (!k || (exacto ? k !== buscado : !k.includes(buscado))) continue;
+    const previo = porCliente.get(k);
+    if (!previo || (previo.estado === "CANCELADO" && r.estado !== "CANCELADO")) porCliente.set(k, r); // filas ya vienen de la más nueva a la más vieja
+  }
+  return [...porCliente.values()].sort((a, b) => a.cliente.localeCompare(b.cliente, "es")).slice(0, 8).map(({ estado, ...resto }) => { void estado; return resto; });
 }
 
 /** Paradas de un día para el mapa. Ubica hasta `maxNuevas` direcciones por vez; las que faltan vuelven como `pendiente`. */

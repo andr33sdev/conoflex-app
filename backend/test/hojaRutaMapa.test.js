@@ -72,6 +72,14 @@ test("hoja de ruta con base real: clientes habituales, ubicación guardada, mapa
     await H.cambiarEstado(pool, { id: b.id, estado: "CANCELADO", motivo: "pospuesto", usuario: vero });
     cl = await M.clientesHabituales(pool, { q: "vial" });
     assert.equal(cl[0].direccion, "Mitre 100, Avellaneda");
+    // el mismo cliente escrito distinto (S.R.L / S R L / SRL, tildes, espacios) se reconoce igual
+    await H.crearDespacho(pool, { usuario: vero, datos: { op: "62", cliente: "Distribuidora Ejad S.R.L", fecha_despacho: "2026-11-12", tipo_entrega: "ENTREGA", direccion: "Edgardo Casella 1407, Villa Rosa", contacto_nombre: "Juan", prioridad: 3 } });
+    for (const nombre of ["DISTRIBUIDORA  EJAD S R L", "distribuidora ejad srl", "Distribuídora Ejad S.R.L."]) {
+      assert.equal((await M.clientesHabituales(pool, { q: nombre, exacto: true }))[0]?.direccion, "Edgardo Casella 1407, Villa Rosa", nombre);
+    }
+    // si todas sus cargas están canceladas, igual se recuerdan los datos
+    await pool.query("UPDATE hoja_ruta SET estado='CANCELADO' WHERE cliente LIKE 'Distribuidora Ejad%'");
+    assert.equal((await M.clientesHabituales(pool, { q: "distribuidora ejad srl", exacto: true }))[0]?.contacto_nombre, "Juan");
 
     // ubicación: consulta una vez y después sale de lo guardado
     let consultas = 0;

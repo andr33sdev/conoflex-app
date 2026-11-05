@@ -114,7 +114,7 @@ function Formulario({ inicial, onCerrar, onGuardado }) {
     try {
       const h = (await pedir(`/api/hoja-ruta/clientes?q=${encodeURIComponent(c.cliente)}&exacto=1`)).clientes[0];
       if (h) aplicarHabitual(h);
-    } catch { /* sin datos previos: se completa a mano */ }
+    } catch (e) { setError(`No pude traer los datos de su última entrega (${e.message}). Completalos a mano.`); }
   };
 
   const buscar = async () => {
