@@ -23,6 +23,7 @@ const { asegurarTablasProduccion, registrarRutasProduccion } = require("./produc
 const { asegurarTablaReflectivas, registrarRutasReflectivas } = require("./reflectivasRutas");
 const { asegurarTablasIngenieria, registrarRutasIngenieria } = require("./ingenieriasRutas");
 const { asegurarTablaHojaRuta, registrarRutasHojaRuta } = require("./hojaRuta");
+const { asegurarTablasMapa, registrarRutasMapa } = require("./hojaRutaMapa");
 const { asegurarTablasNotificaciones, crearNotificacion, registrarRutasNotificaciones, alCrearNotificacion } = require("./notificaciones");
 const { asegurarPush, enviarPush, registrarRutasPush } = require("./push");
 const { mismoProducto, asegurarColumnasCatalogo, registrarRutasCatalogo } = require("./comercial/catalogo");
@@ -217,6 +218,7 @@ registrarRutasProduccion(app, db, requirePermiso);
 registrarRutasReflectivas(app, db, requirePermiso, requireAdmin);
 registrarRutasIngenieria(app, db, requirePermiso, requireAdmin);
 registrarRutasHojaRuta(app, db, requirePermiso);
+registrarRutasMapa(app, db, requirePermiso, requireAdmin);
 registrarRutasNotificaciones(app, db);
 registrarRutasPush(app, db);
 registrarRutasCatalogo(app, { db, autenticarToken, autorizarRoles });
@@ -837,6 +839,7 @@ async function initDB() {
     await asegurarTablaReflectivas(db);
     await asegurarTablasIngenieria(db);
     await asegurarTablaHojaRuta(db);
+    await asegurarTablasMapa(db);
     await asegurarTablasNotificaciones(db);
     await asegurarTablaMovimientos(db);
     await asegurarColumnasCatalogo(db);

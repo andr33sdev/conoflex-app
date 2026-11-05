@@ -1,5 +1,7 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { CalendarDays, Check, ChevronLeft, ChevronRight, ListChecks, Loader2, Pencil, Phone, Plus, RotateCcw, Truck, User, X, MapPin, Ban } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import MapaRuta from "./MapaRuta";
+import Cruces from "./Cruces";
+import { CalendarDays, Check, ChevronLeft, ChevronRight, ListChecks, Loader2, Pencil, Phone, Plus, RotateCcw, Truck, User, X, MapPin, Ban, Map as MapaIcon } from "lucide-react";
 
 const API_BASE_URL = import.meta.env?.VITE_API_URL || "";
 const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -10,30 +12,12 @@ const MESES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "
 const diaSemana = (d) => (d.getDay() + 6) % 7;
 const tituloDia = (s) => { const d = aFecha(s); return `${DIAS[diaSemana(d)]} ${d.getDate()} de ${MESES[d.getMonth()]}`; };
 const TIPOS = { ENTREGA: "Entrega a domicilio", TRANSPORTE: "Por transporte", RETIRA: "Retira el cliente" };
-const COLOR_PRIO = ["", "text-zinc-400", "text-sky-400", "text-amber-400", "text-orange-400", "text-red-400"];
 
 async function pedir(path, opciones) {
   const res = await fetch(`${API_BASE_URL}${path}`, opciones && { ...opciones, headers: { "Content-Type": "application/json" }, body: JSON.stringify(opciones.body) });
   const d = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(d.error || "No se pudo completar.");
   return d;
-}
-
-/** Prioridad de 1 a 5 como cruces: las encendidas son la prioridad. */
-export function Cruces({ valor, onElegir, tam = "text-sm" }) {
-  return (
-    <span className={`inline-flex items-center gap-0.5 font-black ${tam}`} aria-label={`Prioridad ${valor} de 5`} title={`Prioridad ${valor} de 5`}>
-      {[1, 2, 3, 4, 5].map((n) => {
-        const on = n <= valor;
-        const cls = on ? COLOR_PRIO[valor] : "text-zinc-700";
-        return onElegir ? (
-          <button key={n} type="button" onClick={() => onElegir(n)} className={`${cls} hover:scale-110 transition-transform px-0.5`} aria-label={`Prioridad ${n}`}>✕</button>
-        ) : (
-          <span key={n} className={cls}>✕</span>
-        );
-      })}
-    </span>
-  );
 }
 
 const ESTADO_TXT = { PROGRAMADO: "Programado", DESPACHADO: "Despachado", CANCELADO: "Cancelado" };
@@ -97,7 +81,25 @@ function Formulario({ inicial, onCerrar, onGuardado }) {
   const [buscando, setBuscando] = useState(false);
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState("");
+  const [sugerencias, setSugerencias] = useState([]);
+  const [precargado, setPrecargado] = useState(null);
+  const timer = useRef(null);
   const set = (k, v) => setF((x) => ({ ...x, [k]: v }));
+
+  // Cliente habitual: completa cómo se entregó la última vez.
+  const aplicarHabitual = (c) => {
+    setSugerencias([]);
+    setPrecargado(c);
+    setF((x) => ({ ...x, cliente: c.cliente, tipo_entrega: c.tipo_entrega || "ENTREGA", direccion: c.direccion || "", transporte_nombre: c.transporte_nombre || "", contacto_nombre: c.contacto_nombre || "", contacto_telefono: c.contacto_telefono || "", observaciones: c.observaciones || "" }));
+  };
+  const escribirCliente = (v) => {
+    set("cliente", v); setPrecargado(null);
+    clearTimeout(timer.current);
+    if (editando || v.trim().length < 2) { setSugerencias([]); return; }
+    timer.current = setTimeout(async () => {
+      try { setSugerencias((await pedir(`/api/hoja-ruta/clientes?q=${encodeURIComponent(v.trim())}`)).clientes); } catch { setSugerencias([]); }
+    }, 300);
+  };
 
   const buscar = async () => {
     if (!f.op.trim()) return;
@@ -106,6 +108,10 @@ function Formulario({ inicial, onCerrar, onGuardado }) {
       const r = await pedir(`/api/hoja-ruta/op/${encodeURIComponent(f.op.trim())}`);
       setInfo(r);
       setF((x) => ({ ...x, op: r.op, cliente: r.cliente || x.cliente, articulos: r.articulos?.length ? r.articulos : x.articulos }));
+      if (r.cliente && !editando) {
+        const h = (await pedir(`/api/hoja-ruta/clientes?q=${encodeURIComponent(r.cliente)}&exacto=1`)).clientes[0];
+        if (h) aplicarHabitual(h);
+      }
     } catch (e) { setError(e.message); } finally { setBuscando(false); }
   };
 
@@ -138,7 +144,17 @@ function Formulario({ inicial, onCerrar, onGuardado }) {
           </div>
           <div>
             <label className="text-[11px] font-bold uppercase tracking-widest text-zinc-500">Cliente</label>
-            <input className={`${campo} mt-1`} value={f.cliente} onChange={(e) => set("cliente", e.target.value)} placeholder="Razón social o nombre" />
+            <div className="relative">
+              <input className={`${campo} mt-1`} value={f.cliente} onChange={(e) => escribirCliente(e.target.value)} placeholder="Razón social o nombre" autoComplete="off" />
+              {sugerencias.length > 0 && (
+                <ul className="absolute left-0 right-0 top-full mt-1 z-20 bg-[#1c1c1c] border border-zinc-700 rounded-md shadow-xl overflow-hidden">
+                  {sugerencias.map((c) => (
+                    <li key={c.cliente}><button type="button" onClick={() => aplicarHabitual(c)} className="w-full text-left px-3 py-2 hover:bg-zinc-800"><span className="block text-sm text-white font-semibold">{c.cliente}</span><span className="block text-xs text-zinc-500 truncate">{c.tipo_entrega === "RETIRA" ? "Retira el cliente" : c.direccion}</span></button></li>
+                  ))}
+                </ul>
+              )}
+            </div>
+            {precargado && <p className="text-xs text-emerald-400 mt-1.5">Cliente habitual: cargué los datos de su última entrega ({precargado.ultima_fecha.slice(8)}/{precargado.ultima_fecha.slice(5, 7)}). Revisalos y cambiá lo que haga falta.</p>}
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
@@ -269,6 +285,7 @@ export default function HojaRuta({ usuarioActual }) {
   }, [vista, rango, mes]);
 
   const cargar = useCallback(async () => {
+    if (vista === "mapa") { setCargando(false); return; }
     try {
       const est = vista === "calendario" ? "TODOS" : estado;
       const q = new URLSearchParams({ desde, hasta, estado: est });
@@ -317,6 +334,7 @@ export default function HojaRuta({ usuarioActual }) {
         <div className="flex rounded-md border border-zinc-800 overflow-hidden">
           <button onClick={() => setVista("lista")} className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold ${vista === "lista" ? "bg-zinc-800 text-white" : "text-zinc-400 hover:bg-zinc-900"}`}><ListChecks size={14} />Lista</button>
           <button onClick={() => setVista("calendario")} className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold ${vista === "calendario" ? "bg-zinc-800 text-white" : "text-zinc-400 hover:bg-zinc-900"}`}><CalendarDays size={14} />Calendario</button>
+          <button onClick={() => setVista("mapa")} className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold ${vista === "mapa" ? "bg-zinc-800 text-white" : "text-zinc-400 hover:bg-zinc-900"}`}><MapaIcon size={14} />Mapa</button>
         </div>
         {vista === "lista" && (
           <>
@@ -335,7 +353,9 @@ export default function HojaRuta({ usuarioActual }) {
       </div>
 
       {error && <p className="text-sm text-red-400 mb-3">{error}</p>}
-      {cargando && !despachos.length ? (
+      {vista === "mapa" ? (
+        <MapaRuta fechaInicial={diaSel} esAdmin={esAdmin} />
+      ) : cargando && !despachos.length ? (
         <div className="py-16 flex justify-center"><Loader2 className="animate-spin text-zinc-600" /></div>
       ) : vista === "lista" ? (
         grupos.length === 0 ? (

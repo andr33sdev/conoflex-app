@@ -1,4 +1,5 @@
 "use strict";
+const { ubicarEnSegundoPlano } = require("./hojaRutaMapa");
 // Hoja de ruta: ventas carga los despachos pendientes (OP, cliente, día, dirección o transporte, prioridad 1 a 5, contacto y
 // observaciones) y despacho/producción ve qué sale y cuándo. Cada despacho guarda qué usuario lo cargó.
 const FECHA = /^\d{4}-\d{2}-\d{2}$/;
@@ -113,6 +114,7 @@ async function crearDespacho(db, { datos, usuario }) {
      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     [d.op, d.cliente, d.fecha_despacho, d.tipo_entrega, d.direccion, d.transporte_nombre, d.prioridad, d.contacto_nombre, d.contacto_telefono, d.observaciones, d.articulos, usuario?.id ?? null, limpiar(usuario?.nombre, 120) || null],
   );
+  if (d.tipo_entrega !== "RETIRA") ubicarEnSegundoPlano(db, d.direccion);
   return aFila(await leer(db, r.insertId));
 }
 
@@ -126,6 +128,7 @@ async function editarDespacho(db, { id, datos, usuario }) {
     `UPDATE hoja_ruta SET op=?, cliente=?, fecha_despacho=?, tipo_entrega=?, direccion=?, transporte_nombre=?, prioridad=?, contacto_nombre=?, contacto_telefono=?, observaciones=?, articulos=?, actualizado_por=?, actualizado_en=NOW() WHERE id=?`,
     [d.op, d.cliente, d.fecha_despacho, d.tipo_entrega, d.direccion, d.transporte_nombre, d.prioridad, d.contacto_nombre, d.contacto_telefono, d.observaciones, d.articulos, limpiar(usuario?.nombre, 120) || null, id],
   );
+  if (d.tipo_entrega !== "RETIRA") ubicarEnSegundoPlano(db, d.direccion);
   return aFila(await leer(db, id));
 }
 
