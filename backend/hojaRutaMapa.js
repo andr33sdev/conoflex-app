@@ -74,39 +74,179 @@ async function consultarNominatim(direccion, { fetchFn = fetch } = {}) {
   return null;
 }
 
-const nombreLugar = (p) => {
-  const a = p.address || {};
-  const calle = [a.road || a.pedestrian || a.neighbourhood, a.house_number].filter(Boolean).join(" ");
-  const zona = [a.suburb || a.neighbourhood, a.city || a.town || a.village || a.municipality || a.city_district, a.state].filter((x, i, arr) => x && arr.indexOf(x) === i).join(", ");
-  const t = [calle, zona].filter(Boolean).join(", ");
-  return t || String(p.display_name || "").split(",").slice(0, 4).join(",").trim();
-};
+// ───────────────────────── Búsqueda de direcciones (autocompletar) ─────────────────────────
+// Varias fuentes, de la más precisa a la más general:
+//  · Google Places (solo si hay GOOGLE_MAPS_API_KEY): la mejor calidad, como Google Maps.
+//  · Georef (API oficial del Estado argentino): calcula la ubicación por altura, aunque OpenStreetMap no tenga el número.
+//  · Photon (OpenStreetMap): sirve para autocompletar mientras se escribe.
+//  · Nominatim: último recurso.
+// Y siempre se puede pegar coordenadas / un link de Google Maps, o marcar el punto en el mapa.
+const GEOREF_URL = () => (process.env.GEOREF_URL || "https://apis.datos.gob.ar/georef/api/v2.0").replace(/\/+$/, "");
+const PHOTON_URL = () => (process.env.PHOTON_URL || "https://photon.komoot.io").replace(/\/+$/, "");
+const GOOGLE_KEY = () => process.env.GOOGLE_MAPS_API_KEY || "";
+const CENTRO = { lat: -34.6, lng: -58.5 }; // Gran Buenos Aires: se prefiere por sobre el resto del país
+const PROVINCIAS = ["Buenos Aires", "Ciudad Autonoma de Buenos Aires", "Catamarca", "Chaco", "Chubut", "Cordoba", "Corrientes", "Entre Rios", "Formosa", "Jujuy", "La Pampa", "La Rioja", "Mendoza", "Misiones", "Neuquen", "Rio Negro", "Salta", "San Juan", "San Luis", "Santa Cruz", "Santa Fe", "Santiago del Estero", "Tierra del Fuego", "Tucuman"];
 
-/** Coincidencias para lo que se escribió (como el buscador de Google Maps), para que la persona elija. Se guardan para no volver a consultar. */
-async function buscarDirecciones(db, texto, { fetchFn } = {}) {
+const normTxt = (t) => String(t || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+const MINUSCULAS = new Set(["de", "del", "la", "las", "los", "el", "y", "e"]);
+const titulo = (t) => String(t || "").toLowerCase().split(/(\s+)/).map((w, i) => (i > 0 && MINUSCULAS.has(w) ? w : w.charAt(0).toUpperCase() + w.slice(1))).join("");
+const unir = (...partes) => partes.map((x) => String(x || "").trim()).filter((x, i, a) => x && a.findIndex((y) => normTxt(y) === normTxt(x)) === i).join(", ");
+const enAR = (lat, lng) => lat <= -21 && lat >= -56 && lng <= -53 && lng >= -74;
+
+async function pedirJson(url, { fetchFn = fetch, opciones = {}, espera = 8000 } = {}) {
+  const res = await fetchFn(url, { ...opciones, signal: AbortSignal.timeout(espera) });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
+}
+
+/** Calle y altura ("Casela 1407") y el resto del texto ("en Villa Rosa, Pilar"), para consultar a Georef. */
+function partirConsulta(q) {
+  const parte0 = q.split(",")[0];
+  const ms = [...parte0.matchAll(/\d{1,5}/g)];
+  if (!ms.length) return null;
+  const u = ms[ms.length - 1];
+  const direccion = parte0.slice(0, u.index + u[0].length).trim();
+  if (normTxt(direccion).split(" ").filter((w) => !/^\d+$/.test(w)).length < 1) return null; // solo números
+  return { direccion, resto: q.slice(direccion.length) };
+}
+
+/** Georef: dirección con altura → ubicación calculada. Las coincidencias con la localidad/partido escritos van primero. */
+async function buscarGeoref(q, { fetchFn } = {}) {
+  const parte = partirConsulta(q);
+  if (!parte) return [];
+  const resto = normTxt(parte.resto);
+  const provEscrita = PROVINCIAS.filter((p) => resto.includes(normTxt(p)));
+  const provincias = provEscrita.length ? provEscrita.map((p) => (p === "Ciudad Autonoma de Buenos Aires" ? "Ciudad Autónoma de Buenos Aires" : p)) : ["Buenos Aires", "Ciudad Autónoma de Buenos Aires"];
+  const consultar = async (prov) => {
+    const url = `${GEOREF_URL()}/direcciones?direccion=${encodeURIComponent(parte.direccion)}${prov ? `&provincia=${encodeURIComponent(prov)}` : ""}&max=25`;
+    const d = await pedirJson(url, { fetchFn });
+    return Array.isArray(d.direcciones) ? d.direcciones : [];
+  };
+  const intentos = await Promise.allSettled(provincias.map((p) => consultar(p)));
+  let crudas = intentos.flatMap((r) => (r.status === "fulfilled" ? r.value : []));
+  if (!crudas.length) {
+    if (intentos.every((r) => r.status === "rejected")) throw intentos[0].reason; // servicio caído ≠ sin coincidencias
+    crudas = await consultar(null).catch(() => []);
+  }
+  const salida = crudas.filter((x) => Number.isFinite(Number(x.ubicacion?.lat)) && Number.isFinite(Number(x.ubicacion?.lon))).map((x) => {
+    const loc = x.localidad_censal?.nombre, dep = x.departamento?.nombre, prov = x.provincia?.nombre;
+    const calle = `${titulo(x.calle?.nombre)}${x.altura?.valor ? ` ${x.altura.valor}` : ""}`;
+    const puntos = [loc, dep].filter(Boolean).reduce((a, n) => a + (resto.includes(normTxt(n)) ? 1 : 0), 0);
+    return { texto: unir(calle, loc, dep, prov), lat: Number(x.ubicacion.lat), lng: Number(x.ubicacion.lon), aprox: !x.altura?.valor, fuente: "georef", puntos };
+  });
+  const coinciden = salida.filter((x) => x.puntos > 0);
+  return (coinciden.length ? coinciden.sort((a, b) => b.puntos - a.puntos) : salida).slice(0, 6);
+}
+
+/** Photon (OpenStreetMap): rápido y tolerante, ideal para ir mostrando coincidencias mientras se escribe. */
+async function buscarPhoton(q, { fetchFn } = {}) {
+  const d = await pedirJson(`${PHOTON_URL()}/api/?q=${encodeURIComponent(q)}&limit=8&lat=${CENTRO.lat}&lon=${CENTRO.lng}&location_bias_scale=0.3`, { fetchFn });
+  return (d.features || []).filter((f) => f.geometry?.coordinates && (!f.properties?.countrycode || f.properties.countrycode === "AR")).map((f) => {
+    const p = f.properties || {};
+    const [lng, lat] = f.geometry.coordinates;
+    const zona = [p.district || p.locality, p.city || p.county, p.state];
+    const calle = p.street || (p.osm_key === "highway" ? p.name : null);
+    const texto = calle ? unir(`${calle}${p.housenumber ? ` ${p.housenumber}` : ""}`, ...zona) : unir(p.name, ...zona.slice(1));
+    return { texto, lat: Number(lat), lng: Number(lng), aprox: !p.housenumber, fuente: "photon" };
+  }).filter((x) => x.texto && Number.isFinite(x.lat) && Number.isFinite(x.lng));
+}
+
+/** Google Places (opcional, con clave): devuelve sugerencias; las coordenadas se piden recién al elegir una. */
+async function buscarGoogle(q, { fetchFn } = {}) {
+  const key = GOOGLE_KEY();
+  if (!key) return [];
+  const d = await pedirJson("https://places.googleapis.com/v1/places:autocomplete", {
+    fetchFn,
+    opciones: { method: "POST", headers: { "Content-Type": "application/json", "X-Goog-Api-Key": key }, body: JSON.stringify({ input: q, languageCode: "es", regionCode: "AR", includedRegionCodes: ["ar"], locationBias: { circle: { center: { latitude: CENTRO.lat, longitude: CENTRO.lng }, radius: 50000 } } }) },
+  });
+  return (d.suggestions || []).map((x) => x.placePrediction).filter((x) => x?.placeId).map((x) => ({ texto: x.text?.text || "", placeId: x.placeId, fuente: "google" })).filter((x) => x.texto).slice(0, 8);
+}
+async function detalleGoogle(placeId, { fetchFn } = {}) {
+  const key = GOOGLE_KEY();
+  if (!key) throw err(400, "Google Maps no está configurado.");
+  const d = await pedirJson(`https://places.googleapis.com/v1/places/${encodeURIComponent(placeId)}?languageCode=es`, { fetchFn, opciones: { headers: { "X-Goog-Api-Key": key, "X-Goog-FieldMask": "location,formattedAddress" } } });
+  if (!Number.isFinite(d.location?.latitude)) throw err(422, "No pude obtener la ubicación de ese lugar.");
+  return { texto: String(d.formattedAddress || "").replace(/, Argentina$/, ""), lat: d.location.latitude, lng: d.location.longitude };
+}
+
+/** Coordenadas pegadas ("-34.45, -58.91") o un link de Google Maps (largo o corto) → ubicación. */
+function coordenadasEnTexto(t) {
+  const m = String(t).match(/@?(-?\d{1,2}\.\d{3,})\s*[,;\s]\s*(-?\d{1,3}\.\d{3,})/) || String(t).match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/);
+  if (!m) return null;
+  const lat = Number(m[1]), lng = Number(m[2]);
+  return Number.isFinite(lat) && Number.isFinite(lng) && enAR(lat, lng) ? { lat, lng } : null;
+}
+async function ubicacionPegada(q, { fetchFn = fetch } = {}) {
+  const t = q.trim();
+  let c = null;
+  if (/^https?:\/\//i.test(t)) {
+    let u;
+    try { u = new URL(t); } catch { return null; }
+    if (!/(^|\.)(google\.[a-z.]+|goo\.gl|g\.co)$/i.test(u.hostname)) return null; // solo Google: no se visita cualquier sitio
+    c = coordenadasEnTexto(decodeURIComponent(t));
+    if (!c) {
+      try {
+        const res = await fetchFn(t, { redirect: "follow", signal: AbortSignal.timeout(8000), headers: { "User-Agent": "Mozilla/5.0" } });
+        c = coordenadasEnTexto(decodeURIComponent(res.url || "")) || coordenadasEnTexto((await res.text()).slice(0, 400000));
+      } catch { return null; }
+    }
+  } else c = coordenadasEnTexto(t);
+  if (!c) return null;
+  let texto = `${c.lat.toFixed(6)}, ${c.lng.toFixed(6)}`;
+  try { // dirección legible de ese punto
+    const d = await pedirJson(`${PHOTON_URL()}/reverse?lat=${c.lat}&lon=${c.lng}`, { fetchFn, espera: 5000 });
+    const p = d.features?.[0]?.properties;
+    if (p) texto = unir(`${p.street || p.name || ""}${p.housenumber ? ` ${p.housenumber}` : ""}`, p.district || p.locality, p.city || p.county, p.state) || texto;
+  } catch { /* se queda con las coordenadas */ }
+  return { texto, lat: c.lat, lng: c.lng, aprox: false, fuente: "pegada" };
+}
+
+const memoria = new Map(); // búsquedas recientes (mientras se escribe se repiten mucho)
+const RECUERDA_MS = 10 * 60 * 1000;
+
+/**
+ * Coincidencias para lo que se escribió, para que la persona elija. Devuelve { lista, caido }:
+ * `caido` = ninguna fuente respondió (distinto de "no hay coincidencias").
+ */
+async function buscarDirecciones(db, texto, { fetchFn, consultarUltimoRecurso = consultarNominatim } = {}) {
   const q = limpiar(texto, 200);
-  if (q.length < 3) return [];
-  const completa = expandirAbreviaturas(q);
-  let lista = (await enCola(() => nominatim(conPais(completa), { fetchFn, limite: 6, detalle: true }))).map((x) => ({ ...x, aprox: false }));
-  const calle = sinAltura(completa);
-  if (lista.length < 3 && calle !== completa) {
-    const mas = await enCola(() => nominatim(conPais(calle), { fetchFn, limite: 4, detalle: true }));
-    lista.push(...mas.map((x) => ({ ...x, aprox: true })));
+  if (q.length < 3) return { lista: [], caido: false };
+  const clave = claveDireccion(q);
+  const guardada = memoria.get(clave);
+  if (guardada && Date.now() - guardada.t < RECUERDA_MS) return guardada.r;
+
+  const pegada = await ubicacionPegada(q, { fetchFn });
+  let lista = pegada ? [pegada] : [];
+  let respondio = !!pegada;
+  if (!pegada) {
+    const completa = expandirAbreviaturas(q);
+    const fuentes = GOOGLE_KEY() ? [buscarGoogle(completa, { fetchFn }), buscarGeoref(completa, { fetchFn }), buscarPhoton(completa, { fetchFn })] : [buscarGeoref(completa, { fetchFn }), buscarPhoton(completa, { fetchFn })];
+    const res = await Promise.allSettled(fuentes);
+    respondio = res.some((r) => r.status === "fulfilled");
+    lista = res.flatMap((r) => (r.status === "fulfilled" ? r.value : []));
+    if (!lista.length) { // último recurso: Nominatim (con la cola de 1 por segundo)
+      try {
+        const r = await enCola(() => consultarUltimoRecurso(completa, { fetchFn }));
+        respondio = true;
+        if (r) lista = [{ texto: q, lat: r.lat, lng: r.lng, aprox: !!r.aprox, fuente: "nominatim" }];
+      } catch { /* sin respuesta */ }
+    }
   }
   const vistos = new Set();
   const salida = [];
   for (const x of lista) {
-    const nombre = nombreLugar(x.p);
-    const clave = claveDireccion(nombre);
-    if (!nombre || vistos.has(clave)) continue;
-    vistos.add(clave);
-    salida.push({ texto: nombre, lat: x.lat, lng: x.lng, aprox: x.aprox });
-    await db.query(
+    const k = x.placeId ? `g:${x.placeId}` : claveDireccion(x.texto);
+    if (!x.texto || vistos.has(k)) continue;
+    vistos.add(k);
+    salida.push({ texto: x.texto, lat: x.lat ?? null, lng: x.lng ?? null, aprox: !!x.aprox, fuente: x.fuente, placeId: x.placeId });
+    if (x.lat != null) await db.query(
       "INSERT INTO hoja_ruta_geo (clave, direccion, lat, lng, aprox, consultado_en) VALUES (?,?,?,?,?,NOW()) ON DUPLICATE KEY UPDATE lat=VALUES(lat), lng=VALUES(lng), aprox=VALUES(aprox), consultado_en=NOW()",
-      [clave.slice(0, 300), nombre.slice(0, 300), x.lat, x.lng, x.aprox ? 1 : 0],
+      [claveDireccion(x.texto).slice(0, 300), x.texto.slice(0, 300), x.lat, x.lng, x.aprox ? 1 : 0],
     );
   }
-  return salida.slice(0, 8);
+  const r = { lista: salida.slice(0, 8), caido: !respondio };
+  if (respondio) { if (memoria.size > 500) memoria.clear(); memoria.set(clave, { t: Date.now(), r }); }
+  return r;
 }
 
 /** La persona eligió dónde queda una dirección: se guarda como ubicación exacta. */
@@ -248,7 +388,10 @@ function registrarRutasMapa(app, db, requirePermiso, requireAdmin) {
     try { res.json({ clientes: await clientesHabituales(db, { q: req.query.q, exacto: req.query.exacto === "1" }) }); } catch (e) { salir(res, e); }
   });
   app.get("/api/hoja-ruta/buscar-direccion", acceso, async (req, res) => {
-    try { res.json({ coincidencias: await buscarDirecciones(db, req.query.q) }); } catch (e) { salir(res, e.status ? e : err(503, "El servicio de mapas no responde ahora. Probá de nuevo en un momento.")); }
+    try { const r = await buscarDirecciones(db, req.query.q); res.json({ coincidencias: r.lista, caido: r.caido }); } catch (e) { salir(res, e); }
+  });
+  app.get("/api/hoja-ruta/direccion-detalle", acceso, async (req, res) => {
+    try { res.json(await detalleGoogle(String(req.query.id || ""))); } catch (e) { salir(res, e.status ? e : err(503, "El servicio de mapas no responde ahora.")); }
   });
   app.post("/api/hoja-ruta/ubicacion", acceso, async (req, res) => {
     try { res.json(await fijarUbicacion(db, req.body?.direccion, req.body?.lat, req.body?.lng)); } catch (e) { salir(res, e); }
@@ -267,4 +410,4 @@ function registrarRutasMapa(app, db, requirePermiso, requireAdmin) {
   });
 }
 
-module.exports = { buscarDirecciones, fijarUbicacion, expandirAbreviaturas, asegurarTablasMapa, claveDireccion, ubicar, ubicarEnSegundoPlano, leerOrigen, guardarOrigen, clientesHabituales, mapaDelDia, calcularRuta, registrarRutasMapa };
+module.exports = { detalleGoogle, ubicacionPegada, partirConsulta, buscarDirecciones, fijarUbicacion, expandirAbreviaturas, asegurarTablasMapa, claveDireccion, ubicar, ubicarEnSegundoPlano, leerOrigen, guardarOrigen, clientesHabituales, mapaDelDia, calcularRuta, registrarRutasMapa };
