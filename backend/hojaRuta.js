@@ -208,10 +208,12 @@ function registrarRutasHojaRuta(app, db, requirePermiso) {
   app.post("/api/hoja-ruta", acceso, async (req, res) => {
     try { res.json(await crearDespacho(db, { datos: req.body, usuario: await quien(req) })); } catch (e) { salir(res, e); }
   });
-  app.put("/api/hoja-ruta/:id", acceso, async (req, res) => {
+  app.put("/api/hoja-ruta/:id", acceso, async (req, res, next) => {
+    if (!/^\d+$/.test(req.params.id)) return next();
     try { res.json(await editarDespacho(db, { id: Number(req.params.id), datos: req.body, usuario: await quien(req) })); } catch (e) { salir(res, e); }
   });
-  app.post("/api/hoja-ruta/:id/estado", acceso, async (req, res) => {
+  app.post("/api/hoja-ruta/:id/estado", acceso, async (req, res, next) => {
+    if (!/^\d+$/.test(req.params.id)) return next();
     try { res.json(await cambiarEstado(db, { id: Number(req.params.id), estado: req.body?.estado, motivo: req.body?.motivo, usuario: await quien(req) })); } catch (e) { salir(res, e); }
   });
 }

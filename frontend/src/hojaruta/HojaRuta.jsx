@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import MapaRuta from "./MapaRuta";
 import Cruces from "./Cruces";
+import BuscadorDireccion from "./BuscadorDireccion";
 import { CalendarDays, Check, ChevronLeft, ChevronRight, ListChecks, Loader2, Pencil, Phone, Plus, RotateCcw, Truck, User, X, MapPin, Ban, Map as MapaIcon } from "lucide-react";
 
 const API_BASE_URL = import.meta.env?.VITE_API_URL || "";
@@ -83,6 +84,7 @@ function Formulario({ inicial, onCerrar, onGuardado }) {
   const [error, setError] = useState("");
   const [sugerencias, setSugerencias] = useState([]);
   const [precargado, setPrecargado] = useState(null);
+  const [ubicada, setUbicada] = useState(false);
   const timer = useRef(null);
   const set = (k, v) => setF((x) => ({ ...x, [k]: v }));
 
@@ -183,7 +185,7 @@ function Formulario({ inicial, onCerrar, onGuardado }) {
           {f.tipo_entrega !== "RETIRA" && (
             <div>
               <label className="text-[11px] font-bold uppercase tracking-widest text-zinc-500">{f.tipo_entrega === "TRANSPORTE" ? "Dirección del transporte" : "Dirección de entrega"}</label>
-              <input className={`${campo} mt-1`} value={f.direccion} onChange={(e) => set("direccion", e.target.value)} placeholder="Calle, número, localidad" />
+              <div className="mt-1"><BuscadorDireccion valor={f.direccion} onCambiar={(v) => { set("direccion", v); setUbicada(false); }} onElegir={(t) => { set("direccion", t); setUbicada(true); }} ubicada={ubicada} /></div>
             </div>
           )}
           <div className="grid grid-cols-2 gap-3">

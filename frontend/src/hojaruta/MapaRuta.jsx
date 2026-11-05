@@ -3,6 +3,7 @@ import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { Loader2, MapPin, Navigation, Pencil, Route as RouteIcon, TrendingDown } from "lucide-react";
 import Cruces from "./Cruces";
+import BuscadorDireccion from "./BuscadorDireccion";
 
 const API_BASE_URL = import.meta.env?.VITE_API_URL || "";
 const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -53,7 +54,7 @@ export default function MapaRuta({ fechaInicial, esAdmin }) {
   }, [datos, cargar]);
 
   const ubicadas = useMemo(() => (datos?.paradas || []).filter((p) => p.lat != null), [datos]);
-  const sinUbicar = useMemo(() => (datos?.paradas || []).filter((p) => p.lat == null), [datos]);
+  const revisar = useMemo(() => (datos?.paradas || []).filter((p) => p.lat == null || p.aproximada), [datos]);
   const elegidas = useMemo(() => ubicadas.filter((p) => !fuera.has(p.id)), [ubicadas, fuera]);
   const origen = datos?.origen;
 
@@ -215,11 +216,11 @@ export default function MapaRuta({ fechaInicial, esAdmin }) {
                 </ul>
               )}
 
-              {sinUbicar.length > 0 && (
+              {revisar.length > 0 && (
                 <div className="rounded-lg border border-amber-800/50 bg-amber-950/20 p-3">
-                  <p className="text-xs font-bold text-amber-300 flex items-center gap-1.5"><MapPin size={12} />{datos.pendientes ? "Ubicando direcciones…" : "No pude ubicar estas direcciones"}</p>
-                  <ul className="mt-1.5 text-xs text-zinc-300 flex flex-col gap-1">
-                    {sinUbicar.map((p) => <li key={p.id}><b>{p.cliente}</b> · {p.direccion}{p.estado_ubicacion === "no_encontrada" ? " — corregí la dirección en la lista (calle, número y localidad)." : p.estado_ubicacion === "sin_servicio" ? " — el servicio de mapas no respondió." : ""}</li>)}
+                  <p className="text-xs font-bold text-amber-300 flex items-center gap-1.5"><MapPin size={12} />{datos.pendientes ? "Ubicando direcciones…" : "Revisá estas direcciones"}</p>
+                  <ul className="mt-2 flex flex-col gap-2.5">
+                    {revisar.map((p) => <li key={p.id}><Revisar p={p} onListo={cargar} /></li>)}
                   </ul>
                 </div>
               )}
@@ -244,6 +245,21 @@ function Fila({ p, n, tildado, onAlternar, onVer, tramo }) {
           <span className="block text-[11px] text-zinc-500">OP {p.op}{tramo ? ` · ${tramo.km} km desde la anterior (${horas(tramo.min)})` : ""}</span>
         </span>
       </button>
+    </div>
+  );
+}
+
+function Revisar({ p, onListo }) {
+  const [abierto, setAbierto] = useState(false);
+  const [texto, setTexto] = useState(p.direccion);
+  const detalle = p.estado_ubicacion === "sin_servicio" ? "el servicio de mapas no respondió" : p.lat == null ? "no la pude ubicar" : "ubicación aproximada (solo la calle)";
+  return (
+    <div className="text-xs text-zinc-300">
+      <div className="flex items-start justify-between gap-2">
+        <p className="min-w-0"><b className="text-white">{p.cliente}</b> · {p.direccion}<span className="text-amber-300"> — {detalle}</span></p>
+        {p.estado_ubicacion !== "pendiente" && <button onClick={() => setAbierto((v) => !v)} className="shrink-0 text-[11px] font-bold text-orange-400 hover:text-orange-300">{abierto ? "Cerrar" : "Elegir ubicación"}</button>}
+      </div>
+      {abierto && <div className="mt-2"><BuscadorDireccion valor={texto} onCambiar={setTexto} fijarPara={p.direccion} onElegir={() => { setAbierto(false); onListo(); }} /></div>}
     </div>
   );
 }

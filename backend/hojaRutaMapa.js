@@ -16,6 +16,8 @@ async function asegurarTablasMapa(db) {
     lng DECIMAL(10,7) NULL,
     consultado_en DATETIME DEFAULT CURRENT_TIMESTAMP
   )`);
+  const [cols] = await db.query("SHOW COLUMNS FROM hoja_ruta_geo LIKE 'aprox'");
+  if (!cols.length) await db.query("ALTER TABLE hoja_ruta_geo ADD COLUMN aprox TINYINT NOT NULL DEFAULT 0");
   await db.query(`CREATE TABLE IF NOT EXISTS hoja_ruta_config (
     clave VARCHAR(60) NOT NULL PRIMARY KEY,
     valor VARCHAR(300) NULL
@@ -45,17 +47,79 @@ function expandirAbreviaturas(texto) {
   return String(texto).replace(/\b([A-Za-zÁÉÍÓÚáéíóúñÑ]{2,5})\.(?=\s|$)/g, (m, w) => ABREVIATURAS[w.toLowerCase()] || m);
 }
 
-/** Consulta a Nominatim. Devuelve {lat,lng} o null si no la encuentra; lanza si el servicio no responde. */
-async function consultarNominatim(direccion, { fetchFn = fetch } = {}) {
-  const q = /argentina/i.test(direccion) ? direccion : `${expandirAbreviaturas(direccion)}, Argentina`;
-  const url = `${NOMINATIM_URL()}/search?format=jsonv2&limit=1&countrycodes=ar&q=${encodeURIComponent(q)}`;
+// Zona de trabajo (Gran Buenos Aires): se prefiere por sobre el resto del país, sin excluirlo.
+const ZONA = "-59.3,-34.2,-57.9,-35.1";
+
+async function nominatim(texto, { fetchFn = fetch, limite = 1, detalle = false } = {}) {
+  const url = `${NOMINATIM_URL()}/search?format=jsonv2&limit=${limite}&countrycodes=ar&viewbox=${ZONA}&bounded=0${detalle ? "&addressdetails=1" : ""}&q=${encodeURIComponent(texto)}`;
   const res = await fetchFn(url, { headers: { "User-Agent": "Conoflex-App/1.0 (hoja de ruta)", "Accept-Language": "es" }, signal: AbortSignal.timeout(10000) });
   if (!res.ok) throw new Error(`El servicio de mapas respondió ${res.status}.`);
   const datos = await res.json();
-  const p = Array.isArray(datos) ? datos[0] : null;
-  if (!p) return null;
-  const lat = Number(p.lat), lng = Number(p.lon);
-  return Number.isFinite(lat) && Number.isFinite(lng) ? { lat, lng } : null;
+  return (Array.isArray(datos) ? datos : []).map((p) => ({ lat: Number(p.lat), lng: Number(p.lon), p })).filter((x) => Number.isFinite(x.lat) && Number.isFinite(x.lng));
+}
+const conPais = (t) => (/argentina/i.test(t) ? t : `${t}, Argentina`);
+/** Saca la altura ("Perón 3798, Morón" → "Perón, Morón") para buscar al menos la calle. */
+const sinAltura = (t) => t.replace(/\s+\d{1,5}(?=\s*(,|$))/, "").replace(/\s+\d{1,5}\b/, "");
+
+/** Consulta a Nominatim. Devuelve {lat,lng,aprox} o null si no la encuentra; lanza si el servicio no responde. */
+async function consultarNominatim(direccion, { fetchFn = fetch } = {}) {
+  const completa = expandirAbreviaturas(direccion);
+  let r = (await nominatim(conPais(completa), { fetchFn }))[0];
+  if (r) return { lat: r.lat, lng: r.lng, aprox: false };
+  const calle = sinAltura(completa);
+  if (calle !== completa) {
+    r = (await nominatim(conPais(calle), { fetchFn }))[0];
+    if (r) return { lat: r.lat, lng: r.lng, aprox: true }; // solo la calle: ubicación aproximada
+  }
+  return null;
+}
+
+const nombreLugar = (p) => {
+  const a = p.address || {};
+  const calle = [a.road || a.pedestrian || a.neighbourhood, a.house_number].filter(Boolean).join(" ");
+  const zona = [a.suburb || a.neighbourhood, a.city || a.town || a.village || a.municipality || a.city_district, a.state].filter((x, i, arr) => x && arr.indexOf(x) === i).join(", ");
+  const t = [calle, zona].filter(Boolean).join(", ");
+  return t || String(p.display_name || "").split(",").slice(0, 4).join(",").trim();
+};
+
+/** Coincidencias para lo que se escribió (como el buscador de Google Maps), para que la persona elija. Se guardan para no volver a consultar. */
+async function buscarDirecciones(db, texto, { fetchFn } = {}) {
+  const q = limpiar(texto, 200);
+  if (q.length < 3) return [];
+  const completa = expandirAbreviaturas(q);
+  let lista = (await enCola(() => nominatim(conPais(completa), { fetchFn, limite: 6, detalle: true }))).map((x) => ({ ...x, aprox: false }));
+  const calle = sinAltura(completa);
+  if (lista.length < 3 && calle !== completa) {
+    const mas = await enCola(() => nominatim(conPais(calle), { fetchFn, limite: 4, detalle: true }));
+    lista.push(...mas.map((x) => ({ ...x, aprox: true })));
+  }
+  const vistos = new Set();
+  const salida = [];
+  for (const x of lista) {
+    const nombre = nombreLugar(x.p);
+    const clave = claveDireccion(nombre);
+    if (!nombre || vistos.has(clave)) continue;
+    vistos.add(clave);
+    salida.push({ texto: nombre, lat: x.lat, lng: x.lng, aprox: x.aprox });
+    await db.query(
+      "INSERT INTO hoja_ruta_geo (clave, direccion, lat, lng, aprox, consultado_en) VALUES (?,?,?,?,?,NOW()) ON DUPLICATE KEY UPDATE lat=VALUES(lat), lng=VALUES(lng), aprox=VALUES(aprox), consultado_en=NOW()",
+      [clave.slice(0, 300), nombre.slice(0, 300), x.lat, x.lng, x.aprox ? 1 : 0],
+    );
+  }
+  return salida.slice(0, 8);
+}
+
+/** La persona eligió dónde queda una dirección: se guarda como ubicación exacta. */
+async function fijarUbicacion(db, direccion, lat, lng) {
+  const dir = limpiar(direccion, 300);
+  const la = Number(lat), lo = Number(lng);
+  if (!claveDireccion(dir)) throw err(400, "Falta la dirección.");
+  if (!Number.isFinite(la) || !Number.isFinite(lo) || Math.abs(la) > 90 || Math.abs(lo) > 180) throw err(400, "La ubicación no es válida.");
+  await db.query(
+    "INSERT INTO hoja_ruta_geo (clave, direccion, lat, lng, aprox, consultado_en) VALUES (?,?,?,?,0,NOW()) ON DUPLICATE KEY UPDATE lat=VALUES(lat), lng=VALUES(lng), aprox=0, consultado_en=NOW()",
+    [claveDireccion(dir), dir, la, lo],
+  );
+  return { direccion: dir, lat: la, lng: lo };
 }
 
 /**
@@ -66,18 +130,18 @@ async function ubicar(db, direccion, { fetchFn, soloCache = false, consultar = c
   const dir = limpiar(direccion, 300);
   const clave = claveDireccion(dir);
   if (!clave) return { estado: "sin_direccion" };
-  const [rows] = await db.query("SELECT lat, lng, (consultado_en < NOW() - INTERVAL 1 HOUR) AS vieja FROM hoja_ruta_geo WHERE clave = ?", [clave]);
+  const [rows] = await db.query("SELECT lat, lng, aprox, (consultado_en < NOW() - INTERVAL 1 HOUR) AS vieja FROM hoja_ruta_geo WHERE clave = ?", [clave]);
   const g = rows[0];
-  if (g && g.lat != null) return { estado: "ok", lat: Number(g.lat), lng: Number(g.lng) };
+  if (g && g.lat != null) return { estado: "ok", lat: Number(g.lat), lng: Number(g.lng), aprox: !!g.aprox };
   if (g && !g.vieja) return { estado: "no_encontrada" };
   if (soloCache) return { estado: "pendiente" };
   let r;
   try { r = await enCola(() => consultar(dir, { fetchFn })); } catch { return { estado: "sin_servicio" }; }
   await db.query(
-    "INSERT INTO hoja_ruta_geo (clave, direccion, lat, lng, consultado_en) VALUES (?,?,?,?,NOW()) ON DUPLICATE KEY UPDATE lat=VALUES(lat), lng=VALUES(lng), consultado_en=NOW()",
-    [clave, dir, r?.lat ?? null, r?.lng ?? null],
+    "INSERT INTO hoja_ruta_geo (clave, direccion, lat, lng, aprox, consultado_en) VALUES (?,?,?,?,?,NOW()) ON DUPLICATE KEY UPDATE lat=VALUES(lat), lng=VALUES(lng), aprox=VALUES(aprox), consultado_en=NOW()",
+    [clave, dir, r?.lat ?? null, r?.lng ?? null, r?.aprox ? 1 : 0],
   );
-  return r ? { estado: "ok", lat: r.lat, lng: r.lng } : { estado: "no_encontrada" };
+  return r ? { estado: "ok", lat: r.lat, lng: r.lng, aprox: !!r.aprox } : { estado: "no_encontrada" };
 }
 
 /** Punto de partida (la planta). */
@@ -128,7 +192,7 @@ async function mapaDelDia(db, fecha, { maxNuevas = 5, ...deps } = {}) {
     if (r.tipo_entrega === "RETIRA") { retiran.push(r); continue; }
     let u = await ubicar(db, r.direccion, { ...deps, soloCache: true });
     if (u.estado === "pendiente" && nuevas < maxNuevas) { nuevas++; u = await ubicar(db, r.direccion, deps); }
-    paradas.push({ ...r, estado_ubicacion: u.estado, lat: u.lat ?? null, lng: u.lng ?? null });
+    paradas.push({ ...r, estado_ubicacion: u.estado, lat: u.lat ?? null, lng: u.lng ?? null, aproximada: !!u.aprox });
   }
   return { fecha, origen: await leerOrigen(db), paradas, retiran, pendientes: paradas.filter((p) => p.estado_ubicacion === "pendiente").length };
 }
@@ -183,6 +247,12 @@ function registrarRutasMapa(app, db, requirePermiso, requireAdmin) {
   app.get("/api/hoja-ruta/clientes", acceso, async (req, res) => {
     try { res.json({ clientes: await clientesHabituales(db, { q: req.query.q, exacto: req.query.exacto === "1" }) }); } catch (e) { salir(res, e); }
   });
+  app.get("/api/hoja-ruta/buscar-direccion", acceso, async (req, res) => {
+    try { res.json({ coincidencias: await buscarDirecciones(db, req.query.q) }); } catch (e) { salir(res, e.status ? e : err(503, "El servicio de mapas no responde ahora. Probá de nuevo en un momento.")); }
+  });
+  app.post("/api/hoja-ruta/ubicacion", acceso, async (req, res) => {
+    try { res.json(await fijarUbicacion(db, req.body?.direccion, req.body?.lat, req.body?.lng)); } catch (e) { salir(res, e); }
+  });
   app.get("/api/hoja-ruta/mapa", acceso, async (req, res) => {
     try { res.json(await mapaDelDia(db, req.query.fecha)); } catch (e) { salir(res, e); }
   });
@@ -197,4 +267,4 @@ function registrarRutasMapa(app, db, requirePermiso, requireAdmin) {
   });
 }
 
-module.exports = { expandirAbreviaturas, asegurarTablasMapa, claveDireccion, ubicar, ubicarEnSegundoPlano, leerOrigen, guardarOrigen, clientesHabituales, mapaDelDia, calcularRuta, registrarRutasMapa };
+module.exports = { buscarDirecciones, fijarUbicacion, expandirAbreviaturas, asegurarTablasMapa, claveDireccion, ubicar, ubicarEnSegundoPlano, leerOrigen, guardarOrigen, clientesHabituales, mapaDelDia, calcularRuta, registrarRutasMapa };
