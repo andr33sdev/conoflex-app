@@ -127,8 +127,17 @@ test("rutas: la planta no cae en /:id, se buscan coincidencias y se elige ubicac
     if (/Per[oó]n/.test(q)) return res.json([{ lat: "-34.6500", lon: "-58.6200", display_name: "x", address: { road: "Avenida Presidente Perón", city: "Morón", state: "Buenos Aires" } }, { lat: "-34.6600", lon: "-58.6300", display_name: "y", address: { road: "Avenida Presidente Perón", suburb: "Haedo", city: "Morón", state: "Buenos Aires" } }]);
     res.json([]);
   });
+  fake.get("/direcciones", (req, res) => res.json({ cantidad: 0, direcciones: [] }));
+  fake.get("/api/", (req, res) => {
+    consultasQ.push("photon:" + req.query.q);
+    res.json({ features: [
+      { geometry: { coordinates: [-58.62, -34.65] }, properties: { countrycode: "AR", street: "Avenida Presidente Perón", city: "Morón", state: "Buenos Aires", osm_key: "highway" } },
+      { geometry: { coordinates: [-58.63, -34.66] }, properties: { countrycode: "AR", street: "Avenida Presidente Perón", district: "Haedo", city: "Morón", state: "Buenos Aires" } },
+    ] });
+  });
   const fs = fake.listen(0);
   process.env.NOMINATIM_URL = `http://127.0.0.1:${fs.address().port}`;
+  process.env.GEOREF_URL = process.env.PHOTON_URL = process.env.NOMINATIM_URL;
   try {
     for (const t of ["hoja_ruta", "hoja_ruta_geo", "hoja_ruta_config"]) await pool.query(`DROP TABLE IF EXISTS ${t}`);
     await H.asegurarTablaHojaRuta(pool);
@@ -147,11 +156,12 @@ test("rutas: la planta no cae en /:id, se buscan coincidencias y se elige ubicac
       let [st, d] = await llamar("PUT", "/api/hoja-ruta/origen", { direccion: "Av. Pres. Perón 3798, Morón" });
       assert.equal(st, 200); // antes caía en /:id y daba 500
       assert.equal(d.origen.lat, -34.65);
-      assert.ok(consultasQ.some((q) => /Avenida Presidente/.test(q))); // abreviaturas expandidas
+      assert.ok(consultasQ.some((q) => /Avenida Presidente/.test(q))); // abreviaturas expandidas (Nominatim)
       [st, d] = await llamar("GET", "/api/hoja-ruta/buscar-direccion?q=" + encodeURIComponent("Av. Pres. Perón 3798, Morón"));
       assert.equal(st, 200);
       assert.equal(d.coincidencias.length, 2);
-      assert.match(d.coincidencias[0].texto, /Avenida Presidente Perón, Morón/);
+      assert.equal(d.caido, false);
+      assert.match(d.coincidencias[0].texto, /Avenida Presidente Perón, Morón, Buenos Aires/);
       assert.equal(d.coincidencias[0].aprox, true); // sin altura
       const elegida = d.coincidencias[1];
       // lo elegido ya queda ubicado sin volver a consultar
@@ -169,7 +179,7 @@ test("rutas: la planta no cae en /:id, se buscan coincidencias y se elige ubicac
       assert.equal(st, 404);
     } finally { s.close(); }
   } finally {
-    fs.close(); delete process.env.NOMINATIM_URL;
+    fs.close(); delete process.env.NOMINATIM_URL; delete process.env.GEOREF_URL; delete process.env.PHOTON_URL;
     for (const t of ["hoja_ruta", "hoja_ruta_geo", "hoja_ruta_config"]) await pool.query(`DROP TABLE IF EXISTS ${t}`);
     await pool.end();
   }
@@ -214,6 +224,72 @@ test("pedidos pendientes: se busca por cliente y solo salen las OP sin fecha de 
     assert.deepEqual(await H.pedidosPendientes(pool, { q: "vial" }), []); // sin planilla: no falla
   } finally {
     for (const t of ["hoja_ruta", "estado_pedidos"]) await pool.query(`DROP TABLE IF EXISTS ${t}`);
+    await pool.end();
+  }
+});
+
+test("buscarDirecciones: Georef por altura, Photon, pegar coordenadas o link, Google y servicios caídos", async () => {
+  let pool;
+  try {
+    pool = mysql.createPool({ host: process.env.TEST_DB_HOST || "localhost", user: process.env.TEST_DB_USER || "root", password: process.env.TEST_DB_PASSWORD || "", database: process.env.TEST_DB_NAME || "test" });
+    await pool.query("SELECT 1");
+  } catch { if (pool) await pool.end().catch(() => {}); return; }
+  const urls = [];
+  const jr = (o) => ({ ok: true, url: "", json: async () => o, text: async () => JSON.stringify(o) });
+  const casela = (loc, dep, lat) => ({ altura: { unidad: "nro", valor: 1407 }, calle: { nombre: "CASELA", categoria: "CALLE" }, localidad_censal: { nombre: loc }, departamento: { nombre: dep }, provincia: { nombre: "Buenos Aires" }, ubicacion: { lat, lon: -58.9 } });
+  const fetchFn = async (url, op) => {
+    urls.push(String(url));
+    const u = String(url);
+    if (u.includes("/direcciones")) {
+      if (u.includes("provincia=Buenos%20Aires")) return jr({ direcciones: [casela("Lanús", "Lanús", -34.7), casela("Villa Rosa", "Pilar", -34.45), casela("Banfield", "Lomas de Zamora", -34.75)] });
+      return jr({ direcciones: [] });
+    }
+    if (u.includes("/api/?q=")) return jr({ features: [{ geometry: { coordinates: [-58.9, -34.45] }, properties: { countrycode: "AR", street: "Casela", district: "Villa Rosa", county: "Pilar", state: "Buenos Aires" } }, { geometry: { coordinates: [0, 0] }, properties: { countrycode: "ES", street: "Casela", city: "X" } }] });
+    if (u.includes("/reverse")) return jr({ features: [{ properties: { street: "Casela", housenumber: "1407", district: "Villa Rosa", city: "Pilar", state: "Buenos Aires" } }] });
+    if (u.startsWith("https://maps.app.goo.gl/")) return { ok: true, url: "https://www.google.com/maps/place/Casela/@-34.4512345,-58.9012345,17z/data=!3m1", text: async () => "" };
+    if (u.includes("places:autocomplete")) { assert.equal(op.headers["X-Goog-Api-Key"], "clave"); return jr({ suggestions: [{ placePrediction: { placeId: "ABC", text: { text: "Casela 1407, Villa Rosa, Pilar, Provincia de Buenos Aires, Argentina" } } }] }); }
+    if (u.includes("/places/ABC")) return jr({ formattedAddress: "Casela 1407, B1631 Villa Rosa, Provincia de Buenos Aires, Argentina", location: { latitude: -34.4512, longitude: -58.9011 } });
+    throw new Error("sin red");
+  };
+  try {
+    await pool.query("DROP TABLE IF EXISTS hoja_ruta_geo"); await M.asegurarTablasMapa(pool);
+    // 1) "Casela 1407 en Villa Rosa, Pilar": Georef ubica por altura y la de Villa Rosa/Pilar va primera
+    let r = await M.buscarDirecciones(pool, "Casela 1407 en Villa Rosa, Pilar", { fetchFn });
+    assert.equal(r.caido, false);
+    assert.equal(r.lista[0].texto, "Casela 1407, Villa Rosa, Pilar, Buenos Aires");
+    assert.equal(r.lista[0].lat, -34.45); assert.equal(r.lista[0].aprox, false);
+    assert.equal(r.lista.length, 2); // solo la coincidencia de Georef (filtrada por localidad) + la de Photon; la de España queda afuera
+    assert.ok(urls.some((u) => u.includes("direccion=Casela%201407&provincia=Buenos%20Aires")));
+    assert.ok(r.lista.every((x) => !/España|ES/.test(x.texto)));
+    // lo elegido queda guardado
+    assert.equal((await M.ubicar(pool, r.lista[0].texto, { soloCache: true })).lat, -34.45);
+    // 2) pegar coordenadas, link largo y link corto de Google Maps
+    r = await M.buscarDirecciones(pool, "-34.4512345, -58.9012345", { fetchFn });
+    assert.equal(r.lista[0].fuente, "pegada"); assert.match(r.lista[0].texto, /Casela 1407, Villa Rosa, Pilar/);
+    r = await M.buscarDirecciones(pool, "https://www.google.com/maps/place/Casela/@-34.4512345,-58.9012345,17z", { fetchFn });
+    assert.equal(r.lista[0].lat, -34.4512345);
+    r = await M.buscarDirecciones(pool, "https://maps.app.goo.gl/abc123", { fetchFn });
+    assert.equal(r.lista[0].lat, -34.4512345);
+    assert.equal(await M.ubicacionPegada("https://sitio-raro.com/x", { fetchFn }), null); // solo se visita Google
+    assert.equal(await M.ubicacionPegada("-10.5, -20.5", { fetchFn }), null); // fuera de Argentina
+    // 3) Google Places con clave
+    process.env.GOOGLE_MAPS_API_KEY = "clave";
+    r = await M.buscarDirecciones(pool, "Casela 14", { fetchFn });
+    assert.equal(r.lista[0].fuente, "google"); assert.equal(r.lista[0].placeId, "ABC"); assert.equal(r.lista[0].lat, null);
+    const det = await M.detalleGoogle("ABC", { fetchFn });
+    assert.equal(det.lat, -34.4512); assert.equal(det.texto, "Casela 1407, B1631 Villa Rosa, Provincia de Buenos Aires");
+    delete process.env.GOOGLE_MAPS_API_KEY;
+    // 4) servicios caídos: se avisa (no es lo mismo que "sin coincidencias")
+    const caido = async () => { throw new Error("sin red"); };
+    r = await M.buscarDirecciones(pool, "Calle Que No Existe 99", { fetchFn: caido, consultarUltimoRecurso: caido });
+    assert.deepEqual(r, { lista: [], caido: true });
+    // 5) partirConsulta
+    assert.deepEqual(M.partirConsulta("25 de Mayo 123, Pilar"), { direccion: "25 de Mayo 123", resto: ", Pilar" });
+    assert.equal(M.partirConsulta("Casela"), null);
+    assert.equal(M.partirConsulta("1407"), null);
+  } finally {
+    delete process.env.GOOGLE_MAPS_API_KEY;
+    await pool.query("DROP TABLE IF EXISTS hoja_ruta_geo");
     await pool.end();
   }
 });
