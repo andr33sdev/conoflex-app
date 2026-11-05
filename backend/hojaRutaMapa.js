@@ -172,7 +172,7 @@ function registrarRutasMapa(app, db, requirePermiso, requireAdmin) {
   const salir = (res, e) => {
     if (e.status) return res.status(e.status).json({ error: e.message });
     console.error("Error en el mapa de la hoja de ruta:", e);
-    return res.status(500).json({ error: "No se pudo completar la operación." });
+    return res.status(500).json({ error: "No se pudo completar la operación.", detalle: String(e?.code || e?.message || e).slice(0, 200) });
   };
   app.get("/api/hoja-ruta/clientes", acceso, async (req, res) => {
     try { res.json({ clientes: await clientesHabituales(db, { q: req.query.q, exacto: req.query.exacto === "1" }) }); } catch (e) { salir(res, e); }
