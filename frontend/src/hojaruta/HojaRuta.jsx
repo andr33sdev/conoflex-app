@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import MapaRuta from "./MapaRuta";
 import Cruces from "./Cruces";
 import BuscadorDireccion from "./BuscadorDireccion";
+import { articulosPorOp, listaOps } from "./ops";
 import BotonPdf from "./BotonPdf";
 import { CalendarDays, Check, ChevronLeft, ChevronRight, ListChecks, Loader2, Pencil, Phone, Plus, RotateCcw, Truck, User, X, MapPin, Ban, Map as MapaIcon } from "lucide-react";
 
@@ -36,7 +37,7 @@ function Tarjeta({ d, puedeEditar, ocupado, onEditar, onEstado }) {
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-xs font-bold text-orange-400 tabular-nums">OP {d.op}</span>
+            <span className="text-xs font-bold text-orange-400 tabular-nums">OP {listaOps(d.op).join(" · ")}</span>
             <Etiqueta estado={d.estado} />
           </div>
           <p className="text-white font-bold text-base leading-tight mt-1 truncate">{d.cliente}</p>
@@ -48,7 +49,7 @@ function Tarjeta({ d, puedeEditar, ocupado, onEditar, onEstado }) {
         {(d.contacto_nombre || d.contacto_telefono) && (
           <p className="flex items-center gap-2"><Phone size={14} className="text-zinc-500 shrink-0" />{[d.contacto_nombre, d.contacto_telefono].filter(Boolean).join(" · ")}</p>
         )}
-        {d.articulos?.length > 0 && <p className="text-xs text-zinc-500">{d.articulos.map((a) => `${a.cantidad ? `${a.cantidad} × ` : ""}${a.modelo}`).join(" · ")}</p>}
+        {articulosPorOp(d).map((g) => <p key={g.op || "x"} className="text-xs text-zinc-500">{g.op && <span className="text-orange-400/80 font-semibold">OP {g.op}: </span>}{g.texto}</p>)}
         {d.observaciones && <p className="text-xs text-zinc-400 bg-zinc-900 rounded px-2 py-1.5 mt-1">{d.observaciones}</p>}
         {d.estado === "CANCELADO" && d.cancelado_motivo && <p className="text-xs text-zinc-500">Motivo: {d.cancelado_motivo}</p>}
       </div>
@@ -134,16 +135,13 @@ function Formulario({ inicial, onCerrar, onGuardado }) {
     e.preventDefault(); setError(""); setGuardando(true);
     try {
       if (editando) { onGuardado(await pedir(`/api/hoja-ruta/${inicial.id}`, { method: "PUT", body: f })); return; }
-      const elegidos = (pendientes || []).filter((o) => selOps.includes(o.op)).map((o) => ({ op: o.op, articulos: o.articulos }));
+      const elegidos = (pendientes || []).filter((o) => selOps.includes(o.op));
       const aMano = f.op.trim() && !elegidos.some((o) => o.op === f.op.trim()) ? [{ op: f.op.trim(), articulos: f.articulos }] : [];
       const ops = [...elegidos, ...aMano];
       if (!ops.length) throw new Error("Elegí al menos un pedido o cargá el N.º de OP a mano.");
-      let ultimo;
-      for (const o of ops) {
-        try { ultimo = await pedir("/api/hoja-ruta", { method: "POST", body: { ...f, op: o.op, articulos: o.articulos } }); }
-        catch (e3) { setSelOps((x) => x.filter((y) => !ops.slice(0, ops.indexOf(o)).some((z) => z.op === y))); throw new Error(`${ops.indexOf(o) ? `Se cargaron ${ops.indexOf(o)} y ` : ""}falló la OP ${o.op}: ${e3.message}`, { cause: e3 }); }
-      }
-      onGuardado(ultimo);
+      // Un solo despacho que junta todas las OP elegidas (cada artículo conserva su OP).
+      const articulos = ops.flatMap((o) => (o.articulos || []).map((a) => ({ ...a, op: o.op })));
+      onGuardado(await pedir("/api/hoja-ruta", { method: "POST", body: { ...f, op: ops.map((o) => o.op).join(", "), articulos } }));
     } catch (e2) { setError(e2.message); } finally { setGuardando(false); }
   };
 
@@ -223,7 +221,7 @@ function Formulario({ inicial, onCerrar, onGuardado }) {
                   })}
                 </ul>
               )}
-              {selOps.length > 1 && <p className="text-[11px] text-zinc-500 mt-1.5">Se carga un despacho por cada OP, con los mismos datos de entrega.</p>}
+              {selOps.length > 1 && <p className="text-[11px] text-zinc-500 mt-1.5">Se carga un solo despacho con las {selOps.length} OP juntas.</p>}
             </div>
           )}
           {!editando && !manual && !(pendientes && pendientes.length === 0) && (
@@ -292,7 +290,7 @@ function Formulario({ inicial, onCerrar, onGuardado }) {
         </div>
         <div className="px-5 py-4 border-t border-zinc-800 flex justify-end gap-2 sticky bottom-0 bg-[#161616]">
           <button type="button" onClick={onCerrar} className="px-4 py-2 text-sm text-zinc-300 hover:text-white">Cancelar</button>
-          <button disabled={guardando} className="px-5 py-2 rounded-md bg-orange-600 hover:bg-orange-500 text-white text-sm font-bold disabled:opacity-50 flex items-center gap-2">{guardando && <Loader2 size={14} className="animate-spin" />}{editando ? "Guardar cambios" : selOps.length > 1 ? `Cargar ${selOps.length} despachos` : "Cargar despacho"}</button>
+          <button disabled={guardando} className="px-5 py-2 rounded-md bg-orange-600 hover:bg-orange-500 text-white text-sm font-bold disabled:opacity-50 flex items-center gap-2">{guardando && <Loader2 size={14} className="animate-spin" />}{editando ? "Guardar cambios" : "Cargar despacho"}</button>
         </div>
       </form>
     </div>

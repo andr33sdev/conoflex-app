@@ -133,7 +133,7 @@ export default function BuscadorDireccion({ valor, onCambiar, onElegir, fijarPar
               <li key={`${c.placeId || ""}${c.lat},${c.lng},${c.texto}`}>
                 <button type="button" disabled={guardando} onMouseEnter={() => setActivo(i)} onClick={() => elegir(c)} className={`w-full text-left px-3 py-2 flex items-start gap-2 ${i === activo ? "bg-zinc-800" : "hover:bg-zinc-800"}`}>
                   <MapPin size={14} className="text-orange-500 mt-0.5 shrink-0" />
-                  <span className="min-w-0"><span className="block text-sm text-white">{c.aprox ? conAltura(c.texto, valor) : c.texto}</span>{c.aprox && <span className="block text-[11px] text-zinc-500">Solo la calle (esa altura no figura): quedará aproximada</span>}</span>
+                  <span className="min-w-0"><span className="block text-sm text-white">{c.aprox ? conAltura(c.texto, valor) : c.texto}</span>{c.fuente === "guardada" && <span className="block text-[11px] text-emerald-400">Ya usada en otro despacho</span>}{c.aprox && <span className="block text-[11px] text-zinc-500">Solo la calle (esa altura no figura): quedará aproximada</span>}</span>
                 </button>
               </li>
             ))}

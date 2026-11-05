@@ -1,4 +1,5 @@
 // PDF de la hoja de ruta de un día: solo la información (sin mapa ni calendario), pensado para imprimir y llevar en el camión.
+import { listaOps } from "./ops";
 const API_BASE_URL = import.meta.env?.VITE_API_URL || "";
 const DIAS = ["domingo", "lunes", "martes", "miércoles", "jueves", "viernes", "sábado"];
 const MESES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"];
@@ -56,10 +57,16 @@ export async function descargarPdfDia({ fecha, orden = [], km = null, usuario = 
   if (km) partes.push(`recorrido sugerido: ${km} km`);
   doc.setFontSize(9.5); doc.setTextColor(107, 114, 128); doc.text(partes.join("  ·  "), m, 28);
 
-  const fmtArticulos = (d) => (d.articulos?.length ? d.articulos.map((a) => `${a.cantidad ? `${a.cantidad} × ` : ""}${a.modelo}`).join("\n") : "—");
+  const fmtArticulos = (d) => {
+    const arts = d.articulos || [];
+    if (!arts.length) return "—";
+    const lin = (a) => `${a.cantidad ? `${a.cantidad} × ` : ""}${a.modelo}`;
+    if (listaOps(d.op).length < 2) return arts.map(lin).join("\n");
+    return listaOps(d.op).map((op) => [`OP ${op}:`, ...arts.filter((a) => a.op === op).map((a) => `  ${lin(a)}`)].join("\n")).join("\n");
+  };
   const cuerpo = filas.map((d, i) => [
     conRecorrido ? (i < enRuta.length ? String(i + 1) : "—") : String(i + 1),
-    d.op, limpio(d.cliente), limpio(fmtArticulos(d)), limpio(entrega(d)),
+    listaOps(d.op).join("\n"), limpio(d.cliente), limpio(fmtArticulos(d)), limpio(entrega(d)),
     limpio([d.contacto_nombre, d.contacto_telefono].filter(Boolean).join("\n") || "—"),
     "", limpio(d.observaciones || "—"), limpio(d.creado_por || "—"), "",
   ]);

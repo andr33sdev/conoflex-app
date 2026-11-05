@@ -212,7 +212,15 @@ test("pedidos pendientes: se busca por cliente y solo salen las OP sin fecha de 
     await ins("OP-402", "Vial SA", "De hace 5 meses", 1, hace(150), "EN PRODUCCION", null); // dentro de los 6 meses
     const vero = { id: 2, nombre: "Vero" };
     await H.crearDespacho(pool, { usuario: vero, datos: { op: "100", cliente: "Vial SA", fecha_despacho: "2026-11-12", tipo_entrega: "RETIRA", prioridad: 2 } });
+    // un despacho que junta varias OP: las ya cargadas se detectan por cada una
+    await H.crearDespacho(pool, { usuario: vero, datos: { op: "OP 102, 300", cliente: "Vial SA", fecha_despacho: "2026-11-13", tipo_entrega: "RETIRA", prioridad: 2, articulos: [{ modelo: "Cono 300", cantidad: 8, op: "102" }, { modelo: "Mixta B", cantidad: 4, op: "300" }] } });
+    const junto = (await pool.query("SELECT op, articulos FROM hoja_ruta WHERE op LIKE '102%'"))[0][0];
+    assert.equal(junto.op, "102, 300");
+    assert.equal(JSON.parse(junto.articulos)[1].op, "300");
     const r = await H.pedidosPendientes(pool, { q: "vial" });
+    assert.equal(r[0].ops.find((o) => o.op === "300").ya.length, 1);
+    assert.equal(r[0].ops.find((o) => o.op === "102").ya.length, 1);
+    assert.equal(r[0].ops.find((o) => o.op === "104").ya.length, 0);
     assert.equal(r.length, 1);
     assert.deepEqual(r[0].ops.map((o) => o.op).sort(), ["100", "102", "104", "300", "402"]);
     const op100 = r[0].ops.find((o) => o.op === "100");
@@ -318,4 +326,43 @@ test("Georef con lat/lon nulos no genera una coincidencia en (0,0)", async () =>
   process.env.GEOREF_URL = process.env.PHOTON_URL = "http://x";
   try { assert.deepEqual(await M.buscarDirecciones({ query: async () => [[]] }, "Casella 1407, Pilar", { fetchFn, consultarUltimoRecurso: async () => null }), { lista: [], caido: false }); }
   finally { delete process.env.GEOREF_URL; delete process.env.PHOTON_URL; }
+});
+
+test("búsqueda de direcciones: ortografía (Casela→Casella), Photon sin número, ranking y direcciones ya usadas", async () => {
+  assert.ok(M.variantesOrtograficas("Casela 1407").includes("Casella 1407"));
+  assert.ok(M.variantesOrtograficas("Beldrano 500").includes("Beldrano 500".replace("Beldrano", "Belgrano")) === false); // no inventa letras distintas
+  assert.ok(M.puntaje("Casella 1407, Villa Rosa, Pilar", "casella 1407 pilar") > M.puntaje("Casella 1407, Lanús", "casella 1407 pilar"));
+  let pool;
+  try {
+    pool = mysql.createPool({ host: process.env.TEST_DB_HOST || "localhost", user: process.env.TEST_DB_USER || "root", password: process.env.TEST_DB_PASSWORD || "", database: process.env.TEST_DB_NAME || "test" });
+    await pool.query("SELECT 1");
+  } catch { if (pool) await pool.end().catch(() => {}); return; }
+  const jr = (o) => ({ ok: true, json: async () => o });
+  const urls = [];
+  const fetchFn = async (url) => {
+    const u = String(url); urls.push(u);
+    if (u.includes("/direcciones")) return jr({ direcciones: /direccion=Casella%201407/.test(u) && u.includes("provincia=Buenos%20Aires") ? [{ altura: { valor: 1407 }, calle: { nombre: "EDGARDO CASELLA" }, localidad_censal: { nombre: "Villa Rosa" }, departamento: { nombre: "Pilar" }, provincia: { nombre: "Buenos Aires" }, ubicacion: { lat: -34.45, lon: -58.9 } }] : [] });
+    if (u.includes("/api/?q=")) return jr({ features: /1407/.test(decodeURIComponent(u)) ? [] : [{ geometry: { coordinates: [-58.9, -34.45] }, properties: { countrycode: "AR", street: "Edgardo Casella", district: "Villa Rosa", state: "Buenos Aires" } }] });
+    throw new Error("x");
+  };
+  try {
+    await pool.query("DROP TABLE IF EXISTS hoja_ruta_geo"); await M.asegurarTablasMapa(pool);
+    await pool.query("DROP TABLE IF EXISTS hoja_ruta"); await H.asegurarTablaHojaRuta(pool);
+    process.env.GEOREF_URL = process.env.PHOTON_URL = "http://x";
+    // "Casela" mal escrita: Georef la encuentra con la variante y Photon sin el número
+    let r = await M.buscarDirecciones(pool, "Casela 1407, Pilar", { fetchFn, consultarUltimoRecurso: async () => null });
+    assert.match(r.lista[0].texto, /Edgardo Casella 1407, Villa Rosa, Pilar/);
+    assert.ok(r.lista.some((x) => x.fuente === "photon"));
+    // una dirección ya usada en un despacho aparece primero
+    await M.fijarUbicacion(pool, "Edgardo Casella 1407, Villa Rosa, Buenos Aires", -34.4512, -58.9011);
+    await H.crearDespacho(pool, { usuario: { id: 1, nombre: "V" }, datos: { op: "1", cliente: "EJAD", fecha_despacho: "2026-11-12", tipo_entrega: "ENTREGA", direccion: "Edgardo Casella 1407, Villa Rosa, Buenos Aires", prioridad: 3 } });
+    r = await M.buscarDirecciones(pool, "casela villa rosa", { fetchFn, consultarUltimoRecurso: async () => null });
+    assert.equal(r.lista[0].fuente, "guardada");
+    r = await M.buscarDirecciones(pool, "edgardo casella", { fetchFn, consultarUltimoRecurso: async () => null });
+    assert.equal(r.lista[0].fuente, "guardada");
+  } finally {
+    delete process.env.GEOREF_URL; delete process.env.PHOTON_URL;
+    await pool.query("DROP TABLE IF EXISTS hoja_ruta_geo"); await pool.query("DROP TABLE IF EXISTS hoja_ruta");
+    await pool.end();
+  }
 });
