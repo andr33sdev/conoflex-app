@@ -23,6 +23,7 @@ import {
   UsersRound,
   Lightbulb,
   Radar,
+  Route,
 } from "lucide-react";
 
 export const INICIO = {
@@ -158,6 +159,15 @@ export const ALL_MENU_ITEMS = [
     icon: Truck,
     desc: "Preparar y despachar lo vendido",
     kw: "despacho envios",
+  },
+  {
+    id: "hoja-de-ruta",
+    corto: "Hoja ruta",
+    grupo: "comercial",
+    label: "Hoja de ruta",
+    icon: Route,
+    desc: "Cargá y mirá qué se despacha, cuándo y con qué prioridad",
+    kw: "despacho calendario entregas transporte prioridad op",
   },
   {
     id: "clientes-nuevos",
