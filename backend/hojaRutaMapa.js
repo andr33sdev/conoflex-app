@@ -111,6 +111,19 @@ function partirConsulta(q) {
   return { direccion, resto: q.slice(direccion.length) };
 }
 
+/** Errores de ortografía típicos ("Casela" por "Casella", "Beldrano" por "Belgrano"…): otras formas de escribir la calle. */
+function variantesOrtograficas(direccion) {
+  const m = String(direccion).match(/^(.*?)(\s*\d{1,5})$/);
+  const calle = m ? m[1] : direccion, altura = m ? m[2] : "";
+  const cambios = [
+    [/ll/gi, "l"], [/l/gi, "ll"], [/ss/gi, "s"], [/s/gi, "ss"], [/rr/gi, "r"], [/nn/gi, "n"], [/mm/gi, "m"], [/tt/gi, "t"], [/cc/gi, "c"],
+    [/v/gi, "b"], [/b/gi, "v"], [/y/gi, "ll"], [/ll/gi, "y"], [/h/gi, ""], [/z/gi, "s"], [/s/gi, "z"], [/c(?=[ei])/gi, "s"], [/k/gi, "qu"], [/ü/gi, "u"],
+  ];
+  const sal = new Set();
+  for (const [re, por] of cambios) { const v = calle.replace(re, por); if (v !== calle) sal.add(`${v}${altura}`.trim()); }
+  return [...sal].slice(0, 12);
+}
+
 /** Georef: dirección con altura → ubicación calculada. Las coincidencias con la localidad/partido escritos van primero. */
 async function buscarGeoref(q, { fetchFn } = {}) {
   const parte = partirConsulta(q);
@@ -118,8 +131,8 @@ async function buscarGeoref(q, { fetchFn } = {}) {
   const resto = normTxt(parte.resto);
   const provEscrita = PROVINCIAS.filter((p) => resto.includes(normTxt(p)));
   const provincias = provEscrita.length ? provEscrita.map((p) => (p === "Ciudad Autonoma de Buenos Aires" ? "Ciudad Autónoma de Buenos Aires" : p)) : ["Buenos Aires", "Ciudad Autónoma de Buenos Aires"];
-  const consultar = async (prov) => {
-    const url = `${GEOREF_URL()}/direcciones?direccion=${encodeURIComponent(parte.direccion)}${prov ? `&provincia=${encodeURIComponent(prov)}` : ""}&max=25`;
+  const consultar = async (prov, direccion = parte.direccion) => {
+    const url = `${GEOREF_URL()}/direcciones?direccion=${encodeURIComponent(direccion)}${prov ? `&provincia=${encodeURIComponent(prov)}` : ""}&max=25`;
     const d = await pedirJson(url, { fetchFn });
     return Array.isArray(d.direcciones) ? d.direcciones : [];
   };
@@ -128,6 +141,10 @@ async function buscarGeoref(q, { fetchFn } = {}) {
   if (!crudas.length) {
     if (intentos.every((r) => r.status === "rejected")) throw intentos[0].reason; // servicio caído ≠ sin coincidencias
     crudas = await consultar(null).catch(() => []);
+  }
+  if (!crudas.length) { // por si está mal escrita la calle: se prueban variantes de ortografía (todas juntas, con un tope)
+    const alt = await Promise.allSettled(variantesOrtograficas(parte.direccion).slice(0, 6).flatMap((v) => provincias.slice(0, 2).map((pv) => consultar(pv, v))));
+    crudas = alt.flatMap((r) => (r.status === "fulfilled" ? r.value : []));
   }
   const salida = crudas.filter((x) => x.ubicacion?.lat != null && x.ubicacion?.lon != null && enAR(Number(x.ubicacion.lat), Number(x.ubicacion.lon))).map((x) => {
     const loc = x.localidad_censal?.nombre, dep = x.departamento?.nombre, prov = x.provincia?.nombre;
@@ -141,7 +158,10 @@ async function buscarGeoref(q, { fetchFn } = {}) {
 
 /** Photon (OpenStreetMap): rápido y tolerante, ideal para ir mostrando coincidencias mientras se escribe. */
 async function buscarPhoton(q, { fetchFn } = {}) {
-  const d = await pedirJson(`${PHOTON_URL()}/api/?q=${encodeURIComponent(q)}&limit=8&lat=${CENTRO.lat}&lon=${CENTRO.lng}&location_bias_scale=0.3`, { fetchFn });
+  const pedir = (t) => pedirJson(`${PHOTON_URL()}/api/?q=${encodeURIComponent(t)}&limit=8&lat=${CENTRO.lat}&lon=${CENTRO.lng}&location_bias_scale=0.3`, { fetchFn });
+  let d = await pedir(q);
+  const sinNumero = q.replace(/\b\d{1,5}\b/g, " ").replace(/\s+/g, " ").replace(/\s,/g, ",").trim(); // OSM suele no tener la altura: la calle sola sí
+  if (!(d.features || []).length && sinNumero && sinNumero !== q) d = await pedir(sinNumero);
   return (d.features || []).filter((f) => f.geometry?.coordinates && (!f.properties?.countrycode || f.properties.countrycode === "AR")).map((f) => {
     const p = f.properties || {};
     const [lng, lat] = f.geometry.coordinates;
@@ -205,6 +225,38 @@ async function ubicacionPegada(q, { fetchFn = fetch } = {}) {
 const memoria = new Map(); // búsquedas recientes (mientras se escribe se repiten mucho)
 const RECUERDA_MS = 10 * 60 * 1000;
 
+/** Direcciones que ya se usaron en despachos anteriores y que coinciden con lo escrito (la fuente más confiable para clientes habituales). */
+const distancia = (a, b) => { // Levenshtein
+  const d = Array.from({ length: a.length + 1 }, (_, i) => [i, ...Array(b.length).fill(0)]);
+  for (let j = 1; j <= b.length; j++) d[0][j] = j;
+  for (let i = 1; i <= a.length; i++) for (let j = 1; j <= b.length; j++) d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+  return d[a.length][b.length];
+};
+/** ¿La palabra escrita coincide con alguna de la dirección guardada? (prefijo o con hasta 1–2 letras de diferencia) */
+const palabraCoincide = (w, palabrasDir) => palabrasDir.some((x) => x.startsWith(w) || (w.length >= 4 && distancia(w, x.slice(0, w.length + 1)) <= (w.length >= 7 ? 2 : 1)) || (/^\d+$/.test(w) && x === w));
+
+async function buscarGuardadas(db, q) {
+  const palabras = normTxt(q).split(" ").filter((w) => w.length >= 2).slice(0, 6);
+  if (!palabras.length) return [];
+  let rows;
+  try { [rows] = await db.query("SELECT direccion, MAX(id) AS mid FROM hoja_ruta WHERE direccion IS NOT NULL AND direccion <> '' GROUP BY direccion ORDER BY mid DESC LIMIT 600"); } catch { return []; }
+  const candidatas = rows.filter((r) => { const pd = normTxt(r.direccion).split(" "); return palabras.every((w) => palabraCoincide(w, pd)); }).slice(0, 5);
+  const salida = [];
+  for (const r of candidatas) {
+    const u = await ubicar(db, r.direccion, { soloCache: true }).catch(() => null);
+    if (u?.estado === "ok") salida.push({ texto: r.direccion, lat: u.lat, lng: u.lng, aprox: !!u.aprox, fuente: "guardada" });
+  }
+  return salida;
+}
+
+/** Cuánto se parece una coincidencia a lo escrito (palabras y altura). */
+function puntaje(texto, q) {
+  const t = ` ${normTxt(texto)} `;
+  const palabras = normTxt(q).split(" ").filter(Boolean);
+  if (!palabras.length) return 0;
+  return palabras.reduce((a, w) => a + (t.includes(` ${w} `) ? 1 : t.includes(` ${w}`) ? 0.6 : 0), 0) / palabras.length;
+}
+
 /**
  * Coincidencias para lo que se escribió, para que la persona elija. Devuelve { lista, caido }:
  * `caido` = ninguna fuente respondió (distinto de "no hay coincidencias").
@@ -222,9 +274,11 @@ async function buscarDirecciones(db, texto, { fetchFn, consultarUltimoRecurso = 
   if (!pegada) {
     const completa = expandirAbreviaturas(q);
     const fuentes = GOOGLE_KEY() ? [buscarGoogle(completa, { fetchFn }), buscarGeoref(completa, { fetchFn }), buscarPhoton(completa, { fetchFn })] : [buscarGeoref(completa, { fetchFn }), buscarPhoton(completa, { fetchFn })];
-    const res = await Promise.allSettled(fuentes);
-    respondio = res.some((r) => r.status === "fulfilled");
-    lista = res.flatMap((r) => (r.status === "fulfilled" ? r.value : []));
+    const [guardadas, res] = await Promise.all([buscarGuardadas(db, q), Promise.allSettled(fuentes)]);
+    respondio = res.some((r) => r.status === "fulfilled") || guardadas.length > 0;
+    const externas = res.flatMap((r) => (r.status === "fulfilled" ? r.value : []));
+    // Primero lo ya usado; después, lo que más se parece a lo escrito (las exactas, no aproximadas, antes).
+    lista = [...guardadas, ...externas.map((x, i) => ({ x, i, pt: puntaje(x.texto, q) - (x.aprox ? 0.01 : 0) })).sort((a, b) => b.pt - a.pt || a.i - b.i).map((o) => o.x)];
     if (!lista.length) { // último recurso: Nominatim (con la cola de 1 por segundo)
       try {
         const r = await enCola(() => consultarUltimoRecurso(completa, { fetchFn }));
@@ -412,4 +466,4 @@ function registrarRutasMapa(app, db, requirePermiso, requireAdmin) {
   });
 }
 
-module.exports = { detalleGoogle, ubicacionPegada, partirConsulta, buscarDirecciones, fijarUbicacion, expandirAbreviaturas, asegurarTablasMapa, claveDireccion, ubicar, ubicarEnSegundoPlano, leerOrigen, guardarOrigen, clientesHabituales, mapaDelDia, calcularRuta, registrarRutasMapa };
+module.exports = { variantesOrtograficas, buscarGuardadas, puntaje, detalleGoogle, ubicacionPegada, partirConsulta, buscarDirecciones, fijarUbicacion, expandirAbreviaturas, asegurarTablasMapa, claveDireccion, ubicar, ubicarEnSegundoPlano, leerOrigen, guardarOrigen, clientesHabituales, mapaDelDia, calcularRuta, registrarRutasMapa };

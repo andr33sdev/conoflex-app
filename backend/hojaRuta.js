@@ -11,7 +11,7 @@ const limpiar = (v, max) => String(v ?? "").trim().slice(0, max);
 async function asegurarTablaHojaRuta(db) {
   await db.query(`CREATE TABLE IF NOT EXISTS hoja_ruta (
     id INT AUTO_INCREMENT PRIMARY KEY,
-    op VARCHAR(40) NOT NULL,
+    op VARCHAR(255) NOT NULL,
     cliente VARCHAR(255) NOT NULL,
     fecha_despacho DATE NOT NULL,
     tipo_entrega VARCHAR(12) NOT NULL DEFAULT 'ENTREGA',
@@ -34,13 +34,20 @@ async function asegurarTablaHojaRuta(db) {
     KEY idx_fecha (fecha_despacho, estado),
     KEY idx_op (op)
   )`);
+  // Un despacho puede juntar varias OP ("1, 2, 3"): la columna tiene que alcanzar.
+  const [col] = await db.query("SELECT CHARACTER_MAXIMUM_LENGTH AS n FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'hoja_ruta' AND COLUMN_NAME = 'op'");
+  if (col[0] && Number(col[0].n) < 255) await db.query("ALTER TABLE hoja_ruta MODIFY op VARCHAR(255) NOT NULL");
 }
 
 const normalizarOp = (op) => limpiar(op, 40).replace(/^OP[-\s]*/i, "").trim();
+/** "OP 1, 2 y 3" → ["1","2","3"] (sin repetidas). */
+const listarOps = (texto) => [...new Set(String(texto || "").split(/[,;\n]+/).map(normalizarOp).filter(Boolean))].slice(0, 20);
+/** Condición SQL: la OP está dentro de la lista guardada en hoja_ruta.op. */
+const ENTRE_OPS = "FIND_IN_SET(?, REPLACE(op, ' ', '')) > 0";
 
 /** Valida y limpia lo que carga ventas. Devuelve los campos listos para guardar o lanza un error con el motivo. */
 function validarDespacho(b = {}) {
-  const op = normalizarOp(b.op);
+  const op = listarOps(b.op).join(", ");
   if (!op) throw err(400, "Poné el número de OP.");
   const cliente = limpiar(b.cliente, 255);
   if (!cliente) throw err(400, "Falta el cliente.");
@@ -59,7 +66,7 @@ function validarDespacho(b = {}) {
   if (!Number.isInteger(prioridad) || prioridad < 1 || prioridad > 5) throw err(400, "La prioridad va de 1 a 5.");
   let articulos = null;
   if (Array.isArray(b.articulos) && b.articulos.length) {
-    articulos = JSON.stringify(b.articulos.slice(0, 60).map((a) => ({ modelo: limpiar(a.modelo, 200), cantidad: Number(a.cantidad) || 0 })).filter((a) => a.modelo));
+    articulos = JSON.stringify(b.articulos.slice(0, 60).map((a) => ({ modelo: limpiar(a.modelo, 200), cantidad: Number(a.cantidad) || 0, ...(a.op ? { op: normalizarOp(a.op) } : {}) })).filter((a) => a.modelo));
   }
   return {
     op, cliente, fecha_despacho: fecha, tipo_entrega: tipo,
@@ -176,7 +183,7 @@ async function buscarOp(db, opTexto) {
   } catch {
     /* sin planilla de ventas: se carga a mano */
   }
-  const [ya] = await db.query(`SELECT id, DATE_FORMAT(fecha_despacho, '%Y-%m-%d') AS fecha_despacho, estado, creado_por FROM hoja_ruta WHERE op = ? AND estado <> 'CANCELADO' ORDER BY fecha_despacho`, [op]);
+  const [ya] = await db.query(`SELECT id, DATE_FORMAT(fecha_despacho, '%Y-%m-%d') AS fecha_despacho, estado, creado_por FROM hoja_ruta WHERE ${ENTRE_OPS} AND estado <> 'CANCELADO' ORDER BY fecha_despacho`, [op]);
   return { op, encontrada: !!cliente, cliente, fecha_op: fechaOp, articulos, ya_cargados: ya };
 }
 
@@ -222,8 +229,8 @@ async function pedidosPendientes(db, { q = "", exacto = false } = {}) {
     .map((c) => ({ cliente: c.cliente, ops: [...c.ops.values()].sort((a, b) => String(b.fecha).localeCompare(String(a.fecha))).slice(0, 40) }));
   const todas = lista.flatMap((c) => c.ops.map((o) => o.op));
   if (todas.length) {
-    const [ya] = await db.query(`SELECT op, DATE_FORMAT(fecha_despacho, '%Y-%m-%d') AS fecha_despacho, estado, creado_por FROM hoja_ruta WHERE op IN (?) AND estado <> 'CANCELADO' ORDER BY fecha_despacho`, [todas]);
-    for (const c of lista) for (const o of c.ops) o.ya = ya.filter((y) => y.op === o.op).map(({ fecha_despacho, estado, creado_por }) => ({ fecha_despacho, estado, creado_por }));
+    const [ya] = await db.query(`SELECT op, DATE_FORMAT(fecha_despacho, '%Y-%m-%d') AS fecha_despacho, estado, creado_por FROM hoja_ruta WHERE estado <> 'CANCELADO' AND (${todas.map(() => ENTRE_OPS).join(" OR ")}) ORDER BY fecha_despacho`, todas);
+    for (const c of lista) for (const o of c.ops) o.ya = ya.filter((y) => listarOps(y.op).includes(o.op)).map(({ fecha_despacho, estado, creado_por }) => ({ fecha_despacho, estado, creado_por }));
   }
   return lista;
 }

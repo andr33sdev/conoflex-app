@@ -6,6 +6,7 @@ import "./mapa.css";
 import Cruces from "./Cruces";
 import BuscadorDireccion from "./BuscadorDireccion";
 import BotonPdf from "./BotonPdf";
+import { listaOps } from "./ops";
 
 const API_BASE_URL = import.meta.env?.VITE_API_URL || "";
 const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -39,9 +40,9 @@ function agruparParadas(lista) {
     const lugar = p.lat != null ? `${Number(p.lat).toFixed(5)},${Number(p.lng).toFixed(5)}` : `d:${normCli(p.direccion)}`;
     const k = `${normCli(p.cliente)}|${lugar}`;
     const g = grupos.get(k);
-    if (!g) { grupos.set(k, { ...p, ids: [p.id], ops: [p.op], observaciones: p.observaciones || "" }); continue; }
+    if (!g) { grupos.set(k, { ...p, ids: [p.id], ops: listaOps(p.op), observaciones: p.observaciones || "" }); continue; }
     g.ids.push(p.id);
-    if (!g.ops.includes(p.op)) g.ops.push(p.op);
+    for (const o of listaOps(p.op)) if (!g.ops.includes(o)) g.ops.push(o);
     g.prioridad = Math.max(g.prioridad || 0, p.prioridad || 0);
     g.contacto_nombre = g.contacto_nombre || p.contacto_nombre;
     g.contacto_telefono = g.contacto_telefono || p.contacto_telefono;
