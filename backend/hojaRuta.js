@@ -198,7 +198,7 @@ async function pedidosPendientes(db, { q = "", exacto = false } = {}) {
       `SELECT op, cliente, modelo, detalles, cantidad, DATE_FORMAT(fecha, '%Y-%m-%d') AS fecha
          FROM estado_pedidos
         WHERE ${exacto ? "LOWER(TRIM(cliente)) = ?" : "LOWER(cliente) LIKE ?"} AND ${SIN_DESPACHO} AND ${NO_CANCELADO}
-          AND op IS NOT NULL AND TRIM(op) <> ''
+          AND op IS NOT NULL AND TRIM(op) <> '' AND fecha >= DATE_SUB(CURDATE(), INTERVAL 6 MONTH)
         ORDER BY fecha DESC, id DESC LIMIT 800`,
       [exacto ? texto : `%${texto.replace(/[%_]/g, "")}%`],
     );

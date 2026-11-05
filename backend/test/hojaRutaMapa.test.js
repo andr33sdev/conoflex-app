@@ -195,30 +195,35 @@ test("pedidos pendientes: se busca por cliente y solo salen las OP sin fecha de 
     for (const t of ["hoja_ruta", "estado_pedidos"]) await pool.query(`DROP TABLE IF EXISTS ${t}`);
     await H.asegurarTablaHojaRuta(pool);
     await pool.query("CREATE TABLE estado_pedidos (id INT AUTO_INCREMENT PRIMARY KEY, op VARCHAR(40), cliente VARCHAR(255), modelo VARCHAR(255), detalles TEXT, cantidad INT, fecha DATE, estado VARCHAR(60), despacho VARCHAR(60))");
+    const hace = (d) => new Date(Date.now() - d * 864e5).toISOString().slice(0, 10);
     const ins = (op, cli, mod, cant, fecha, estado, despacho) => pool.query("INSERT INTO estado_pedidos (op, cliente, modelo, cantidad, fecha, estado, despacho) VALUES (?,?,?,?,?,?,?)", [op, cli, mod, cant, fecha, estado, despacho]);
-    await ins("OP-100", "Vial SA", "Cono 700", 40, "2026-10-20", "EN PRODUCCION", null);
-    await ins("OP-100", "Vial SA", "Baliza", 10, "2026-10-20", "EN PRODUCCION", "");
-    await ins("OP-101", "Vial SA", "Cono 500", 5, "2026-10-25", "PREPARADO", "05/11/2026"); // ya despachada
-    await ins("OP-102", "Vial SA", "Cono 300", 8, "2026-10-28", "EN PRODUCCION", "-");
-    await ins("OP-103", "Vial SA", "Cono 300", 8, "2026-10-29", "CANCELADO", null); // cancelada
-    await ins("OP-104", "Vial SA", "Pieza", 1, "2026-10-30", "PREPARADO", "SIN DESPACHAR");
-    await ins("OP-200", "Otro SRL", "Cono 700", 2, "2026-10-21", "EN PRODUCCION", null);
-    await ins("OP-102", "Vial SA", "Cono viejo", 99, "2025-01-10", "EN PRODUCCION", null); // misma OP de un año anterior: no es la vigente
-    await ins("OP-300", "Vial SA", "Mixta A", 3, "2026-11-01", "PREPARADO", "05/11/2026");
-    await ins("OP-300", "Vial SA", "Mixta B", 4, "2026-11-01", "PREPARADO", null); // despachada a medias: solo sale lo que falta
+    await ins("OP-100", "Vial SA", "Cono 700", 40, hace(16), "EN PRODUCCION", null);
+    await ins("OP-100", "Vial SA", "Baliza", 10, hace(16), "EN PRODUCCION", "");
+    await ins("OP-101", "Vial SA", "Cono 500", 5, hace(11), "PREPARADO", "05/11/2026"); // ya despachada
+    await ins("OP-102", "Vial SA", "Cono 300", 8, hace(8), "EN PRODUCCION", "-");
+    await ins("OP-103", "Vial SA", "Cono 300", 8, hace(7), "CANCELADO", null); // cancelada
+    await ins("OP-104", "Vial SA", "Pieza", 1, hace(6), "PREPARADO", "SIN DESPACHAR");
+    await ins("OP-200", "Otro SRL", "Cono 700", 2, hace(15), "EN PRODUCCION", null);
+    await ins("OP-102", "Vial SA", "Cono viejo", 99, hace(300), "EN PRODUCCION", null); // misma OP de un año anterior: no es la vigente
+    await ins("OP-300", "Vial SA", "Mixta A", 3, hace(4), "PREPARADO", "05/11/2026");
+    await ins("OP-300", "Vial SA", "Mixta B", 4, hace(4), "PREPARADO", null); // despachada a medias: solo sale lo que falta
+    await ins("OP-400", "Vial SA", "Muy vieja", 1, hace(200), "EN PRODUCCION", null); // más de 6 meses: no aparece
+    await ins("OP-401", "Solo Viejo SA", "Muy vieja", 1, hace(200), "EN PRODUCCION", null);
+    await ins("OP-402", "Vial SA", "De hace 5 meses", 1, hace(150), "EN PRODUCCION", null); // dentro de los 6 meses
     const vero = { id: 2, nombre: "Vero" };
     await H.crearDespacho(pool, { usuario: vero, datos: { op: "100", cliente: "Vial SA", fecha_despacho: "2026-11-12", tipo_entrega: "RETIRA", prioridad: 2 } });
     const r = await H.pedidosPendientes(pool, { q: "vial" });
     assert.equal(r.length, 1);
-    assert.deepEqual(r[0].ops.map((o) => o.op).sort(), ["100", "102", "104", "300"]);
+    assert.deepEqual(r[0].ops.map((o) => o.op).sort(), ["100", "102", "104", "300", "402"]);
     const op100 = r[0].ops.find((o) => o.op === "100");
     assert.equal(op100.articulos.length, 2);
     assert.equal(op100.ya.length, 1); // ya tiene un despacho programado
     assert.deepEqual(r[0].ops.find((o) => o.op === "102").articulos.map((a) => a.modelo), ["Cono 300"]);
     assert.deepEqual(r[0].ops.find((o) => o.op === "300").articulos.map((a) => a.modelo), ["Mixta B"]);
-    assert.equal((await H.pedidosPendientes(pool, { q: "VIAL SA", exacto: true }))[0].ops.length, 4);
+    assert.equal((await H.pedidosPendientes(pool, { q: "VIAL SA", exacto: true }))[0].ops.length, 5);
     assert.equal((await H.pedidosPendientes(pool, { q: "vial s", exacto: true })).length, 0);
     assert.equal((await H.pedidosPendientes(pool, { q: "v" })).length, 0);
+    assert.equal((await H.pedidosPendientes(pool, { q: "solo viejo" })).length, 0); // cliente con OP solo viejas: no aparece
     assert.equal((await H.pedidosPendientes(pool, { q: "otro" }))[0].ops.length, 1);
     await pool.query("DROP TABLE estado_pedidos");
     assert.deepEqual(await H.pedidosPendientes(pool, { q: "vial" }), []); // sin planilla: no falla
