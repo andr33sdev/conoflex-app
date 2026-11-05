@@ -293,3 +293,14 @@ test("buscarDirecciones: Georef por altura, Photon, pegar coordenadas o link, Go
     await pool.end();
   }
 });
+
+test("fijarUbicacion: rechaza coordenadas vacías o (0,0) en vez de guardar el pin en el golfo de Guinea", async () => {
+  const llamadas = [];
+  const db = { query: async (...a) => { llamadas.push(a); return [[]]; } };
+  for (const [la, lo] of [[null, null], [undefined, -58], ["", ""], [0, 0], [-34, null]]) {
+    await assert.rejects(() => M.fijarUbicacion(db, "Casella 1407, Pilar", la, lo), /no es válida/);
+  }
+  assert.equal(llamadas.length, 0);
+  const ok = await M.fijarUbicacion(db, "Casella 1407, Pilar", -34.45, -58.9);
+  assert.equal(ok.lat, -34.45);
+});
