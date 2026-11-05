@@ -39,9 +39,15 @@ function enCola(fn, espera = 1100) {
   return t;
 }
 
+/** "Av. Pres. Perón 3798" → "Avenida Presidente Perón 3798": Nominatim entiende mejor los nombres completos. */
+const ABREVIATURAS = { av: "Avenida", avda: "Avenida", pres: "Presidente", gral: "General", cnel: "Coronel", dr: "Doctor", dra: "Doctora", int: "Intendente", ing: "Ingeniero", tte: "Teniente", sgto: "Sargento", brig: "Brigadier", alte: "Almirante", pte: "Presidente", bv: "Boulevard", bvd: "Boulevard", pje: "Pasaje", diag: "Diagonal", prof: "Profesor", cap: "Capitán", cte: "Comandante", fco: "Francisco", pdo: "Partido" };
+function expandirAbreviaturas(texto) {
+  return String(texto).replace(/\b([A-Za-zÁÉÍÓÚáéíóúñÑ]{2,5})\.(?=\s|$)/g, (m, w) => ABREVIATURAS[w.toLowerCase()] || m);
+}
+
 /** Consulta a Nominatim. Devuelve {lat,lng} o null si no la encuentra; lanza si el servicio no responde. */
 async function consultarNominatim(direccion, { fetchFn = fetch } = {}) {
-  const q = /argentina/i.test(direccion) ? direccion : `${direccion}, Argentina`;
+  const q = /argentina/i.test(direccion) ? direccion : `${expandirAbreviaturas(direccion)}, Argentina`;
   const url = `${NOMINATIM_URL()}/search?format=jsonv2&limit=1&countrycodes=ar&q=${encodeURIComponent(q)}`;
   const res = await fetchFn(url, { headers: { "User-Agent": "Conoflex-App/1.0 (hoja de ruta)", "Accept-Language": "es" }, signal: AbortSignal.timeout(10000) });
   if (!res.ok) throw new Error(`El servicio de mapas respondió ${res.status}.`);
@@ -191,4 +197,4 @@ function registrarRutasMapa(app, db, requirePermiso, requireAdmin) {
   });
 }
 
-module.exports = { asegurarTablasMapa, claveDireccion, ubicar, ubicarEnSegundoPlano, leerOrigen, guardarOrigen, clientesHabituales, mapaDelDia, calcularRuta, registrarRutasMapa };
+module.exports = { expandirAbreviaturas, asegurarTablasMapa, claveDireccion, ubicar, ubicarEnSegundoPlano, leerOrigen, guardarOrigen, clientesHabituales, mapaDelDia, calcularRuta, registrarRutasMapa };

@@ -10,6 +10,12 @@ test("claveDireccion: mismas direcciones escritas distinto dan la misma clave", 
   assert.equal(M.claveDireccion("Perú 100"), M.claveDireccion("PERU 100"));
 });
 
+test("expandirAbreviaturas: Av. Pres. Perón → Avenida Presidente Perón", () => {
+  assert.equal(M.expandirAbreviaturas("Av. Pres. Perón 3798, Morón"), "Avenida Presidente Perón 3798, Morón");
+  assert.equal(M.expandirAbreviaturas("Gral. Paz 100"), "General Paz 100");
+  assert.equal(M.expandirAbreviaturas("Mitre 100, Avellaneda"), "Mitre 100, Avellaneda");
+});
+
 test("calcularRuta: ordena según OSRM, devuelve km/min/tramos y cae a 'con vuelta' si no acepta sin vuelta", async () => {
   const llamadas = [];
   const fetchFn = async (url) => {
