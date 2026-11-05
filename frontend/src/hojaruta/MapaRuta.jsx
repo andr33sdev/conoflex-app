@@ -30,6 +30,27 @@ const corto = (t, n = 24) => (t.length > n ? `${t.slice(0, n - 1).trim()}…` : 
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
 
+const normCli = (t) => String(t || "").trim().toLowerCase().replace(/\s+/g, " ");
+const textoOps = (p) => `OP ${p.ops.join(" · ")}`;
+/** Junta las OP del mismo cliente y el mismo lugar en una sola parada. */
+function agruparParadas(lista) {
+  const grupos = new Map();
+  for (const p of lista) {
+    const lugar = p.lat != null ? `${Number(p.lat).toFixed(5)},${Number(p.lng).toFixed(5)}` : `d:${normCli(p.direccion)}`;
+    const k = `${normCli(p.cliente)}|${lugar}`;
+    const g = grupos.get(k);
+    if (!g) { grupos.set(k, { ...p, ids: [p.id], ops: [p.op], observaciones: p.observaciones || "" }); continue; }
+    g.ids.push(p.id);
+    if (!g.ops.includes(p.op)) g.ops.push(p.op);
+    g.prioridad = Math.max(g.prioridad || 0, p.prioridad || 0);
+    g.contacto_nombre = g.contacto_nombre || p.contacto_nombre;
+    g.contacto_telefono = g.contacto_telefono || p.contacto_telefono;
+    if (p.observaciones && !g.observaciones.split(" / ").includes(p.observaciones)) g.observaciones = g.observaciones ? `${g.observaciones} / ${p.observaciones}` : p.observaciones;
+    g.aproximada = g.aproximada || p.aproximada;
+  }
+  return [...grupos.values()];
+}
+
 export default function MapaRuta({ fechaInicial, esAdmin, usuario }) {
   const [fecha, setFecha] = useState(fechaInicial || iso(new Date()));
   const [datos, setDatos] = useState(null);
@@ -64,8 +85,10 @@ export default function MapaRuta({ fechaInicial, esAdmin, usuario }) {
     return () => clearTimeout(t);
   }, [datos, cargar]);
 
-  const ubicadas = useMemo(() => (datos?.paradas || []).filter((p) => p.lat != null), [datos]);
-  const revisar = useMemo(() => (datos?.paradas || []).filter((p) => p.lat == null || p.aproximada), [datos]);
+  // Un cliente con varias OP para el mismo lugar aparece una sola vez (con todas sus OP).
+  const paradas = useMemo(() => agruparParadas(datos?.paradas || []), [datos]);
+  const ubicadas = useMemo(() => paradas.filter((p) => p.lat != null), [paradas]);
+  const revisar = useMemo(() => paradas.filter((p) => p.lat == null || p.aproximada), [paradas]);
   const elegidas = useMemo(() => ubicadas.filter((p) => !fuera.has(p.id)), [ubicadas, fuera]);
   const origen = datos?.origen;
 
@@ -119,7 +142,7 @@ export default function MapaRuta({ fechaInicial, esAdmin, usuario }) {
     ubicadas.forEach((p) => {
       const n = ordenadas.indexOf(p);
       const dentro = !fuera.has(p.id);
-      marcadores.current[p.id] = L.marker([p.lat, p.lng], { icon: icono(dentro ? "ruta" : "fuera", dentro && n >= 0 ? n + 1 : "·"), zIndexOffset: dentro ? 100 : 0 }).bindPopup(`<b>${esc(p.cliente)}</b><br>OP ${esc(p.op)}<br>${esc(p.direccion)}`).addTo(capa.current);
+      marcadores.current[p.id] = L.marker([p.lat, p.lng], { icon: icono(dentro ? "ruta" : "fuera", dentro && n >= 0 ? n + 1 : "·"), zIndexOffset: dentro ? 100 : 0 }).bindPopup(`<b>${esc(p.cliente)}</b><br>${esc(textoOps(p))}<br>${esc(p.direccion)}`).addTo(capa.current);
       if (dentro && ordenadas.length <= 15) marcadores.current[p.id].bindTooltip(esc(corto(p.cliente)), { permanent: true, direction: "right", offset: [12, -22], className: "tip-mapa" });
       puntos.push([p.lat, p.lng]);
     });
@@ -170,7 +193,7 @@ export default function MapaRuta({ fechaInicial, esAdmin, usuario }) {
   const copiarRuta = async () => {
     const l = [`HOJA DE RUTA · ${tituloDia(fecha)}`, `${ruta.distancia_km} km en total`, ""];
     ordenadas.forEach((p, i) => {
-      l.push(`${i + 1}) ${p.cliente} (OP ${p.op})`);
+      l.push(`${i + 1}) ${p.cliente} (${textoOps(p)})`);
       l.push(`   ${p.tipo_entrega === "TRANSPORTE" ? `${p.transporte_nombre} · ` : ""}${p.direccion}`);
       if (p.contacto_nombre || p.contacto_telefono) l.push(`   Contacto: ${[p.contacto_nombre, p.contacto_telefono].filter(Boolean).join(" · ")}`);
       if (p.observaciones) l.push(`   Obs: ${p.observaciones}`);
@@ -240,7 +263,7 @@ export default function MapaRuta({ fechaInicial, esAdmin, usuario }) {
                     )}
                     <div className="mt-2.5 flex flex-wrap gap-2">
                       {urlGoogle && <a href={urlGoogle} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 text-xs font-bold text-white bg-blue-600 hover:bg-blue-500 rounded-md px-3 py-2"><Navigation size={13} />Abrir en Google Maps</a>}
-                      <BotonPdf fecha={fecha} usuario={usuario} orden={ordenadas.map((p) => p.id)} km={ruta?.distancia_km} etiqueta="Exportar PDF" />
+                      <BotonPdf fecha={fecha} usuario={usuario} orden={ordenadas.flatMap((p) => p.ids)} km={ruta?.distancia_km} etiqueta="Exportar PDF" />
                       <button onClick={copiarRuta} className="inline-flex items-center gap-1.5 text-xs font-bold text-zinc-200 border border-zinc-600 hover:bg-zinc-800 rounded-md px-3 py-2">{copiado ? <Check size={13} className="text-emerald-400" /> : <Copy size={13} />}{copiado ? "Copiada" : "Copiar para WhatsApp"}</button>
                       {elegidas.length > 1 && <button onClick={calcularAportes} disabled={calcAportes} className="inline-flex items-center gap-1.5 text-xs font-bold text-zinc-200 border border-zinc-600 hover:bg-zinc-800 rounded-md px-3 py-2 disabled:opacity-60">{calcAportes ? <Loader2 size={13} className="animate-spin" /> : <Calculator size={13} />}¿Cuánto suma cada cliente?</button>}
                     </div>
@@ -297,7 +320,7 @@ function Fila({ p, n, tildado, onAlternar, onVer, tramo, aporte, masCaro }) {
           <span className="min-w-0 flex-1">
             <span className="flex items-center justify-between gap-2"><span className="text-sm font-bold text-white truncate">{p.cliente}</span><Cruces valor={p.prioridad} tam="text-[11px]" /></span>
             <span className="block text-xs text-zinc-400 truncate">{p.tipo_entrega === "TRANSPORTE" ? `${p.transporte_nombre} · ` : ""}{p.direccion}</span>
-            <span className="block text-[11px] text-zinc-500">OP {p.op}{tramo ? ` · ${tramo.km} km desde la anterior` : ""}</span>
+            <span className="block text-[11px] text-zinc-500">{textoOps(p)}{tramo ? ` · ${tramo.km} km desde la anterior` : ""}</span>
           </span>
         </button>
         {aporte && <span className={`mt-1.5 ml-[34px] inline-block text-[11px] font-bold rounded px-1.5 py-0.5 ${masCaro ? "bg-amber-900/50 text-amber-200" : "bg-zinc-800 text-zinc-300"}`}>Suma {aporte.km > 0 ? "+" : ""}{aporte.km} km</span>}
