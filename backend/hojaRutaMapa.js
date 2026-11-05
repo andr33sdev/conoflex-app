@@ -183,7 +183,7 @@ async function clientesHabituales(db, { q = "", exacto = false } = {}) {
 async function mapaDelDia(db, fecha, { maxNuevas = 5, ...deps } = {}) {
   if (!FECHA.test(String(fecha || ""))) throw err(400, "Elegí el día.");
   const [rows] = await db.query(
-    `SELECT id, op, cliente, tipo_entrega, direccion, transporte_nombre, prioridad, estado, contacto_nombre, contacto_telefono
+    `SELECT id, op, cliente, tipo_entrega, direccion, transporte_nombre, prioridad, estado, contacto_nombre, contacto_telefono, observaciones
        FROM hoja_ruta WHERE fecha_despacho = ? AND estado <> 'CANCELADO' ORDER BY prioridad DESC, id`, [fecha]);
   let nuevas = 0;
   const paradas = [];

@@ -1,0 +1,5 @@
+/* Mapa de la hoja de ruta: base más apagada para que la ruta y los pines se lean mejor. */
+.mapa-ruta .leaflet-tile-pane { filter: saturate(0.35) brightness(1.06) contrast(0.92); }
+.pin-mapa { background: none; border: 0; }
+.tip-mapa { background: #fff; color: #111827; border: 0; border-radius: 6px; padding: 2px 7px; font: 700 11px system-ui, sans-serif; box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4); }
+.tip-mapa.leaflet-tooltip-right::before { border-right-color: #fff; }
