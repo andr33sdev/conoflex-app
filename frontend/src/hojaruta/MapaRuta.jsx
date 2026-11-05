@@ -88,7 +88,7 @@ export default function MapaRuta({ fechaInicial, esAdmin }) {
   useEffect(() => {
     if (!mapaEl.current || mapa.current) return undefined;
     mapa.current = L.map(mapaEl.current, { zoomControl: true }).setView([-34.6, -58.45], 10);
-    L.tileLayer(import.meta.env?.VITE_MAP_TILES || "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png", { maxZoom: 19, subdomains: "abcd", attribution: "© OpenStreetMap · © CARTO" }).addTo(mapa.current);
+    L.tileLayer(import.meta.env?.VITE_MAP_TILES || "https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, attribution: "© OpenStreetMap" }).addTo(mapa.current);
     mapa.current.zoomControl.setPosition("bottomright");
     capa.current = L.layerGroup().addTo(mapa.current);
     return () => { mapa.current?.remove(); mapa.current = null; };
