@@ -1,14 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
-import { AlertTriangle, Calculator, Check, ChevronLeft, ChevronRight, Clock, Copy, Loader2, MapPin, Navigation, Pencil, Phone, Route as RouteIcon, TrendingDown } from "lucide-react";
+import { AlertTriangle, Calculator, Check, ChevronLeft, ChevronRight, Copy, Loader2, MapPin, Navigation, Pencil, Phone, Route as RouteIcon, TrendingDown } from "lucide-react";
 import "./mapa.css";
 import Cruces from "./Cruces";
 import BuscadorDireccion from "./BuscadorDireccion";
 
 const API_BASE_URL = import.meta.env?.VITE_API_URL || "";
 const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-const horas = (min) => (min >= 60 ? `${Math.floor(min / 60)} h ${String(min % 60).padStart(2, "0")} min` : `${min} min`);
 
 async function pedir(path, opciones) {
   const res = await fetch(`${API_BASE_URL}${path}`, opciones && { ...opciones, headers: { "Content-Type": "application/json" }, body: JSON.stringify(opciones.body) });
@@ -26,9 +25,6 @@ const MESES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "
 const aFecha = (f) => new Date(`${f}T12:00:00`);
 const sumarDias = (f, n) => { const d = aFecha(f); d.setDate(d.getDate() + n); return iso(d); };
 const tituloDia = (f) => { const d = aFecha(f); return `${DIAS[d.getDay()]} ${d.getDate()} de ${MESES[d.getMonth()]}`; };
-const hhmm = (min) => { const m = ((Math.round(min) % 1440) + 1440) % 1440; return `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`; };
-const leerGuardado = (k, def) => { try { return localStorage.getItem(k) || def; } catch { return def; } };
-const guardar = (k, v) => { try { localStorage.setItem(k, String(v)); } catch { /* sin almacenamiento */ } };
 const corto = (t, n = 24) => (t.length > n ? `${t.slice(0, n - 1).trim()}…` : t);
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
@@ -51,10 +47,6 @@ export default function MapaRuta({ fechaInicial, esAdmin }) {
   const capa = useRef(null);
   const turno = useRef(0);
   const marcadores = useRef({});
-  const [salida, setSalida] = useState(() => leerGuardado("hr_salida", "08:00"));
-  const [descarga, setDescarga] = useState(() => Number(leerGuardado("hr_descarga", "15")) || 0);
-  const [vmax, setVmax] = useState(() => Number(leerGuardado("hr_vmax", "80")) || 80);
-  const [conHorarios, setConHorarios] = useState(() => leerGuardado("hr_horarios", "0") === "1");
   const [aportes, setAportes] = useState(null);
   const [calcAportes, setCalcAportes] = useState(false);
   const [copiado, setCopiado] = useState(false);
@@ -76,13 +68,10 @@ export default function MapaRuta({ fechaInicial, esAdmin }) {
   const elegidas = useMemo(() => ubicadas.filter((p) => !fuera.has(p.id)), [ubicadas, fuera]);
   const origen = datos?.origen;
 
-  // El servicio de rutas calcula para auto; para camión, ningún tramo puede promediar más que la velocidad máxima elegida.
   const calcular = useCallback(async (paradas) => {
     if (!origen || !paradas.length) return null;
-    const r = await pedir("/api/hoja-ruta/ruta", { method: "POST", body: { vuelta, puntos: [origen, ...paradas].map((p) => ({ lat: p.lat, lng: p.lng })) } });
-    const tramos = (r.tramos || []).map((t) => ({ ...t, min: Math.max(t.min, Math.round((t.km / vmax) * 60)) }));
-    return { ...r, tramos, duracion_min: tramos.reduce((a, t) => a + t.min, 0) };
-  }, [origen, vuelta, vmax]);
+    return pedir("/api/hoja-ruta/ruta", { method: "POST", body: { vuelta, puntos: [origen, ...paradas].map((p) => ({ lat: p.lat, lng: p.lng })) } });
+  }, [origen, vuelta]);
 
   // Ruta con todos (para comparar cuánto cambia al sacar alguno).
   useEffect(() => { let vivo = true; calcular(ubicadas).then((r) => vivo && setBase(r)).catch(() => vivo && setBase(null)); return () => { vivo = false; }; }, [calcular, ubicadas]);
@@ -160,20 +149,6 @@ export default function MapaRuta({ fechaInicial, esAdmin }) {
     catch (e) { setError(e.message); } finally { setGuardandoOrigen(false); }
   };
 
-  // Horarios estimados: salida + manejo + tiempo de descarga en cada parada.
-  const llegadas = useMemo(() => {
-    if (!ruta?.tramos) return [];
-    const [h, m] = String(salida).split(":").map(Number);
-    let t = (h || 0) * 60 + (m || 0);
-    return ordenadas.map((_, i) => { t += (ruta.tramos[i]?.min || 0) + (i > 0 ? descarga : 0); return t; });
-  }, [ruta, ordenadas, salida, descarga]);
-  const horaFin = useMemo(() => {
-    if (!ruta?.tramos || !llegadas.length) return null;
-    const ultima = llegadas[llegadas.length - 1] + descarga;
-    return ruta.vuelta ? ultima + (ruta.tramos[ordenadas.length]?.min || 0) : ultima;
-  }, [ruta, llegadas, ordenadas, descarga]);
-
-  // ¿Cuánto suma cada cliente a la ruta? (se calcula sacándolo de a uno)
   const claveAportes = `${claveSel}|${vuelta}`;
   const aporte = aportes?.clave === claveAportes ? aportes.datos : null;
   const calcularAportes = async () => {
@@ -183,7 +158,7 @@ export default function MapaRuta({ fechaInicial, esAdmin }) {
       const out = {};
       for (const p of elegidas.slice(0, 15)) {
         const r = await calcular(elegidas.filter((x) => x.id !== p.id));
-        out[p.id] = { km: Math.round((ruta.distancia_km - r.distancia_km) * 10) / 10, min: ruta.duracion_min - r.duracion_min };
+        out[p.id] = { km: Math.round((ruta.distancia_km - r.distancia_km) * 10) / 10 };
       }
       setAportes({ clave: claveAportes, datos: out });
     } catch (e) { setError(e.message); } finally { setCalcAportes(false); }
@@ -192,9 +167,9 @@ export default function MapaRuta({ fechaInicial, esAdmin }) {
   const fueraAlta = ubicadas.filter((p) => fuera.has(p.id) && p.prioridad >= 4);
 
   const copiarRuta = async () => {
-    const l = [`HOJA DE RUTA · ${tituloDia(fecha)}`, `${conHorarios ? `Salida ${salida} · ` : ""}${ruta.distancia_km} km · ${horas(ruta.duracion_min)} de manejo${conHorarios && horaFin != null ? ` · fin ~${hhmm(horaFin)}` : ""}`, ""];
+    const l = [`HOJA DE RUTA · ${tituloDia(fecha)}`, `${ruta.distancia_km} km en total`, ""];
     ordenadas.forEach((p, i) => {
-      l.push(`${i + 1}) ${conHorarios ? `${hhmm(llegadas[i])} · ` : ""}${p.cliente} (OP ${p.op})`);
+      l.push(`${i + 1}) ${p.cliente} (OP ${p.op})`);
       l.push(`   ${p.tipo_entrega === "TRANSPORTE" ? `${p.transporte_nombre} · ` : ""}${p.direccion}`);
       if (p.contacto_nombre || p.contacto_telefono) l.push(`   Contacto: ${[p.contacto_nombre, p.contacto_telefono].filter(Boolean).join(" · ")}`);
       if (p.observaciones) l.push(`   Obs: ${p.observaciones}`);
@@ -209,7 +184,6 @@ export default function MapaRuta({ fechaInicial, esAdmin }) {
 
   const hayCambio = base && ruta && elegidas.length < ubicadas.length;
   const ahorroKm = hayCambio ? Math.round((base.distancia_km - ruta.distancia_km) * 10) / 10 : 0;
-  const ahorroMin = hayCambio ? base.duracion_min - ruta.duracion_min : 0;
   const pill = (act) => `px-3 py-1.5 rounded-md text-xs font-semibold border ${act ? "border-orange-500 bg-orange-500/10 text-orange-300" : "border-zinc-800 text-zinc-400 hover:bg-zinc-800"}`;
   const ahora = new Date();
   const hoy = iso(ahora);
@@ -258,28 +232,19 @@ export default function MapaRuta({ fechaInicial, esAdmin }) {
                 </div>
                 {ruta ? (
                   <>
-                    <p className="text-2xl font-black text-white mt-1 tabular-nums">{ruta.distancia_km} km <span className="text-base font-bold text-zinc-400">· {horas(ruta.duracion_min)}</span></p>
-                    <p className="text-[11px] text-zinc-500">{elegidas.length} parada{elegidas.length > 1 ? "s" : ""}{ruta.vuelta ? " con vuelta a planta" : " sin vuelta"} · tiempo de manejo en camión (máx. {vmax} km/h), sin contar descargas</p>
-                    {hayCambio && (ahorroKm > 0 || ahorroMin > 0) && (
-                      <p className="mt-2 text-xs text-emerald-300 bg-emerald-950/40 border border-emerald-900/60 rounded-md px-2.5 py-1.5 flex items-center gap-1.5"><TrendingDown size={13} />Sin {ubicadas.length - elegidas.length} cliente{ubicadas.length - elegidas.length > 1 ? "s" : ""} ahorrás {ahorroKm} km y {horas(ahorroMin)}.</p>
+                    <p className="text-2xl font-black text-white mt-1 tabular-nums">{ruta.distancia_km} km</p>
+                    <p className="text-[11px] text-zinc-500">{elegidas.length} parada{elegidas.length > 1 ? "s" : ""}{ruta.vuelta ? " con vuelta a planta" : " sin vuelta"}</p>
+                    {hayCambio && ahorroKm > 0 && (
+                      <p className="mt-2 text-xs text-emerald-300 bg-emerald-950/40 border border-emerald-900/60 rounded-md px-2.5 py-1.5 flex items-center gap-1.5"><TrendingDown size={13} />Sin {ubicadas.length - elegidas.length} cliente{ubicadas.length - elegidas.length > 1 ? "s" : ""} ahorrás {ahorroKm} km.</p>
                     )}
-                    {conHorarios && horaFin != null && <p className="mt-1.5 text-xs text-zinc-300 flex items-center gap-1.5"><Clock size={12} className="text-zinc-500" />Sale {salida} · {ruta.vuelta ? "vuelve" : "termina"} <b className="text-white">{hhmm(horaFin)}</b></p>}
                     <div className="mt-2.5 flex flex-wrap gap-2">
                       {urlGoogle && <a href={urlGoogle} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 text-xs font-bold text-white bg-blue-600 hover:bg-blue-500 rounded-md px-3 py-2"><Navigation size={13} />Abrir en Google Maps</a>}
                       <button onClick={copiarRuta} className="inline-flex items-center gap-1.5 text-xs font-bold text-zinc-200 border border-zinc-600 hover:bg-zinc-800 rounded-md px-3 py-2">{copiado ? <Check size={13} className="text-emerald-400" /> : <Copy size={13} />}{copiado ? "Copiada" : "Copiar para WhatsApp"}</button>
                       {elegidas.length > 1 && <button onClick={calcularAportes} disabled={calcAportes} className="inline-flex items-center gap-1.5 text-xs font-bold text-zinc-200 border border-zinc-600 hover:bg-zinc-800 rounded-md px-3 py-2 disabled:opacity-60">{calcAportes ? <Loader2 size={13} className="animate-spin" /> : <Calculator size={13} />}¿Cuánto suma cada cliente?</button>}
                     </div>
-                    <div className="mt-2.5 flex items-center gap-3 flex-wrap text-[11px] text-zinc-400">
-                      <label className="flex items-center gap-1.5">Camión: máx.<input type="number" min="30" max="130" value={vmax} onChange={(e) => { const v = Math.min(130, Math.max(30, Number(e.target.value) || 80)); setVmax(v); guardar("hr_vmax", v); }} className="w-14 bg-[#0d0d0d] border border-zinc-700 rounded px-1.5 py-1 text-zinc-200" />km/h</label>
-                      <label className="flex items-center gap-1.5 cursor-pointer"><input type="checkbox" checked={conHorarios} onChange={(e) => { setConHorarios(e.target.checked); guardar("hr_horarios", e.target.checked ? "1" : "0"); }} className="accent-orange-500" />Estimar horarios</label>
-                    </div>
-                    {conHorarios && <div className="mt-2 flex items-center gap-3 text-[11px] text-zinc-400">
-                      <label className="flex items-center gap-1.5">Salida<input type="time" value={salida} onChange={(e) => { setSalida(e.target.value); guardar("hr_salida", e.target.value); }} className="bg-[#0d0d0d] border border-zinc-700 rounded px-1.5 py-1 text-zinc-200" /></label>
-                      <label className="flex items-center gap-1.5">Descarga<input type="number" min="0" max="180" value={descarga} onChange={(e) => { const v = Math.max(0, Number(e.target.value) || 0); setDescarga(v); guardar("hr_descarga", v); }} className="w-14 bg-[#0d0d0d] border border-zinc-700 rounded px-1.5 py-1 text-zinc-200" />min por parada (aprox.)</label>
-                    </div>}
-                    {masCaro && <p className="mt-2 text-xs text-amber-200 bg-amber-950/30 border border-amber-900/50 rounded-md px-2.5 py-1.5">El que más suma a la ruta: <b>{masCaro.cliente}</b> (+{aporte[masCaro.id].km} km, +{horas(Math.max(0, aporte[masCaro.id].min))}).</p>}
+                    {masCaro && <p className="mt-2 text-xs text-amber-200 bg-amber-950/30 border border-amber-900/50 rounded-md px-2.5 py-1.5">El que más suma a la ruta: <b>{masCaro.cliente}</b> (+{aporte[masCaro.id].km} km).</p>}
                     {fueraAlta.length > 0 && <p className="mt-2 text-xs text-red-300 bg-red-950/30 border border-red-900/50 rounded-md px-2.5 py-1.5 flex items-start gap-1.5"><AlertTriangle size={13} className="shrink-0 mt-0.5" />Sacaste {fueraAlta.length === 1 ? "un cliente" : `${fueraAlta.length} clientes`} de prioridad alta: {fueraAlta.map((p) => p.cliente).join(", ")}.</p>}
-                    {hayCambio && ahorroKm <= 0 && ahorroMin <= 0 && <p className="mt-2 text-xs text-zinc-400">Sacarlos casi no cambia el recorrido.</p>}
+                    {hayCambio && ahorroKm <= 0 && <p className="mt-2 text-xs text-zinc-400">Sacarlos casi no cambia el recorrido.</p>}
                   </>
                 ) : errRuta ? <p className="text-sm text-red-400 mt-1">{errRuta}</p>
                   : <p className="text-sm text-zinc-500 mt-1">{!origen ? "Cargá la planta para ver la ruta." : elegidas.length ? "Calculando…" : "Tildá al menos un cliente."}</p>}
@@ -297,7 +262,7 @@ export default function MapaRuta({ fechaInicial, esAdmin }) {
               ) : (
                 <ul className="flex flex-col gap-1.5">
                   {ordenadas.map((p, i) => (
-                    <li key={p.id}><Fila p={p} n={i + 1} tildado onAlternar={alternar} onVer={verEnMapa} tramo={ruta?.tramos?.[i]} llegada={conHorarios && llegadas[i] != null ? hhmm(llegadas[i]) : null} aporte={aporte?.[p.id]} masCaro={masCaro?.id === p.id} /></li>
+                    <li key={p.id}><Fila p={p} n={i + 1} tildado onAlternar={alternar} onVer={verEnMapa} tramo={ruta?.tramos?.[i]} aporte={aporte?.[p.id]} masCaro={masCaro?.id === p.id} /></li>
                   ))}
                   {ubicadas.filter((p) => fuera.has(p.id)).map((p) => <li key={p.id}><Fila p={p} onAlternar={alternar} onVer={verEnMapa} /></li>)}
                 </ul>
@@ -320,7 +285,7 @@ export default function MapaRuta({ fechaInicial, esAdmin }) {
   );
 }
 
-function Fila({ p, n, tildado, onAlternar, onVer, tramo, llegada, aporte, masCaro }) {
+function Fila({ p, n, tildado, onAlternar, onVer, tramo, aporte, masCaro }) {
   return (
     <div className={`flex items-start gap-2.5 rounded-lg border px-3 py-2.5 ${tildado ? "border-zinc-800 bg-[#121212]" : "border-zinc-800/60 bg-transparent opacity-60"}`}>
       <input type="checkbox" checked={!!tildado} onChange={() => onAlternar(p.id)} className="mt-1 accent-orange-500 w-4 h-4 cursor-pointer" aria-label={`Incluir ${p.cliente}`} />
@@ -328,12 +293,12 @@ function Fila({ p, n, tildado, onAlternar, onVer, tramo, llegada, aporte, masCar
         <button type="button" onClick={() => onVer(p)} className="w-full flex items-start gap-2.5 text-left" title="Ver en el mapa">
           <span className={`shrink-0 w-6 h-6 rounded-full text-[11px] font-black flex items-center justify-center ${tildado ? "bg-orange-600 text-white" : "bg-zinc-700 text-zinc-300"}`}>{tildado ? n : "·"}</span>
           <span className="min-w-0 flex-1">
-            <span className="flex items-center justify-between gap-2"><span className="text-sm font-bold text-white truncate">{p.cliente}</span>{llegada ? <span className="shrink-0 text-xs font-bold text-sky-300 tabular-nums">{llegada}</span> : <Cruces valor={p.prioridad} tam="text-[11px]" />}</span>
+            <span className="flex items-center justify-between gap-2"><span className="text-sm font-bold text-white truncate">{p.cliente}</span><Cruces valor={p.prioridad} tam="text-[11px]" /></span>
             <span className="block text-xs text-zinc-400 truncate">{p.tipo_entrega === "TRANSPORTE" ? `${p.transporte_nombre} · ` : ""}{p.direccion}</span>
-            <span className="flex items-center justify-between gap-2 text-[11px] text-zinc-500"><span>OP {p.op}{tramo ? ` · ${tramo.km} km (${horas(tramo.min)}) desde la anterior` : ""}</span>{llegada && <Cruces valor={p.prioridad} tam="text-[10px]" />}</span>
+            <span className="block text-[11px] text-zinc-500">OP {p.op}{tramo ? ` · ${tramo.km} km desde la anterior` : ""}</span>
           </span>
         </button>
-        {aporte && <span className={`mt-1.5 ml-[34px] inline-block text-[11px] font-bold rounded px-1.5 py-0.5 ${masCaro ? "bg-amber-900/50 text-amber-200" : "bg-zinc-800 text-zinc-300"}`}>Suma {aporte.km > 0 ? "+" : ""}{aporte.km} km · {aporte.min > 0 ? "+" : ""}{aporte.min} min</span>}
+        {aporte && <span className={`mt-1.5 ml-[34px] inline-block text-[11px] font-bold rounded px-1.5 py-0.5 ${masCaro ? "bg-amber-900/50 text-amber-200" : "bg-zinc-800 text-zinc-300"}`}>Suma {aporte.km > 0 ? "+" : ""}{aporte.km} km</span>}
         {(p.contacto_telefono || p.contacto_nombre) && (
           <p className="mt-1 ml-[34px] text-[11px] text-zinc-400 flex items-center gap-1.5"><Phone size={11} className="text-zinc-500" />{p.contacto_nombre}{p.contacto_telefono && <a href={`tel:${String(p.contacto_telefono).replace(/[^\d+]/g, "")}`} className="text-sky-300 hover:underline">{p.contacto_telefono}</a>}</p>
         )}
