@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import MapaRuta from "./MapaRuta";
 import Cruces from "./Cruces";
 import BuscadorDireccion from "./BuscadorDireccion";
+import BotonPdf from "./BotonPdf";
 import { CalendarDays, Check, ChevronLeft, ChevronRight, ListChecks, Loader2, Pencil, Phone, Plus, RotateCcw, Truck, User, X, MapPin, Ban, Map as MapaIcon } from "lucide-react";
 
 const API_BASE_URL = import.meta.env?.VITE_API_URL || "";
@@ -85,6 +86,9 @@ function Formulario({ inicial, onCerrar, onGuardado }) {
   const [sugerencias, setSugerencias] = useState([]);
   const [precargado, setPrecargado] = useState(null);
   const [ubicada, setUbicada] = useState(false);
+  const [pendientes, setPendientes] = useState(null); // OP sin despachar del cliente elegido
+  const [selOps, setSelOps] = useState([]);
+  const [manual, setManual] = useState(false);
   const timer = useRef(null);
   const set = (k, v) => setF((x) => ({ ...x, [k]: v }));
 
@@ -95,12 +99,21 @@ function Formulario({ inicial, onCerrar, onGuardado }) {
     setF((x) => ({ ...x, cliente: c.cliente, tipo_entrega: c.tipo_entrega || "ENTREGA", direccion: c.direccion || "", transporte_nombre: c.transporte_nombre || "", contacto_nombre: c.contacto_nombre || "", contacto_telefono: c.contacto_telefono || "", observaciones: c.observaciones || "" }));
   };
   const escribirCliente = (v) => {
-    set("cliente", v); setPrecargado(null);
+    set("cliente", v); setPrecargado(null); setPendientes(null); setSelOps([]);
     clearTimeout(timer.current);
     if (editando || v.trim().length < 2) { setSugerencias([]); return; }
     timer.current = setTimeout(async () => {
-      try { setSugerencias((await pedir(`/api/hoja-ruta/clientes?q=${encodeURIComponent(v.trim())}`)).clientes); } catch { setSugerencias([]); }
+      try { setSugerencias((await pedir(`/api/hoja-ruta/pendientes?q=${encodeURIComponent(v.trim())}`)).clientes); } catch { setSugerencias([]); }
     }, 300);
+  };
+  // Elegir un cliente de la lista: se ven sus pedidos sin despachar y se precarga cómo se le entregó la última vez.
+  const elegirCliente = async (c) => {
+    setSugerencias([]); setPendientes(c.ops); setSelOps(c.ops.length === 1 ? [c.ops[0].op] : []);
+    set("cliente", c.cliente);
+    try {
+      const h = (await pedir(`/api/hoja-ruta/clientes?q=${encodeURIComponent(c.cliente)}&exacto=1`)).clientes[0];
+      if (h) aplicarHabitual(h);
+    } catch { /* sin datos previos: se completa a mano */ }
   };
 
   const buscar = async () => {
@@ -120,8 +133,17 @@ function Formulario({ inicial, onCerrar, onGuardado }) {
   const guardar = async (e) => {
     e.preventDefault(); setError(""); setGuardando(true);
     try {
-      const guardado = editando ? await pedir(`/api/hoja-ruta/${inicial.id}`, { method: "PUT", body: f }) : await pedir("/api/hoja-ruta", { method: "POST", body: f });
-      onGuardado(guardado);
+      if (editando) { onGuardado(await pedir(`/api/hoja-ruta/${inicial.id}`, { method: "PUT", body: f })); return; }
+      const elegidos = (pendientes || []).filter((o) => selOps.includes(o.op)).map((o) => ({ op: o.op, articulos: o.articulos }));
+      const aMano = f.op.trim() && !elegidos.some((o) => o.op === f.op.trim()) ? [{ op: f.op.trim(), articulos: f.articulos }] : [];
+      const ops = [...elegidos, ...aMano];
+      if (!ops.length) throw new Error("Elegí al menos un pedido o cargá el N.º de OP a mano.");
+      let ultimo;
+      for (const o of ops) {
+        try { ultimo = await pedir("/api/hoja-ruta", { method: "POST", body: { ...f, op: o.op, articulos: o.articulos } }); }
+        catch (e3) { setSelOps((x) => x.filter((y) => !ops.slice(0, ops.indexOf(o)).some((z) => z.op === y))); throw new Error(`${ops.indexOf(o) ? `Se cargaron ${ops.indexOf(o)} y ` : ""}falló la OP ${o.op}: ${e3.message}`, { cause: e3 }); }
+      }
+      onGuardado(ultimo);
     } catch (e2) { setError(e2.message); } finally { setGuardando(false); }
   };
 
@@ -133,6 +155,8 @@ function Formulario({ inicial, onCerrar, onGuardado }) {
           <button type="button" onClick={onCerrar} className="text-zinc-500 hover:text-white"><X size={18} /></button>
         </div>
         <div className="p-5 flex flex-col gap-4">
+          {editando ? (
+            <>
           <div>
             <label className="text-[11px] font-bold uppercase tracking-widest text-zinc-500">N.º de OP</label>
             <div className="flex gap-2 mt-1">
@@ -147,17 +171,79 @@ function Formulario({ inicial, onCerrar, onGuardado }) {
           <div>
             <label className="text-[11px] font-bold uppercase tracking-widest text-zinc-500">Cliente</label>
             <div className="relative">
-              <input className={`${campo} mt-1`} value={f.cliente} onChange={(e) => escribirCliente(e.target.value)} placeholder="Razón social o nombre" autoComplete="off" />
+              <input className={`${campo} mt-1`} value={f.cliente} onChange={(e) => escribirCliente(e.target.value)} placeholder={editando ? "Razón social o nombre" : "Buscá el cliente por nombre"} autoComplete="off" />
               {sugerencias.length > 0 && (
                 <ul className="absolute left-0 right-0 top-full mt-1 z-20 bg-[#1c1c1c] border border-zinc-700 rounded-md shadow-xl overflow-hidden">
                   {sugerencias.map((c) => (
-                    <li key={c.cliente}><button type="button" onClick={() => aplicarHabitual(c)} className="w-full text-left px-3 py-2 hover:bg-zinc-800"><span className="block text-sm text-white font-semibold">{c.cliente}</span><span className="block text-xs text-zinc-500 truncate">{c.tipo_entrega === "RETIRA" ? "Retira el cliente" : c.direccion}</span></button></li>
+                    <li key={c.cliente}><button type="button" onClick={() => elegirCliente(c)} className="w-full text-left px-3 py-2 hover:bg-zinc-800"><span className="block text-sm text-white font-semibold">{c.cliente}</span><span className="block text-xs text-zinc-500">{c.ops.length} pedido{c.ops.length > 1 ? "s" : ""} sin despachar</span></button></li>
                   ))}
                 </ul>
               )}
             </div>
             {precargado && <p className="text-xs text-emerald-400 mt-1.5">Cliente habitual: cargué los datos de su última entrega ({precargado.ultima_fecha.slice(8)}/{precargado.ultima_fecha.slice(5, 7)}). Revisalos y cambiá lo que haga falta.</p>}
           </div>
+            </>
+          ) : (
+            <>
+          <div>
+            <label className="text-[11px] font-bold uppercase tracking-widest text-zinc-500">Cliente</label>
+            <div className="relative">
+              <input className={`${campo} mt-1`} value={f.cliente} onChange={(e) => escribirCliente(e.target.value)} placeholder={editando ? "Razón social o nombre" : "Buscá el cliente por nombre"} autoComplete="off" />
+              {sugerencias.length > 0 && (
+                <ul className="absolute left-0 right-0 top-full mt-1 z-20 bg-[#1c1c1c] border border-zinc-700 rounded-md shadow-xl overflow-hidden">
+                  {sugerencias.map((c) => (
+                    <li key={c.cliente}><button type="button" onClick={() => elegirCliente(c)} className="w-full text-left px-3 py-2 hover:bg-zinc-800"><span className="block text-sm text-white font-semibold">{c.cliente}</span><span className="block text-xs text-zinc-500">{c.ops.length} pedido{c.ops.length > 1 ? "s" : ""} sin despachar</span></button></li>
+                  ))}
+                </ul>
+              )}
+            </div>
+            {precargado && <p className="text-xs text-emerald-400 mt-1.5">Cliente habitual: cargué los datos de su última entrega ({precargado.ultima_fecha.slice(8)}/{precargado.ultima_fecha.slice(5, 7)}). Revisalos y cambiá lo que haga falta.</p>}
+          </div>
+          {!editando && pendientes && (
+            <div>
+              <label className="text-[11px] font-bold uppercase tracking-widest text-zinc-500">Pedidos sin despachar</label>
+              {pendientes.length === 0 ? (
+                <p className="text-xs text-amber-400 mt-1.5">Este cliente no tiene pedidos sin despachar en la planilla de ventas.</p>
+              ) : (
+                <ul className="mt-1 flex flex-col gap-1.5">
+                  {pendientes.map((o) => {
+                    const on = selOps.includes(o.op);
+                    return (
+                      <li key={o.op}>
+                        <label className={`flex items-start gap-2.5 rounded-md border px-3 py-2 cursor-pointer ${on ? "border-orange-500 bg-orange-500/10" : "border-zinc-700 hover:bg-zinc-800/60"}`}>
+                          <input type="checkbox" checked={on} onChange={() => setSelOps((x) => (on ? x.filter((y) => y !== o.op) : [...x, o.op]))} className="mt-1 accent-orange-500" />
+                          <span className="min-w-0 flex-1">
+                            <span className="flex items-center justify-between gap-2"><span className="text-sm font-bold text-white">OP {o.op}</span>{o.fecha && <span className="text-[11px] text-zinc-500">Pedido {o.fecha.slice(8)}/{o.fecha.slice(5, 7)}</span>}</span>
+                            <span className="block text-xs text-zinc-400">{o.articulos.map((a) => `${a.cantidad ? `${a.cantidad} × ` : ""}${a.modelo}`).join(" · ")}</span>
+                            {o.ya?.length > 0 && <span className="block text-[11px] text-amber-400 mt-0.5">Ya cargada para el {o.ya.map((y) => `${y.fecha_despacho.slice(8)}/${y.fecha_despacho.slice(5, 7)}${y.estado === "DESPACHADO" ? " (despachada)" : ""}`).join(", ")}</span>}
+                          </span>
+                        </label>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+              {selOps.length > 1 && <p className="text-[11px] text-zinc-500 mt-1.5">Se carga un despacho por cada OP, con los mismos datos de entrega.</p>}
+            </div>
+          )}
+          {!editando && !manual && !(pendientes && pendientes.length === 0) && (
+            <button type="button" onClick={() => setManual(true)} className="self-start text-xs text-zinc-400 hover:text-white underline underline-offset-2">¿No aparece? Cargar por N.º de OP</button>
+          )}
+              {(manual || (pendientes && pendientes.length === 0)) && (
+          <div>
+            <label className="text-[11px] font-bold uppercase tracking-widest text-zinc-500">N.º de OP</label>
+            <div className="flex gap-2 mt-1">
+              <input className={campo} placeholder="Ej: 1234" value={f.op} onChange={(e) => set("op", e.target.value)} onBlur={() => !editando && !info && buscar()} inputMode="numeric" />
+              <button type="button" onClick={buscar} disabled={buscando || !f.op.trim()} className="px-3 rounded-md border border-zinc-700 text-sm text-zinc-200 hover:bg-zinc-800 disabled:opacity-40 shrink-0">{buscando ? <Loader2 size={14} className="animate-spin" /> : "Buscar"}</button>
+            </div>
+            {info && (info.encontrada
+              ? <p className="text-xs text-emerald-400 mt-1.5">Encontrada: {info.cliente}{info.articulos?.length ? ` · ${info.articulos.length} artículo${info.articulos.length > 1 ? "s" : ""}` : ""}</p>
+              : <p className="text-xs text-amber-400 mt-1.5">No encontré esa OP en la planilla de ventas. Escribí el cliente a mano.</p>)}
+            {info?.ya_cargados?.length > 0 && <p className="text-xs text-amber-400 mt-1">Ya tiene despachos cargados: {info.ya_cargados.map((y) => `${y.fecha_despacho.slice(8)}/${y.fecha_despacho.slice(5, 7)} (${y.creado_por || "—"})`).join(", ")}.</p>}
+          </div>
+              )}
+            </>
+          )}
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="text-[11px] font-bold uppercase tracking-widest text-zinc-500">Día de despacho</label>
@@ -206,7 +292,7 @@ function Formulario({ inicial, onCerrar, onGuardado }) {
         </div>
         <div className="px-5 py-4 border-t border-zinc-800 flex justify-end gap-2 sticky bottom-0 bg-[#161616]">
           <button type="button" onClick={onCerrar} className="px-4 py-2 text-sm text-zinc-300 hover:text-white">Cancelar</button>
-          <button disabled={guardando} className="px-5 py-2 rounded-md bg-orange-600 hover:bg-orange-500 text-white text-sm font-bold disabled:opacity-50 flex items-center gap-2">{guardando && <Loader2 size={14} className="animate-spin" />}{editando ? "Guardar cambios" : "Cargar despacho"}</button>
+          <button disabled={guardando} className="px-5 py-2 rounded-md bg-orange-600 hover:bg-orange-500 text-white text-sm font-bold disabled:opacity-50 flex items-center gap-2">{guardando && <Loader2 size={14} className="animate-spin" />}{editando ? "Guardar cambios" : selOps.length > 1 ? `Cargar ${selOps.length} despachos` : "Cargar despacho"}</button>
         </div>
       </form>
     </div>
@@ -356,7 +442,7 @@ export default function HojaRuta({ usuarioActual }) {
 
       {error && <p className="text-sm text-red-400 mb-3">{error}</p>}
       {vista === "mapa" ? (
-        <MapaRuta fechaInicial={diaSel} esAdmin={esAdmin} />
+        <MapaRuta fechaInicial={diaSel} esAdmin={esAdmin} usuario={usuarioActual?.nombre} />
       ) : cargando && !despachos.length ? (
         <div className="py-16 flex justify-center"><Loader2 className="animate-spin text-zinc-600" /></div>
       ) : vista === "lista" ? (
@@ -366,7 +452,7 @@ export default function HojaRuta({ usuarioActual }) {
           <div className="flex flex-col gap-6">
             {grupos.map(([f, lista]) => (
               <section key={f}>
-                <h3 className="text-sm font-bold text-white first-letter:uppercase mb-2 flex items-center gap-2">{tituloDia(f)}<span className="text-xs font-semibold text-zinc-500 normal-case">{lista.length} despacho{lista.length > 1 ? "s" : ""}</span></h3>
+                <h3 className="text-sm font-bold text-white first-letter:uppercase mb-2 flex items-center gap-2">{tituloDia(f)}<span className="text-xs font-semibold text-zinc-500 normal-case">{lista.length} despacho{lista.length > 1 ? "s" : ""}</span><BotonPdf fecha={f} usuario={usuarioActual?.nombre} className="ml-auto" /></h3>
                 <div className="flex flex-col gap-2.5">{[...lista].sort((a, b) => b.prioridad - a.prioridad).map(tarjeta)}</div>
               </section>
             ))}
@@ -376,7 +462,7 @@ export default function HojaRuta({ usuarioActual }) {
         <div className="grid lg:grid-cols-[1.4fr_1fr] gap-5 items-start">
           <Calendario mes={mes} despachos={despachos} diaSel={diaSel} onDia={setDiaSel} onMes={cambiarMes} />
           <div>
-            <h3 className="text-sm font-bold text-white first-letter:uppercase mb-2">{tituloDia(diaSel)}</h3>
+            <h3 className="text-sm font-bold text-white first-letter:uppercase mb-2 flex items-center gap-2">{tituloDia(diaSel)}{delDia.length > 0 && <BotonPdf fecha={diaSel} usuario={usuarioActual?.nombre} className="ml-auto" />}</h3>
             {delDia.length === 0 ? <p className="text-sm text-zinc-500">Nada programado este día.</p> : <div className="flex flex-col gap-2.5">{delDia.map(tarjeta)}</div>}
           </div>
         </div>

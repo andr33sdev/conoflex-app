@@ -5,6 +5,7 @@ import { AlertTriangle, Calculator, Check, ChevronLeft, ChevronRight, Copy, Load
 import "./mapa.css";
 import Cruces from "./Cruces";
 import BuscadorDireccion from "./BuscadorDireccion";
+import BotonPdf from "./BotonPdf";
 
 const API_BASE_URL = import.meta.env?.VITE_API_URL || "";
 const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -29,7 +30,7 @@ const corto = (t, n = 24) => (t.length > n ? `${t.slice(0, n - 1).trim()}…` : 
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
 
-export default function MapaRuta({ fechaInicial, esAdmin }) {
+export default function MapaRuta({ fechaInicial, esAdmin, usuario }) {
   const [fecha, setFecha] = useState(fechaInicial || iso(new Date()));
   const [datos, setDatos] = useState(null);
   const [error, setError] = useState("");
@@ -239,6 +240,7 @@ export default function MapaRuta({ fechaInicial, esAdmin }) {
                     )}
                     <div className="mt-2.5 flex flex-wrap gap-2">
                       {urlGoogle && <a href={urlGoogle} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 text-xs font-bold text-white bg-blue-600 hover:bg-blue-500 rounded-md px-3 py-2"><Navigation size={13} />Abrir en Google Maps</a>}
+                      <BotonPdf fecha={fecha} usuario={usuario} orden={ordenadas.map((p) => p.id)} km={ruta?.distancia_km} etiqueta="Exportar PDF" />
                       <button onClick={copiarRuta} className="inline-flex items-center gap-1.5 text-xs font-bold text-zinc-200 border border-zinc-600 hover:bg-zinc-800 rounded-md px-3 py-2">{copiado ? <Check size={13} className="text-emerald-400" /> : <Copy size={13} />}{copiado ? "Copiada" : "Copiar para WhatsApp"}</button>
                       {elegidas.length > 1 && <button onClick={calcularAportes} disabled={calcAportes} className="inline-flex items-center gap-1.5 text-xs font-bold text-zinc-200 border border-zinc-600 hover:bg-zinc-800 rounded-md px-3 py-2 disabled:opacity-60">{calcAportes ? <Loader2 size={13} className="animate-spin" /> : <Calculator size={13} />}¿Cuánto suma cada cliente?</button>}
                     </div>
