@@ -59,6 +59,7 @@ function MarcarEnMapa({ centro, onGuardar, onCerrar, guardando }) {
 export default function BuscadorDireccion({ valor, onCambiar, onElegir, fijarPara, placeholder = "Calle, número, localidad", ubicada }) {
   const [lista, setLista] = useState(null);
   const [caido, setCaido] = useState(false);
+  const [fallas, setFallas] = useState([]);
   const [buscando, setBuscando] = useState(false);
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState("");
@@ -77,7 +78,7 @@ export default function BuscadorDireccion({ valor, onCambiar, onElegir, fijarPar
       try {
         const d = await pedir(`/api/hoja-ruta/buscar-direccion?q=${encodeURIComponent(q)}`);
         if (mi !== seq.current) return; // respuesta vieja
-        setLista(d.coincidencias || []); setCaido(!!d.caido); setActivo(-1);
+        setLista(d.coincidencias || []); setCaido(!!d.caido); setFallas(Object.entries(d.fuentes || {}).filter(([, v]) => String(v).startsWith("error")).map(([k, v]) => `${k[0].toUpperCase()}${k.slice(1)}: ${String(v).slice(7)}`)); setActivo(-1);
       } catch (e) { if (mi === seq.current) setError(e.message); }
       finally { if (mi === seq.current) setBuscando(false); }
     }, 400);
@@ -138,6 +139,7 @@ export default function BuscadorDireccion({ valor, onCambiar, onElegir, fijarPar
               </li>
             ))}
           </ul>
+          {fallas.length > 0 && <p className="px-3 py-1.5 border-t border-zinc-800 text-[10px] text-amber-500/90">No respondió: {fallas.join(" · ")}</p>}
           <button type="button" onClick={() => setMapa(true)} className="w-full text-left px-3 py-2 border-t border-zinc-800 text-xs text-zinc-300 hover:bg-zinc-800 flex items-center gap-2"><Crosshair size={13} className="text-orange-500" />No aparece: marcarla en el mapa</button>
         </div>
       )}

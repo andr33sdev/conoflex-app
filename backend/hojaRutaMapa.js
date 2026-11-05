@@ -96,7 +96,10 @@ const enAR = (lat, lng) => lat <= -21 && lat >= -56 && lng <= -53 && lng >= -74;
 
 async function pedirJson(url, { fetchFn = fetch, opciones = {}, espera = 8000 } = {}) {
   const res = await fetchFn(url, { ...opciones, signal: AbortSignal.timeout(espera) });
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  if (!res.ok) {
+    const cuerpo = await res.json().catch(() => null); // Google explica el motivo (clave inválida, API sin habilitar, IP no permitida…)
+    throw new Error(`HTTP ${res.status}${cuerpo?.error?.message ? `: ${String(cuerpo.error.message).slice(0, 160)}` : ""}`);
+  }
   return res.json();
 }
 
@@ -268,13 +271,20 @@ async function buscarDirecciones(db, texto, { fetchFn, consultarUltimoRecurso = 
   const guardada = memoria.get(clave);
   if (guardada && Date.now() - guardada.t < RECUERDA_MS) return guardada.r;
 
+  const estadoFuentes = {};
   const pegada = await ubicacionPegada(q, { fetchFn });
   let lista = pegada ? [pegada] : [];
   let respondio = !!pegada;
   if (!pegada) {
     const completa = expandirAbreviaturas(q);
-    const fuentes = GOOGLE_KEY() ? [buscarGoogle(completa, { fetchFn }), buscarGeoref(completa, { fetchFn }), buscarPhoton(completa, { fetchFn })] : [buscarGeoref(completa, { fetchFn }), buscarPhoton(completa, { fetchFn })];
+    const nombres = GOOGLE_KEY() ? ["google", "georef", "photon"] : ["georef", "photon"];
+    const fuentes = (GOOGLE_KEY() ? [buscarGoogle(completa, { fetchFn }), buscarGeoref(completa, { fetchFn }), buscarPhoton(completa, { fetchFn })] : [buscarGeoref(completa, { fetchFn }), buscarPhoton(completa, { fetchFn })]);
     const [guardadas, res] = await Promise.all([buscarGuardadas(db, q), Promise.allSettled(fuentes)]);
+    estadoFuentes.google = GOOGLE_KEY() ? undefined : "sin clave configurada";
+    res.forEach((r, i) => {
+      estadoFuentes[nombres[i]] = r.status === "fulfilled" ? `ok (${r.value.length})` : `error: ${r.reason?.message || "no responde"}`;
+      if (r.status === "rejected") console.warn(`[hoja-ruta] búsqueda de direcciones: ${nombres[i]} falló: ${r.reason?.message}`);
+    });
     respondio = res.some((r) => r.status === "fulfilled") || guardadas.length > 0;
     const externas = res.flatMap((r) => (r.status === "fulfilled" ? r.value : []));
     // Primero lo ya usado; después, lo que más se parece a lo escrito (las exactas, no aproximadas, antes).
@@ -299,7 +309,7 @@ async function buscarDirecciones(db, texto, { fetchFn, consultarUltimoRecurso = 
       [claveDireccion(x.texto).slice(0, 300), x.texto.slice(0, 300), x.lat, x.lng, x.aprox ? 1 : 0],
     );
   }
-  const r = { lista: salida.slice(0, 8), caido: !respondio };
+  const r = { lista: salida.slice(0, 8), caido: !respondio, fuentes: estadoFuentes };
   if (respondio) { if (memoria.size > 500) memoria.clear(); memoria.set(clave, { t: Date.now(), r }); }
   return r;
 }
@@ -444,7 +454,7 @@ function registrarRutasMapa(app, db, requirePermiso, requireAdmin) {
     try { res.json({ clientes: await clientesHabituales(db, { q: req.query.q, exacto: req.query.exacto === "1" }) }); } catch (e) { salir(res, e); }
   });
   app.get("/api/hoja-ruta/buscar-direccion", acceso, async (req, res) => {
-    try { const r = await buscarDirecciones(db, req.query.q); res.json({ coincidencias: r.lista, caido: r.caido }); } catch (e) { salir(res, e); }
+    try { const r = await buscarDirecciones(db, req.query.q); res.json({ coincidencias: r.lista, caido: r.caido, fuentes: r.fuentes }); } catch (e) { salir(res, e); }
   });
   app.get("/api/hoja-ruta/direccion-detalle", acceso, async (req, res) => {
     try { res.json(await detalleGoogle(String(req.query.id || ""))); } catch (e) { salir(res, e.status ? e : err(503, "El servicio de mapas no responde ahora.")); }

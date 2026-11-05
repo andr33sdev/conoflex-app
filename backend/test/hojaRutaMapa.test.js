@@ -295,7 +295,8 @@ test("buscarDirecciones: Georef por altura, Photon, pegar coordenadas o link, Go
     // 4) servicios caídos: se avisa (no es lo mismo que "sin coincidencias")
     const caido = async () => { throw new Error("sin red"); };
     r = await M.buscarDirecciones(pool, "Calle Que No Existe 99", { fetchFn: caido, consultarUltimoRecurso: caido });
-    assert.deepEqual(r, { lista: [], caido: true });
+    assert.deepEqual({ lista: r.lista, caido: r.caido }, { lista: [], caido: true });
+    assert.match(r.fuentes.georef, /^error/);
     // 5) partirConsulta
     assert.deepEqual(M.partirConsulta("25 de Mayo 123, Pilar"), { direccion: "25 de Mayo 123", resto: ", Pilar" });
     assert.equal(M.partirConsulta("Casela"), null);
@@ -324,7 +325,7 @@ test("Georef con lat/lon nulos no genera una coincidencia en (0,0)", async () =>
     ? jr({ direcciones: [{ altura: { valor: 1407 }, calle: { nombre: "CASELLA" }, localidad_censal: { nombre: "Pilar" }, provincia: { nombre: "Buenos Aires" }, ubicacion: { lat: null, lon: null } }, { altura: { valor: 1407 }, calle: { nombre: "CASELLA" }, localidad_censal: { nombre: "Pilar" }, provincia: { nombre: "Buenos Aires" }, ubicacion: { lat: 0, lon: 0 } }] })
     : jr({ features: [{ geometry: { coordinates: [0, 0] }, properties: { countrycode: "AR", street: "Casella", city: "Pilar" } }] });
   process.env.GEOREF_URL = process.env.PHOTON_URL = "http://x";
-  try { assert.deepEqual(await M.buscarDirecciones({ query: async () => [[]] }, "Casella 1407, Pilar", { fetchFn, consultarUltimoRecurso: async () => null }), { lista: [], caido: false }); }
+  try { const rr = await M.buscarDirecciones({ query: async () => [[]] }, "Casella 1407, Pilar", { fetchFn, consultarUltimoRecurso: async () => null }); assert.deepEqual({ lista: rr.lista, caido: rr.caido }, { lista: [], caido: false }); }
   finally { delete process.env.GEOREF_URL; delete process.env.PHOTON_URL; }
 });
 
