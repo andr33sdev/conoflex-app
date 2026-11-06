@@ -408,12 +408,32 @@ function ubicarEnSegundoPlano(db, direccion, deps) {
  * Ruta óptima que pasa por todos los puntos (el primero es la salida). Usa OSRM /trip.
  * `vuelta`: vuelve a la planta al final. Devuelve el orden de visita (índices de `puntos`), km, minutos y el trazado.
  */
-async function calcularRuta(puntos, { vuelta = true, fetchFn = fetch } = {}) {
+/** `fijo`: respeta el orden de los puntos dados (planta primero) en vez de buscar el mejor orden. */
+async function calcularRuta(puntos, { vuelta = true, fijo = false, fetchFn = fetch } = {}) {
   if (!Array.isArray(puntos) || puntos.length < 2) throw err(400, "Hacen falta al menos la planta y una parada.");
   if (puntos.length > 60) throw err(400, "Son demasiadas paradas para un solo día (máximo 59).");
   const pts = puntos.map((p) => ({ lat: Number(p?.lat), lng: Number(p?.lng) }));
   if (pts.some((p) => !Number.isFinite(p.lat) || !Number.isFinite(p.lng) || Math.abs(p.lat) > 90 || Math.abs(p.lng) > 180)) throw err(400, "Hay coordenadas inválidas.");
   const coords = pts.map((p) => `${p.lng},${p.lat}`).join(";");
+  if (fijo) {
+    const todos = vuelta ? [...pts, pts[0]] : pts;
+    let r, d;
+    try {
+      r = await fetchFn(`${OSRM_URL()}/route/v1/driving/${todos.map((p) => `${p.lng},${p.lat}`).join(";")}?geometries=geojson&overview=full&steps=false`, { signal: AbortSignal.timeout(20000) });
+      d = await r.json().catch(() => ({}));
+    } catch { throw err(503, "El servicio de rutas no responde ahora. Probá de nuevo en un momento."); }
+    const ruta = d.routes?.[0];
+    if (!r.ok || d.code !== "Ok" || !ruta) throw err(422, d.code === "NoRoute" ? "No hay camino entre algunas de las direcciones." : "No se pudo calcular la ruta.");
+    return {
+      orden: pts.map((_, i) => i),
+      vuelta: !!vuelta,
+      fijo: true,
+      distancia_km: Math.round((ruta.distance / 1000) * 10) / 10,
+      duracion_min: Math.round(ruta.duration / 60),
+      tramos: (ruta.legs || []).map((l) => ({ km: Math.round((l.distance / 1000) * 10) / 10, min: Math.round(l.duration / 60) })),
+      trazado: (ruta.geometry?.coordinates || []).map(([lng, lat]) => [lat, lng]),
+    };
+  }
   const pedir = async (roundtrip) => {
     const extra = roundtrip ? "" : "&source=first&destination=any";
     const res = await fetchFn(`${OSRM_URL()}/trip/v1/driving/${coords}?roundtrip=${roundtrip}${extra}&geometries=geojson&overview=full&steps=false`, { signal: AbortSignal.timeout(20000) });
@@ -462,7 +482,7 @@ function registrarRutasMapa(app, db, requirePermiso, requireAdmin) {
     try { res.json(await mapaDelDia(db, req.query.fecha)); } catch (e) { salir(res, e); }
   });
   app.post("/api/hoja-ruta/ruta", acceso, async (req, res) => {
-    try { res.json(await calcularRuta(req.body?.puntos, { vuelta: req.body?.vuelta !== false })); } catch (e) { salir(res, e); }
+    try { res.json(await calcularRuta(req.body?.puntos, { vuelta: req.body?.vuelta !== false, fijo: req.body?.fijo === true })); } catch (e) { salir(res, e); }
   });
   app.get("/api/hoja-ruta/origen", acceso, async (_req, res) => {
     try { res.json({ origen: await leerOrigen(db) }); } catch (e) { salir(res, e); }
