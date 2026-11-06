@@ -1,12 +1,17 @@
+import { lazy, Suspense } from "react";
 import { Sparkle } from "lucide-react";
 import { Drawer } from "../produccion/ui";
 import Movimientos from "./Movimientos";
+import { modeloDe } from "../visor3d/modelos";
+
+const Visor3D = lazy(() => import("../visor3d/Visor3D")); // three.js solo se descarga si el semielaborado tiene modelo
 
 const ORIGENES = [["FABRICA", "Se fabrica"], ["PROVEEDOR", "Se compra"], ["PARAGUAY", "De Paraguay"]];
 const n0 = (v) => Number(v || 0).toLocaleString("es-AR", { maximumFractionDigits: 2 });
 
 /** Ficha lateral de un semielaborado: cómo se consigue, stock por depósito, movimientos y pegado. */
 export default function FichaSemi({ item, seguir, onCerrar, onClasificar, onCambio }) {
+  const en3d = item ? modeloDe(item) : null;
   return (
     <Drawer
       abierto={!!item}
@@ -16,6 +21,14 @@ export default function FichaSemi({ item, seguir, onCerrar, onClasificar, onCamb
     >
       {item && (
         <div className="flex flex-col gap-7">
+          {en3d && (
+            <section>
+              <Suspense fallback={<div className="h-[280px] rounded-2xl border border-white/[0.07] bg-white/[0.03]" />}>
+                <Visor3D archivo={en3d.modelo.archivo} color={en3d.color.hex} />
+              </Suspense>
+              <p className="mt-2 text-xs text-zinc-500 text-center">{en3d.modelo.titulo} · {en3d.color.nombre}</p>
+            </section>
+          )}
           <section>
             <h3 className="text-[11px] font-bold uppercase tracking-[0.1em] text-zinc-500 mb-3">¿Cómo se consigue?</h3>
             <div className="grid grid-cols-3 gap-2">
