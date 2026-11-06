@@ -149,7 +149,8 @@ export default function MapaRuta({ fechaInicial, esAdmin, usuario }) {
     [ids[i], ids[j]] = [ids[j], ids[i]];
     setManual(ids);
   };
-  const diferenciaKm = manuales && rutaManual && ruta ? Math.round((rutaManual.distancia_km - ruta.distancia_km) * 10) / 10 : null;
+  const servidorViejo = !!(manuales && rutaManual && !rutaManual.fijo); // un backend sin actualizar ignora el orden pedido y devuelve el mejor recorrido
+  const diferenciaKm = manuales && rutaManual && rutaManual.fijo && ruta ? Math.round((rutaManual.distancia_km - ruta.distancia_km) * 10) / 10 : null;
 
   // Mapa
   useEffect(() => {
@@ -292,7 +293,7 @@ export default function MapaRuta({ fechaInicial, esAdmin, usuario }) {
                     <p className="text-[11px] text-zinc-500">{elegidas.length} parada{elegidas.length > 1 ? "s" : ""}{rutaVista.vuelta ? " con vuelta a planta" : " sin vuelta"}{manuales ? " · orden manual" : ""}</p>
                     {manuales && (
                       <div className="mt-2 rounded-md border border-sky-900/60 bg-sky-950/30 px-2.5 py-1.5 text-xs text-sky-200 flex items-center justify-between gap-2">
-                        <span>{diferenciaKm === null ? "Orden elegido por vos." : diferenciaKm > 0 ? `Tu orden suma ${diferenciaKm} km respecto al mejor.` : diferenciaKm < 0 ? `Tu orden ahorra ${-diferenciaKm} km.` : "Tu orden es tan corto como el mejor."}</span>
+                        <span>{servidorViejo ? "El servidor todavía no está actualizado, por eso no cuenta tu orden. Hay que reiniciar el backend." : diferenciaKm === null ? "Orden elegido por vos." : diferenciaKm > 0 ? `Tu orden suma ${diferenciaKm} km respecto al mejor.` : diferenciaKm < 0 ? `Tu orden ahorra ${-diferenciaKm} km.` : "Tu orden es tan corto como el mejor."}</span>
                         <button onClick={() => { setManual(null); setRutaManual(null); }} className="shrink-0 font-bold text-sky-300 hover:text-white inline-flex items-center gap-1"><Undo2 size={12} />Mejor orden</button>
                       </div>
                     )}
