@@ -374,3 +374,16 @@ test("búsqueda de direcciones: ortografía (Casela→Casella), Photon sin núme
     await pool.end();
   }
 });
+
+test("calcularRuta con orden fijo: usa /route con el orden dado, agrega la vuelta y no reordena", async () => {
+  const urls = [];
+  const fetchFn = async (url) => { urls.push(String(url)); return { ok: true, json: async () => ({ code: "Ok", routes: [{ distance: 42500, duration: 3000, legs: [{ distance: 10000, duration: 600 }, { distance: 20000, duration: 1500 }, { distance: 12500, duration: 900 }], geometry: { coordinates: [[-58.4, -34.6], [-58.5, -34.7]] } }] }) }; };
+  const pts = [{ lat: -34.6, lng: -58.4 }, { lat: -34.7, lng: -58.5 }, { lat: -34.8, lng: -58.6 }];
+  const r = await M.calcularRuta(pts, { vuelta: true, fijo: true, fetchFn });
+  assert.match(urls[0], /\/route\/v1\/driving\/-58\.4,-34\.6;-58\.5,-34\.7;-58\.6,-34\.8;-58\.4,-34\.6\?/); // vuelve a la planta
+  assert.deepEqual(r.orden, [0, 1, 2]);
+  assert.equal(r.distancia_km, 42.5); assert.equal(r.fijo, true); assert.equal(r.tramos.length, 3);
+  await M.calcularRuta(pts, { vuelta: false, fijo: true, fetchFn });
+  assert.doesNotMatch(urls[1], /-58\.6,-34\.8;-58\.4/);
+  await assert.rejects(M.calcularRuta(pts, { fijo: true, fetchFn: async () => { throw new Error("x"); } }), /no responde/);
+});
