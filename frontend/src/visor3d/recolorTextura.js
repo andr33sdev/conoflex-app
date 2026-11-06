@@ -13,14 +13,24 @@ export function pesoCuerpo(r, g, b) {
 
 const luz = (r, g, b) => 0.2126 * r + 0.7152 * g + 0.0722 * b;
 
-/** Devuelve los píxeles recoloreados (Uint8ClampedArray RGBA) a partir de los originales. */
+/**
+ * Devuelve los píxeles recoloreados (Uint8ClampedArray RGBA) a partir de los originales.
+ * En colores oscuros, la tinta negra de las etiquetas (logo, textos) pasa a blanco para que se lea.
+ */
 export function recolorearPixeles(datos, [tr, tg, tb], referencia) {
   const sal = new Uint8ClampedArray(datos.length);
   const k = (v) => Math.max(0.25, Math.min(1.7, v));
+  const oscuro = luz(tr, tg, tb) < 80;
   for (let i = 0; i < datos.length; i += 4) {
     const r = datos[i], g = datos[i + 1], b = datos[i + 2];
     const w = pesoCuerpo(r, g, b);
-    if (w === 0) { sal[i] = r; sal[i + 1] = g; sal[i + 2] = b; sal[i + 3] = datos[i + 3]; continue; }
+    const l = luz(r, g, b);
+    // Tinta de etiqueta: pixeles mucho más oscuros que el cuerpo (en colores oscuros pasan a blanco para que se lean).
+    const tinta = oscuro ? 1 - paso(0.3 * referencia, 0.55 * referencia, l) : 0;
+    if (w === 0 || tinta > 0.5) {
+      sal[i] = r + (238 - r) * tinta; sal[i + 1] = g + (238 - g) * tinta; sal[i + 2] = b + (238 - b) * tinta; sal[i + 3] = datos[i + 3];
+      continue;
+    }
     const f = k(luz(r, g, b) / referencia); // cuánta luz/sombra trae ese píxel respecto del promedio del cuerpo
     sal[i] = r + (tr * f - r) * w;
     sal[i + 1] = g + (tg * f - g) * w;
