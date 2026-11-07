@@ -15,6 +15,7 @@ const Ingenieria = lazy(() => import("./Ingenieria"));
 const PlanificacionProduccion = lazy(() => import("./PlanificacionProduccion"));
 const CargaProduccion = lazy(() => import("./CargaProduccion"));
 const ComercialIA = lazy(() => import("./ComercialIA"));
+const WhatsApp = lazy(() => import("./WhatsApp"));
 const SolicitudesInternas = lazy(() => import("./SolicitudesInternas"));
 const DespacharPedidos = lazy(() => import("./DespacharPedidos"));
 const HojaRuta = lazy(() => import("./hojaruta/HojaRuta"));
@@ -45,6 +46,7 @@ const PRECARGA = {
   planificacion: () => import("./PlanificacionProduccion"),
   "carga-produccion": () => import("./CargaProduccion"),
   comercial: () => import("./ComercialIA"),
+  whatsapp: () => import("./WhatsApp"),
   "solicitudes-internas": () => import("./SolicitudesInternas"),
   "despachar-pedidos": () => import("./DespacharPedidos"),
   "hoja-de-ruta": () => import("./hojaruta/HojaRuta"),
@@ -279,6 +281,8 @@ function AppInterna() {
       {hasAccess("comercial") && activeModule === "comercial" && (
         <ComercialIA />
       )}
+
+      {hasAccess("whatsapp") && activeModule === "whatsapp" && <WhatsApp />}
 
       </Suspense>
     </Layout>

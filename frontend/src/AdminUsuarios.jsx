@@ -28,6 +28,7 @@ const MODULOS_SISTEMA = [
   { id: "despachar-pedidos", nombre: "Despachar Pedidos" },
   { id: "hoja-de-ruta", nombre: "Hoja de ruta (despachos)" },
   { id: "comercial", nombre: "IA Comercial" },
+  { id: "whatsapp", nombre: "WhatsApp" },
   { id: "sugerencias-compra", nombre: "Sugerencias de Compra" },
   { id: "clientes-nuevos", nombre: "Clientes nuevos" },
   { id: "solicitudes-internas", nombre: "Solicitudes Internas" },

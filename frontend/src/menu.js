@@ -23,6 +23,7 @@ import {
   Lightbulb,
   Radar,
   Route,
+  MessageCircle,
 } from "lucide-react";
 
 export const INICIO = {
@@ -174,7 +175,15 @@ export const ALL_MENU_ITEMS = [
     label: "IA Comercial",
     icon: Bot,
     desc: "Presupuestos y mensajes con ayuda de IA",
-    kw: "presupuesto cotizacion whatsapp",
+    kw: "presupuesto cotizacion",
+  },
+  {
+    id: "whatsapp",
+    grupo: "comercial",
+    label: "WhatsApp",
+    icon: MessageCircle,
+    desc: "El bot que responde a los clientes por WhatsApp",
+    kw: "whatsapp bot chat clientes mensajes consultas",
   },
 
   {
