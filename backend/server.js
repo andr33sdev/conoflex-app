@@ -46,12 +46,14 @@ const { leerPlanilla: leerPlanillaStock, compararPlanilla, aplicarPlanilla } = r
 const { migrarPermisoConnie, migrarPermisoSugerencias } = require("./permisos");
 const { asegurarTablasSugerencias, registrarRutasSugerencias } = require("./sugerenciasCompra");
 const { asegurarTablaClientesNuevos, registrarRutasClientesNuevos, iniciarBusquedaSemanal } = require("./clientesNuevosDatos");
+const { asegurarTablasWhatsapp, crearBotWhatsapp, registrarRutasWhatsapp } = require("./whatsapp");
 require("dotenv").config();
 
 const app = express();
 
 app.use(cors());
-app.use(express.json({ limit: "50mb" }));
+// rawBody: el webhook de WhatsApp valida la firma de Meta con el cuerpo tal cual llegó.
+app.use(express.json({ limit: "50mb", verify: (req, res, buf) => { if (req.originalUrl.startsWith("/api/public/whatsapp")) req.rawBody = buf; } }));
 app.use(express.urlencoded({ limit: "50mb", extended: true }));
 
 const PORT = process.env.PORT || 3001;
@@ -852,6 +854,7 @@ async function initDB() {
     await asegurarColumnasGestion(db);
     await asegurarTablasSugerencias(db);
     await asegurarTablaClientesNuevos(db);
+    await asegurarTablasWhatsapp(db);
 
     console.log("✅ Estructura MySQL inicializada correctamente.");
   } catch (err) {
@@ -5841,6 +5844,10 @@ const agentes = registrarRutasAgentes(app, {
   // Gmail para Sofi (seguimiento): mira la carpeta de enviados, sin etiquetas, y solo deja borradores.
   seguimiento: seguimientoGmail,
 });
+
+// WhatsApp: bot con la API oficial de Meta y su módulo de administración (permiso "whatsapp").
+const botWhatsapp = crearBotWhatsapp({ db, ai, leerLista, notasTexto: notasVentasTexto, crearNotificacion });
+registrarRutasWhatsapp(app, { db, requirePermiso, bot: botWhatsapp });
 
 app.listen(PORT, () => {
   console.log(`🚀 Servidor Conoflex unificado ejecutándose en puerto ${PORT}`);
