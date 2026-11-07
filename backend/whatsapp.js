@@ -174,7 +174,7 @@ CUÁNDO DERIVAR A UNA PERSONA ("derivar": true)
 - Piden hablar con alguien, un reclamo, una devolución, factura, un pago, estado de un pedido ya hecho, un descuento especial o algo que no está en el catálogo ni en las reglas.
 - En ese caso avisá en tu respuesta que alguien del equipo le escribe a la brevedad, sin prometer horarios.
 
-REGLAS COMERCIALES (las mismas que usa el equipo para los presupuestos)
+REGLAS COMERCIALES (escritas para los presupuestos por MAIL: tomá solo lo comercial —precios, IVA, descuentos, entregas, pagos—. Ignorá todo lo de formato: HTML, tablas, estilos, imágenes incrustadas, saludos y firmas de mail)
 ${reglasComerciales || "(sin reglas cargadas)"}
 ${notas ? `\n${notas}\n` : ""}
 REGLAS PROPIAS DE WHATSAPP (mandan sobre todo lo anterior)
@@ -182,6 +182,8 @@ ${reglasWhatsapp || "(sin reglas propias)"}
 ${correcciones ? `\nCORRECCIONES DEL EQUIPO: así se debe responder en estos casos. Seguí el criterio y el tono.\n${correcciones}\n` : ""}
 CATÁLOGO (código | nombre | categoría | medidas | precio | uso)
 ${catalogo || "(catálogo vacío: no pases precios y derivá)"}
+
+RECORDÁ: "respuesta" es texto plano de WhatsApp. NUNCA HTML (<div>, <table>, <b>, style=…), NUNCA markdown con ** ni #. Solo texto, saltos de línea y *negrita*.
 
 FORMATO DE SALIDA: solo un JSON así:
 {"respuesta": "texto para el cliente", "items": [{"codigo": "...", "cantidad": 0}], "nota_total": "ej: más IVA", "fotos": ["codigo"], "enviar_lista": false, "derivar": false, "motivo": "por qué derivás (solo si derivar)"}`;
@@ -202,10 +204,43 @@ function historialContents(mensajes) {
   return contents;
 }
 
+/**
+ * Deja el texto listo para WhatsApp aunque la IA haya devuelto HTML o markdown:
+ * negrita → *texto*, bloques → saltos de línea, el resto de las etiquetas se borran.
+ */
+function textoWhatsapp(texto) {
+  let t = String(texto || "");
+  if (/<[a-z][\s\S]*?>/i.test(t)) {
+    t = t
+      .replace(/<(style|script|head)[\s\S]*?<\/\1>/gi, "")
+      .replace(/<img[^>]*>/gi, "")
+      .replace(/<\s*(b|strong)\b[^>]*>([\s\S]*?)<\s*\/\s*\1\s*>/gi, (_, __, x) => `*${x.replace(/<[^>]+>/g, "").trim()}*`)
+      .replace(/<\s*br\s*\/?>/gi, "\n")
+      .replace(/<\s*li\b[^>]*>/gi, "\n• ")
+      .replace(/<\s*\/\s*(p|div|tr|li|ul|ol|table|h[1-6])\s*>/gi, "\n")
+      .replace(/<\s*\/\s*td\s*>/gi, " ")
+      .replace(/<[^>]+>/g, "")
+      .replace(/&nbsp;/g, " ")
+      .replace(/&lt;/g, "<")
+      .replace(/&gt;/g, ">")
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'")
+      .replace(/&amp;/g, "&");
+  }
+  return t
+    .replace(/\*\*(.+?)\*\*/g, "*$1*")
+    .replace(/^#{1,6}\s+/gm, "")
+    .split("\n")
+    .map((l) => l.replace(/[ \t]+/g, " ").trim())
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
 function normalizarSalida(crudo) {
   if (!crudo || typeof crudo.respuesta !== "string" || !crudo.respuesta.trim()) return null;
   return {
-    respuesta: crudo.respuesta.replace(/\*\*(.+?)\*\*/g, "*$1*").trim().slice(0, 3500),
+    respuesta: textoWhatsapp(crudo.respuesta).slice(0, 3500),
     items: Array.isArray(crudo.items) ? crudo.items : [],
     notaTotal: typeof crudo.nota_total === "string" ? crudo.nota_total : "",
     fotos: Array.isArray(crudo.fotos) ? crudo.fotos.map(String).slice(0, MAX_FOTOS) : [],
@@ -619,6 +654,7 @@ module.exports = {
   ventanaAbierta,
   historialContents,
   normalizarSalida,
+  textoWhatsapp,
   instrucciones,
   urlFotoPublica,
   asegurarTablasWhatsapp,
