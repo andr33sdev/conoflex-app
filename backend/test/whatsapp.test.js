@@ -108,3 +108,13 @@ test("instrucciones incluyen reglas, correcciones y catálogo", () => {
   assert.match(i, /CORRECCIONES DEL EQUIPO/);
   assert.match(i, /enviar_lista/);
 });
+
+test("si la IA devuelve HTML de mail, queda texto plano de WhatsApp", () => {
+  const html = '<div style="font-family: Arial; color: #1A1A1A;">\n  ¡Hola! Soy de <b>Conoflex Argentina</b>.&nbsp;Contame el uso.\n</div>\n<div>Adjunto precios:</div>\n<table><tr><td><img src="x.jpg"></td><td><strong>Cono 75</strong></td><td>$10.000</td></tr></table>';
+  const t = w.textoWhatsapp(html);
+  assert.doesNotMatch(t, /<|style=|&nbsp;/);
+  assert.match(t, /\*Conoflex Argentina\*/);
+  assert.match(t, /\*Cono 75\* \$10\.000/);
+  assert.equal(w.textoWhatsapp("Hola **vos**\n\n\n\n## Precios"), "Hola *vos*\n\nPrecios");
+  assert.equal(w.normalizarSalida({ respuesta: "<div>Hola <b>che</b></div>" }).respuesta, "Hola *che*");
+});
