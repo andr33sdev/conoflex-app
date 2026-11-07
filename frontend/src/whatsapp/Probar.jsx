@@ -11,7 +11,9 @@ export default function Probar({ aviso }) {
   const [texto, setTexto] = useState("");
   const [pensando, setPensando] = useState(false);
   const fin = useRef(null);
-  useEffect(() => fin.current?.scrollIntoView({ block: "end" }), [mensajes, pensando]);
+  useEffect(() => {
+    fin.current?.scrollIntoView({ block: "end" });
+  }, [mensajes, pensando]);
 
   const enviar = async (e) => {
     e.preventDefault();
