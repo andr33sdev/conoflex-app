@@ -513,9 +513,18 @@ function registrarRutasWhatsapp(app, { db, requirePermiso, bot }) {
   // Público: mensajes entrantes. Se contesta 200 enseguida (Meta reintenta si tarda) y se procesa después.
   app.post("/api/public/whatsapp/webhook", (req, res) => {
     const c = cfg();
-    if (!configurado(c) || !firmaValida(req.rawBody, req.headers["x-hub-signature-256"], c.appSecret)) return res.sendStatus(401);
+    if (!configurado(c)) {
+      console.warn("[whatsapp] webhook rechazado: faltan variables WHATSAPP_* en el .env");
+      return res.sendStatus(401);
+    }
+    if (!firmaValida(req.rawBody, req.headers["x-hub-signature-256"], c.appSecret)) {
+      console.warn(`[whatsapp] webhook rechazado: firma inválida (¿WHATSAPP_APP_SECRET correcto?) firma=${req.headers["x-hub-signature-256"] ? "sí" : "no"} cuerpo=${req.rawBody ? req.rawBody.length : 0} bytes`);
+      return res.sendStatus(401);
+    }
     res.sendStatus(200);
-    for (const m of extraerMensajes(req.body)) bot.recibir(m).catch((e) => console.error("[whatsapp] recibir:", e.message));
+    const mensajes = extraerMensajes(req.body);
+    console.log(`[whatsapp] webhook recibido: ${mensajes.length} mensaje(s)`);
+    for (const m of mensajes) bot.recibir(m).catch((e) => console.error("[whatsapp] recibir:", e.message));
   });
 
   const permiso = requirePermiso("whatsapp");
