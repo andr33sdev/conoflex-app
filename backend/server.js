@@ -48,6 +48,7 @@ const { asegurarTablasSugerencias, registrarRutasSugerencias } = require("./suge
 const { asegurarTablaClientesNuevos, registrarRutasClientesNuevos, iniciarBusquedaSemanal } = require("./clientesNuevosDatos");
 const { asegurarTablasWhatsapp, crearBotWhatsapp, registrarRutasWhatsapp } = require("./whatsapp");
 const { registrarRutasVoz } = require("./whatsappVoz");
+const { asegurarTablasCostos, asegurarPTDesdePedidos, registrarRutasCostos } = require("./mpCostos");
 require("dotenv").config();
 
 const app = express();
@@ -220,6 +221,8 @@ app.use(requireAuth);
 registrarRutasProduccion(app, db, requirePermiso);
 registrarRutasReflectivas(app, db, requirePermiso, requireAdmin);
 registrarRutasIngenieria(app, db, requirePermiso, requireAdmin);
+// Excel de materias primas y costos (solo administradores).
+registrarRutasCostos(app, { db, requireAdmin });
 registrarRutasMapa(app, db, requirePermiso, requireAdmin); // antes que la hoja de ruta: sus rutas fijas (origen, ruta…) no deben caer en /:id
 registrarRutasHojaRuta(app, db, requirePermiso);
 registrarRutasNotificaciones(app, db);
@@ -856,6 +859,7 @@ async function initDB() {
     await asegurarTablasSugerencias(db);
     await asegurarTablaClientesNuevos(db);
     await asegurarTablasWhatsapp(db);
+    await asegurarTablasCostos(db);
 
     console.log("✅ Estructura MySQL inicializada correctamente.");
   } catch (err) {
@@ -3097,6 +3101,7 @@ app.post("/api/semielaborados/aplicar-sincronizacion", async (req, res) => {
 // ==========================================
 app.get("/api/productos-terminados", async (req, res) => {
   try {
+    await asegurarPTDesdePedidos(db); // los productos terminados salen de los modelos de estado_pedidos
     const [rows] = await db.query(`
       SELECT p.*, COUNT(i.id) as recetas_count 
       FROM productos_terminados p 

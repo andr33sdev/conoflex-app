@@ -3,6 +3,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { Building2, CalendarRange, ChevronDown, History, Layers, Mail, Pencil, Phone, Search } from "lucide-react";
 import { Drawer } from "../produccion/ui";
 import { TONO, abrev, estadoDe, fraccion, nf, norm, useContar } from "./util";
+import CostoMP from "./CostoMP";
 
 const EASE = [0.22, 1, 0.36, 1];
 
@@ -95,6 +96,14 @@ export default function FichaMP({ m, proveedor, plan, planCargando, usos, esAdmi
               <button onClick={onSemana} className="mt-3 text-sm font-bold text-zinc-300 hover:text-white inline-flex items-center gap-2 cursor-pointer"><CalendarRange size={15} /> Ver detalle por lote</button>
             </Bloque>
           </motion.div>
+
+          {esAdmin && (
+            <motion.div variants={{ oculto: { opacity: 0, y: 16 }, visto: { opacity: 1, y: 0 } }} transition={{ duration: 0.4, ease: EASE }}>
+              <Bloque titulo="Costo · solo administradores">
+                <CostoMP key={m.id} m={m} />
+              </Bloque>
+            </motion.div>
+          )}
 
           <motion.div variants={{ oculto: { opacity: 0, y: 16 }, visto: { opacity: 1, y: 0 } }} transition={{ duration: 0.4, ease: EASE }}>
             <Bloque titulo="Proveedor">

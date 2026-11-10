@@ -1,7 +1,7 @@
 "use strict";
 // Alta de una materia prima nueva (código, nombre, unidad y proveedor). El stock inicial solo lo puede cargar un administrador
 // y queda en el historial como edición directa, igual que cualquier ajuste manual.
-const UNIDADES = ["KILOS", "UNIDADES", "METROS", "LITROS", "PAQUETES"];
+const UNIDADES = ["KILOS", "UNIDADES", "METROS", "M2", "LITROS", "PAQUETES", "ROLLOS"];
 const PLANTAS = ["Argentina", "Paraguay"];
 
 const num = (v) => Number(String(v ?? "").replace(",", "."));
