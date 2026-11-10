@@ -115,7 +115,7 @@ async function conBase(fn) {
     return;
   }
   try {
-    for (const t of ["ingenieria_detalles", "ingenierias", "mp_costos", "mp_eliminadas", "sugerencias_compra", "estado_pedidos", "productos_terminados", "semielaborados", "materias_primas"]) await pool.query(`DROP TABLE IF EXISTS ${t}`);
+    for (const t of ["ingenieria_detalles", "ingenierias", "mp_costos", "mp_costos_historial", "mp_costos_avisos", "mp_eliminadas", "sugerencias_compra", "estado_pedidos", "productos_terminados", "semielaborados", "materias_primas"]) await pool.query(`DROP TABLE IF EXISTS ${t}`);
     await pool.query("CREATE TABLE materias_primas (id INT AUTO_INCREMENT PRIMARY KEY, codigo VARCHAR(255) UNIQUE NOT NULL, nombre VARCHAR(255) NOT NULL, unidad_medida VARCHAR(50) DEFAULT 'Unidades', stock_actual DOUBLE DEFAULT 0, orden INT DEFAULT 0)");
     await pool.query("CREATE TABLE semielaborados (id INT AUTO_INCREMENT PRIMARY KEY, codigo VARCHAR(255) UNIQUE NOT NULL, nombre VARCHAR(255) NOT NULL)");
     await pool.query("CREATE TABLE productos_terminados (id INT AUTO_INCREMENT PRIMARY KEY, codigo VARCHAR(255) UNIQUE NOT NULL, nombre VARCHAR(255) NOT NULL, promedio_ventas_mensual DOUBLE DEFAULT 0, orden INT DEFAULT 0)");

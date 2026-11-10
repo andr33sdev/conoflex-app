@@ -51,6 +51,7 @@ const { registrarRutasVoz } = require("./whatsappVoz");
 const { asegurarTablasCostos, asegurarPTDesdePedidos, registrarRutasCostos } = require("./mpCostos");
 const { registrarRutasCostosSheets } = require("./costosSheets");
 const { asegurarTablasFacturas, registrarRutasFacturas } = require("./facturas");
+const { avisarCostosViejos } = require("./costosAvisos");
 require("dotenv").config();
 
 const app = express();
@@ -5392,6 +5393,10 @@ app.post("/api/estado-pedidos/sincronizar", async (req, res) => {
     const idxPunisiva = headers.indexOf("PUNISIVA");
     const idxCosusd = headers.indexOf("COSUSD");
     const idxVendedor = headers.indexOf("VENDEDOR");
+    // Número de factura: vacío = ese renglón no se facturó.
+    const idxFactura = headers.findIndex((h) => h === "FACTURA" || h.startsWith("FACTURA") || h === "NRO FACTURA" || h === "N° FACTURA");
+    const [colFactura] = await db.query("SELECT 1 FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'estado_pedidos' AND column_name = 'factura'");
+    if (!colFactura.length) await db.query("ALTER TABLE estado_pedidos ADD COLUMN factura VARCHAR(100) NULL");
 
     const conn = await db.getConnection();
     try {
@@ -5400,7 +5405,7 @@ app.post("/api/estado-pedidos/sincronizar", async (req, res) => {
 
       const insertQuery = `
         INSERT INTO estado_pedidos 
-        (fecha, periodo, op, cliente, modelo, detalles, oc, cantidad, estado, programado, preparado, despacho, demora_entrega_dias, demora_preparacion, comentarios, despachado, punisiva, cosusd, vendedor) 
+        (fecha, periodo, op, cliente, modelo, detalles, oc, cantidad, estado, programado, preparado, despacho, demora_entrega_dias, demora_preparacion, comentarios, despachado, punisiva, cosusd, vendedor, factura) 
         VALUES ?
       `;
 
@@ -5445,6 +5450,7 @@ app.post("/api/estado-pedidos/sincronizar", async (req, res) => {
           punisivaVal,
           cosusdVal,
           vendedorVal,
+          idxFactura !== -1 && String(cols[idxFactura] || "").trim() ? String(cols[idxFactura]).trim().slice(0, 100) : null,
         ]);
       }
 
@@ -5548,6 +5554,7 @@ app.post("/api/compras/solicitudes", async (req, res) => {
     }
     await conn.commit();
     res.json({ success: true, insertId: solicitudId });
+    avisarCostosViejos(db, solicitudId, { crearNotificacion }); // costos con más de 60 días → aviso a costos
   } catch (error) {
     await conn.rollback().catch(() => {});
     res.status(500).json({ error: error.message });
@@ -5616,6 +5623,7 @@ app.put("/api/compras/solicitudes/:id", async (req, res) => {
     }
     await conn.commit();
     res.json({ success: true, stock: resumen });
+    avisarCostosViejos(db, id, { crearNotificacion });
   } catch (error) {
     await conn.rollback().catch(() => {});
     res.status(500).json({ error: error.message });
