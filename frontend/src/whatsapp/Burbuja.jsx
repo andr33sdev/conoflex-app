@@ -11,7 +11,24 @@ const ESTILO = {
   PERSONA: { lado: "justify-end", caja: "bg-emerald-500/10 border-emerald-500/25 rounded-br-sm", etiqueta: "Equipo" },
 };
 
+/** Llamada atendida por la voz: va centrada y la transcripción se despliega al tocarla. */
+function Llamada({ texto, hora }) {
+  const [cabeza, ...resto] = String(texto || "").split("\n");
+  return (
+    <div className="flex justify-center">
+      <details className="max-w-[92%] sm:max-w-[75%] w-full rounded-xl border border-sky-500/25 bg-sky-500/5 px-3.5 py-2">
+        <summary className="cursor-pointer text-sm font-medium text-sky-300 flex items-center justify-between gap-3">
+          <span>{cabeza}</span>
+          {hora && <span className="text-[11px] text-zinc-500 font-normal">{hora}</span>}
+        </summary>
+        <p className="mt-2 text-sm text-zinc-300 whitespace-pre-wrap break-words leading-relaxed">{resto.join("\n")}</p>
+      </details>
+    </div>
+  );
+}
+
 export default function Burbuja({ autor, texto, hora, error, accion }) {
+  if (autor === "LLAMADA") return <Llamada texto={texto} hora={hora} />;
   const e = ESTILO[autor] || ESTILO.CLIENTE;
   return (
     <div className={`flex ${e.lado}`}>
