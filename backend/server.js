@@ -49,6 +49,7 @@ const { asegurarTablaClientesNuevos, registrarRutasClientesNuevos, iniciarBusque
 const { asegurarTablasWhatsapp, crearBotWhatsapp, registrarRutasWhatsapp } = require("./whatsapp");
 const { registrarRutasVoz } = require("./whatsappVoz");
 const { asegurarTablasCostos, asegurarPTDesdePedidos, registrarRutasCostos } = require("./mpCostos");
+const { registrarRutasCostosSheets } = require("./costosSheets");
 require("dotenv").config();
 
 const app = express();
@@ -223,6 +224,7 @@ registrarRutasReflectivas(app, db, requirePermiso, requireAdmin);
 registrarRutasIngenieria(app, db, requirePermiso, requireAdmin);
 // Excel de materias primas y costos (solo administradores).
 registrarRutasCostos(app, { db, requireAdmin });
+registrarRutasCostosSheets(app, { db, requireAdmin });
 registrarRutasMapa(app, db, requirePermiso, requireAdmin); // antes que la hoja de ruta: sus rutas fijas (origen, ruta…) no deben caer en /:id
 registrarRutasHojaRuta(app, db, requirePermiso);
 registrarRutasNotificaciones(app, db);
