@@ -50,6 +50,7 @@ const { asegurarTablasWhatsapp, crearBotWhatsapp, registrarRutasWhatsapp } = req
 const { registrarRutasVoz } = require("./whatsappVoz");
 const { asegurarTablasCostos, asegurarPTDesdePedidos, registrarRutasCostos } = require("./mpCostos");
 const { registrarRutasCostosSheets } = require("./costosSheets");
+const { asegurarTablasFacturas, registrarRutasFacturas } = require("./facturas");
 require("dotenv").config();
 
 const app = express();
@@ -225,6 +226,8 @@ registrarRutasIngenieria(app, db, requirePermiso, requireAdmin);
 // Excel de materias primas y costos (solo administradores).
 registrarRutasCostos(app, { db, requireAdmin });
 registrarRutasCostosSheets(app, { db, requireAdmin });
+// Facturas reales (las sube el lector-facturas de la PC del trabajo) e informe de costo de lo vendido.
+registrarRutasFacturas(app, { db, requirePermiso });
 registrarRutasMapa(app, db, requirePermiso, requireAdmin); // antes que la hoja de ruta: sus rutas fijas (origen, ruta…) no deben caer en /:id
 registrarRutasHojaRuta(app, db, requirePermiso);
 registrarRutasNotificaciones(app, db);
@@ -862,6 +865,7 @@ async function initDB() {
     await asegurarTablaClientesNuevos(db);
     await asegurarTablasWhatsapp(db);
     await asegurarTablasCostos(db);
+    await asegurarTablasFacturas(db);
 
     console.log("✅ Estructura MySQL inicializada correctamente.");
   } catch (err) {
