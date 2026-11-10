@@ -2,6 +2,8 @@
 // Lista de compra de Vera: UNA solicitud de compra "en armado" por persona. Vera (y Nati, cuando le pasa materiales) van
 // agregando renglones a esa misma solicitud en lugar de crear una por cada charla. Usa las mismas tablas que el módulo
 // Solicitudes de Compra (solicitudes_compra / solicitudes_compra_items), así lo que se arma acá se ve y se firma allá.
+const { avisarCostosViejos } = require("../costosAvisos");
+const { crearNotificacion } = require("../notificaciones");
 const sinAcentos = (t) => String(t || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().trim();
 
 async function asegurarTablaListas(db) {
@@ -125,6 +127,7 @@ async function agregarALista(db, usuario, items) {
       }
     }
     await conn.commit();
+    avisarCostosViejos(db, l.solicitud_id, { crearNotificacion }); // costos con más de 60 días → aviso a costos
     return { ok: true, solicitud_id: l.solicitud_id, solicitud_nueva: creada, agregados, actualizados };
   } catch (e) {
     await conn.rollback().catch(() => {});

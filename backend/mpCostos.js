@@ -165,12 +165,45 @@ function validarCosto(v) {
 
 // ---------------------------------------------------------------- base de datos
 
+/**
+ * Guarda un costo y deja el cambio en el historial (solo si de verdad cambió).
+ * `conn` puede ser el pool o una conexión dentro de una transacción.
+ */
+async function guardarCosto(conn, { id, costo, usuario, origen = "MANUAL", detalle = null }) {
+  const [[mp]] = await conn.query("SELECT m.codigo, c.costo FROM materias_primas m LEFT JOIN mp_costos c ON c.materia_prima_id = m.id WHERE m.id = ?", [id]);
+  if (!mp) return { cambio: false, existe: false };
+  const antes = mp.costo == null ? null : Number(mp.costo);
+  const igual = (antes == null && costo == null) || (antes != null && costo != null && Math.abs(antes - costo) < 1e-9);
+  if (igual) return { cambio: false, existe: true };
+  await conn.query("INSERT INTO mp_costos (materia_prima_id, costo, actualizado_por) VALUES (?,?,?) ON DUPLICATE KEY UPDATE costo = VALUES(costo), actualizado_por = VALUES(actualizado_por), updated_at = NOW()", [id, costo, usuario || null]);
+  await conn.query("INSERT INTO mp_costos_historial (materia_prima_id, codigo, antes, despues, origen, detalle, usuario) VALUES (?,?,?,?,?,?,?)", [id, mp.codigo, antes, costo, origen, detalle ? String(detalle).slice(0, 255) : null, usuario || null]);
+  return { cambio: true, existe: true, antes };
+}
+
 async function asegurarTablasCostos(db) {
   await db.query(`CREATE TABLE IF NOT EXISTS mp_costos (
     materia_prima_id INT PRIMARY KEY,
     costo DOUBLE NULL,
     actualizado_por VARCHAR(120) NULL,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+  )`);
+  // Trazabilidad: cada cambio de costo, quién, cuándo, de cuánto a cuánto y de dónde salió.
+  await db.query(`CREATE TABLE IF NOT EXISTS mp_costos_historial (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    materia_prima_id INT NOT NULL,
+    codigo VARCHAR(255) NULL,
+    antes DOUBLE NULL,
+    despues DOUBLE NULL,
+    origen VARCHAR(20) NOT NULL DEFAULT 'MANUAL',
+    detalle VARCHAR(255) NULL,
+    usuario VARCHAR(120) NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    INDEX (materia_prima_id, id)
+  )`);
+  // Último aviso de "costo viejo" por materia prima (para no repetir la misma notificación todos los días).
+  await db.query(`CREATE TABLE IF NOT EXISTS mp_costos_avisos (
+    materia_prima_id INT PRIMARY KEY,
+    avisado_at DATETIME NOT NULL
   )`);
   await db.query(`CREATE TABLE IF NOT EXISTS mp_eliminadas (
     id INT AUTO_INCREMENT PRIMARY KEY,
@@ -258,7 +291,11 @@ async function aplicar(db, filas, eliminarIds, usuario) {
 
 async function costosCompletos(db) {
   await asegurarPTDesdePedidos(db);
-  const [mps] = await db.query("SELECT m.id, m.codigo, m.nombre, m.unidad_medida, c.costo, c.updated_at, c.actualizado_por FROM materias_primas m LEFT JOIN mp_costos c ON c.materia_prima_id = m.id ORDER BY m.codigo");
+  const [mps] = await db.query(
+    `SELECT m.id, m.codigo, m.nombre, m.unidad_medida, c.costo, c.actualizado_por,
+            COALESCE((SELECT MAX(h.created_at) FROM mp_costos_historial h WHERE h.materia_prima_id = m.id), c.updated_at) AS updated_at
+       FROM materias_primas m LEFT JOIN mp_costos c ON c.materia_prima_id = m.id ORDER BY m.codigo`,
+  );
   const [ses] = await db.query("SELECT id, codigo, nombre FROM semielaborados ORDER BY codigo");
   const [pts] = await db.query("SELECT id, codigo, nombre FROM productos_terminados ORDER BY codigo");
   const [recetas] = await db.query("SELECT id, semielaborado_id, producto_terminado_id FROM ingenierias WHERE es_activa = 1 ORDER BY id DESC");
@@ -275,7 +312,7 @@ async function costosCompletos(db) {
       return { id: x.id, codigo: x.codigo, nombre: x.nombre, costo: c?.costo ?? null, completo: !!c?.completo, sin_receta: !c || !!c.sin_receta, faltan: c?.faltan || [], lineas: c?.lineas || [] };
     });
   return {
-    materias: mps.map((m) => ({ id: m.id, codigo: m.codigo, nombre: m.nombre, unidad: m.unidad_medida, costo: m.costo == null ? null : Number(m.costo), actualizado: m.updated_at, actualizado_por: m.actualizado_por })),
+    materias: mps.map((m) => ({ id: m.id, codigo: m.codigo, nombre: m.nombre, unidad: m.unidad_medida, costo: m.costo == null ? null : Number(m.costo), actualizado: m.updated_at, actualizado_por: m.actualizado_por, dias: m.costo == null || !m.updated_at ? null : Math.floor((Date.now() - new Date(m.updated_at).getTime()) / 86400000) })),
     semielaborados: armar(ses, r.se),
     productos: armar(pts, r.pt),
   };
@@ -318,8 +355,10 @@ function registrarRutasCostos(app, { db, requireAdmin }) {
 
   app.get("/api/materias-primas/:id/costo", requireAdmin, async (req, res) => {
     try {
-      const [[c]] = await db.query("SELECT costo, actualizado_por, updated_at FROM mp_costos WHERE materia_prima_id = ?", [Number(req.params.id)]);
-      res.json({ costo: c?.costo ?? null, actualizado_por: c?.actualizado_por ?? null, actualizado: c?.updated_at ?? null });
+      const id = Number(req.params.id);
+      const [[c]] = await db.query("SELECT costo, actualizado_por, updated_at FROM mp_costos WHERE materia_prima_id = ?", [id]);
+      const [historial] = await db.query("SELECT id, antes, despues, origen, detalle, usuario, created_at FROM mp_costos_historial WHERE materia_prima_id = ? ORDER BY id DESC LIMIT 100", [id]);
+      res.json({ costo: c?.costo ?? null, actualizado_por: c?.actualizado_por ?? null, actualizado: c?.updated_at ?? null, historial });
     } catch (e) {
       err(res, e);
     }
@@ -331,10 +370,9 @@ function registrarRutasCostos(app, { db, requireAdmin }) {
       if (!Number.isInteger(id)) return res.status(400).json({ error: "Materia prima no válida." });
       const v = validarCosto(req.body?.costo);
       if (v.error) return res.status(400).json({ error: v.error });
-      const [[mp]] = await db.query("SELECT id FROM materias_primas WHERE id = ?", [id]);
-      if (!mp) return res.status(404).json({ error: "Esa materia prima no existe." });
-      await db.query("INSERT INTO mp_costos (materia_prima_id, costo, actualizado_por) VALUES (?,?,?) ON DUPLICATE KEY UPDATE costo = VALUES(costo), actualizado_por = VALUES(actualizado_por)", [id, v.costo, usuarioDe(req)]);
-      res.json({ ok: true, costo: v.costo });
+      const r = await guardarCosto(db, { id, costo: v.costo, usuario: usuarioDe(req), origen: "MANUAL" });
+      if (!r.existe) return res.status(404).json({ error: "Esa materia prima no existe." });
+      res.json({ ok: true, costo: v.costo, cambio: r.cambio });
     } catch (e) {
       err(res, e);
     }
@@ -347,6 +385,7 @@ module.exports = {
   compararConExcel,
   calcularCostos,
   validarCosto,
+  guardarCosto,
   asegurarTablasCostos,
   asegurarPTDesdePedidos,
   previsualizar,

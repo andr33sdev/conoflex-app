@@ -8,6 +8,9 @@ import CostoMP from "./materias/CostoMP";
 import TraerDeSheets from "./costos/TraerDeSheets";
 import { abrev, nf, norm, usd } from "./materias/util";
 
+const DIAS_LIMITE = 60;
+const paraRevisar = (x, tab) => (tab === "materias" ? x.costo == null || x.dias > DIAS_LIMITE : !x.completo);
+
 const TABS = [
   { id: "productos", texto: "Terminados" },
   { id: "semielaborados", texto: "Semielaborados" },
@@ -15,7 +18,11 @@ const TABS = [
 ];
 
 function Estado({ x, tab }) {
-  if (tab === "materias") return x.costo == null ? <span className="text-xs font-bold text-amber-300">Sin costo</span> : null;
+  if (tab === "materias") {
+    if (x.costo == null) return <span className="text-xs font-bold text-amber-300">Sin costo</span>;
+    if (x.dias > DIAS_LIMITE) return <span className="text-xs font-bold text-amber-300">Hace {x.dias} días</span>;
+    return null;
+  }
   if (x.sin_receta) return <span className="text-xs font-bold text-zinc-500">Sin receta</span>;
   if (!x.completo) return <span className="text-xs font-bold text-amber-300 inline-flex items-center gap-1"><AlertTriangle size={12} /> Incompleto</span>;
   return null;
@@ -45,12 +52,12 @@ export default function Costos() {
     if (!datos) return [];
     const q = norm(busqueda);
     return datos[tab].filter((x) => {
-      if (soloFaltan && (tab === "materias" ? x.costo != null : x.completo)) return false;
+      if (soloFaltan && !paraRevisar(x, tab)) return false;
       return !q || norm(`${x.codigo} ${x.nombre}`).includes(q);
     });
   }, [datos, tab, busqueda, soloFaltan]);
 
-  const faltan = datos ? datos[tab].filter((x) => (tab === "materias" ? x.costo == null : !x.completo)).length : 0;
+  const faltan = datos ? datos[tab].filter((x) => paraRevisar(x, tab)).length : 0;
   const elegido = abierto && datos ? datos[abierto.tab].find((x) => x.id === abierto.id) : null;
 
   return (
@@ -81,7 +88,7 @@ export default function Costos() {
           </div>
           {faltan > 0 && (
             <button onClick={() => setSoloFaltan((v) => !v)} aria-pressed={soloFaltan} className={`min-h-[48px] px-4 rounded-2xl text-sm font-bold border cursor-pointer ${soloFaltan ? "bg-amber-400 text-black border-transparent" : "border-amber-400/30 text-amber-300 bg-amber-400/[0.06]"}`}>
-              {tab === "materias" ? `${nf(faltan, 0)} sin costo` : `${nf(faltan, 0)} incompletos`}
+              {tab === "materias" ? `${nf(faltan, 0)} para revisar` : `${nf(faltan, 0)} incompletos`}
             </button>
           )}
         </div>
