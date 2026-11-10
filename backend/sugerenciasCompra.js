@@ -3,6 +3,7 @@
 // urgencia del 1 al 5 (la misma escala que las solicitudes de compra). Quien compra las revisa y las agrega a una solicitud
 // de compra abierta (tal cual o con otra cantidad, asignando el proveedor). Cada paso queda en una auditoría por sugerencia.
 
+const { avisarCostosViejos } = require("./costosAvisos");
 const URGENCIAS = { 1: "Baja", 2: "Normal", 3: "Media", 4: "Alta", 5: "Urgente" };
 const ESTADOS = ["PENDIENTE", "AGREGADA", "DESCARTADA"];
 const num = (v) => Number(String(v ?? "").replace(",", "."));
@@ -274,6 +275,7 @@ function registrarRutasSugerencias(app, { db, requirePermiso, nombreDeUsuario, c
       });
       await conn.commit();
       res.json({ success: true, solicitud_id: solicitudId, item_id: ins.insertId });
+      avisarCostosViejos(db, solicitudId, { crearNotificacion }); // costos con más de 60 días → aviso a costos
     } catch (e) {
       await conn.rollback().catch(() => {});
       res.status(500).json({ error: e.message });

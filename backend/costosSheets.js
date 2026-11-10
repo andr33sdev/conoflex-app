@@ -5,6 +5,8 @@
 // de la hoja), su costo en dólares está 4 columnas a la derecha (ej.: código en A → costo en E;
 // código en H → costo en L). Antes de guardar se muestra qué cambia; el link queda guardado.
 
+const { guardarCosto } = require("./mpCostos");
+
 const CLAVE_URL = "costos_sheets_url";
 const SALTO = 4;
 
@@ -199,12 +201,11 @@ function registrarRutasCostosSheets(app, { db, requireAdmin, fetcher }) {
       const url = String(req.body?.url || "").trim() || (await leerUrl(db));
       if (!url) return res.status(400).json({ error: "Pegá el link de la planilla de costos." });
       const p = await previsualizar(db, url, fetcher);
-      const quien = `${usuarioDe(req) || "admin"} (planilla)`;
       const conn = await db.getConnection();
       try {
         await conn.beginTransaction();
         for (const c of p.cambios) {
-          await conn.query("INSERT INTO mp_costos (materia_prima_id, costo, actualizado_por) VALUES (?,?,?) ON DUPLICATE KEY UPDATE costo = VALUES(costo), actualizado_por = VALUES(actualizado_por)", [c.id, c.despues, quien]);
+          await guardarCosto(conn, { id: c.id, costo: c.despues, usuario: usuarioDe(req), origen: "PLANILLA", detalle: `celda ${c.celda}` });
         }
         await conn.commit();
       } catch (e) {

@@ -84,10 +84,10 @@ test("rutas: previsualiza con la planilla, guarda el link y aplica (con base rea
   }
   const express = require("express");
   try {
-    for (const t of ["mp_costos", "reglas", "materias_primas"]) await db.query(`DROP TABLE IF EXISTS ${t}`);
+    for (const t of ["ingenieria_detalles", "ingenierias", "mp_costos", "mp_costos_historial", "mp_costos_avisos", "mp_eliminadas", "reglas", "materias_primas"]) await db.query(`DROP TABLE IF EXISTS ${t}`);
     await db.query("CREATE TABLE materias_primas (id INT AUTO_INCREMENT PRIMARY KEY, codigo VARCHAR(255), nombre VARCHAR(255), unidad_medida VARCHAR(50))");
     await db.query("CREATE TABLE reglas (clave VARCHAR(255) PRIMARY KEY, valor TEXT)");
-    await db.query("CREATE TABLE mp_costos (materia_prima_id INT PRIMARY KEY, costo DOUBLE NULL, actualizado_por VARCHAR(120) NULL, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP)");
+    await require("../mpCostos").asegurarTablasCostos(db);
     await db.query("INSERT INTO materias_primas (id, codigo, nombre, unidad_medida) VALUES (1,'MT_GRAMPA_3','Grampa','UNIDADES'),(2,'MT_PVC_RECICLADO_00','Scrap','KILOS')");
     const csv = hoja.map((f) => f.map((c) => `"${c}"`).join(",")).join("\n");
     let pedido = null;
@@ -115,7 +115,12 @@ test("rutas: previsualiza con la planilla, guarda el link y aplica (con base rea
       assert.equal(st2, 200);
       assert.deepEqual(ap, { actualizados: 2, iguales: 0 });
       const [c] = await db.query("SELECT materia_prima_id AS id, costo, actualizado_por FROM mp_costos ORDER BY id");
-      assert.deepEqual(c, [{ id: 1, costo: 5, actualizado_por: "Andrés (planilla)" }, { id: 2, costo: 0.5, actualizado_por: "Andrés (planilla)" }]);
+      assert.deepEqual(c, [{ id: 1, costo: 5, actualizado_por: "Andrés" }, { id: 2, costo: 0.5, actualizado_por: "Andrés" }]);
+      const [h] = await db.query("SELECT materia_prima_id AS id, antes, despues, origen, detalle, usuario FROM mp_costos_historial ORDER BY id");
+      assert.deepEqual(h, [
+        { id: 1, antes: null, despues: 5, origen: "PLANILLA", detalle: "celda L4", usuario: "Andrés" },
+        { id: 2, antes: null, despues: 0.5, origen: "PLANILLA", detalle: "celda E4", usuario: "Andrés" },
+      ]);
       assert.equal((await post("/api/costos/sheets/previsualizar", {}))[1].iguales, 2);
     } finally {
       srv.close();
