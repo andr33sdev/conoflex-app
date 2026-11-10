@@ -1,4 +1,5 @@
 import CountUp from "./CountUp";
+import InformeCostoVendido from "./metricas/InformeCostoVendido";
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import {
   Calendar,
@@ -651,6 +652,8 @@ export default function Metricas() {
               </div>
             )}
           </div>
+
+          <InformeCostoVendido />
 
           {/* RANGO DE FECHAS */}
           <div className="flex items-center gap-2 bg-[#050505] border border-zinc-800 px-3 py-2 shrink-0 w-full sm:w-auto">
