@@ -250,6 +250,19 @@ function normalizarSalida(crudo) {
   };
 }
 
+/** ¿El aviso de Meta trae eventos de llamadas (campo "calls")? */
+function tieneLlamadas(body) {
+  return (body?.entry || []).some((e) => (e?.changes || []).some((c) => c?.field === "calls"));
+}
+
+/** Las llamadas las atiende el servicio de voz (carpeta voz/, otro proceso). Si está caído, el chat sigue igual. */
+function reenviarLlamada(rawBody) {
+  const puerto = process.env.VOZ_PUERTO || 3002;
+  fetch(`http://127.0.0.1:${puerto}/llamada`, { method: "POST", headers: { "Content-Type": "application/json", "x-voz-secreto": process.env.VOZ_SECRETO || "" }, body: rawBody })
+    .then((r) => console.log(`[whatsapp] llamada reenviada al servicio de voz (${r.status})`))
+    .catch((e) => console.error("[whatsapp] el servicio de voz no responde:", e.message));
+}
+
 // ---------------------------------------------------------------- base de datos
 
 async function asegurarTablasWhatsapp(db) {
@@ -413,9 +426,19 @@ function crearBotWhatsapp({ db, ai, leerLista, notasTexto, crearNotificacion }) 
     return (await leerRegla(db, "whatsapp_bot_activo")) !== "0";
   }
 
+  async function asegurarConversacion(telefono, nombre) {
+    await db.query("INSERT INTO wa_conversaciones (telefono, nombre) VALUES (?, ?) ON DUPLICATE KEY UPDATE nombre = COALESCE(VALUES(nombre), nombre)", [telefono, nombre || null]);
+    const [[conv]] = await db.query("SELECT * FROM wa_conversaciones WHERE telefono = ?", [telefono]);
+    return conv;
+  }
+
+  async function derivar(conv, motivo) {
+    await db.query(`UPDATE wa_conversaciones SET derivada = 1, motivo_derivacion = ?, pausado_hasta = NOW() + INTERVAL ${PAUSA_HORAS} HOUR WHERE id = ?`, [corto(motivo || "Pidió hablar con una persona", 290), conv.id]);
+    crearNotificacion?.(db, { tipo: "WHATSAPP", titulo: `WhatsApp: ${conv.nombre || conv.telefono} necesita una persona`, texto: motivo || null, ruta: "whatsapp", roles: ROLES_AVISO, push: true });
+  }
+
   async function recibir(m) {
-    await db.query("INSERT INTO wa_conversaciones (telefono, nombre) VALUES (?, ?) ON DUPLICATE KEY UPDATE nombre = COALESCE(VALUES(nombre), nombre)", [m.telefono, m.nombre]);
-    const [[conv]] = await db.query("SELECT id FROM wa_conversaciones WHERE telefono = ?", [m.telefono]);
+    const conv = await asegurarConversacion(m.telefono, m.nombre);
     // Primero se reserva el id del mensaje (evita procesar dos veces el mismo audio).
     const id = await guardarMensaje(conv.id, { waId: m.waId, direccion: "IN", autor: "CLIENTE", tipo: m.tipo, texto: m.mediaId && ["audio", "image"].includes(m.tipo) ? "…" : m.texto });
     if (!id) return;
@@ -477,10 +500,7 @@ function crearBotWhatsapp({ db, ai, leerLista, notasTexto, crearNotificacion }) 
           console.error("[whatsapp] lista:", e.message);
         }
       }
-      if (r.derivar) {
-        await db.query(`UPDATE wa_conversaciones SET derivada = 1, motivo_derivacion = ?, pausado_hasta = NOW() + INTERVAL ${PAUSA_HORAS} HOUR WHERE id = ?`, [corto(r.motivo || "Pidió hablar con una persona", 290), conversacionId]);
-        crearNotificacion?.(db, { tipo: "WHATSAPP", titulo: `WhatsApp: ${conv.nombre || conv.telefono} necesita una persona`, texto: r.motivo || null, ruta: "whatsapp", roles: ROLES_AVISO, push: true });
-      }
+      if (r.derivar) await derivar(conv, r.motivo);
     } finally {
       ocupadas.delete(conversacionId);
       if (pendientes.delete(conversacionId)) programar(conversacionId);
@@ -497,7 +517,7 @@ function crearBotWhatsapp({ db, ai, leerLista, notasTexto, crearNotificacion }) 
     await db.query(`UPDATE wa_conversaciones SET pausado_hasta = NOW() + INTERVAL ${PAUSA_HORAS} HOUR, derivada = 0, motivo_derivacion = NULL WHERE id = ?`, [conversacionId]);
   }
 
-  return { recibir, pensar, enviarPersona, botGlobal, responder };
+  return { recibir, pensar, enviarPersona, botGlobal, responder, contexto, guardarMensaje, asegurarConversacion, derivar };
 }
 
 // ---------------------------------------------------------------- rutas
@@ -513,9 +533,19 @@ function registrarRutasWhatsapp(app, { db, requirePermiso, bot }) {
   // Público: mensajes entrantes. Se contesta 200 enseguida (Meta reintenta si tarda) y se procesa después.
   app.post("/api/public/whatsapp/webhook", (req, res) => {
     const c = cfg();
-    if (!configurado(c) || !firmaValida(req.rawBody, req.headers["x-hub-signature-256"], c.appSecret)) return res.sendStatus(401);
+    if (!configurado(c)) {
+      console.warn("[whatsapp] webhook rechazado: faltan variables WHATSAPP_* en el .env");
+      return res.sendStatus(401);
+    }
+    if (!firmaValida(req.rawBody, req.headers["x-hub-signature-256"], c.appSecret)) {
+      console.warn(`[whatsapp] webhook rechazado: firma inválida (¿WHATSAPP_APP_SECRET correcto?) firma=${req.headers["x-hub-signature-256"] ? "sí" : "no"} cuerpo=${req.rawBody ? req.rawBody.length : 0} bytes`);
+      return res.sendStatus(401);
+    }
     res.sendStatus(200);
-    for (const m of extraerMensajes(req.body)) bot.recibir(m).catch((e) => console.error("[whatsapp] recibir:", e.message));
+    if (tieneLlamadas(req.body)) reenviarLlamada(req.rawBody);
+    const mensajes = extraerMensajes(req.body);
+    console.log(`[whatsapp] webhook recibido: ${mensajes.length} mensaje(s)`);
+    for (const m of mensajes) bot.recibir(m).catch((e) => console.error("[whatsapp] recibir:", e.message));
   });
 
   const permiso = requirePermiso("whatsapp");
@@ -657,6 +687,9 @@ module.exports = {
   textoWhatsapp,
   instrucciones,
   urlFotoPublica,
+  tieneLlamadas,
+  corto,
+  enviarTexto,
   asegurarTablasWhatsapp,
   crearBotWhatsapp,
   registrarRutasWhatsapp,
