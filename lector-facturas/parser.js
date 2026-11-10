@@ -16,6 +16,9 @@ const TIPOS = {
   "011": { tipo: "FACTURA", letra: "C", signo: 1 },
   "012": { tipo: "NOTA_DEBITO", letra: "C", signo: 0 },
   "013": { tipo: "NOTA_CREDITO", letra: "C", signo: -1 },
+  "019": { tipo: "FACTURA", letra: "E", signo: 1 }, // exportación
+  "020": { tipo: "NOTA_DEBITO", letra: "E", signo: 0 },
+  "021": { tipo: "NOTA_CREDITO", letra: "E", signo: -1 },
   "051": { tipo: "FACTURA", letra: "M", signo: 1 },
   "053": { tipo: "NOTA_CREDITO", letra: "M", signo: -1 },
   "201": { tipo: "FACTURA", letra: "A", signo: 1 }, // FCE MiPyME
@@ -75,7 +78,7 @@ function despuesDe(lineas, etiqueta) {
 function leerComprobante(paginas, archivo = "") {
   const primera = renglones(paginas[0] || []);
   const cod = (despuesDe(primera, "COD.") || "").replace(/\D/g, "").padStart(3, "0");
-  const porNombre = String(archivo).match(/^(\d{2,3})\s+(\d{4})-(\d{8})\s+(\d{11})/);
+  const porNombre = String(archivo).match(/^(\d{2,3})\s+(\d{4,5})-(\d{8})(?:\s+(\d{6,14}))?/);
   const codigo = TIPOS[cod] ? cod : porNombre ? porNombre[1].padStart(3, "0") : cod;
   const t = TIPOS[codigo];
   if (!t) return { error: `tipo de comprobante desconocido (${cod || "?"})` };

@@ -96,6 +96,7 @@ async function vuelta() {
         await subir(actual.map((x) => x.datos));
         for (const x of actual) estado[x.clave] = { ok: true };
         subidos += actual.length;
+        if (subidos % 500 < actual.length) log(`… ${subidos} de ${pendientes.length} subidos`);
       } catch (e) {
         log(`⚠ No se pudieron subir ${actual.length}: ${e.message}`);
         for (const x of actual) estado[x.clave] = { intentos: (estado[x.clave]?.intentos || 0) + 1, error: e.message };

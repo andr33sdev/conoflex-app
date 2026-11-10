@@ -52,3 +52,13 @@ test("números en los dos formatos", () => {
   assert.equal(P.numero("5,089,388.82"), 5089388.82);
   assert.equal(P.numero("-17.573,68"), -17573.68);
 });
+
+test("facturas de exportación (E): tipo por el código o por el nombre, aunque el nombre no traiga CUIT", () => {
+  const e = factura.map((x) => (x.s === "001" ? { ...x, s: "019" } : x));
+  assert.equal(P.leerComprobante([e], "").letra, "E");
+  const sinCod = factura.filter((x) => x.s !== "COD." && x.s !== "001");
+  const r = P.leerComprobante([sinCod], "19 0004-00000103.pdf");
+  assert.equal(r.tipo, "FACTURA");
+  assert.equal(r.letra, "E");
+  assert.equal(P.leerComprobante([sinCod], "21 0004-00000009 55000000018.pdf").tipo, "NOTA_CREDITO");
+});
