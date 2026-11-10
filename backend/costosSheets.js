@@ -27,8 +27,10 @@ function urlCsv(url) {
   }
   const id = (u.pathname.match(/\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/) || [])[1];
   if (!id) return null;
-  const gid = u.searchParams.get("gid") || (u.hash.match(/gid=(\d+)/) || [])[1] || "0";
-  return `https://docs.google.com/spreadsheets/d/${id}/export?format=csv&gid=${gid}`;
+  // Sin hoja indicada (link de "Copiar enlace"), Google entrega la primera hoja. No se asume gid=0: si esa hoja
+  // no existe, Google responde 400.
+  const gid = u.searchParams.get("gid") || (u.hash.match(/gid=(\d+)/) || [])[1];
+  return `https://docs.google.com/spreadsheets/d/${id}/export?format=csv${gid ? `&gid=${gid}` : ""}`;
 }
 
 /** CSV → filas (respeta comillas, comas y saltos de línea dentro de celdas). */
@@ -151,8 +153,8 @@ async function descargar(url, fetcher = fetch) {
     const permiso = res.status === 401 || res.status === 403 || (res.ok && tipo.includes("text/html"));
     const msg = permiso
       ? "No pude abrir la planilla. En Sheets: Compartir → Acceso general → «Cualquier persona con el enlace» como Lector, y volvé a probar."
-      : res.status === 404
-        ? "Google no encuentra esa planilla u hoja. Copiá el link de nuevo desde la barra del navegador, con la hoja de costos abierta."
+      : res.status === 404 || res.status === 400
+        ? "Google no encuentra esa planilla u hoja. Abrí la hoja de costos y copiá el link desde la barra del navegador (no con «Copiar enlace»)."
         : "Google no entregó la planilla.";
     throw Object.assign(new Error(`${msg} (Google respondió ${res.status}${tipo ? `, ${tipo.split(";")[0]}` : ""})`), { status: 400 });
   }

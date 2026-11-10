@@ -4,7 +4,7 @@ const S = require("../costosSheets");
 
 test("links de Google Sheets → descarga CSV", () => {
   assert.equal(S.urlCsv("https://docs.google.com/spreadsheets/d/AbC_12-x/edit#gid=345"), "https://docs.google.com/spreadsheets/d/AbC_12-x/export?format=csv&gid=345");
-  assert.equal(S.urlCsv("https://docs.google.com/spreadsheets/d/AbC/edit?usp=sharing"), "https://docs.google.com/spreadsheets/d/AbC/export?format=csv&gid=0");
+  assert.equal(S.urlCsv("https://docs.google.com/spreadsheets/d/AbC/edit?usp=sharing"), "https://docs.google.com/spreadsheets/d/AbC/export?format=csv"); // sin gid: primera hoja
   assert.equal(S.urlCsv("https://docs.google.com/spreadsheets/d/e/2PACX-1v/pubhtml?gid=7&single=true"), "https://docs.google.com/spreadsheets/d/e/2PACX-1v/pub?output=csv&gid=7&single=true");
   assert.equal(S.urlCsv("https://evil.com/spreadsheets/d/AbC"), null);
   assert.equal(S.urlCsv("cualquier cosa"), null);
