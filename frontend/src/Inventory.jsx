@@ -11,6 +11,7 @@ import TarjetaMP from "./materias/TarjetaMP";
 import FichaMP from "./materias/FichaMP";
 import FormularioMP from "./materias/FormularioMP";
 import SincronizarSheets from "./materias/SincronizarSheets";
+import SincronizarExcel from "./materias/SincronizarExcel";
 import { estadoDe, nf, norm } from "./materias/util";
 
 const EASE = [0.22, 1, 0.36, 1];
@@ -265,6 +266,7 @@ export default function Inventory() {
               </p>
             </div>
             <div className="flex items-center gap-2.5">
+              {esAdmin && <SincronizarExcel toast={toast} onListo={() => cargar(true)} />}
               <button onClick={sincronizar} disabled={sincronizando} className="min-h-[46px] px-4 rounded-xl bg-white/[0.06] hover:bg-white/[0.11] border border-white/[0.09] text-sm font-bold text-zinc-100 inline-flex items-center gap-2 cursor-pointer disabled:opacity-50 transition-colors">
                 <RefreshCw size={16} className={sincronizando ? "animate-spin" : ""} /> <span className="hidden sm:inline">Sincronizar Sheets</span><span className="sm:hidden">Sheets</span>
               </button>

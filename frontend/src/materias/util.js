@@ -5,12 +5,16 @@ export const UNIDADES = [
   { v: "KILOS", c: "kg", t: "Kilos" },
   { v: "UNIDADES", c: "u", t: "Unidades" },
   { v: "METROS", c: "m", t: "Metros" },
+  { v: "M2", c: "m²", t: "Metros²" },
   { v: "LITROS", c: "l", t: "Litros" },
   { v: "PAQUETES", c: "paq", t: "Paquetes" },
+  { v: "ROLLOS", c: "rollo", t: "Rollos" },
 ];
 export const abrev = (u) => UNIDADES.find((x) => x.v === String(u || "KILOS").toUpperCase())?.c || String(u || "kg").toLowerCase();
 export const PLANTAS = ["Argentina", "Paraguay"];
 
+/** Costo en dólares: "US$ 2,60". */
+export const usd = (n) => (n == null || !Number.isFinite(Number(n)) ? "—" : `US$ ${Number(n).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 4 })}`);
 export const nf = (n, d = 2) => (Number.isFinite(Number(n)) ? Number(n).toLocaleString("es-AR", { maximumFractionDigits: d }) : "—");
 export const norm = (t) => String(t || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
 

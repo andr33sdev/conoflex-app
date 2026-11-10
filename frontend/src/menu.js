@@ -24,6 +24,7 @@ import {
   Radar,
   Route,
   MessageCircle,
+  DollarSign,
 } from "lucide-react";
 
 export const INICIO = {
@@ -69,6 +70,16 @@ export const ALL_MENU_ITEMS = [
     icon: Cpu,
     desc: "Qué lleva cada producto terminado",
     kw: "bom composicion recetas",
+  },
+  {
+    id: "costos",
+    corto: "Costos",
+    grupo: "produccion",
+    label: "Costos",
+    icon: DollarSign,
+    desc: "Costo de productos según sus recetas",
+    kw: "costo costos precio materia prima semielaborado terminado",
+    adminOnly: true,
   },
   {
     id: "semielaborados",
