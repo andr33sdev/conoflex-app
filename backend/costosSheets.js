@@ -138,10 +138,23 @@ async function leerUrl(db) {
 async function descargar(url, fetcher = fetch) {
   const csv = urlCsv(url);
   if (!csv) throw Object.assign(new Error("Ese link no es de una planilla de Google Sheets."), { status: 400 });
-  const res = await fetcher(csv, { redirect: "follow" });
+  // Google contesta distinto según quién pide: se pide como lo haría curl/un navegador, no como "node".
+  let res;
+  try {
+    res = await fetcher(csv, { redirect: "follow", headers: { "User-Agent": "curl/8.5.0", Accept: "text/csv,*/*" } });
+  } catch (e) {
+    throw Object.assign(new Error(`No pude conectarme con Google (${e.cause?.code || e.message}).`), { status: 502 });
+  }
   const tipo = String(res.headers?.get?.("content-type") || "");
   if (!res.ok || tipo.includes("text/html")) {
-    throw Object.assign(new Error("No pude abrir la planilla. En Sheets: Compartir → Acceso general → «Cualquier persona con el enlace» como Lector, y volvé a probar."), { status: 400 });
+    console.warn(`[costos sheets] Google respondió ${res.status} ${tipo} para ${csv}`);
+    const permiso = res.status === 401 || res.status === 403 || (res.ok && tipo.includes("text/html"));
+    const msg = permiso
+      ? "No pude abrir la planilla. En Sheets: Compartir → Acceso general → «Cualquier persona con el enlace» como Lector, y volvé a probar."
+      : res.status === 404
+        ? "Google no encuentra esa planilla u hoja. Copiá el link de nuevo desde la barra del navegador, con la hoja de costos abierta."
+        : "Google no entregó la planilla.";
+    throw Object.assign(new Error(`${msg} (Google respondió ${res.status}${tipo ? `, ${tipo.split(";")[0]}` : ""})`), { status: 400 });
   }
   return leerCsv(await res.text());
 }
