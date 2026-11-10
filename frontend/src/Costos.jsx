@@ -5,6 +5,7 @@ import { AlertTriangle, ChevronRight, Loader2, Search, X } from "lucide-react";
 import { api } from "./produccion/util";
 import { Drawer } from "./produccion/ui";
 import CostoMP from "./materias/CostoMP";
+import TraerDeSheets from "./costos/TraerDeSheets";
 import { abrev, nf, norm, usd } from "./materias/util";
 
 const TABS = [
@@ -55,8 +56,13 @@ export default function Costos() {
   return (
     <div className="h-full overflow-y-auto custom-scrollbar bg-black text-zinc-200">
       <div className="max-w-4xl mx-auto px-4 sm:px-6 pt-6 sm:pt-9 pb-28">
-        <h1 className="text-[34px] sm:text-5xl font-extrabold tracking-tight text-white leading-none">Costos</h1>
-        <p className="mt-2.5 text-[15px] text-zinc-500">En dólares, según la receta activa de cada producto. Solo lo ven los administradores.</p>
+        <div className="flex flex-wrap items-end gap-4">
+          <div className="mr-auto">
+            <h1 className="text-[34px] sm:text-5xl font-extrabold tracking-tight text-white leading-none">Costos</h1>
+            <p className="mt-2.5 text-[15px] text-zinc-500">En dólares, según la receta activa de cada producto. Solo lo ven los administradores.</p>
+          </div>
+          <TraerDeSheets onListo={cargar} />
+        </div>
 
         <nav className="mt-6 flex gap-2 overflow-x-auto no-scrollbar" aria-label="Qué ver">
           {TABS.map((t) => (
