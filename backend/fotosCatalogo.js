@@ -32,6 +32,49 @@ const corto = (t, n) => {
   return s.length > n ? s.slice(0, n - 1) + "…" : s;
 };
 
+/**
+ * Altura en cm según el catálogo (nombre, medidas o descripción). null si no la dice.
+ * Busca "alt. 120 cm", "altura: 90cm", "h 70 cm"; o, en medidas, un "120 cm" suelto que no sea parte de "40x40 cm".
+ */
+function alturaCm(p) {
+  const textos = [p?.medidas, p?.nombre, p?.descripcion, p?.especificacion].filter(Boolean).map(String);
+  for (const t of textos) {
+    const m = t.match(/\b(?:alt(?:ura)?|h)\.?\s*(?:total\s*)?(?:de\s*)?:?\s*(\d{2,3}(?:[.,]\d)?)\s*cm/i);
+    if (m) return Math.round(Number(m[1].replace(",", ".")));
+    const enMetros = t.match(/\b(?:alt(?:ura)?|h)\.?\s*(?:total\s*)?(?:de\s*)?:?\s*(\d[.,]\d{1,2})\s*m(?:ts?|etros?)?\b/i);
+    if (enMetros) return Math.round(Number(enMetros[1].replace(",", ".")) * 100);
+  }
+  const med = String(p?.medidas || "");
+  for (const m of med.matchAll(/(^|[^x×\d.,])\s*(\d{2,3})\s*cm/gi)) {
+    const antes = med.slice(Math.max(0, m.index - 3), m.index + m[1].length);
+    if (!/[x×]\s*$/i.test(antes)) return Number(m[2]);
+  }
+  return null;
+}
+
+/** Del mismo tipo y altura parecida (±15 cm) que el reconocido, del más al menos parecido en altura. */
+function alternativasMismaAltura(productos, base, max = 3) {
+  const h = alturaCm(base);
+  if (h == null) return [];
+  return productos
+    .filter((p) => norm(p.codigo) !== norm(base.codigo) && (!base.categoria || norm(p.categoria) === norm(base.categoria)))
+    .map((p) => ({ p, h: alturaCm(p) }))
+    .filter((x) => x.h != null && Math.abs(x.h - h) <= 15)
+    .sort((a, b) => Math.abs(a.h - h) - Math.abs(b.h - h))
+    .slice(0, max)
+    .map((x) => x.p);
+}
+
+/** Saca de la descripción de la foto cualquier altura estimada ("de unos 90 cm"): las medidas salen del catálogo. */
+function sinAlturasEstimadas(t) {
+  return String(t || "")
+    .replace(/[,;]?\s*(?:y\s+)?(?:con\s+)?(?:una\s+)?altura\s+(?:aproximada\s+)?(?:de\s+)?(?:unos\s+|aprox\.?\s*)?\d{2,3}\s*(?:cm|m)\b/gi, "")
+    .replace(/[,;]?\s*(?:de\s+)?(?:unos|aproximadamente|aprox\.?|cerca de|más de|alrededor de)\s+\d+(?:[.,]\d+)?\s*(?:cm|metros?|m)\b(?:\s+de\s+alto)?/gi, "")
+    .replace(/\s{2,}/g, " ")
+    .replace(/\s+([.,])/g, "$1")
+    .trim();
+}
+
 /** Ruta en disco de una foto del catálogo (".../imagenes/x.jpg" → <dir>/x.jpg). null si no es de la app. */
 function rutaImagenLocal(url, dir) {
   if (!url || !dir) return null;
@@ -108,14 +151,30 @@ function textoFoto({ vista, decision, productos, textoCliente }) {
     const p = porCodigo.get(norm(c));
     return p ? `${p.codigo} ${p.nombre}` : null;
   };
-  const lineas = [`📷 Foto: ${String(vista?.descripcion || "sin descripción").trim()}`];
+  const lineas = [`📷 Foto: ${sinAlturasEstimadas(vista?.descripcion) || "sin descripción"}`];
   const marca = String(vista?.marca || "").toUpperCase();
   if (marca === "CONOFLEX") lineas.push("Marca: es un producto Conoflex (nuestro).");
   else if (marca && marca !== "NO SE VE") lineas.push(`Marca: ${vista.marca}.`);
   if (decision?.reconocido && nombre(decision.reconocido.codigo)) {
     lineas.push(`Producto reconocido: ${nombre(decision.reconocido.codigo)} (${decision.reconocido.confianza}% seguro).`);
+    const base = porCodigo.get(norm(decision.reconocido.codigo));
+    const h = alturaCm(base);
+    if (h != null) lineas.push(`Altura según catálogo: ${h} cm.`);
+    const alt = alternativasMismaAltura(productos, base);
+    if (alt.length) lineas.push(`Alternativas de altura parecida: ${alt.map((p) => `${p.codigo} ${p.nombre} (${alturaCm(p)} cm)`).join(" · ")}.`);
   } else {
-    const ops = (decision?.opciones || []).filter((o) => nombre(o.codigo)).map((o) => `${nombre(o.codigo)} (${o.confianza}%)`);
+    // Las opciones para preguntar se mantienen en la altura de la más parecida (±15 cm).
+    const hPrimera = alturaCm(porCodigo.get(norm(decision?.opciones?.[0]?.codigo)));
+    const ops = (decision?.opciones || [])
+      .filter((o) => nombre(o.codigo))
+      .filter((o, i) => {
+        const h = alturaCm(porCodigo.get(norm(o.codigo)));
+        return i === 0 || hPrimera == null || h == null || Math.abs(h - hPrimera) <= 15;
+      })
+      .map((o) => {
+        const h = alturaCm(porCodigo.get(norm(o.codigo)));
+        return `${nombre(o.codigo)} (${h != null ? `${h} cm, ` : ""}${o.confianza}%)`;
+      });
     if (ops.length) lineas.push(`No es seguro. Opciones más parecidas: ${ops.join(" · ")}.`);
   }
   if (textoCliente) lineas.push(`Texto del cliente: ${textoCliente}`);
@@ -123,7 +182,7 @@ function textoFoto({ vista, decision, productos, textoCliente }) {
 }
 
 function catalogoCorto(productos) {
-  return productos.map((p) => [p.codigo, p.nombre, p.categoria, p.medidas && corto(p.medidas, 70)].filter(Boolean).join(" | ")).join("\n");
+  return productos.map((p) => [p.codigo, p.nombre, p.categoria, alturaCm(p) != null && `altura ${alturaCm(p)} cm`, p.medidas && corto(p.medidas, 120)].filter(Boolean).join(" | ")).join("\n");
 }
 
 const parsear = (t) => {
@@ -183,7 +242,7 @@ ${catalogoCorto(productos)}`,
     if (!fotos.length || bytes + peso > MAX_BYTES_TOTAL) continue;
     bytes += peso;
     incluidas++;
-    partes.push({ text: `PRODUCTO ${p.codigo} — ${p.nombre}${p.medidas ? ` — medidas: ${corto(p.medidas, 90)}` : ""}` });
+    partes.push({ text: `PRODUCTO ${p.codigo} — ${p.nombre}${alturaCm(p) != null ? ` — altura ${alturaCm(p)} cm` : ""}${p.medidas ? ` — medidas: ${corto(p.medidas, 120)}` : ""}` });
     for (const f of fotos) partes.push({ text: `(${f.etiqueta})` }, { inlineData: { mimeType: f.img.mimeType, data: f.img.data } });
   }
   if (!incluidas) return { vista, decision: decidir((vista.candidatos || []).slice(0, 3).map((c) => ({ codigo: c, confianza: 30 }))) };
@@ -197,4 +256,4 @@ Respondé solo JSON: {"top": [{"codigo": "...", "confianza": 0, "motivo": "..."}
   return { vista, decision };
 }
 
-module.exports = { UMBRAL, VENTAJA, rutaImagenLocal, miniatura, elegirOpciones, decidir, textoFoto, reconocer };
+module.exports = { UMBRAL, VENTAJA, alturaCm, alternativasMismaAltura, sinAlturasEstimadas, rutaImagenLocal, miniatura, elegirOpciones, decidir, textoFoto, reconocer };

@@ -33,11 +33,11 @@ test("texto de la foto: reconocido o con opciones para preguntar", () => {
   const vista = { descripcion: "Cono naranja con cabezal pasacadenas", marca: "CONOFLEX" };
   assert.equal(
     F.textoFoto({ vista, decision: { reconocido: { codigo: "2301cs", confianza: 91 } }, productos, textoCliente: "busco este" }),
-    "📷 Foto: Cono naranja con cabezal pasacadenas\nMarca: es un producto Conoflex (nuestro).\nProducto reconocido: 2301CS Obrador Classic (91% seguro).\nTexto del cliente: busco este",
+    "📷 Foto: Cono naranja con cabezal pasacadenas\nMarca: es un producto Conoflex (nuestro).\nProducto reconocido: 2301CS Obrador Classic (91% seguro).\nAltura según catálogo: 120 cm.\nAlternativas de altura parecida: 2300-2R Vencedor (120 cm).\nTexto del cliente: busco este",
   );
   assert.equal(
     F.textoFoto({ vista: { descripcion: "x", marca: "NO SE VE" }, decision: { reconocido: null, opciones: [{ codigo: "2301CS", confianza: 70 }, { codigo: "2300-2R", confianza: 65 }] }, productos }),
-    "📷 Foto: x\nNo es seguro. Opciones más parecidas: 2301CS Obrador Classic (70%) · 2300-2R Vencedor (65%).",
+    "📷 Foto: x\nNo es seguro. Opciones más parecidas: 2301CS Obrador Classic (120 cm, 70%) · 2300-2R Vencedor (120 cm, 65%).",
   );
 });
 
@@ -135,7 +135,7 @@ test("con base: se equivoca, el equipo confirma el producto y la próxima vez lo
     const opciones = comparaciones[0].filter((t) => t.startsWith("PRODUCTO")).map((t) => t.split(" — ")[0]);
     assert.deepEqual(opciones, ["PRODUCTO 2071LE-2R", "PRODUCTO 2301CS", "PRODUCTO 2300-2R"]); // todos los conos con foto, no la columna
     const [[m1]] = await db.query("SELECT id, texto, media_archivo FROM wa_mensajes WHERE direccion = 'IN'");
-    assert.match(m1.texto, /No es seguro\. Opciones más parecidas: 2300-2R Vencedor \(72%\) · 2301CS Obrador Classic \(70%\)/);
+    assert.match(m1.texto, /No es seguro\. Opciones más parecidas: 2300-2R Vencedor \(120 cm, 72%\) · 2301CS Obrador Classic \(120 cm, 70%\)\./); // el de 70 cm queda afuera
     assert.ok(fs.existsSync(path.join(fotosDir, m1.media_archivo))); // la foto del cliente quedó guardada
     assert.deepEqual(enviadas, ["¿Es alguno de estos?", "[foto Vencedor]", "[foto Obrador Classic]"]);
 
@@ -155,4 +155,33 @@ test("con base: se equivoca, el equipo confirma el producto y la próxima vez lo
     fs.rmSync(tmp, { recursive: true, force: true });
     await db.end();
   }
+});
+
+test("altura: solo la del catálogo, nunca la estimada de la foto", () => {
+  assert.equal(F.alturaCm({ medidas: "ALT. 120 cm, base 40x40 cm" }), 120);
+  assert.equal(F.alturaCm({ medidas: "Base 35x35cm, altura 70cm" }), 70);
+  assert.equal(F.alturaCm({ medidas: "35 x 35 cm; 90 cm" }), 90);
+  assert.equal(F.alturaCm({ medidas: "Altura total: 1,2 m" }), 120);
+  assert.equal(F.alturaCm({ nombre: "CONO MOD. MAYOR ECONO LE ALT. 70 cm" }), 70);
+  assert.equal(F.alturaCm({ medidas: "peso 8,5 kg" }), null);
+  assert.equal(F.sinAlturasEstimadas("Cono naranja con cabezal. Presenta dos bandas y una altura aproximada de 90 cm."), "Cono naranja con cabezal. Presenta dos bandas.");
+  assert.equal(F.sinAlturasEstimadas("Cono naranja de más de 1 metro con cabezal, de unos 120 cm de alto."), "Cono naranja con cabezal.");
+});
+
+test("alternativas: mismo tipo y altura parecida (±15 cm), la más cercana primero", () => {
+  const lista = [
+    { codigo: "OBR", nombre: "Obrador", categoria: "Conos", medidas: "ALT. 120 cm" },
+    { codigo: "AUT", nombre: "Autopista", categoria: "Conos", medidas: "ALT. 120 cm" },
+    { codigo: "VEN", nombre: "Vencedor", categoria: "Conos", medidas: "ALT. 110 cm" },
+    { codigo: "KING", nombre: "King Cone", categoria: "Conos", medidas: "ALT. 70 cm" },
+    { codigo: "COL", nombre: "Columna", categoria: "Columnas", medidas: "ALT. 120 cm" },
+    { codigo: "SINALT", nombre: "Sin altura", categoria: "Conos" },
+  ];
+  assert.deepEqual(F.alternativasMismaAltura(lista, lista[0]).map((p) => p.codigo), ["AUT", "VEN"]);
+  assert.deepEqual(F.alternativasMismaAltura(lista, lista[5]), []);
+});
+
+test("historial del bot: las fotos viejas pierden las alturas estimadas", () => {
+  const h = w.historialContents([{ direccion: "IN", tipo: "image", texto: "📷 Foto: Cono naranja con cabezal y una altura aproximada de 90 cm.\nTexto del cliente: hola" }]);
+  assert.equal(h[0].parts[0].text, "📷 Foto: Cono naranja con cabezal.\nTexto del cliente: hola");
 });

@@ -105,7 +105,8 @@ function catalogoTexto(productos) {
     .map((p) => {
       const uso = corto(p.aplicacion || p.descripcion || "", 180);
       const usos = corto(String(p.usos_recomendados || "").split(/\s*\|\s*/).map((u) => u.split(":")[0].trim()).filter(Boolean).slice(0, 5).join(", "), 120);
-      return [p.codigo, p.nombre, p.categoria, p.medidas && `medidas: ${corto(p.medidas, 80)}`, `precio: ${corto(p.precio_lista, 160) || "consultar"}`, uso && `para qué sirve: ${uso}`, usos && `usos: ${usos}`, p.advertencias && `ojo: ${corto(p.advertencias, 120)}`, (p.foto_catalogo || p.foto_tecnica) ? "tiene foto" : null]
+      const h = fotos.alturaCm(p);
+      return [p.codigo, p.nombre, p.categoria, h != null && `altura: ${h} cm`, p.medidas && `medidas: ${corto(p.medidas, 160)}`, `precio: ${corto(p.precio_lista, 160) || "consultar"}`, uso && `para qué sirve: ${uso}`, usos && `usos: ${usos}`, p.advertencias && `ojo: ${corto(p.advertencias, 120)}`, (p.foto_catalogo || p.foto_tecnica) ? "tiene foto" : null]
         .filter(Boolean)
         .map((x) => String(x).replace(/\|/g, "/"))
         .join(" | ");
@@ -183,6 +184,8 @@ PRODUCTOS Y PRECIOS
 - NUNCA hagas cuentas vos. Si el cliente da cantidades, completá "items" con código y cantidad: el sistema agrega el cálculo exacto debajo de tu mensaje. En tu texto no escribas totales.
 - Fotos: si la foto trae "Producto reconocido", ESE es el producto: nombralo y pasá su precio directo.
 - Si la foto dice "No es seguro. Opciones más parecidas", NO afirmes cuál es ni ofrezcas otros modelos: poné en "fotos" los códigos de esas opciones (máximo 3, en ese orden) y preguntale al cliente cuál de esas es, nombrándolas.
+- ALTURAS Y MEDIDAS: decí solo las del CATÁLOGO ("altura:" y "medidas:" de ese producto). Nunca uses una altura estimada de una foto ni de mensajes anteriores. Si el catálogo no dice la altura, no la digas.
+- Alternativas a un producto reconocido: ofrecé solo las de "Alternativas de altura parecida" (mismo tipo y altura similar). No ofrezcas modelos de otra altura salvo que el cliente lo pida.
 - Nunca digas que un producto es "de otra marca" salvo que la foto diga "Marca:" con otra marca. Nuestro logo CONOFLEX suele verse borroso en las fotos.
 - Si el cliente manda una foto de un producto de la competencia o roto, ofrecé el equivalente del catálogo y explicá por qué.
 - Si quieren ver un producto, poné su código en "fotos" (solo si dice "tiene foto"; máximo ${MAX_FOTOS}).
@@ -212,7 +215,9 @@ function historialContents(mensajes) {
   const contents = [];
   for (const m of mensajes) {
     const role = m.direccion === "IN" ? "user" : "model";
-    const texto = String(m.texto || "").trim() || `[${m.tipo}]`;
+    let texto = String(m.texto || "").trim() || `[${m.tipo}]`;
+    // Fotos viejas pudieron quedar con alturas estimadas ("de unos 90 cm"): no sirven, las medidas salen del catálogo.
+    if (texto.startsWith("📷")) texto = fotos.sinAlturasEstimadas(texto);
     const prev = contents[contents.length - 1];
     if (prev && prev.role === role) prev.parts[0].text += `\n${texto}`;
     else contents.push({ role, parts: [{ text: texto }] });
