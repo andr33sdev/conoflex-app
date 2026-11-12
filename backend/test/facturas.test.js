@@ -28,6 +28,9 @@ test("valida comprobantes del lector", () => {
   assert.match(F.validarComprobante(fac({ fecha: "6/11/2026" })).error, /fecha/);
   assert.match(F.validarComprobante(fac({ items: [{ codigo: "", cantidad: 1 }] })).error, /ítem/);
   assert.equal(F.validarComprobante(fac({ empresa: "", carpeta: "Facturas_Serenplas" })).c.empresa, "SERENPLAS");
+  const sinImporte = F.validarComprobante(fac({ total: null, items: [{ codigo: "X", cantidad: 1, subtotal: null, precio_unitario: null }] })).c;
+  assert.equal(sinImporte.total, null);
+  assert.equal(sinImporte.items[0].subtotal, null); // vacío, no 0
 });
 
 test("informe: suma por código, resta notas de crédito y multiplica por el costo actual", () => {

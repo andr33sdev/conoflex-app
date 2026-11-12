@@ -12,6 +12,8 @@ const PERMISO = "costo-vendido";
 const norm = (c) => String(c ?? "").toUpperCase().replace(/\s+/g, "");
 const sinGuiones = (c) => norm(c).replace(/[-_.]/g, "");
 const r2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
+// Vacío queda vacío (Number(null) daría 0 y parecería un precio en cero).
+const numONull = (v) => (v == null || v === "" || !Number.isFinite(Number(v)) ? null : Number(v));
 const fechaOk = (f) => /^\d{4}-\d{2}-\d{2}$/.test(String(f || ""));
 
 /** Valida y limpia un comprobante que manda el lector. Devuelve { error } o { c }. */
@@ -28,8 +30,8 @@ function validarComprobante(x) {
     descripcion: String(i?.descripcion || "").trim().slice(0, 255),
     unidad: String(i?.unidad || "").trim().slice(0, 20),
     cantidad: Number(i?.cantidad),
-    precio_unitario: Number.isFinite(Number(i?.precio_unitario)) ? Number(i.precio_unitario) : null,
-    subtotal: Number.isFinite(Number(i?.subtotal)) ? Number(i.subtotal) : null,
+    precio_unitario: numONull(i?.precio_unitario),
+    subtotal: numONull(i?.subtotal),
   }));
   if (items.some((i) => !i.codigo || !Number.isFinite(i.cantidad))) return { error: "ítem sin código o cantidad" };
   return {
@@ -47,7 +49,7 @@ function validarComprobante(x) {
       remito: x.remito ? String(x.remito).slice(0, 20) : null,
       orden_compra: x.orden_compra ? String(x.orden_compra).slice(0, 100) : null,
       referencia: x.referencia ? String(x.referencia).slice(0, 20) : null,
-      total: Number.isFinite(Number(x.total)) ? Number(x.total) : null,
+      total: numONull(x.total),
       archivo: x.archivo ? String(x.archivo).slice(0, 255) : null,
       items,
     },
