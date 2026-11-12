@@ -4,6 +4,7 @@ import { api } from "../produccion/util";
 import { Aviso, Boton, Chip, Modal } from "../comercial/ui";
 import { campo } from "../comercial/util";
 import Burbuja from "./Burbuja";
+import FotoCliente from "./FotoCliente";
 
 const hora = (f) => {
   if (!f) return "";
@@ -164,14 +165,16 @@ function Chat({ conv, aviso, onVolver, onCambio }) {
           <div className="grid place-items-center py-10 text-zinc-500"><Loader2 className="animate-spin" /></div>
         ) : (
           mensajes.map((m, i) => (
+            <div key={m.id} className="flex flex-col gap-1.5">
+            {m.direccion === "IN" && m.tiene_foto ? <FotoCliente mensaje={m} aviso={aviso} onCambio={cargar} /> : null}
             <Burbuja
-              key={m.id}
               autor={m.autor}
               texto={m.texto}
               error={m.error}
               hora={hora(m.created_at)}
               accion={m.autor === "BOT" && m.tipo === "text" ? <button onClick={() => setCorrigiendo({ pregunta: preguntaPrevia(i), respuesta: m.texto })} className="text-[11px] text-zinc-400 hover:text-white underline underline-offset-2 cursor-pointer">Corregir</button> : null}
             />
+            </div>
           ))
         )}
         <div ref={fin} />

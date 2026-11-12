@@ -15,3 +15,6 @@ token.json
 backend/uploads/
 
 backend/datos_comercial/
+
+# Fotos que mandan los clientes por WhatsApp (se guardan en el servidor, no en el repo)
+backend/datos/
