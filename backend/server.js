@@ -52,6 +52,7 @@ const { asegurarTablasCostos, asegurarPTDesdePedidos, registrarRutasCostos } = r
 const { registrarRutasCostosSheets } = require("./costosSheets");
 const { asegurarTablasFacturas, registrarRutasFacturas } = require("./facturas");
 const { avisarCostosViejos } = require("./costosAvisos");
+const { prepararIA } = require("./ia");
 require("dotenv").config();
 
 const app = express();
@@ -297,7 +298,8 @@ const oauth2Client = new google.auth.OAuth2(
   process.env.GOOGLE_CLIENT_SECRET,
   process.env.GOOGLE_REDIRECT_URI,
 );
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+// prepararIA: manda los pedidos al modelo vigente y reintenta con el de respaldo si Google retira uno (ver ia.js).
+const ai = prepararIA(new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY }));
 registrarRutasPrecios(app, { db, ai, multer, autenticarToken, autorizarRoles, leerExcel: (p) => procesarExcelTarjetas(p).textoFormateado });
 registrarRutasFotos(app, { db, multer, autenticarToken, autorizarRoles, dirImagenes: IMAGENES_DIR, baseUrl: () => process.env.BASE_URL || `http://localhost:${PORT}` });
 const TOKEN_PATH = path.join(__dirname, "token.json");
