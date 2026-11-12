@@ -3,6 +3,7 @@
 // de facturación) y el informe "Costo de lo vendido": en un rango de fechas, unidades facturadas de cada producto
 // terminado (facturas − notas de crédito) × su costo actual según la receta.
 const crypto = require("crypto");
+const R = require("./reporteResultados");
 const { costosCompletos } = require("./mpCostos");
 
 const TIPOS_VALIDOS = new Set(["FACTURA", "NOTA_CREDITO", "NOTA_DEBITO"]);
@@ -77,8 +78,11 @@ function repartirTotales(lineas) {
  *  productos: [{ codigo, nombre, costo, completo, sin_receta }]  (de Costos)
  *  tipoCambio: pesos por dólar, para la rentabilidad (importe neto en US$ − costo total). Sin él, no se calcula.
  */
-function armarInforme(lineas, productos, { tipoCambio = null } = {}) {
+function armarInforme(lineas, productos, { tipoCambio = null, gastosPct = null, mlPct = null } = {}) {
   const tc = Number(tipoCambio) > 0 ? Number(tipoCambio) : null;
+  // Margen final = contribución marginal − gastos operativos (% de la venta) − cargos de MercadoLibre (% de lo vendido por ML).
+  const g = Number(gastosPct) >= 0 && gastosPct !== null && gastosPct !== "" ? Number(gastosPct) / 100 : null;
+  const m = Number(mlPct) >= 0 && mlPct !== null && mlPct !== "" ? Number(mlPct) / 100 : 0;
   const exacto = new Map();
   const suelto = new Map();
   for (const p of productos) {
@@ -90,12 +94,15 @@ function armarInforme(lineas, productos, { tipoCambio = null } = {}) {
     if (!l.signo) continue;
     const k = norm(l.codigo);
     if (!k) continue;
-    const a = porCodigo.get(k) || { codigo: String(l.codigo).trim(), descripcion: l.descripcion || "", unidades: 0, neto: 0, total: 0, renglones: 0, sinImporte: 0, letrasSin: new Set() };
+    const a = porCodigo.get(k) || { codigo: String(l.codigo).trim(), descripcion: l.descripcion || "", unidades: 0, neto: 0, netoML: 0, total: 0, renglones: 0, sinImporte: 0, letrasSin: new Set() };
     a.unidades += l.signo * (Number(l.cantidad) || 0);
     a.renglones++;
     const okNeto = l.subtotal != null && Number.isFinite(Number(l.subtotal));
     const okTotal = l.total_item != null && Number.isFinite(Number(l.total_item));
-    if (okNeto) a.neto += l.signo * Math.abs(Number(l.subtotal));
+    if (okNeto) {
+      a.neto += l.signo * Math.abs(Number(l.subtotal));
+      if (l.ml) a.netoML += l.signo * Math.abs(Number(l.subtotal));
+    }
     if (okTotal) a.total += l.signo * Math.abs(Number(l.total_item));
     if (!okNeto || !okTotal) {
       a.sinImporte++;
@@ -126,16 +133,24 @@ function armarInforme(lineas, productos, { tipoCambio = null } = {}) {
     const avisoImporte = !a.sinImporte
       ? ""
       : `${nadaLeido ? "No se pudo leer el importe de ninguno" : `No se pudo leer el importe de ${a.sinImporte} de ${a.renglones}`} de sus comprobantes${letras ? ` (factura/NC ${letras})` : ""}${nadaLeido ? "." : ": el importe es parcial."}`;
+    const ventaUsd = tc && !nadaLeido ? neto / tc : null;
+    const margen = rentabilidad != null && g != null ? r2(rentabilidad - ventaUsd * g - (a.netoML / tc) * m) : null;
+    const pct = (x) => (x != null && ventaUsd > 0 ? Math.round((x / ventaUsd) * 10000) / 10000 : null);
     filas.push({
       codigo: a.codigo, producto: p?.codigo || null, descripcion: a.descripcion, unidades,
       costo_unitario: costo, costo_total: costoTotal,
       importe_neto: nadaLeido ? null : neto, importe_total: nadaLeido ? null : r2(a.total),
+      venta_usd: ventaUsd == null ? null : r2(ventaUsd),
+      precio_unitario: nadaLeido || !(unidades > 0) ? null : r2(neto / unidades),
+      precio_unitario_usd: ventaUsd == null || !(unidades > 0) ? null : Math.round((ventaUsd / unidades) * 10000) / 10000,
       importe_incompleto: a.sinImporte > 0, aviso_importe: avisoImporte,
-      rentabilidad, observacion: obs,
+      rentabilidad, rentabilidad_pct: pct(rentabilidad),
+      margen_final: margen, margen_final_pct: pct(margen), venta_ml: a.netoML ? r2(a.netoML) : 0,
+      observacion: obs,
     });
   }
   filas.sort((a, b) => (b.costo_total ?? -1) - (a.costo_total ?? -1) || (b.importe_neto ?? 0) - (a.importe_neto ?? 0) || b.unidades - a.unidades);
-  return {
+  const T = {
     filas,
     totales: {
       productos: filas.length,
@@ -148,9 +163,19 @@ function armarInforme(lineas, productos, { tipoCambio = null } = {}) {
       rentabilidad: tc ? r2(filas.reduce((s, f) => s + (f.rentabilidad || 0), 0)) : null,
       sin_rentabilidad: tc ? filas.filter((f) => f.rentabilidad == null).length : 0,
       sin_importe: filas.filter((f) => f.importe_incompleto).length,
+      venta_usd: tc ? r2(filas.reduce((s, f) => s + (f.venta_usd || 0), 0)) : null,
+      // Los % se calculan sobre la venta de los productos que sí tienen rentabilidad (si no, se mezclan peras con manzanas).
+      venta_usd_con_rentabilidad: tc ? r2(filas.reduce((s, f) => s + (f.rentabilidad != null ? f.venta_usd : 0), 0)) : null,
+      margen_final: tc && g != null ? r2(filas.reduce((s, f) => s + (f.margen_final || 0), 0)) : null,
     },
     tipo_cambio: tc,
+    gastos_pct: g == null ? null : g * 100,
+    ml_pct: m * 100,
   };
+  const base = T.totales.venta_usd_con_rentabilidad;
+  T.totales.rentabilidad_pct = T.totales.rentabilidad != null && base > 0 ? Math.round((T.totales.rentabilidad / base) * 10000) / 10000 : null;
+  T.totales.margen_final_pct = T.totales.margen_final != null && base > 0 ? Math.round((T.totales.margen_final / base) * 10000) / 10000 : null;
+  return T;
 }
 
 // ---------------------------------------------------------------- base de datos
@@ -240,8 +265,10 @@ const nombreEmpresa = (e) => String(e || "Sin empresa").toLowerCase().replace(/(
  *  ml: "junto" (MercadoLibre con el resto) · "separar" (hoja aparte) · "solo" · "sin".
  * Devuelve [{ nombre, empresa, canal, lineas }] en orden estable (empresa, después resto antes que MercadoLibre).
  */
+const esMercadoLibre = (l, pvML = pvsMercadoLibre()) => pvML.includes(Number(String(l.punto_venta || "").replace(/\D/g, "")));
+
 function separarHojas(lineas, { porEmpresa = false, ml = "junto", pvML = pvsMercadoLibre() } = {}) {
-  const esML = (l) => pvML.includes(Number(String(l.punto_venta || "").replace(/\D/g, "")));
+  const esML = (l) => esMercadoLibre(l, pvML);
   const grupos = new Map();
   for (const l of lineas) {
     const deML = esML(l);
@@ -266,19 +293,23 @@ function contarComprobantes(lineas) {
   return { facturas: f.size, notas_credito: nc.size };
 }
 
-async function informe(db, desde, hasta, { tipoCambio = null, porEmpresa = false, ml = "junto" } = {}) {
+async function informe(db, desde, hasta, { tipoCambio = null, porEmpresa = false, ml = "junto", gastosPct = null, mlPct = null, extras = false } = {}) {
   const [crudas] = await db.query(
-    `SELECT i.codigo, i.descripcion, i.cantidad, i.subtotal, f.signo, f.letra, f.empresa, f.punto_venta, f.id AS factura_id, f.total AS total_factura
+    `SELECT i.codigo, i.descripcion, i.cantidad, i.subtotal, f.signo, f.letra, f.empresa, f.punto_venta, f.archivo, DATE_FORMAT(f.fecha, '%Y-%m-%d') AS fecha, f.id AS factura_id, f.total AS total_factura
        FROM factura_items i JOIN facturas f ON f.id = i.factura_id
       WHERE f.fecha BETWEEN ? AND ? AND f.signo <> 0`,
     [desde, hasta],
   );
   const [[ultima]] = await db.query("SELECT DATE_FORMAT(MAX(fecha), '%Y-%m-%d') AS fecha, MAX(leida_at) AS leida FROM facturas");
   const { productos } = await costosCompletos(db);
-  const lineas = repartirTotales(crudas);
-  const grupos = separarHojas(lineas, { porEmpresa, ml });
+  const pvML = pvsMercadoLibre();
+  const lineas = repartirTotales(crudas).map((l) => ({ ...l, ml: esMercadoLibre(l, pvML) }));
+  const grupos = separarHojas(lineas, { porEmpresa, ml, pvML });
   const todas = grupos.flatMap((g) => g.lineas);
-  const hojas = grupos.map((g) => ({ nombre: g.nombre, empresa: g.empresa, canal: g.canal, comprobantes: contarComprobantes(g.lineas), ...armarInforme(g.lineas, productos, { tipoCambio }) }));
+  const opc = { tipoCambio, gastosPct, mlPct };
+  const hojas = grupos.map((g) => ({ nombre: g.nombre, empresa: g.empresa, canal: g.canal, comprobantes: contarComprobantes(g.lineas), ...armarInforme(g.lineas, productos, opc) }));
+  const general = armarInforme(todas, productos, opc);
+  const extra = extras ? await R.extras(db, { desde, hasta, lineas: todas, filas: general.filas }) : {};
   return {
     desde,
     hasta,
@@ -287,8 +318,9 @@ async function informe(db, desde, hasta, { tipoCambio = null, porEmpresa = false
     ultima_factura: ultima?.fecha || null,
     ultima_lectura: ultima?.leida || null,
     // Todo junto (lo elegido), para el resumen; y las hojas del Excel.
-    ...armarInforme(todas, productos, { tipoCambio }),
+    ...general,
     hojas,
+    ...extra,
   };
 }
 
@@ -334,7 +366,12 @@ function registrarRutasFacturas(app, { db, requirePermiso }) {
       const tc = req.query.tc == null || req.query.tc === "" ? null : Number(String(req.query.tc).replace(",", "."));
       if (tc != null && !(tc > 0)) return res.status(400).json({ error: "Poné un tipo de cambio válido (pesos por dólar)." });
       const ml = MODOS_ML.includes(req.query.ml) ? req.query.ml : "junto";
-      res.json(await informe(db, desde, hasta, { tipoCambio: tc, porEmpresa: req.query.empresas === "separadas", ml }));
+      const pctQ = (v) => (v == null || v === "" ? null : Number(String(v).replace(",", ".")));
+      const gastosPct = pctQ(req.query.gastos);
+      const mlPct = pctQ(req.query.cargos_ml);
+      if ([gastosPct, mlPct].some((x) => x != null && !(x >= 0 && x < 100))) return res.status(400).json({ error: "Los porcentajes tienen que estar entre 0 y 100." });
+      if (gastosPct != null && !tc) return res.status(400).json({ error: "Para el margen final hace falta el dólar." });
+      res.json(await informe(db, desde, hasta, { tipoCambio: tc, porEmpresa: req.query.empresas === "separadas", ml, gastosPct, mlPct, extras: req.query.extras === "1" }));
     } catch (e) {
       console.error("[facturas] informe:", e);
       res.status(500).json({ error: e.message });
@@ -342,4 +379,4 @@ function registrarRutasFacturas(app, { db, requirePermiso }) {
   });
 }
 
-module.exports = { PERMISO, norm, validarComprobante, repartirTotales, separarHojas, contarComprobantes, armarInforme, asegurarTablasFacturas, guardarLote, informe, registrarRutasFacturas };
+module.exports = { PERMISO, norm, validarComprobante, repartirTotales, esMercadoLibre, separarHojas, contarComprobantes, armarInforme, asegurarTablasFacturas, guardarLote, informe, registrarRutasFacturas };
