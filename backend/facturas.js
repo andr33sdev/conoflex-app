@@ -229,23 +229,66 @@ async function guardarLote(db, comprobantes) {
   return { guardados, errores };
 }
 
-async function informe(db, desde, hasta, { tipoCambio = null } = {}) {
-  const [lineas] = await db.query(
-    `SELECT i.codigo, i.descripcion, i.cantidad, i.subtotal, f.signo, f.letra, f.id AS factura_id, f.total AS total_factura
+// Puntos de venta de MercadoLibre (en cualquier empresa). Se puede cambiar con FACTURAS_PV_MERCADOLIBRE="6,9".
+const pvsMercadoLibre = () => String(process.env.FACTURAS_PV_MERCADOLIBRE || "6").split(/[,;\s]+/).map(Number).filter((n) => n > 0);
+const MODOS_ML = ["junto", "separar", "solo", "sin"];
+const nombreEmpresa = (e) => String(e || "Sin empresa").toLowerCase().replace(/(^|\s)\S/g, (c) => c.toUpperCase());
+
+/**
+ * Reparte las líneas en hojas.
+ *  porEmpresa: una hoja por empresa (si no, todo junto).
+ *  ml: "junto" (MercadoLibre con el resto) · "separar" (hoja aparte) · "solo" · "sin".
+ * Devuelve [{ nombre, empresa, canal, lineas }] en orden estable (empresa, después resto antes que MercadoLibre).
+ */
+function separarHojas(lineas, { porEmpresa = false, ml = "junto", pvML = pvsMercadoLibre() } = {}) {
+  const esML = (l) => pvML.includes(Number(String(l.punto_venta || "").replace(/\D/g, "")));
+  const grupos = new Map();
+  for (const l of lineas) {
+    const deML = esML(l);
+    if ((ml === "solo" && !deML) || (ml === "sin" && deML)) continue;
+    const empresa = porEmpresa ? nombreEmpresa(l.empresa) : null;
+    const canal = ml === "separar" ? (deML ? "MercadoLibre" : "Resto") : ml === "solo" ? "MercadoLibre" : ml === "sin" ? "Sin MercadoLibre" : null;
+    const clave = `${empresa || ""}|${ml === "separar" ? canal : ""}`;
+    if (!grupos.has(clave)) grupos.set(clave, { empresa, canal, lineas: [] });
+    grupos.get(clave).lineas.push(l);
+  }
+  const orden = (g) => `${g.empresa || ""}|${g.canal === "MercadoLibre" ? 1 : 0}`;
+  return [...grupos.values()]
+    .sort((a, b) => orden(a).localeCompare(orden(b)))
+    .map((g) => ({ ...g, nombre: [g.empresa, g.canal].filter(Boolean).join(" - ") || "Facturación" }));
+}
+
+/** Cantidad de facturas y notas de crédito distintas en unas líneas. */
+function contarComprobantes(lineas) {
+  const f = new Set();
+  const nc = new Set();
+  for (const l of lineas) (l.signo > 0 ? f : nc).add(l.factura_id);
+  return { facturas: f.size, notas_credito: nc.size };
+}
+
+async function informe(db, desde, hasta, { tipoCambio = null, porEmpresa = false, ml = "junto" } = {}) {
+  const [crudas] = await db.query(
+    `SELECT i.codigo, i.descripcion, i.cantidad, i.subtotal, f.signo, f.letra, f.empresa, f.punto_venta, f.id AS factura_id, f.total AS total_factura
        FROM factura_items i JOIN facturas f ON f.id = i.factura_id
       WHERE f.fecha BETWEEN ? AND ? AND f.signo <> 0`,
     [desde, hasta],
   );
-  const [[cuenta]] = await db.query("SELECT SUM(tipo = 'FACTURA') AS facturas, SUM(tipo = 'NOTA_CREDITO') AS notas_credito FROM facturas WHERE fecha BETWEEN ? AND ?", [desde, hasta]);
   const [[ultima]] = await db.query("SELECT DATE_FORMAT(MAX(fecha), '%Y-%m-%d') AS fecha, MAX(leida_at) AS leida FROM facturas");
   const { productos } = await costosCompletos(db);
+  const lineas = repartirTotales(crudas);
+  const grupos = separarHojas(lineas, { porEmpresa, ml });
+  const todas = grupos.flatMap((g) => g.lineas);
+  const hojas = grupos.map((g) => ({ nombre: g.nombre, empresa: g.empresa, canal: g.canal, comprobantes: contarComprobantes(g.lineas), ...armarInforme(g.lineas, productos, { tipoCambio }) }));
   return {
     desde,
     hasta,
-    comprobantes: { facturas: Number(cuenta?.facturas) || 0, notas_credito: Number(cuenta?.notas_credito) || 0 },
+    opciones: { por_empresa: porEmpresa, mercadolibre: ml, pv_mercadolibre: pvsMercadoLibre() },
+    comprobantes: contarComprobantes(todas),
     ultima_factura: ultima?.fecha || null,
     ultima_lectura: ultima?.leida || null,
-    ...armarInforme(repartirTotales(lineas), productos, { tipoCambio }),
+    // Todo junto (lo elegido), para el resumen; y las hojas del Excel.
+    ...armarInforme(todas, productos, { tipoCambio }),
+    hojas,
   };
 }
 
@@ -290,7 +333,8 @@ function registrarRutasFacturas(app, { db, requirePermiso }) {
       if (!fechaOk(desde) || !fechaOk(hasta) || desde > hasta) return res.status(400).json({ error: "Elegí un rango de fechas válido." });
       const tc = req.query.tc == null || req.query.tc === "" ? null : Number(String(req.query.tc).replace(",", "."));
       if (tc != null && !(tc > 0)) return res.status(400).json({ error: "Poné un tipo de cambio válido (pesos por dólar)." });
-      res.json(await informe(db, desde, hasta, { tipoCambio: tc }));
+      const ml = MODOS_ML.includes(req.query.ml) ? req.query.ml : "junto";
+      res.json(await informe(db, desde, hasta, { tipoCambio: tc, porEmpresa: req.query.empresas === "separadas", ml }));
     } catch (e) {
       console.error("[facturas] informe:", e);
       res.status(500).json({ error: e.message });
@@ -298,4 +342,4 @@ function registrarRutasFacturas(app, { db, requirePermiso }) {
   });
 }
 
-module.exports = { PERMISO, norm, validarComprobante, repartirTotales, armarInforme, asegurarTablasFacturas, guardarLote, informe, registrarRutasFacturas };
+module.exports = { PERMISO, norm, validarComprobante, repartirTotales, separarHojas, contarComprobantes, armarInforme, asegurarTablasFacturas, guardarLote, informe, registrarRutasFacturas };

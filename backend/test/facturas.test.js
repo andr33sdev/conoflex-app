@@ -92,6 +92,23 @@ test("informe: importes neto y total, y rentabilidad en US$ con el tipo de cambi
   assert.equal(r.tipo_cambio, 100);
 });
 
+test("hojas: por empresa y MercadoLibre (punto de venta 6) aparte, solo o afuera", () => {
+  const L = [
+    { empresa: "CONOPLAS", punto_venta: "0002", factura_id: 1, signo: 1 },
+    { empresa: "CONOPLAS", punto_venta: "0006", factura_id: 2, signo: 1 },
+    { empresa: "SERENPLAS", punto_venta: "0006", factura_id: 3, signo: 1 },
+    { empresa: "SERENPLAS", punto_venta: "0002", factura_id: 4, signo: -1 },
+  ];
+  const n = (o) => F.separarHojas(L, { pvML: [6], ...o }).map((h) => [h.nombre, h.lineas.length]);
+  assert.deepEqual(n({}), [["Facturación", 4]]);
+  assert.deepEqual(n({ porEmpresa: true }), [["Conoplas", 2], ["Serenplas", 2]]);
+  assert.deepEqual(n({ ml: "separar" }), [["Resto", 2], ["MercadoLibre", 2]]);
+  assert.deepEqual(n({ porEmpresa: true, ml: "separar" }), [["Conoplas - Resto", 1], ["Conoplas - MercadoLibre", 1], ["Serenplas - Resto", 1], ["Serenplas - MercadoLibre", 1]]);
+  assert.deepEqual(n({ ml: "solo" }), [["MercadoLibre", 2]]);
+  assert.deepEqual(n({ porEmpresa: true, ml: "sin" }), [["Conoplas - Sin MercadoLibre", 1], ["Serenplas - Sin MercadoLibre", 1]]);
+  assert.deepEqual(F.contarComprobantes(L), { facturas: 3, notas_credito: 1 });
+});
+
 test("informe: códigos con guiones o espacios distintos se encuentran igual", () => {
   const r = F.armarInforme([{ codigo: "2071LE-2R AZ", cantidad: 8, signo: 1 }], [{ codigo: "2071LE2RAZ", costo: 4, completo: true }]);
   assert.equal(r.filas[0].costo_total, 32);
@@ -142,6 +159,10 @@ test("con base: guarda lotes sin duplicar y arma el informe del rango", async ()
 
     const inf = await F.informe(db, "2026-11-01", "2026-11-30");
     assert.deepEqual(inf.comprobantes, { facturas: 1, notas_credito: 1 });
+    assert.deepEqual(inf.hojas.map((h) => h.nombre), ["Facturación"]);
+    // Las facturas de prueba son del punto de venta 0002: con "solo MercadoLibre" no queda nada.
+    assert.equal((await F.informe(db, "2026-11-01", "2026-11-30", { ml: "solo" })).filas.length, 0);
+    assert.deepEqual((await F.informe(db, "2026-11-01", "2026-11-30", { porEmpresa: true })).hojas.map((h) => h.nombre), ["Conoplas"]);
     assert.deepEqual(inf.filas.map((f) => [f.codigo, f.unidades, f.costo_unitario, f.costo_total]), [["2051-1R NA", 70, 3, 210]]);
     assert.equal(inf.ultima_factura, "2026-11-07");
     // Rango que deja afuera la nota de crédito.

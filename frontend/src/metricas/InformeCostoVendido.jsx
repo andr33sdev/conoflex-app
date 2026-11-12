@@ -35,9 +35,19 @@ function puedeVerInforme() {
   }
 }
 
-/** Arma el Excel solo con las columnas elegidas. */
-async function descargarExcel(d, sel) {
-  const XLSX = await import("xlsx");
+const EMPRESAS = [
+  { id: "juntas", titulo: "Todo junto" },
+  { id: "separadas", titulo: "Una hoja por empresa" },
+];
+const MERCADOLIBRE = [
+  { id: "junto", titulo: "Junto con el resto" },
+  { id: "separar", titulo: "En hoja aparte" },
+  { id: "solo", titulo: "Solo MercadoLibre" },
+  { id: "sin", titulo: "Sin MercadoLibre" },
+];
+
+/** Columnas del Excel según lo tildado. */
+function columnas(sel) {
   const cols = [
     { t: "Código", w: 18, v: (f) => f.codigo, tot: () => "TOTAL" },
     { t: "Descripción", w: 48, v: (f) => f.descripcion, tot: () => "" },
@@ -59,26 +69,70 @@ async function descargarExcel(d, sel) {
     return o.join(" ");
   };
   cols.push({ t: "Observación", w: 60, v: obs, tot: () => "" });
+  return { cols, conCosto, conImporte };
+}
 
-  const detalle = [`Del ${fechaAR(d.desde)} al ${fechaAR(d.hasta)}`, `${d.comprobantes.facturas} facturas y ${d.comprobantes.notas_credito} notas de crédito`];
-  if (conCosto) detalle.push("costo actual según receta, en US$");
-  if (conImporte) detalle.push("importes en $");
-  if (sel.rentabilidad) detalle.push(`rentabilidad con dólar a $ ${Number(d.tipo_cambio).toLocaleString("es-AR")}`);
-
-  const filas = [
-    ["Reporte de facturación (solo facturado)"],
-    [detalle.join(" · ")],
-    [],
-    cols.map((c) => c.t),
-    ...d.filas.map((f) => cols.map((c) => c.v(f))),
-    [],
-    cols.map((c) => c.tot(d.totales)),
-  ];
-  const hoja = XLSX.utils.aoa_to_sheet(filas);
-  hoja["!cols"] = cols.map((c) => ({ wch: c.w }));
+/** Arma el Excel: una hoja por grupo (empresa / MercadoLibre) con las columnas elegidas, y un resumen si hay varias. */
+async function descargarExcel(d, sel) {
+  const XLSX = await import("xlsx");
+  const { cols, conCosto, conImporte } = columnas(sel);
+  const notas = [];
+  if (conCosto) notas.push("costo actual según receta, en US$");
+  if (conImporte) notas.push("importes en $");
+  if (sel.rentabilidad) notas.push(`rentabilidad con dólar a $ ${Number(d.tipo_cambio).toLocaleString("es-AR")}`);
   const libro = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(libro, hoja, "Facturación");
+  const hojas = d.hojas?.length ? d.hojas : [{ nombre: "Facturación", ...d }];
+
+  if (hojas.length > 1) {
+    const tot = cols.filter((c) => c.tot({}) !== "" && c.t !== "Código");
+    const filas = [
+      ["Reporte de facturación (solo facturado) · Resumen"],
+      [[`Del ${fechaAR(d.desde)} al ${fechaAR(d.hasta)}`, ...notas].join(" · ")],
+      [],
+      ["Hoja", "Facturas", "Notas de crédito", "Productos", ...tot.map((c) => c.t)],
+      ...hojas.map((h) => [h.nombre, h.comprobantes.facturas, h.comprobantes.notas_credito, h.totales.productos, ...tot.map((c) => c.tot(h.totales))]),
+      [],
+      ["TOTAL", d.comprobantes.facturas, d.comprobantes.notas_credito, "", ...tot.map((c) => c.tot(d.totales))],
+    ];
+    const hoja = XLSX.utils.aoa_to_sheet(filas);
+    hoja["!cols"] = [{ wch: 30 }, { wch: 10 }, { wch: 16 }, { wch: 10 }, ...tot.map((c) => ({ wch: c.w }))];
+    XLSX.utils.book_append_sheet(libro, hoja, "Resumen");
+  }
+
+  for (const h of hojas) {
+    const filas = [
+      [`Reporte de facturación (solo facturado)${hojas.length > 1 ? ` · ${h.nombre}` : ""}`],
+      [[`Del ${fechaAR(d.desde)} al ${fechaAR(d.hasta)}`, `${h.comprobantes.facturas} facturas y ${h.comprobantes.notas_credito} notas de crédito`, ...notas].join(" · ")],
+      [],
+      cols.map((c) => c.t),
+      ...h.filas.map((f) => cols.map((c) => c.v(f))),
+      [],
+      cols.map((c) => c.tot(h.totales)),
+    ];
+    const hoja = XLSX.utils.aoa_to_sheet(filas);
+    hoja["!cols"] = cols.map((c) => ({ wch: c.w }));
+    XLSX.utils.book_append_sheet(libro, hoja, h.nombre.replace(/[\\/?*[\]:]/g, " ").slice(0, 31));
+  }
   XLSX.writeFile(libro, `reporte-facturacion_${d.desde}_a_${d.hasta}.xlsx`);
+}
+
+const TITULO = "text-xs font-bold uppercase tracking-widest text-zinc-500 mb-2";
+
+/** Opciones de a una (se elige solo una). */
+function Selector({ etiqueta, nota, opciones, valor, onCambio }) {
+  return (
+    <fieldset>
+      <legend className={TITULO}>{etiqueta}</legend>
+      <div className="grid grid-cols-2 gap-1.5" role="radiogroup" aria-label={etiqueta}>
+        {opciones.map((o) => (
+          <button key={o.id} type="button" role="radio" aria-checked={valor === o.id} onClick={() => onCambio(o.id)} className={`min-h-[44px] px-3 py-2 border text-sm font-bold text-left cursor-pointer transition-colors ${valor === o.id ? "border-[#FF5A00] bg-[#FF5A00]/10 text-white" : "border-zinc-800 text-zinc-400 hover:border-zinc-600 hover:text-white"}`}>
+            {o.titulo}
+          </button>
+        ))}
+      </div>
+      {nota && <p className="mt-1.5 text-xs text-zinc-500">{nota}</p>}
+    </fieldset>
+  );
 }
 
 export default function InformeCostoVendido() {
@@ -86,6 +140,8 @@ export default function InformeCostoVendido() {
   const [desde, setDesde] = useState(inicioMes);
   const [hasta, setHasta] = useState(hoy);
   const [sel, setSel] = useState({ costo_unitario: true, costo_total: true, importe_neto: false, importe_total: false, rentabilidad: false });
+  const [empresas, setEmpresas] = useState("juntas");
+  const [ml, setMl] = useState("junto");
   const [tc, setTc] = useState("");
   const [buscandoTc, setBuscandoTc] = useState(false);
   const [cargando, setCargando] = useState(false);
@@ -120,7 +176,7 @@ export default function InformeCostoVendido() {
     setCargando(true);
     setError("");
     try {
-      const q = new URLSearchParams({ desde, hasta });
+      const q = new URLSearchParams({ desde, hasta, empresas, ml });
       if (sel.rentabilidad) q.set("tc", String(tcNum));
       const d = await api(`/api/informes/costo-vendido?${q}`);
       await descargarExcel(d, sel);
@@ -163,8 +219,11 @@ export default function InformeCostoVendido() {
                 </label>
               </div>
 
+              <Selector etiqueta="Empresas" opciones={EMPRESAS} valor={empresas} onCambio={(v) => { setEmpresas(v); setUltimo(null); }} nota={empresas === "separadas" ? "Conoplas y Serenplas, cada una en su hoja." : null} />
+              <Selector etiqueta="MercadoLibre (punto de venta 0006)" opciones={MERCADOLIBRE} valor={ml} onCambio={(v) => { setMl(v); setUltimo(null); }} />
+
               <fieldset>
-                <legend className="text-xs font-bold uppercase tracking-widest text-zinc-500 mb-2">Qué incluir</legend>
+                <legend className={TITULO}>Qué incluir</legend>
                 <div className="flex flex-col gap-1.5">
                   {OPCIONES.map((o) => (
                     <button key={o.id} type="button" role="checkbox" aria-checked={sel[o.id]} onClick={() => alternar(o.id)} className={`w-full min-h-[52px] flex items-center gap-3 px-3 py-2 border text-left cursor-pointer transition-colors ${sel[o.id] ? "border-[#FF5A00] bg-[#FF5A00]/10" : "border-zinc-800 hover:border-zinc-600"}`}>
@@ -193,7 +252,7 @@ export default function InformeCostoVendido() {
               {error && <p className="text-sm text-rose-300">{error}</p>}
               {ultimo && (
                 <div className="text-sm text-zinc-300 border border-zinc-800 p-3 flex flex-col gap-1">
-                  <span>Descargado: {ultimo.totales.productos} productos, {ultimo.totales.unidades.toLocaleString("es-AR")} unidades.</span>
+                  <span>Descargado: {ultimo.totales.productos} productos, {ultimo.totales.unidades.toLocaleString("es-AR")} unidades{ultimo.hojas?.length > 1 ? `, en ${ultimo.hojas.length} hojas más el resumen` : ""}.</span>
                   {sel.costo_total && <span>Costo total: <b className="text-white">{plata(ultimo.totales.costo_total, "US$")}</b></span>}
                   {sel.importe_neto && <span>Importe neto: <b className="text-white">{plata(ultimo.totales.importe_neto, "$")}</b></span>}
                   {sel.importe_total && <span>Importe total: <b className="text-white">{plata(ultimo.totales.importe_total, "$")}</b></span>}
