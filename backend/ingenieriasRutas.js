@@ -138,7 +138,9 @@ function resumenCambios(antes, despues) {
  */
 function formulaDeFoto(foto) {
   if (!foto) return null;
-  const mp = foto.ingredientes.filter((i) => i.tipo === "MP");
+  const todas = foto.ingredientes.filter((i) => i.tipo === "MP");
+  const conTachada = todas.filter((i) => i.cantidad_tachada != null);
+  const mp = conTachada.length ? conTachada : todas.filter((i) => F.esKilos(i.unidad));
   if (!mp.length) return null;
   const lineas = mp.map((i) => ({ mp_id: i.id, codigo: i.codigo, nombre: i.nombre, kg_tachada: i.cantidad_tachada != null ? i.cantidad_tachada : i.cantidad }));
   const peso = foto.peso_pieza_kg > 0 ? foto.peso_pieza_kg : F.redondear(mp.reduce((a, i) => a + i.cantidad, 0), 6);
@@ -163,21 +165,24 @@ function prepararReceta(body, { esSE = false } = {}) {
     proceso = procesoValido(body.proceso);
     if (!proceso) return { error: "Elegí cómo se hace: Inyección, Rotomoldeo, Extrusión o Tercerizado." };
   }
-  const tieneTachada = mp.some((i) => i.cantidad_tachada != null && i.cantidad_tachada !== "");
-  if (proceso === "INYECCION" && mp.length && !mp.every((i) => i.cantidad_tachada != null && i.cantidad_tachada !== "")) return { error: "La inyección se define por tachada: poné los kg de cada material por tachada." };
+  const conValor = (i) => i.cantidad_tachada != null && i.cantidad_tachada !== "";
+  // Solo lo que se pesa entra en la tachada; lo que va por unidad (insertos, piezas compradas) va siempre por pieza.
+  if (proceso === "INYECCION" && mp.some((i) => F.esKilos(i.unidad_medida) && !conValor(i))) return { error: "La inyección se define por tachada: poné los kg de cada material por tachada." };
   // Fuera de la inyección la receta es por pieza: si llegara una tachada, se ignora.
-  const conTachada = proceso ? proceso === "INYECCION" && tieneTachada : tieneTachada;
+  const enTachada = mp.filter((i) => conValor(i) && F.esKilos(i.unidad_medida) && (!proceso || proceso === "INYECCION"));
+  const porPieza = mp.filter((i) => !enTachada.includes(i));
   const filas = [];
   let peso = null;
-  if (conTachada) {
+  if (enTachada.length) {
     peso = F.numero(body.peso_pieza_kg);
     if (!(peso > 0)) return { error: "Poné cuánto pesa la pieza (kg) para calcular cuánto lleva de cada material." };
-    const v = F.validarLineas(mp.map((i) => ({ mp_id: i.materia_prima_id, kg_tachada: i.cantidad_tachada, codigo: i.codigo, nombre: i.nombre })));
+    const v = F.validarLineas(enTachada.map((i) => ({ mp_id: i.materia_prima_id, kg_tachada: i.cantidad_tachada, codigo: i.codigo, nombre: i.nombre })));
     if (v.error) return { error: v.error };
     for (const c of F.cantidadesPorPieza(v.lineas, peso)) filas.push({ materia_prima_id: c.mp_id, semielaborado_id: null, cantidad: c.kg_pieza, cantidad_tachada: c.kg_tachada, unidad_medida: "Kg" });
-  } else {
-    const ids = new Set();
-    for (const i of mp) {
+  }
+  {
+    const ids = new Set(enTachada.map((i) => i.materia_prima_id));
+    for (const i of porPieza) {
       if (ids.has(i.materia_prima_id)) return { error: "Hay una materia prima repetida en la receta." };
       ids.add(i.materia_prima_id);
       const c = F.numero(i.cantidad);
@@ -185,7 +190,7 @@ function prepararReceta(body, { esSE = false } = {}) {
       filas.push({ materia_prima_id: i.materia_prima_id, semielaborado_id: null, cantidad: c, cantidad_tachada: null, unidad_medida: i.unidad_medida || "Unidades" });
     }
     const p = F.numero(body.peso_pieza_kg);
-    if (p > 0 && proceso !== "TERCERIZADO") peso = p;
+    if (peso == null && p > 0 && proceso !== "TERCERIZADO") peso = p;
   }
   const seIds = new Set();
   for (const i of se) {

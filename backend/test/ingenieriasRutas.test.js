@@ -65,6 +65,31 @@ test("producto terminado: no lleva proceso", () => {
   assert.equal(prepararReceta({ nombre_version: "x", ingredientes: [{ semielaborado_id: 3, cantidad: 1 }] }).proceso, null);
 });
 
+test("inyección: las materias primas por unidad van por pieza, fuera de la tachada", () => {
+  const r = prepararReceta({ nombre_version: "x", proceso: "INYECCION", peso_pieza_kg: 1, ingredientes: [
+    { materia_prima_id: 1, cantidad_tachada: 20, unidad_medida: "Kg" },
+    { materia_prima_id: 2, cantidad_tachada: 5, unidad_medida: "Kg" },
+    { materia_prima_id: 3, cantidad: 2, unidad_medida: "UNIDADES" },
+  ] }, { esSE: true });
+  assert.equal(r.error, undefined);
+  assert.equal(r.peso, 1);
+  assert.deepEqual(r.filas.map((f) => [f.materia_prima_id, f.cantidad, f.cantidad_tachada, f.unidad_medida]), [[1, 0.8, 20, "Kg"], [2, 0.2, 5, "Kg"], [3, 2, null, "UNIDADES"]]);
+});
+
+test("rotomoldeo: una materia prima en unidades conserva su unidad", () => {
+  const r = prepararReceta({ nombre_version: "x", proceso: "ROTOMOLDEO", ingredientes: [{ materia_prima_id: 1, cantidad: 1.5, unidad_medida: "Kg" }, { materia_prima_id: 4, cantidad: 1, unidad_medida: "UNIDADES" }] }, { esSE: true });
+  assert.deepEqual(r.filas.map((f) => f.unidad_medida), ["Kg", "UNIDADES"]);
+});
+
+test("fórmula de producción: deja afuera lo que va por unidad", () => {
+  const f = formulaDeFoto({ peso_pieza_kg: 1, ingredientes: [
+    { tipo: "MP", id: 1, cantidad: 0.8, cantidad_tachada: 20, unidad: "Kg" },
+    { tipo: "MP", id: 3, cantidad: 2, cantidad_tachada: null, unidad: "UNIDADES" },
+  ] });
+  assert.deepEqual(f.lineas.map((l) => l.mp_id), [1]);
+  assert.equal(f.con_tachada, true);
+});
+
 test("tercerizado: materias primas por unidad, sin tachada ni peso", () => {
   const r = prepararReceta({ nombre_version: "x", proceso: "tercerizado", peso_pieza_kg: 1, ingredientes: [{ materia_prima_id: 7, cantidad: 1, cantidad_tachada: 3, unidad_medida: "Unidades" }] }, { esSE: true });
   assert.equal(r.error, undefined);

@@ -4,7 +4,8 @@ import { AlertTriangle, Check, Loader2, Plus, Search, Trash2 } from "lucide-reac
 import { Drawer } from "../produccion/ui";
 import { api } from "../produccion/util";
 import { BarraComposicion } from "./Receta";
-import { COLORES, aNum, conPct, kgLindo, nf, norm } from "./formato";
+import { abrev } from "../materias/util";
+import { COLORES, aNum, conPct, esKilos, kgLindo, nf, norm } from "./formato";
 
 const campo = "w-full min-h-[48px] rounded-2xl bg-[#17171c] border border-white/[0.1] px-4 text-base text-white placeholder:text-zinc-600 focus:outline-none focus:border-[#FF5A00]/70";
 const MAX_RESULTADOS = 8;
@@ -19,8 +20,11 @@ const PROCESOS = [
 function Cuerpo({ parent, receta, cantidadRecetas, materias, semis, procesoSugerido, onCerrar, onGuardado, toast }) {
   const esSE = parent.type === "SE";
   const ings = receta?.ingredientes || [];
-  const sinTachada = esSE && ings.some((i) => i.item_type === "MP" && i.cantidad_tachada == null);
-  const pesoInicial = receta?.peso_pieza_kg != null ? Number(receta.peso_pieza_kg) : sinTachada ? Math.round(ings.filter((i) => i.item_type === "MP").reduce((a, i) => a + Number(i.cantidad), 0) * 1e4) / 1e4 : "";
+  // La unidad la manda la materia prima (Materias primas); si no está en la lista, la guardada en la receta.
+  const unidadDe = (id, guardada) => materias.find((m) => m.id === id)?.unidad_medida || guardada || "KILOS";
+  const pesables = ings.filter((i) => i.item_type === "MP" && esKilos(unidadDe(i.materia_prima_id, i.unidad_medida)));
+  const sinTachada = esSE && pesables.some((i) => i.cantidad_tachada == null);
+  const pesoInicial = receta?.peso_pieza_kg != null ? Number(receta.peso_pieza_kg) : sinTachada ? Math.round(pesables.reduce((a, i) => a + Number(i.cantidad), 0) * 1e4) / 1e4 : "";
 
   const [nombre, setNombre] = useState(receta?.nombre_version || `Receta v${cantidadRecetas + 1}`);
   const [proceso, setProceso] = useState(esSE ? receta?.proceso || procesoSugerido || "" : "");
@@ -34,7 +38,7 @@ function Cuerpo({ parent, receta, cantidadRecetas, materias, semis, procesoSuger
       nombre: i.item_nombre,
       valor: String(i.item_type === "MP" && esSE ? (i.cantidad_tachada != null ? i.cantidad_tachada : i.cantidad) : i.cantidad),
       unidad: "kg",
-      unidad_medida: i.unidad_medida,
+      unidad_medida: i.item_type === "MP" ? unidadDe(i.materia_prima_id, i.unidad_medida) : i.unidad_medida,
     })),
   );
   const [catalogo, setCatalogo] = useState("MP");
@@ -45,7 +49,8 @@ function Cuerpo({ parent, receta, cantidadRecetas, materias, semis, procesoSuger
   // En el semielaborado los materiales van en kg (o g); solo la inyección los define por tachada.
   // Tercerizado: van en la unidad de cada materia prima (ej. 1 unidad de lo que se compra hecho).
   const tercerizado = proceso === "TERCERIZADO";
-  const enKg = (f) => esSE && f.tipo === "MP" && !tercerizado;
+  // Lo que se cuenta por unidad (o metros, litros…) va siempre en su unidad, en cualquier proceso.
+  const enKg = (f) => esSE && f.tipo === "MP" && !tercerizado && esKilos(f.unidad_medida);
   const enTachada = (f) => enKg(f) && proceso === "INYECCION";
   const convertida = proceso === "INYECCION" && sinTachada;
   const kgDe = (f) => aNum(f.valor) / (f.unidad === "g" ? 1000 : 1);
@@ -72,7 +77,7 @@ function Cuerpo({ parent, receta, cantidadRecetas, materias, semis, procesoSuger
   }, [catalogo, buscar, materias, semis, filas, esSE, parent.id]);
 
   const agregar = (x) => {
-    setFilas((fs) => [...fs, { tipo: catalogo, id: x.id, codigo: x.codigo, nombre: x.nombre, valor: "", unidad: "kg", unidad_medida: x.unidad_medida || (catalogo === "MP" ? "Kg" : "Unidades") }]);
+    setFilas((fs) => [...fs, { tipo: catalogo, id: x.id, codigo: x.codigo, nombre: x.nombre, valor: "", unidad: "kg", unidad_medida: x.unidad_medida || (catalogo === "MP" ? "KILOS" : "Unidades") }]);
     setBuscar("");
   };
   const cambiar = (idx, parte) => setFilas((fs) => fs.map((f, i) => (i === idx ? { ...f, ...parte } : f)));
@@ -94,7 +99,7 @@ function Cuerpo({ parent, receta, cantidadRecetas, materias, semis, procesoSuger
             ? { materia_prima_id: f.id, cantidad_tachada: kgDe(f), unidad_medida: "Kg" }
             : enKg(f)
               ? { materia_prima_id: f.id, cantidad: kgDe(f), unidad_medida: "Kg" }
-              : { materia_prima_id: f.id, cantidad: aNum(f.valor), unidad_medida: f.unidad_medida || (tercerizado ? "Unidades" : "Kg") }
+              : { materia_prima_id: f.id, cantidad: aNum(f.valor), unidad_medida: f.unidad_medida || "KILOS" }
           : { semielaborado_id: f.id, cantidad: aNum(f.valor), unidad_medida: f.unidad_medida || "Unidades" },
       ),
     };
@@ -163,7 +168,7 @@ function Cuerpo({ parent, receta, cantidadRecetas, materias, semis, procesoSuger
           <div className="flex items-end justify-between gap-3 mb-3">
             <div>
               <h3 className="text-base font-extrabold text-white">{proceso === "INYECCION" ? "Fórmula por tachada" : tercerizado ? "Materias primas por pieza" : esSE ? "Materiales por pieza" : "Materiales por unidad"}</h3>
-              <p className="text-xs text-zinc-500 mt-0.5">{proceso === "INYECCION" ? "Cuánto lleva cada material en una tachada. El sistema saca los porcentajes y lo que lleva cada pieza." : tercerizado ? "Lo hace otro. Poné cuántas unidades de cada materia prima equivalen a una pieza (ej. 1 unidad de lo que se compra)." : esSE ? "Cuánto lleva cada pieza de cada material." : "Cantidad de cada material por cada unidad producida."}</p>
+              <p className="text-xs text-zinc-500 mt-0.5">{proceso === "INYECCION" ? "Cuánto lleva cada material en una tachada. El sistema saca los porcentajes y lo que lleva cada pieza." : tercerizado ? "Lo hace otro. Poné cuánto de cada materia prima, en su unidad, equivale a una pieza (ej. 1 u. de lo que se compra)." : esSE ? "Cuánto lleva cada pieza de cada material." : "Cantidad de cada material por cada unidad producida."}</p>
             </div>
             {esSE && proceso !== "INYECCION" && kgPorPieza > 0 && <span className="text-sm font-bold text-zinc-300 shrink-0">Pieza: <b className="text-white">{nf(kgPorPieza, 3)} kg</b></span>}
             {tachada.length > 0 && <span className="text-sm font-bold text-zinc-300 shrink-0">Tachada: <b className="text-white">{nf(total, 3)} kg</b></span>}
@@ -198,7 +203,7 @@ function Cuerpo({ parent, receta, cantidadRecetas, materias, semis, procesoSuger
                               <option value="g">g</option>
                             </select>
                           ) : (
-                            <span className="px-3 grid place-items-center bg-white/[0.05] border-l border-white/[0.08] text-sm font-bold text-zinc-400">{f.tipo === "MP" ? f.unidad_medida || (tercerizado ? "Unidades" : "Kg") : "u."}</span>
+                            <span className="px-3 grid place-items-center bg-white/[0.05] border-l border-white/[0.08] text-sm font-bold text-zinc-400">{f.tipo === "MP" ? abrev(f.unidad_medida) : "u."}</span>
                           )}
                         </div>
                         {p && (
@@ -234,7 +239,7 @@ function Cuerpo({ parent, receta, cantidadRecetas, materias, semis, procesoSuger
             {resultados.slice(0, MAX_RESULTADOS).map((x) => (
               <li key={x.id}>
                 <button type="button" onClick={() => agregar(x)} className="w-full min-h-[52px] text-left flex items-center gap-3 rounded-xl border border-white/[0.06] bg-white/[0.03] px-3.5 py-2 hover:bg-white/[0.07] hover:border-[#FF5A00]/40 transition-colors cursor-pointer">
-                  <span className="min-w-0 flex-1"><span className="block text-sm font-bold text-white truncate">{x.nombre}</span><span className="block text-xs text-zinc-500">{x.codigo}</span></span>
+                  <span className="min-w-0 flex-1"><span className="block text-sm font-bold text-white truncate">{x.nombre}</span><span className="block text-xs text-zinc-500">{x.codigo}{catalogo === "MP" ? ` · ${abrev(x.unidad_medida)}` : ""}</span></span>
                   <span className="shrink-0 w-8 h-8 grid place-items-center rounded-lg bg-[#FFD60A] text-black"><Plus size={16} strokeWidth={3} /></span>
                 </button>
               </li>

@@ -10,7 +10,12 @@ export const UNIDADES = [
   { v: "PAQUETES", c: "paq", t: "Paquetes" },
   { v: "ROLLOS", c: "rollo", t: "Rollos" },
 ];
-export const abrev = (u) => UNIDADES.find((x) => x.v === String(u || "KILOS").toUpperCase())?.c || String(u || "kg").toLowerCase();
+// Acepta también el singular o la abreviatura ("Unidad", "Kg", "u").
+const ALIAS = { KG: "KILOS", KILO: "KILOS", UNIDAD: "UNIDADES", U: "UNIDADES", UN: "UNIDADES", UNI: "UNIDADES", LITRO: "LITROS", METRO: "METROS", PAQUETE: "PAQUETES", ROLLO: "ROLLOS" };
+export const abrev = (u) => {
+  const k = String(u || "KILOS").trim().toUpperCase();
+  return UNIDADES.find((x) => x.v === (ALIAS[k] || k))?.c || String(u || "kg").toLowerCase();
+};
 export const PLANTAS = ["Argentina", "Paraguay"];
 
 /** Costo en dólares: "US$ 2,60". */

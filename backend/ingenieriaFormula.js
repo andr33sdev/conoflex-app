@@ -80,4 +80,7 @@ function firma(f) {
   });
 }
 
-module.exports = { redondear, numero, validarLineas, totalTachada, conPorcentajes, cantidadesPorPieza, compararFormulas, firma };
+/** La unidad es de peso (kilos)? Sin unidad se toma como kilos, igual que en Materias primas. */
+const esKilos = (u) => !u || /^(kg|kgs|kilo|kilos|kilogramos?)$/i.test(String(u).trim());
+
+module.exports = { esKilos, redondear, numero, validarLineas, totalTachada, conPorcentajes, cantidadesPorPieza, compararFormulas, firma };
