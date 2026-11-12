@@ -62,3 +62,21 @@ test("facturas de exportación (E): tipo por el código o por el nombre, aunque 
   assert.equal(r.letra, "E");
   assert.equal(P.leerComprobante([sinCod], "21 0004-00000009 55000000018.pdf").tipo, "NOTA_CREDITO");
 });
+
+test("factura B: el importe del ítem viene con IVA y se le saca con el Iva Contenido del pie", () => {
+  const b = [
+    w("B", 288, 773), w("FACTURA", 342, 773),
+    w("COD.", 282, 758), w("006", 312, 758), w("Punto de Venta:", 342, 758), w("0006", 414, 758), w("Comp. Nro:", 444, 758), w("00001282", 498, 758),
+    w("de Serenplas S.R.L", 120, 747), w("Fecha de Emisión:", 342, 747), w("10/11/2026", 431, 747),
+    w("Cant.", 30, 564), w("Codigo", 105, 564), w("Descripcion", 184, 564), w("Detalle", 318, 564), w("Total", 542, 564),
+    w("10,00", 29, 545), w("UN", 54, 545), w("2071LE-2R NA", 72, 545), w("CONO MOD. ECONO", 174, 545), w("MAYORISTA", 264, 545), w("MARKETPLACE", 289, 545),
+    w("24.915,00", 384, 545), w("0,00", 420, 545), w("0,00", 449, 545), w("0,00", 469, 545), w("24.915,00", 490, 545), w("249.150,00", 534, 545),
+    w("LE ALT. 70 cm 2 REF.", 174, 537),
+    w("Obs:", 36, 238), w("Perc. de IIBB pcia. Bs.As.: $", 377, 171), w("0,00", 536, 171),
+    w("Iva Contenido :", 37, 159), w("43240.91", 151, 159), w("Importe Total: $", 411, 159), w("249.150,00", 507, 159),
+  ];
+  const r = P.leerComprobante([b], "06 0006-00001282 20222222223.pdf");
+  assert.equal(r.letra, "B");
+  assert.equal(r.total, 249150);
+  assert.deepEqual(r.items.map((i) => [i.cantidad, i.codigo, i.precio_unitario, i.subtotal]), [[10, "2071LE-2R NA", 20590.91, 205909.09]]);
+});

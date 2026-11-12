@@ -32,4 +32,5 @@ Con eso, el informe **Costo de lo vendido** (Métricas & KPI) usa siempre lo rea
 
 - Ver qué hace: `pm2 logs lector-facturas`
 - Si un PDF no se pudo leer, queda en `procesados.json` con el error y se reintenta hasta 3 veces.
+- Facturas y notas de crédito B: desde la versión 2 se lee su importe (viene con IVA y se le saca con el "Iva Contenido" del pie). Al actualizar, las B ya leídas se vuelven a leer solas una vez.
 - Para volver a leer todo (por ejemplo, si cambia el formato de factura): borrá `procesados.json` y `pm2 restart lector-facturas`. No se duplica nada: la app reconoce cada comprobante por su número.

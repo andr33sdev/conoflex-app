@@ -24,6 +24,9 @@ const CADA_MINUTOS = Math.max(1, Number(process.env.CADA_MINUTOS) || 5);
 const LOTE = 25;
 const MAX_INTENTOS = 3;
 const ESTADO = path.join(__dirname, "procesados.json");
+// Versión del lector. 2: lee el importe de las facturas y notas de crédito B (06, 07, 08, 206, 208).
+const VERSION = 2;
+const ES_B = /^(0?6|0?7|0?8|206|208)\s/;
 
 const log = (...a) => console.log(new Date().toLocaleString("es-AR"), ...a);
 
@@ -65,7 +68,9 @@ async function vuelta() {
         if (!/\.pdf$/i.test(nombre)) continue;
         const clave = `${path.basename(carpeta)}/${nombre}`;
         const e = estado[clave];
-        if (e && (e.ok || e.viejo || (e.intentos || 0) >= MAX_INTENTOS)) continue;
+        // Las facturas/NC B leídas antes de la versión 2 quedaron sin importe: se vuelven a leer una vez.
+        const releer = e?.ok && (e.v || 1) < VERSION && ES_B.test(nombre);
+        if (e && !releer && (e.ok || e.viejo || (e.intentos || 0) >= MAX_INTENTOS)) continue;
         const ruta = path.join(carpeta, nombre);
         let st;
         try {
@@ -83,7 +88,7 @@ async function vuelta() {
     guardarEstado();
     if (!pendientes.length) return;
     pendientes.sort((a, b) => b.mtime - a.mtime);
-    log(`${pendientes.length} comprobantes nuevos para leer`);
+    log(`${pendientes.length} comprobantes para leer`);
 
     // 2) Leer y subir de a lotes.
     let lote = [];
@@ -94,7 +99,7 @@ async function vuelta() {
       lote = [];
       try {
         await subir(actual.map((x) => x.datos));
-        for (const x of actual) estado[x.clave] = { ok: true };
+        for (const x of actual) estado[x.clave] = { ok: true, v: VERSION };
         subidos += actual.length;
         if (subidos % 500 < actual.length) log(`… ${subidos} de ${pendientes.length} subidos`);
       } catch (e) {

@@ -101,10 +101,18 @@ function leerComprobante(paginas, archivo = "") {
       const cantidad = numero(tk[0].s);
       const unidad = tk[1].s.trim();
       const codigoArt = tk[2].s.trim();
-      // Columnas numéricas del final: ... Precio C/Dto | Subtotal | Alícuota % | Subtotal c/IVA
+      // Factura A: ... Precio C/Dto | Subtotal (sin IVA) | Alícuota % | Subtotal c/IVA
+      // Factura B (no discrimina IVA): ... Precio C/Dto | Total (con IVA). El IVA va al pie ("Iva Contenido").
       const iPct = tk.findIndex((x) => /%$/.test(x.s.trim()));
-      const subtotal = iPct > 0 ? numero(tk[iPct - 1].s) : null;
-      const precioUnit = iPct > 1 ? numero(tk[iPct - 2].s) : null;
+      const nums = tk.filter((x, i) => i > 2 && NUM.test(x.s.trim()));
+      let subtotal = iPct > 0 ? numero(tk[iPct - 1].s) : null;
+      let precioUnit = iPct > 1 ? numero(tk[iPct - 2].s) : null;
+      let conIva = false;
+      if (iPct < 0 && nums.length >= 2) {
+        subtotal = numero(nums[nums.length - 1].s);
+        precioUnit = numero(nums[nums.length - 2].s);
+        conIva = true;
+      }
       const primeraNum = tk.findIndex((x, i) => i > 2 && NUM.test(x.s.trim()));
       const desc = [tk.slice(3, primeraNum > 0 ? primeraNum : tk.length).filter((x) => x.x < finDesc).map((x) => x.s.trim()).join(" ")];
       // La descripción sigue en los renglones de abajo (sin cantidad) hasta el próximo ítem.
@@ -116,7 +124,7 @@ function leerComprobante(paginas, archivo = "") {
         if (!extra.length || n.some((x) => x.x < 60)) break;
         desc.push(extra.join(" "));
       }
-      items.push({ codigo: codigoArt, descripcion: desc.join(" ").replace(/\s+/g, " ").trim().slice(0, 255), unidad, cantidad, precio_unitario: precioUnit == null ? null : Math.abs(precioUnit), subtotal: subtotal == null ? null : Math.abs(subtotal) });
+      items.push({ codigo: codigoArt, descripcion: desc.join(" ").replace(/\s+/g, " ").trim().slice(0, 255), unidad, cantidad, precio_unitario: precioUnit == null ? null : Math.abs(precioUnit), subtotal: subtotal == null ? null : Math.abs(subtotal), conIva });
     }
   }
 
@@ -124,6 +132,19 @@ function leerComprobante(paginas, archivo = "") {
   const refFc = (oc.match(/FC\s*(\d{4})-(\d{8})/i) || []).slice(1);
   const pie = paginas.flatMap((p) => renglones(p));
   const total = numero(despuesDe(pie, "Importe Total") || "");
+  // Factura B: los importes de los ítems traen IVA. Se les saca en proporción con el "Iva Contenido" del pie,
+  // así el subtotal queda sin IVA igual que en la factura A.
+  const conIva = items.filter((i) => i.conIva && i.subtotal != null);
+  if (conIva.length) {
+    const iva = Math.abs(numero(despuesDe(pie, "Iva Contenido") || "") || 0);
+    const suma = conIva.reduce((a, i) => a + i.subtotal, 0);
+    const factor = suma > 0 && iva < suma ? (suma - iva) / suma : 1;
+    for (const i of conIva) {
+      i.subtotal = Math.round(i.subtotal * factor * 100) / 100;
+      if (i.precio_unitario != null) i.precio_unitario = Math.round(i.precio_unitario * factor * 100) / 100;
+    }
+  }
+  for (const i of items) delete i.conIva;
   return {
     empresa,
     codigo_tipo: codigo,
