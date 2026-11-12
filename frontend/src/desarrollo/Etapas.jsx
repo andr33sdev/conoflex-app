@@ -1,12 +1,18 @@
 // Etapas del R.032: detalle, estado y aprobación de cada una.
 import { useState } from "react";
-import { Ban, Check, Clock, Loader2, Pencil, Send, X } from "lucide-react";
+import { Ban, Check, Clock, Loader2, Pencil, Send, UserCheck, X } from "lucide-react";
 import { api } from "../produccion/util";
 import { botonPrimario, botonSecundario, campo, fechaCorta, fechaHora } from "./formato";
 
 function Aprobacion({ e }) {
   if (e.estado === "NO_APLICA") return <span className="text-xs text-zinc-500">No aplica</span>;
-  if (e.aprobacion_estado === "APROBADA") return <span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-300"><Check size={14} /> Aprobó {e.aprobador_nombre} · {fechaHora(e.aprobado_at)}</span>;
+  if (e.aprobacion_estado === "APROBADA")
+    return (
+      <span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-300">
+        <Check size={14} /> Aprobó {e.aprobador_nombre} · {e.aprobacion_registrada_por ? fechaCorta(e.aprobado_at) : fechaHora(e.aprobado_at)}
+        {e.aprobacion_registrada_por && <span className="font-normal text-zinc-500">(cargado por {e.aprobacion_registrada_por})</span>}
+      </span>
+    );
   if (e.aprobacion_estado === "PEDIDA") return <span className="inline-flex items-center gap-1 text-xs font-semibold text-amber-300"><Clock size={14} /> Esperando a {e.aprobador_nombre}</span>;
   if (e.aprobacion_estado === "RECHAZADA") return <span className="inline-flex items-center gap-1 text-xs font-semibold text-rose-300"><X size={14} /> No aprobó {e.aprobador_nombre}</span>;
   return null;
@@ -17,6 +23,9 @@ function Etapa({ e, p, accion, usuarios, n }) {
   const [detalle, setDetalle] = useState(e.detalle || "");
   const [pidiendo, setPidiendo] = useState(false);
   const [aprobador, setAprobador] = useState("");
+  const [cargando, setCargando] = useState(false);
+  const hoy = new Date().toISOString().slice(0, 10);
+  const [manual, setManual] = useState({ nombre: "", fecha: hoy, comentario: "" });
   const [guardando, setGuardando] = useState(false);
   const url = `/api/desarrollo/proyectos/${p.id}/etapas/${e.etapa}`;
 
@@ -28,6 +37,13 @@ function Etapa({ e, p, accion, usuarios, n }) {
   };
   const pedir = async () => {
     if (await accion(() => api(`${url}/pedir-aprobacion`, { method: "POST", body: { aprobador_id: Number(aprobador) } }), "Listo, le llegó el aviso.")) setPidiendo(false);
+  };
+  const cargarAprobacion = async (ev) => {
+    ev.preventDefault();
+    if (await accion(() => api(`${url}/registrar-aprobacion`, { method: "POST", body: manual }), `Aprobación de ${manual.nombre} guardada.`)) {
+      setCargando(false);
+      setManual({ nombre: "", fecha: hoy, comentario: "" });
+    }
   };
   const noAplica = () => accion(() => api(url, { method: "PUT", body: { estado: e.estado === "NO_APLICA" ? "EN_CURSO" : "NO_APLICA" } }), e.estado === "NO_APLICA" ? "La etapa vuelve a contar." : "Marcada como «no aplica».");
   const cerrar = () => accion(() => api(url, { method: "PUT", body: { estado: "LISTA" } }), "Etapa cerrada.");
@@ -71,7 +87,10 @@ function Etapa({ e, p, accion, usuarios, n }) {
 
           {!editando && p.estado !== "DESCARTADO" && (
             <div className="mt-3 flex items-center gap-2 flex-wrap">
-              {e.aprobable && !vacio && e.estado !== "NO_APLICA" && e.aprobacion_estado !== "APROBADA" && e.aprobacion_estado !== "PEDIDA" && !pidiendo && (
+              {e.aprobable && e.estado !== "NO_APLICA" && e.aprobacion_estado !== "APROBADA" && !cargando && !pidiendo && (
+                <button onClick={() => setCargando(true)} className={botonSecundario}><UserCheck size={15} /> Cargar aprobación</button>
+              )}
+              {e.aprobable && !vacio && e.estado !== "NO_APLICA" && e.aprobacion_estado !== "APROBADA" && e.aprobacion_estado !== "PEDIDA" && !pidiendo && !cargando && (
                 <button onClick={() => setPidiendo(true)} className={botonSecundario}><Send size={15} /> Pedir aprobación</button>
               )}
               {e.aprobacion_estado === "PEDIDA" && !pidiendo && <button onClick={() => setPidiendo(true)} className="text-xs text-zinc-400 hover:text-white cursor-pointer">Pedírsela a otra persona</button>}
@@ -80,6 +99,27 @@ function Etapa({ e, p, accion, usuarios, n }) {
                 <button onClick={noAplica} className="inline-flex items-center gap-1.5 text-xs text-zinc-500 hover:text-white cursor-pointer px-2 py-2"><Ban size={14} /> {e.estado === "NO_APLICA" ? "Sí aplica" : "No aplica"}</button>
               )}
             </div>
+          )}
+          {cargando && (
+            <form onSubmit={cargarAprobacion} className="mt-3 rounded-xl border border-zinc-800 bg-black/40 p-3 flex flex-col gap-3">
+              <p className="text-xs text-zinc-400">Si ya lo aprobaron (en persona, por teléfono, por mail), cargalo acá. Queda registrado que lo cargaste vos.</p>
+              <div className="grid gap-3 sm:grid-cols-[1fr_160px]">
+                <label className="flex flex-col gap-1.5 text-xs font-semibold text-zinc-400">
+                  Aprobado por
+                  <input autoFocus required list={`aprobadores-${e.etapa}`} value={manual.nombre} onChange={(ev) => setManual((m) => ({ ...m, nombre: ev.target.value }))} maxLength={120} placeholder="Nombre de quien aprobó" className={campo} />
+                  <datalist id={`aprobadores-${e.etapa}`}>{usuarios.map((u) => <option key={u.id} value={u.nombre} />)}</datalist>
+                </label>
+                <label className="flex flex-col gap-1.5 text-xs font-semibold text-zinc-400">
+                  Fecha
+                  <input type="date" required max={hoy} value={manual.fecha} onChange={(ev) => setManual((m) => ({ ...m, fecha: ev.target.value }))} className={campo} />
+                </label>
+              </div>
+              <input value={manual.comentario} onChange={(ev) => setManual((m) => ({ ...m, comentario: ev.target.value }))} maxLength={500} placeholder="Comentario (opcional)" aria-label="Comentario" className={campo} />
+              <div className="flex gap-2">
+                <button type="submit" disabled={!manual.nombre.trim()} className={botonPrimario}><Check size={15} /> Guardar aprobación</button>
+                <button type="button" onClick={() => setCargando(false)} className={botonSecundario}>Cancelar</button>
+              </div>
+            </form>
           )}
           {pidiendo && (
             <div className="mt-3 flex gap-2 flex-wrap items-center">
@@ -100,7 +140,7 @@ function Etapa({ e, p, accion, usuarios, n }) {
 export default function Etapas({ p, accion, usuarios }) {
   return (
     <div className="max-w-3xl">
-      <p className="text-sm text-zinc-500 mb-4">Cada etapa se aprueba con el usuario de quien aprueba, con fecha y hora. Si después cambia el contenido, la aprobación se cae sola.</p>
+      <p className="text-sm text-zinc-500 mb-4">Cada etapa se cierra con una aprobación: podés pedírsela a alguien desde la app o cargar vos quién la aprobó. Si después cambia el contenido, la aprobación se cae sola.</p>
       <ol className="flex flex-col gap-3">
         {p.etapas.map((e, i) => <Etapa key={e.etapa} e={e} n={i + 1} p={p} accion={accion} usuarios={usuarios} />)}
       </ol>

@@ -152,6 +152,16 @@ test("recorrido: crear, aprobar con la persona correcta, archivos, pruebas, íte
   assert.equal(p.etapas[0].aprobacion_estado, null);
   assert.match(p.eventos[0].texto, /aprobación anterior quedó sin efecto/);
 
+  // Aprobación cargada a mano: cualquier nombre, con fecha; no puede ser futura; queda quién la cargó.
+  assert.equal((await http(ids.andres, "POST", `/api/desarrollo/proyectos/${id}/etapas/ENTRADAS/registrar-aprobacion`, { nombre: "" })).status, 400);
+  assert.equal((await http(ids.andres, "POST", `/api/desarrollo/proyectos/${id}/etapas/ENTRADAS/registrar-aprobacion`, { nombre: "Ing. Rigoni", fecha: "2999-01-01" })).status, 400);
+  assert.equal((await http(ids.andres, "POST", `/api/desarrollo/proyectos/${id}/etapas/ENTRADAS/registrar-aprobacion`, { nombre: "Ing. Rigoni", fecha: "2026-01-22", comentario: "Por teléfono" })).status, 200);
+  p = (await http(ids.andres, "GET", `/api/desarrollo/proyectos/${id}`)).body;
+  const man = p.etapas.find((e) => e.etapa === "ENTRADAS");
+  assert.deepEqual([man.aprobacion_estado, man.aprobador_nombre, man.aprobacion_registrada_por, man.cerrada], ["APROBADA", "Ing. Rigoni", "Andrés", true]);
+  assert.match(String(new Date(man.aprobado_at).toISOString()), /^2026-01-22/);
+  assert.match(p.eventos[0].texto, /Cargó que Ing\. Rigoni aprobó «Entradas del desarrollo» el 22\/01\/2026: Por teléfono/);
+
   // Archivos: imagen con miniatura, plano; portada automática; oficial; borrar va a la papelera.
   const png = await require("sharp")({ create: { width: 800, height: 600, channels: 3, background: "#ff5a00" } }).png().toBuffer();
   const fd = new FormData();
