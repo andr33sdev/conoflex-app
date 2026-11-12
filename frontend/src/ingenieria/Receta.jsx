@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
 import { CheckCircle2, Pencil, Trash2, Zap } from "lucide-react";
-import { COLORES, conPct, fechaHora, kgLindo, nf } from "./formato";
+import { abrev } from "../materias/util";
+import { COLORES, conPct, esKilos, fechaHora, kgLindo, nf } from "./formato";
 
 /** Barra apilada con el reparto de la fórmula. */
 export function BarraComposicion({ lineas, alto = "h-2.5" }) {
@@ -20,8 +21,11 @@ export default function Receta({ r, onActivar, onEditar, onEliminar, ocupado }) 
   const [confirmar, setConfirmar] = useState(false);
   const mp = (r.ingredientes || []).filter((i) => i.item_type === "MP");
   const se = (r.ingredientes || []).filter((i) => i.item_type === "SE");
-  const conFormula = mp.length > 0 && mp.every((i) => i.cantidad_tachada != null);
-  const lineas = conFormula ? mp.map((i) => ({ mp_id: i.materia_prima_id, nombre: i.item_nombre, codigo: i.item_codigo, kg_tachada: Number(i.cantidad_tachada), kg_pieza: Number(i.cantidad) })) : [];
+  // La tachada son solo los materiales que se pesan; lo que va por unidad se lista aparte, por pieza.
+  const mpTachada = mp.filter((i) => i.cantidad_tachada != null);
+  const conFormula = mpTachada.length > 0;
+  const porPieza = conFormula ? mp.filter((i) => i.cantidad_tachada == null) : mp;
+  const lineas = conFormula ? mpTachada.map((i) => ({ mp_id: i.materia_prima_id, nombre: i.item_nombre, codigo: i.item_codigo, kg_tachada: Number(i.cantidad_tachada), kg_pieza: Number(i.cantidad) })) : [];
   const total = lineas.reduce((a, l) => a + l.kg_tachada, 0);
   const pcts = conPct(lineas);
   const modificada = r.updated_at && r.created_at && Math.abs(new Date(r.updated_at) - new Date(r.created_at)) > 60000;
@@ -90,20 +94,22 @@ export default function Receta({ r, onActivar, onEditar, onEliminar, ocupado }) 
             ))}
           </ul>
         </div>
-      ) : mp.length > 0 ? (
+      ) : null}
+
+      {porPieza.length > 0 && (
         <div className="mt-4">
-          <p className="text-[11px] font-extrabold uppercase tracking-[0.1em] text-zinc-500 mb-2">{r.proceso === "TERCERIZADO" ? "Materias primas por cada pieza (tercerizado)" : "Cantidad por unidad producida"}</p>
+          <p className="text-[11px] font-extrabold uppercase tracking-[0.1em] text-zinc-500 mb-2">{r.proceso === "TERCERIZADO" ? "Materias primas por cada pieza (tercerizado)" : conFormula ? "Además, por cada pieza" : "Cantidad por unidad producida"}</p>
           <ul className="divide-y divide-white/[0.05]">
-            {mp.map((i) => (
+            {porPieza.map((i) => (
               <li key={i.id} className="flex items-center gap-3 py-2.5">
                 <p className="min-w-0 flex-1 text-sm font-bold text-white truncate">{i.item_nombre} <span className="text-xs font-normal text-zinc-500">{i.item_codigo}</span></p>
-                <span className="text-sm font-extrabold text-white tabular-nums">{nf(Number(i.cantidad), 4)} {i.unidad_medida || "Kg"}</span>
+                <span className="text-sm font-extrabold text-white tabular-nums">{nf(Number(i.cantidad), 4)} {abrev(i.unidad_medida)}</span>
               </li>
             ))}
           </ul>
-          {r.proceso !== "TERCERIZADO" && <p className="mt-2 text-xs text-zinc-500">Esta receta se cargó por pieza. Al editarla podés pasarla a fórmula por tachada.</p>}
+          {r.proceso === "INYECCION" && !conFormula && porPieza.some((i) => esKilos(i.unidad_medida)) && <p className="mt-2 text-xs text-zinc-500">Esta receta se cargó por pieza. Al editarla podés pasarla a fórmula por tachada.</p>}
         </div>
-      ) : null}
+      )}
 
       {se.length > 0 && (
         <div className="mt-4">

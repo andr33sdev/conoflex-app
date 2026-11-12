@@ -4,6 +4,9 @@ export const aNum = (t) => {
   return typeof t === "number" ? t : Number(String(t).replace(",", "."));
 };
 
+/** La materia prima se mide en kilos? (sin unidad cargada se toma como kilos). */
+export const esKilos = (u) => !u || /^(kg|kgs|kilo|kilos|kilogramos?)$/i.test(String(u).trim());
+
 export const nf = (n, d = 2) => (Number.isFinite(n) ? n.toLocaleString("es-AR", { maximumFractionDigits: d }) : "—");
 
 /** kg con la unidad que más se lee: bajo 1 kg, en gramos. */
