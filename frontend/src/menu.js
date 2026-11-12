@@ -25,6 +25,7 @@ import {
   Route,
   MessageCircle,
   DollarSign,
+  FlaskConical,
 } from "lucide-react";
 
 export const INICIO = {
@@ -70,6 +71,15 @@ export const ALL_MENU_ITEMS = [
     icon: Cpu,
     desc: "Qué lleva cada producto terminado",
     kw: "bom composicion recetas",
+  },
+  {
+    id: "desarrollo",
+    corto: "Desarrollo",
+    grupo: "produccion",
+    label: "Desarrollo de productos",
+    icon: FlaskConical,
+    desc: "Productos nuevos y cambios: etapas, fotos, pruebas y aprobaciones",
+    kw: "r032 r.032 p-11 iso diseño prototipo matriz nuevo producto modificacion aprobacion",
   },
   {
     id: "costos",

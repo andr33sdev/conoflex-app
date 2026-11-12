@@ -52,7 +52,8 @@ const { asegurarTablasSugerencias, registrarRutasSugerencias } = require("./suge
 const { asegurarTablaClientesNuevos, registrarRutasClientesNuevos, iniciarBusquedaSemanal } = require("./clientesNuevosDatos");
 const { asegurarTablasWhatsapp, crearBotWhatsapp, registrarRutasWhatsapp } = require("./whatsapp");
 const { registrarRutasVoz } = require("./whatsappVoz");
-const { asegurarTablasCostos, asegurarPTDesdePedidos, registrarRutasCostos } = require("./mpCostos");
+const { asegurarTablasCostos, asegurarPTDesdePedidos, registrarRutasCostos, costosCompletos } = require("./mpCostos");
+const { asegurarTablasDesarrollo, registrarRutasDesarrollo } = require("./desarrollo");
 const { registrarRutasCostosSheets } = require("./costosSheets");
 const { asegurarTablasFacturas, registrarRutasFacturas } = require("./facturas");
 const { avisarCostosViejos } = require("./costosAvisos");
@@ -871,6 +872,7 @@ async function initDB() {
     await asegurarTablasWhatsapp(db);
     await asegurarTablasCostos(db);
     await asegurarTablasFacturas(db);
+    await asegurarTablasDesarrollo(db);
 
     console.log("✅ Estructura MySQL inicializada correctamente.");
   } catch (err) {
@@ -5872,6 +5874,8 @@ const agentes = registrarRutasAgentes(app, {
 // WhatsApp: bot con la API oficial de Meta y su módulo de administración (permiso "whatsapp").
 const botWhatsapp = crearBotWhatsapp({ db, ai, leerLista, notasTexto: notasVentasTexto, crearNotificacion, imagenesDir: IMAGENES_DIR });
 registrarRutasWhatsapp(app, { db, requirePermiso, bot: botWhatsapp });
+// Desarrollo de productos (P-11 / R.032): proyectos, aprobaciones, archivos, pruebas, ítems y difusión.
+registrarRutasDesarrollo(app, { db, requirePermiso, crearNotificacion, ai, modelo: process.env.DESARROLLO_MODELO || "gemini-2.5-flash", multer, costosCompletos });
 // Llamadas de WhatsApp: las atiende el servicio de voz (carpeta voz/); acá solo se le da contexto.
 registrarRutasVoz(app, { db, bot: botWhatsapp });
 
