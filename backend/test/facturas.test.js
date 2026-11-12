@@ -163,6 +163,11 @@ test("con base: guarda lotes sin duplicar y arma el informe del rango", async ()
     // Las facturas de prueba son del punto de venta 0002: con "solo MercadoLibre" no queda nada.
     assert.equal((await F.informe(db, "2026-11-01", "2026-11-30", { ml: "solo" })).filas.length, 0);
     assert.deepEqual((await F.informe(db, "2026-11-01", "2026-11-30", { porEmpresa: true })).hojas.map((h) => h.nombre), ["Conoplas"]);
+    const completo = await F.informe(db, "2026-11-01", "2026-11-30", { tipoCambio: 1000, gastosPct: 53, mlPct: 34, extras: true });
+    assert.equal(completo.anio, 2026);
+    assert.ok(completo.familias.length > 0);
+    assert.equal(completo.ventas_mensuales.meses.length, 12);
+    assert.ok(Array.isArray(completo.alertas));
     assert.deepEqual(inf.filas.map((f) => [f.codigo, f.unidades, f.costo_unitario, f.costo_total]), [["2051-1R NA", 70, 3, 210]]);
     assert.equal(inf.ultima_factura, "2026-11-07");
     // Rango que deja afuera la nota de crédito.
