@@ -1,3 +1,7 @@
+// Salir a internet por IPv4: Google (Gemini) rechaza los pedidos que salen por la IPv6 de Ferozo con
+// "User location is not supported for the API use", y por IPv4 anda bien.
+require("dns").setDefaultResultOrder?.("ipv4first");
+require("net").setDefaultAutoSelectFamily?.(false);
 const cheerio = require("cheerio");
 const express = require("express");
 const cors = require("cors");
