@@ -43,8 +43,8 @@ test("fórmula de una receta anterior: los kg por pieza sirven de tachada", () =
 });
 
 test("semielaborado: hay que elegir en qué máquina se hace", () => {
-  assert.match(prepararReceta(base, { esSE: true }).error, /máquina/);
-  assert.match(prepararReceta({ ...base, proceso: "OTRA" }, { esSE: true }).error, /máquina/);
+  assert.match(prepararReceta(base, { esSE: true }).error, /cómo se hace/);
+  assert.match(prepararReceta({ ...base, proceso: "OTRA" }, { esSE: true }).error, /cómo se hace/);
   assert.equal(prepararReceta({ ...base, proceso: "inyeccion" }, { esSE: true }).proceso, "INYECCION");
 });
 
@@ -63,4 +63,13 @@ test("rotomoldeo y extrusión: receta por pieza, la tachada se ignora", () => {
 
 test("producto terminado: no lleva proceso", () => {
   assert.equal(prepararReceta({ nombre_version: "x", ingredientes: [{ semielaborado_id: 3, cantidad: 1 }] }).proceso, null);
+});
+
+test("tercerizado: materias primas por unidad, sin tachada ni peso", () => {
+  const r = prepararReceta({ nombre_version: "x", proceso: "tercerizado", peso_pieza_kg: 1, ingredientes: [{ materia_prima_id: 7, cantidad: 1, cantidad_tachada: 3, unidad_medida: "Unidades" }] }, { esSE: true });
+  assert.equal(r.error, undefined);
+  assert.equal(r.proceso, "TERCERIZADO");
+  assert.equal(r.peso, null);
+  assert.deepEqual(r.filas, [{ materia_prima_id: 7, semielaborado_id: null, cantidad: 1, cantidad_tachada: null, unidad_medida: "Unidades" }]);
+  assert.ok(prepararReceta({ nombre_version: "x", proceso: "TERCERIZADO", ingredientes: [{ materia_prima_id: 7, cantidad: 0 }] }, { esSE: true }).error);
 });

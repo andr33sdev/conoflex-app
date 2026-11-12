@@ -13,6 +13,7 @@ const PROCESOS = [
   { id: "INYECCION", nombre: "Inyección", nota: "Receta por tachada" },
   { id: "ROTOMOLDEO", nombre: "Rotomoldeo", nota: "Lleva ciclos" },
   { id: "EXTRUSION", nombre: "Extrusión", nota: "Receta por pieza" },
+  { id: "TERCERIZADO", nombre: "Tercerizado", nota: "Lo hace otro" },
 ];
 
 function Cuerpo({ parent, receta, cantidadRecetas, materias, semis, procesoSugerido, onCerrar, onGuardado, toast }) {
@@ -42,7 +43,9 @@ function Cuerpo({ parent, receta, cantidadRecetas, materias, semis, procesoSuger
   const [guardando, setGuardando] = useState(false);
 
   // En el semielaborado los materiales van en kg (o g); solo la inyección los define por tachada.
-  const enKg = (f) => esSE && f.tipo === "MP";
+  // Tercerizado: van en la unidad de cada materia prima (ej. 1 unidad de lo que se compra hecho).
+  const tercerizado = proceso === "TERCERIZADO";
+  const enKg = (f) => esSE && f.tipo === "MP" && !tercerizado;
   const enTachada = (f) => enKg(f) && proceso === "INYECCION";
   const convertida = proceso === "INYECCION" && sinTachada;
   const kgDe = (f) => aNum(f.valor) / (f.unidad === "g" ? 1000 : 1);
@@ -55,7 +58,7 @@ function Cuerpo({ parent, receta, cantidadRecetas, materias, semis, procesoSuger
 
   const errores = {};
   if (!nombre.trim()) errores.nombre = "Poné un nombre para la receta.";
-  if (esSE && !proceso) errores.proceso = "Elegí en qué máquina se hace.";
+  if (esSE && !proceso) errores.proceso = "Elegí cómo se hace.";
   if (!filas.length) errores.filas = "Agregá al menos un material.";
   if (tachada.length && !(pesoNum > 0)) errores.peso = "Poné cuánto pesa la pieza para calcular lo de cada material.";
   const filaMala = filas.find((f) => !(enKg(f) ? kgDe(f) : aNum(f.valor)) > 0);
@@ -91,7 +94,7 @@ function Cuerpo({ parent, receta, cantidadRecetas, materias, semis, procesoSuger
             ? { materia_prima_id: f.id, cantidad_tachada: kgDe(f), unidad_medida: "Kg" }
             : enKg(f)
               ? { materia_prima_id: f.id, cantidad: kgDe(f), unidad_medida: "Kg" }
-              : { materia_prima_id: f.id, cantidad: aNum(f.valor), unidad_medida: f.unidad_medida || "Kg" }
+              : { materia_prima_id: f.id, cantidad: aNum(f.valor), unidad_medida: f.unidad_medida || (tercerizado ? "Unidades" : "Kg") }
           : { semielaborado_id: f.id, cantidad: aNum(f.valor), unidad_medida: f.unidad_medida || "Unidades" },
       ),
     };
@@ -130,8 +133,8 @@ function Cuerpo({ parent, receta, cantidadRecetas, materias, semis, procesoSuger
 
         {esSE && (
           <section>
-            <span className="block text-[12px] font-extrabold uppercase tracking-[0.1em] text-zinc-400 mb-2">¿En qué máquina se hace?</span>
-            <div className="grid grid-cols-3 gap-2.5" role="radiogroup" aria-label="Proceso de fabricación">
+            <span className="block text-[12px] font-extrabold uppercase tracking-[0.1em] text-zinc-400 mb-2">¿Cómo se hace?</span>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5" role="radiogroup" aria-label="Proceso de fabricación">
               {PROCESOS.map((x) => (
                 <button key={x.id} type="button" role="radio" aria-checked={proceso === x.id} onClick={() => setProceso(x.id)} className={`min-h-[68px] rounded-2xl border px-2 py-2.5 text-center cursor-pointer transition-colors ${proceso === x.id ? "border-[#FF5A00] bg-[#FF5A00]/15 text-white" : "border-white/[0.1] bg-white/[0.04] text-zinc-400 hover:text-white"} ${intento && errores.proceso ? "border-rose-500/70" : ""}`}>
                   <span className="block text-[15px] font-extrabold leading-tight">{x.nombre}</span>
@@ -159,8 +162,8 @@ function Cuerpo({ parent, receta, cantidadRecetas, materias, semis, procesoSuger
         <section>
           <div className="flex items-end justify-between gap-3 mb-3">
             <div>
-              <h3 className="text-base font-extrabold text-white">{proceso === "INYECCION" ? "Fórmula por tachada" : esSE ? "Materiales por pieza" : "Materiales por unidad"}</h3>
-              <p className="text-xs text-zinc-500 mt-0.5">{proceso === "INYECCION" ? "Cuánto lleva cada material en una tachada. El sistema saca los porcentajes y lo que lleva cada pieza." : esSE ? "Cuánto lleva cada pieza de cada material." : "Cantidad de cada material por cada unidad producida."}</p>
+              <h3 className="text-base font-extrabold text-white">{proceso === "INYECCION" ? "Fórmula por tachada" : tercerizado ? "Materias primas por pieza" : esSE ? "Materiales por pieza" : "Materiales por unidad"}</h3>
+              <p className="text-xs text-zinc-500 mt-0.5">{proceso === "INYECCION" ? "Cuánto lleva cada material en una tachada. El sistema saca los porcentajes y lo que lleva cada pieza." : tercerizado ? "Lo hace otro. Poné cuántas unidades de cada materia prima equivalen a una pieza (ej. 1 unidad de lo que se compra)." : esSE ? "Cuánto lleva cada pieza de cada material." : "Cantidad de cada material por cada unidad producida."}</p>
             </div>
             {esSE && proceso !== "INYECCION" && kgPorPieza > 0 && <span className="text-sm font-bold text-zinc-300 shrink-0">Pieza: <b className="text-white">{nf(kgPorPieza, 3)} kg</b></span>}
             {tachada.length > 0 && <span className="text-sm font-bold text-zinc-300 shrink-0">Tachada: <b className="text-white">{nf(total, 3)} kg</b></span>}
@@ -195,7 +198,7 @@ function Cuerpo({ parent, receta, cantidadRecetas, materias, semis, procesoSuger
                               <option value="g">g</option>
                             </select>
                           ) : (
-                            <span className="px-3 grid place-items-center bg-white/[0.05] border-l border-white/[0.08] text-sm font-bold text-zinc-400">{f.tipo === "MP" ? f.unidad_medida || "Kg" : "u."}</span>
+                            <span className="px-3 grid place-items-center bg-white/[0.05] border-l border-white/[0.08] text-sm font-bold text-zinc-400">{f.tipo === "MP" ? f.unidad_medida || (tercerizado ? "Unidades" : "Kg") : "u."}</span>
                           )}
                         </div>
                         {p && (

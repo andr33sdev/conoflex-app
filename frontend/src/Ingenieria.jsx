@@ -23,7 +23,7 @@ const ORDENES = [
   { id: "recetas", label: "Más recetas" },
   { id: "reciente", label: "Modificadas hace poco" },
 ];
-const PROCESOS = { INYECCION: "Inyección", ROTOMOLDEO: "Rotomoldeo", EXTRUSION: "Extrusión" };
+const PROCESOS = { INYECCION: "Inyección", ROTOMOLDEO: "Rotomoldeo", EXTRUSION: "Extrusión", TERCERIZADO: "Tercerizado" };
 const natural = (a, b) => String(a).localeCompare(String(b), "es", { numeric: true, sensitivity: "base" });
 
 const Dato = ({ icono: Icono, t, v, tono = "text-white", className = "" }) => (
