@@ -20,6 +20,7 @@ const MODULOS_SISTEMA = [
   { id: "semielaborados", nombre: "Semielaborados" },
   { id: "reflectivas", nombre: "Reflectivas & Pegado" },
   { id: "ingenieria", nombre: "Ingeniería & BOM" },
+  { id: "desarrollo", nombre: "Desarrollo de productos" },
   { id: "metricas", nombre: "Métricas & KPI" },
   { id: "costo-vendido", nombre: "Informe costo de lo vendido" },
   { id: "connie", nombre: "Connie IA" },
