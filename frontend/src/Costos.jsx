@@ -141,7 +141,7 @@ function Desglose({ x }) {
       <div className="rounded-2xl border border-white/[0.07] bg-white/[0.03] p-4">
         <p className="text-xs font-extrabold uppercase tracking-[0.1em] text-zinc-500">Costo por unidad</p>
         <p className="mt-1 text-3xl font-extrabold text-white tabular-nums">{usd(x.costo)}</p>
-        {!x.completo && <p className="mt-2 text-sm text-amber-300">Incompleto: solo suma lo que tiene costo. Falta: {x.faltan.join(", ")}.</p>}
+        {!x.completo && <p className="mt-2 text-sm text-amber-300">Incompleto: solo suma lo que tiene costo. {x.faltan.join(". ")}.</p>}
       </div>
       <ul className="flex flex-col gap-1.5">
         {x.lineas.map((l, i) => (

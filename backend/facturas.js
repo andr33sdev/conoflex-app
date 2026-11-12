@@ -84,10 +84,10 @@ function armarInforme(lineas, productos) {
     let obs = "";
     let costo = null;
     if (!p) obs = "No está en productos terminados";
-    else if (p.sin_receta) obs = "Sin receta";
+    else if (p.sin_receta) obs = "El producto terminado no tiene receta activa";
     else {
       costo = p.costo;
-      if (!p.completo) obs = `Costo incompleto (falta: ${(p.faltan || []).slice(0, 3).join(", ")}${(p.faltan || []).length > 3 ? "…" : ""})`;
+      if (!p.completo) obs = `Costo incompleto. ${(p.faltan || []).slice(0, 3).join(". ")}${(p.faltan || []).length > 3 ? ` (y ${(p.faltan || []).length - 3} más)` : ""}.`;
     }
     filas.push({ codigo: a.codigo, producto: p?.codigo || null, descripcion: a.descripcion, unidades, costo_unitario: costo, costo_total: costo == null ? null : r2(costo * unidades), observacion: obs });
   }

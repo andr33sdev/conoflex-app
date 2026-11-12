@@ -112,7 +112,7 @@ function calcularCostos({ costosMP, recetas, detalles, nombres = { mp: new Map()
         const n = nombres.mp.get(d.materia_prima_id) || {};
         const ok = unit != null && Number.isFinite(Number(unit));
         if (ok) costo += cant * Number(unit);
-        else faltan.add(`MP ${n.codigo || d.materia_prima_id}`);
+        else faltan.add(`Falta el costo de la materia prima ${n.codigo || d.materia_prima_id}`);
         lineas.push({ tipo: "MP", id: d.materia_prima_id, codigo: n.codigo || null, nombre: n.nombre || null, unidad: n.unidad || null, cantidad: cant, unitario: ok ? Number(unit) : null, subtotal: ok ? redondear(cant * Number(unit)) : null });
       } else if (d.semielaborado_id) {
         const sub = costoSE(d.semielaborado_id, cadena);
@@ -128,10 +128,10 @@ function calcularCostos({ costosMP, recetas, detalles, nombres = { mp: new Map()
   function costoSE(id, cadena = new Set()) {
     if (memo.has(id)) return memo.get(id);
     const n = nombres.se.get(id) || {};
-    if (enCurso.has(id) || cadena.has(id)) return { costo: null, completo: false, faltan: [`SE ${n.codigo || id} (receta circular)`], lineas: [] };
+    if (enCurso.has(id) || cadena.has(id)) return { costo: null, completo: false, faltan: [`La receta del semielaborado ${n.codigo || id} se incluye a sí misma`], lineas: [] };
     const recetaId = recetaSE.get(id);
     if (!recetaId) {
-      const r = { costo: null, completo: false, faltan: [`SE ${n.codigo || id} (sin receta)`], lineas: [], sin_receta: true };
+      const r = { costo: null, completo: false, faltan: [`El semielaborado ${n.codigo || id} no tiene receta activa`], lineas: [], sin_receta: true };
       memo.set(id, r);
       return r;
     }

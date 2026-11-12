@@ -74,7 +74,7 @@ test("costo de semielaborados y terminados por receta activa, con faltantes", ()
   assert.equal(r.pt.get(50).lineas.length, 3);
   assert.equal(r.pt.get(51).costo, 10); // suma lo que tiene costo
   assert.equal(r.pt.get(51).completo, false);
-  assert.deepEqual(r.pt.get(51).faltan.sort(), ["MP TORN", "SE SINRECETA (sin receta)"]);
+  assert.deepEqual(r.pt.get(51).faltan.sort(), ["El semielaborado SINRECETA no tiene receta activa", "Falta el costo de la materia prima TORN"]);
 });
 
 test("receta circular no cuelga el cálculo", () => {
@@ -85,7 +85,7 @@ test("receta circular no cuelga el cálculo", () => {
     nombres: { mp: new Map(), se: new Map([[10, { codigo: "A" }], [11, { codigo: "B" }]]) },
   });
   assert.equal(r.se.get(10).completo, false);
-  assert.ok(r.se.get(10).faltan.some((f) => /circular/.test(f)));
+  assert.ok(r.se.get(10).faltan.some((f) => /a sí misma/.test(f)));
 });
 
 test("validar costo: vacío, coma decimal, miles y negativos", () => {
@@ -177,7 +177,7 @@ test("con base: sincroniza con el Excel, respalda lo borrado y calcula costos", 
     const p = c1.productos.find((x) => x.codigo === "CONO75");
     assert.equal(p.costo, 3); // base 1,5 kg × 2
     assert.equal(p.completo, false);
-    assert.deepEqual(p.faltan, ["MP NUEVA1"]);
+    assert.deepEqual(p.faltan, ["Falta el costo de la materia prima NUEVA1"]);
     await db.query("INSERT INTO mp_costos (materia_prima_id, costo) VALUES (?, 0.25)", [nueva1.id]);
     const p2 = (await C.costosCompletos(db)).productos.find((x) => x.codigo === "CONO75");
     assert.equal(p2.costo, 3.5);
