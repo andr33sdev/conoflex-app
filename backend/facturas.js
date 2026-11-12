@@ -55,11 +55,28 @@ function validarComprobante(x) {
 }
 
 /**
- * Informe puro.
- *  lineas: [{ codigo, descripcion, cantidad, signo }]  (ítems de facturas y notas de crédito del rango)
- *  productos: [{ codigo, nombre, costo, completo, sin_receta }]  (de Costos)
+ * Importe total (con IVA) de cada ítem: el total del comprobante repartido según el subtotal sin IVA de cada ítem.
+ * El PDF trae el subtotal sin IVA por ítem y el "Importe Total" del comprobante (IVA y percepciones incluidos).
+ * lineas: [{ factura_id, subtotal, total_factura }] → devuelve las mismas líneas con `total_item`.
  */
-function armarInforme(lineas, productos) {
+function repartirTotales(lineas) {
+  const suma = new Map();
+  for (const l of lineas) if (l.factura_id != null && l.subtotal != null) suma.set(l.factura_id, (suma.get(l.factura_id) || 0) + Math.abs(Number(l.subtotal) || 0));
+  return lineas.map((l) => {
+    const s = suma.get(l.factura_id);
+    const ok = l.subtotal != null && l.total_factura != null && s > 0;
+    return { ...l, total_item: ok ? (Math.abs(Number(l.subtotal)) * Math.abs(Number(l.total_factura))) / s : null };
+  });
+}
+
+/**
+ * Informe puro.
+ *  lineas: [{ codigo, descripcion, cantidad, signo, subtotal?, total_item? }]  (ítems de facturas y notas de crédito del rango)
+ *  productos: [{ codigo, nombre, costo, completo, sin_receta }]  (de Costos)
+ *  tipoCambio: pesos por dólar, para la rentabilidad (importe neto en US$ − costo total). Sin él, no se calcula.
+ */
+function armarInforme(lineas, productos, { tipoCambio = null } = {}) {
+  const tc = Number(tipoCambio) > 0 ? Number(tipoCambio) : null;
   const exacto = new Map();
   const suelto = new Map();
   for (const p of productos) {
@@ -71,8 +88,12 @@ function armarInforme(lineas, productos) {
     if (!l.signo) continue;
     const k = norm(l.codigo);
     if (!k) continue;
-    const a = porCodigo.get(k) || { codigo: String(l.codigo).trim(), descripcion: l.descripcion || "", unidades: 0 };
+    const a = porCodigo.get(k) || { codigo: String(l.codigo).trim(), descripcion: l.descripcion || "", unidades: 0, neto: 0, total: 0, sinImporte: false };
     a.unidades += l.signo * (Number(l.cantidad) || 0);
+    if (l.subtotal != null && Number.isFinite(Number(l.subtotal))) a.neto += l.signo * Math.abs(Number(l.subtotal));
+    else a.sinImporte = true;
+    if (l.total_item != null && Number.isFinite(Number(l.total_item))) a.total += l.signo * Math.abs(Number(l.total_item));
+    else a.sinImporte = true;
     if (!a.descripcion && l.descripcion) a.descripcion = l.descripcion;
     porCodigo.set(k, a);
   }
@@ -89,9 +110,18 @@ function armarInforme(lineas, productos) {
       costo = p.costo;
       if (!p.completo) obs = `Costo incompleto. ${(p.faltan || []).slice(0, 3).join(". ")}${(p.faltan || []).length > 3 ? ` (y ${(p.faltan || []).length - 3} más)` : ""}.`;
     }
-    filas.push({ codigo: a.codigo, producto: p?.codigo || null, descripcion: a.descripcion, unidades, costo_unitario: costo, costo_total: costo == null ? null : r2(costo * unidades), observacion: obs });
+    const costoTotal = costo == null ? null : r2(costo * unidades);
+    const neto = r2(a.neto);
+    // Rentabilidad solo con costo e importe completos: con datos parciales daría cualquier cosa.
+    const rentabilidad = tc && costoTotal != null && p?.completo && !a.sinImporte ? r2(neto / tc - costoTotal) : null;
+    filas.push({
+      codigo: a.codigo, producto: p?.codigo || null, descripcion: a.descripcion, unidades,
+      costo_unitario: costo, costo_total: costoTotal,
+      importe_neto: neto, importe_total: r2(a.total), importe_incompleto: a.sinImporte,
+      rentabilidad, observacion: obs,
+    });
   }
-  filas.sort((a, b) => (b.costo_total ?? -1) - (a.costo_total ?? -1) || b.unidades - a.unidades);
+  filas.sort((a, b) => (b.costo_total ?? -1) - (a.costo_total ?? -1) || b.importe_neto - a.importe_neto || b.unidades - a.unidades);
   return {
     filas,
     totales: {
@@ -100,7 +130,13 @@ function armarInforme(lineas, productos) {
       costo_total: r2(filas.reduce((s, f) => s + (f.costo_total || 0), 0)),
       sin_costo: filas.filter((f) => f.costo_unitario == null).length,
       incompletos: filas.filter((f) => f.costo_unitario != null && f.observacion).length,
+      importe_neto: r2(filas.reduce((s, f) => s + f.importe_neto, 0)),
+      importe_total: r2(filas.reduce((s, f) => s + f.importe_total, 0)),
+      rentabilidad: tc ? r2(filas.reduce((s, f) => s + (f.rentabilidad || 0), 0)) : null,
+      sin_rentabilidad: tc ? filas.filter((f) => f.rentabilidad == null).length : 0,
+      sin_importe: filas.filter((f) => f.importe_incompleto).length,
     },
+    tipo_cambio: tc,
   };
 }
 
@@ -180,9 +216,9 @@ async function guardarLote(db, comprobantes) {
   return { guardados, errores };
 }
 
-async function informe(db, desde, hasta) {
+async function informe(db, desde, hasta, { tipoCambio = null } = {}) {
   const [lineas] = await db.query(
-    `SELECT i.codigo, i.descripcion, i.cantidad, f.signo
+    `SELECT i.codigo, i.descripcion, i.cantidad, i.subtotal, f.signo, f.id AS factura_id, f.total AS total_factura
        FROM factura_items i JOIN facturas f ON f.id = i.factura_id
       WHERE f.fecha BETWEEN ? AND ? AND f.signo <> 0`,
     [desde, hasta],
@@ -196,7 +232,7 @@ async function informe(db, desde, hasta) {
     comprobantes: { facturas: Number(cuenta?.facturas) || 0, notas_credito: Number(cuenta?.notas_credito) || 0 },
     ultima_factura: ultima?.fecha || null,
     ultima_lectura: ultima?.leida || null,
-    ...armarInforme(lineas, productos),
+    ...armarInforme(repartirTotales(lineas), productos, { tipoCambio }),
   };
 }
 
@@ -223,11 +259,25 @@ function registrarRutasFacturas(app, { db, requirePermiso }) {
     }
   });
 
+  // Dólar oficial (venta) del día, para precargar el tipo de cambio de la rentabilidad.
+  app.get("/api/informes/dolar-oficial", requirePermiso(PERMISO), async (req, res) => {
+    try {
+      const r = await fetch("https://dolarapi.com/v1/dolares/oficial", { signal: AbortSignal.timeout(6000) });
+      if (!r.ok) return res.json({ venta: null });
+      const d = await r.json();
+      res.json({ venta: Number(d.venta) || null, fecha: d.fechaActualizacion || null });
+    } catch {
+      res.json({ venta: null });
+    }
+  });
+
   app.get("/api/informes/costo-vendido", requirePermiso(PERMISO), async (req, res) => {
     try {
       const { desde, hasta } = req.query;
       if (!fechaOk(desde) || !fechaOk(hasta) || desde > hasta) return res.status(400).json({ error: "Elegí un rango de fechas válido." });
-      res.json(await informe(db, desde, hasta));
+      const tc = req.query.tc == null || req.query.tc === "" ? null : Number(String(req.query.tc).replace(",", "."));
+      if (tc != null && !(tc > 0)) return res.status(400).json({ error: "Poné un tipo de cambio válido (pesos por dólar)." });
+      res.json(await informe(db, desde, hasta, { tipoCambio: tc }));
     } catch (e) {
       console.error("[facturas] informe:", e);
       res.status(500).json({ error: e.message });
@@ -235,4 +285,4 @@ function registrarRutasFacturas(app, { db, requirePermiso }) {
   });
 }
 
-module.exports = { PERMISO, norm, validarComprobante, armarInforme, asegurarTablasFacturas, guardarLote, informe, registrarRutasFacturas };
+module.exports = { PERMISO, norm, validarComprobante, repartirTotales, armarInforme, asegurarTablasFacturas, guardarLote, informe, registrarRutasFacturas };

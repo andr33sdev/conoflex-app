@@ -53,7 +53,37 @@ test("informe: suma por código, resta notas de crédito y multiplica por el cos
   );
   assert.match(r.filas[1].observacion, /incompleto.*MP PIG/);
   assert.equal(r.filas[2].observacion, "No está en productos terminados");
-  assert.deepEqual(r.totales, { productos: 3, unidades: 149, costo_total: 326, sin_costo: 1, incompletos: 1 });
+  assert.deepEqual(
+    { productos: r.totales.productos, unidades: r.totales.unidades, costo_total: r.totales.costo_total, sin_costo: r.totales.sin_costo, incompletos: r.totales.incompletos },
+    { productos: 3, unidades: 149, costo_total: 326, sin_costo: 1, incompletos: 1 },
+  );
+  assert.equal(r.totales.rentabilidad, null);
+});
+
+test("informe: importes neto y total, y rentabilidad en US$ con el tipo de cambio", () => {
+  const lineas = F.repartirTotales([
+    { factura_id: 1, total_factura: 1210, codigo: "A", cantidad: 10, signo: 1, subtotal: 600 },
+    { factura_id: 1, total_factura: 1210, codigo: "B", cantidad: 5, signo: 1, subtotal: 400 },
+    { factura_id: 2, total_factura: 121, codigo: "A", cantidad: 1, signo: -1, subtotal: 100 }, // nota de crédito
+    { factura_id: 3, total_factura: 500, codigo: "C", cantidad: 2, signo: 1, subtotal: null }, // sin importe en el PDF
+  ]);
+  assert.deepEqual(lineas.map((l) => l.total_item), [726, 484, 121, null]);
+  const productos = [
+    { codigo: "A", costo: 0.4, completo: true },
+    { codigo: "B", costo: 0.5, completo: false, faltan: ["Falta el costo de la materia prima X"] },
+    { codigo: "C", costo: 1, completo: true },
+  ];
+  const r = F.armarInforme(lineas, productos, { tipoCambio: 100 });
+  const a = r.filas.find((f) => f.codigo === "A");
+  assert.deepEqual([a.unidades, a.importe_neto, a.importe_total, a.costo_total, a.rentabilidad], [9, 500, 605, 3.6, 1.4]); // 500 $ / 100 = US$ 5 − 3,6
+  assert.equal(r.filas.find((f) => f.codigo === "B").rentabilidad, null); // costo incompleto: no se calcula
+  assert.equal(r.filas.find((f) => f.codigo === "C").importe_incompleto, true);
+  assert.equal(r.totales.importe_neto, 900);
+  assert.equal(r.totales.importe_total, 1089);
+  assert.equal(r.filas.find((f) => f.codigo === "C").rentabilidad, null); // sin importe: no se calcula
+  assert.equal(r.totales.rentabilidad, 1.4);
+  assert.equal(r.totales.sin_rentabilidad, 2);
+  assert.equal(r.tipo_cambio, 100);
 });
 
 test("informe: códigos con guiones o espacios distintos se encuentran igual", () => {
