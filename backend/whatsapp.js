@@ -139,6 +139,17 @@ function textoCalculo(calc, nota) {
   return ["*Cálculo con precios de lista*", ...filas, `*Total: ${pesos(calc.total)}*${nota ? ` ${corto(nota, 120)}` : ""}`].join("\n");
 }
 
+/**
+ * ¿Hay mensajes del cliente sin responder? Devuelve el id del último mensaje del cliente si es más nuevo que el último
+ * que ya se respondió; si no, null. (Un mensaje puede llegar mientras el bot piensa: queda con id menor que la
+ * respuesta, pero igual hay que contestarlo.)
+ */
+function ultimoSinResponder(mensajes, ultimoRespondido) {
+  let max = null;
+  for (const m of mensajes) if (m.direccion === "IN" && (max == null || m.id > max)) max = m.id;
+  return max != null && max > (Number(ultimoRespondido) || 0) ? max : null;
+}
+
 /** ¿El bot puede responder en esta conversación ahora? */
 function botPuedeResponder({ global, pausadoHasta }, ahora = new Date()) {
   if (!global) return false;
@@ -160,6 +171,7 @@ CÓMO ESCRIBIR
 - Para resaltar usá *negrita* de WhatsApp (un asterisco). Nunca uses markdown con ** ni títulos con #.
 - Respondé exactamente lo que preguntan. Si falta un dato para ayudar (cantidad, medida, uso), preguntalo en una línea.
 - No saludes de nuevo si ya hay conversación.
+- Respondé siempre a lo ÚLTIMO que mandó el cliente. Si mandó una foto nueva, hablá de ESA foto: las anteriores ya se respondieron.
 
 PRODUCTOS Y PRECIOS
 - Solo ofrecé productos del CATÁLOGO de abajo. Nunca inventes productos, medidas, stock, plazos ni precios.
@@ -292,6 +304,9 @@ async function asegurarTablasWhatsapp(db) {
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     INDEX (conversacion_id, id)
   )`);
+  // Último mensaje del cliente ya respondido (por el bot o por una persona).
+  const [col] = await db.query("SELECT 1 FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'wa_conversaciones' AND column_name = 'ultimo_in_respondido'");
+  if (!col.length) await db.query("ALTER TABLE wa_conversaciones ADD COLUMN ultimo_in_respondido INT NULL");
   await db.query(`CREATE TABLE IF NOT EXISTS wa_correcciones (
     id INT AUTO_INCREMENT PRIMARY KEY,
     pregunta TEXT NOT NULL,
@@ -361,6 +376,7 @@ function crearBotWhatsapp({ db, ai, leerLista, notasTexto, crearNotificacion }) 
   const temporizadores = new Map(); // conversacion_id → timer
   const ocupadas = new Set(); // conversaciones respondiendo ahora mismo
   const pendientes = new Set(); // llegaron mensajes mientras se respondía
+  const procesandoMedia = new Map(); // conversacion_id → fotos/audios que todavía se están pasando a texto
 
   async function contexto() {
     const [productos] = await db.query("SELECT codigo, nombre, categoria, medidas, precio_lista, aplicacion, descripcion, usos_recomendados, advertencias, foto_catalogo, foto_tecnica FROM productos");
@@ -444,9 +460,17 @@ function crearBotWhatsapp({ db, ai, leerLista, notasTexto, crearNotificacion }) 
     if (!id) return;
     marcarLeido(m.waId);
     if (m.mediaId && ["audio", "image"].includes(m.tipo)) {
-      const texto = await aTexto(m);
-      await db.query("UPDATE wa_mensajes SET texto = ? WHERE id = ?", [texto, id]);
-      await db.query("UPDATE wa_conversaciones SET ultimo_texto = ? WHERE id = ?", [corto(texto, 280), conv.id]);
+      // Mientras se mira la foto o se escucha el audio, el bot no responde: si no, contestaría sin verla.
+      procesandoMedia.set(conv.id, (procesandoMedia.get(conv.id) || 0) + 1);
+      try {
+        const texto = await aTexto(m);
+        await db.query("UPDATE wa_mensajes SET texto = ? WHERE id = ?", [texto, id]);
+        await db.query("UPDATE wa_conversaciones SET ultimo_texto = ? WHERE id = ?", [corto(texto, 280), conv.id]);
+      } finally {
+        const n = (procesandoMedia.get(conv.id) || 1) - 1;
+        if (n > 0) procesandoMedia.set(conv.id, n);
+        else procesandoMedia.delete(conv.id);
+      }
     }
     programar(conv.id);
   }
@@ -464,12 +488,15 @@ function crearBotWhatsapp({ db, ai, leerLista, notasTexto, crearNotificacion }) 
 
   async function responder(conversacionId) {
     if (ocupadas.has(conversacionId)) return void pendientes.add(conversacionId);
+    if (procesandoMedia.get(conversacionId)) return; // cuando termine de mirar la foto/audio, vuelve a programar
     ocupadas.add(conversacionId);
     try {
       const [[conv]] = await db.query("SELECT * FROM wa_conversaciones WHERE id = ?", [conversacionId]);
       if (!conv || !botPuedeResponder({ global: await botGlobal(), pausadoHasta: conv.pausado_hasta })) return;
-      const [mensajes] = await db.query("SELECT direccion, tipo, texto FROM (SELECT id, direccion, tipo, texto FROM wa_mensajes WHERE conversacion_id = ? AND error IS NULL ORDER BY id DESC LIMIT ?) t ORDER BY id", [conversacionId, MAX_HISTORIAL]);
-      if (!mensajes.length || mensajes[mensajes.length - 1].direccion !== "IN") return; // ya se respondió
+      const [mensajes] = await db.query("SELECT id, direccion, tipo, texto FROM (SELECT id, direccion, tipo, texto FROM wa_mensajes WHERE conversacion_id = ? AND error IS NULL ORDER BY id DESC LIMIT ?) t ORDER BY id", [conversacionId, MAX_HISTORIAL]);
+      const hasta = ultimoSinResponder(mensajes, conv.ultimo_in_respondido);
+      if (!hasta) return; // ya se respondió todo
+      await db.query("UPDATE wa_conversaciones SET ultimo_in_respondido = ? WHERE id = ?", [hasta, conversacionId]);
       let r;
       try {
         r = await pensar(mensajes);
@@ -514,6 +541,7 @@ function crearBotWhatsapp({ db, ai, leerLista, notasTexto, crearNotificacion }) 
     if (!ventanaAbierta(conv.ultimo_cliente_en)) throw Object.assign(new Error("Pasaron más de 24 h desde el último mensaje del cliente: WhatsApp no deja escribirle hasta que vuelva a escribir."), { status: 409 });
     const env = await enviarTexto(conv.telefono, texto);
     await guardarMensaje(conversacionId, { waId: env?.messages?.[0]?.id, direccion: "OUT", autor: "PERSONA", texto, usuarioId });
+    await db.query("UPDATE wa_conversaciones SET ultimo_in_respondido = (SELECT MAX(id) FROM wa_mensajes WHERE conversacion_id = ? AND direccion = 'IN') WHERE id = ?", [conversacionId, conversacionId]);
     await db.query(`UPDATE wa_conversaciones SET pausado_hasta = NOW() + INTERVAL ${PAUSA_HORAS} HOUR, derivada = 0, motivo_derivacion = NULL WHERE id = ?`, [conversacionId]);
   }
 
@@ -681,6 +709,7 @@ module.exports = {
   calcularItems,
   textoCalculo,
   botPuedeResponder,
+  ultimoSinResponder,
   ventanaAbierta,
   historialContents,
   normalizarSalida,

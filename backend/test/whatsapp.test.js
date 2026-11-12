@@ -118,3 +118,87 @@ test("si la IA devuelve HTML de mail, queda texto plano de WhatsApp", () => {
   assert.equal(w.textoWhatsapp("Hola **vos**\n\n\n\n## Precios"), "Hola *vos*\n\nPrecios");
   assert.equal(w.normalizarSalida({ respuesta: "<div>Hola <b>che</b></div>" }).respuesta, "Hola *che*");
 });
+
+test("qué falta responder: el último mensaje del cliente posterior al ya respondido", () => {
+  const msgs = [{ id: 1, direccion: "IN" }, { id: 2, direccion: "OUT" }, { id: 3, direccion: "IN" }, { id: 4, direccion: "OUT" }];
+  assert.equal(w.ultimoSinResponder(msgs, null), 3);
+  assert.equal(w.ultimoSinResponder(msgs, 1), 3); // el 3 llegó mientras el bot pensaba: queda antes de la respuesta, pero falta
+  assert.equal(w.ultimoSinResponder(msgs, 3), null);
+  assert.equal(w.ultimoSinResponder([], 0), null);
+});
+
+test("con base: dos fotos seguidas → el bot espera a mirar las dos y responde por la última", async () => {
+  let mysql;
+  try {
+    mysql = require("mysql2/promise");
+  } catch {
+    return;
+  }
+  const db = mysql.createPool({ host: process.env.TEST_DB_HOST || "localhost", user: process.env.TEST_DB_USER || "root", password: process.env.TEST_DB_PASSWORD || "", database: process.env.TEST_DB_NAME || "test" });
+  try {
+    await db.query("SELECT 1");
+  } catch {
+    await db.end().catch(() => {});
+    return;
+  }
+  const fetchOriginal = global.fetch;
+  const envVars = ["WHATSAPP_TOKEN", "WHATSAPP_PHONE_NUMBER_ID"];
+  try {
+    for (const t of ["wa_mensajes", "wa_conversaciones", "wa_correcciones", "reglas", "productos"]) await db.query(`DROP TABLE IF EXISTS ${t}`);
+    await db.query("CREATE TABLE reglas (clave VARCHAR(255) PRIMARY KEY, valor TEXT)");
+    await db.query("CREATE TABLE productos (codigo VARCHAR(50), nombre VARCHAR(255), categoria VARCHAR(100), medidas TEXT, precio_lista TEXT, aplicacion TEXT, descripcion TEXT, usos_recomendados TEXT, advertencias TEXT, foto_catalogo TEXT, foto_tecnica TEXT)");
+    await w.asegurarTablasWhatsapp(db);
+    process.env.WHATSAPP_TOKEN = "t";
+    process.env.WHATSAPP_PHONE_NUMBER_ID = "1";
+
+    const enviados = [];
+    global.fetch = async (url, opts = {}) => {
+      const u = String(url);
+      const json = (o) => ({ ok: true, status: 200, json: async () => o, arrayBuffer: async () => new ArrayBuffer(4), headers: { get: () => "image/jpeg" } });
+      if (u.endsWith("/messages")) {
+        const b = JSON.parse(opts.body);
+        if (b.type === "text") enviados.push(b.text.body);
+        return json({ messages: [{ id: `wamid.${enviados.length}` }] });
+      }
+      if (/\/media1$|\/media2$/.test(u)) return json({ url: `https://lookaside/${u.slice(-6)}`, mime_type: "image/jpeg" });
+      return json({});
+    };
+    const pedidosIA = [];
+    const espera = (ms) => new Promise((r) => setTimeout(r, ms));
+    const ai = {
+      models: {
+        generateContent: async (p) => {
+          if (p.contents?.[0]?.inlineData) {
+            // Describir la foto: la primera tarda menos que la segunda.
+            const cual = pedidosIA.filter((x) => x === "foto").length === 0 ? "CARTEL PORTÁTIL" : "CONO 65 CM";
+            pedidosIA.push("foto");
+            await espera(cual === "CARTEL PORTÁTIL" ? 200 : 4500);
+            return { text: cual };
+          }
+          pedidosIA.push(p.contents);
+          return { text: JSON.stringify({ respuesta: "ok" }) };
+        },
+      },
+    };
+    const bot = w.crearBotWhatsapp({ db, ai, leerLista: () => null, notasTexto: async () => "" });
+    const foto = (n, waId) => ({ waId, telefono: "549111", nombre: "Jefa", tipo: "image", mediaId: `media${n}`, mime: "image/jpeg", texto: null });
+    await bot.recibir(foto(1, "w1")); // la primera se describe rápido y el bot espera 3 s para responder
+    await espera(1000);
+    const p2 = bot.recibir(foto(2, "w2")); // la segunda llega en esa espera y tarda en describirse
+    await espera(3000); // vence la espera de la primera: antes respondía acá, sin haber visto la foto 2
+    assert.equal(enviados.length, 0);
+    await p2;
+    await espera(3300);
+    assert.equal(enviados.length, 1); // una sola respuesta, con las dos fotos ya vistas
+    const ultimoPedido = pedidosIA.filter((x) => x !== "foto").pop();
+    const ultimoTurnoCliente = ultimoPedido.filter((c) => c.role === "user").pop().parts[0].text;
+    assert.match(ultimoTurnoCliente, /CONO 65 CM/);
+    // Nada más para responder.
+    await bot.responder((await db.query("SELECT id FROM wa_conversaciones"))[0][0].id);
+    assert.equal(enviados.length, 1);
+  } finally {
+    global.fetch = fetchOriginal;
+    for (const v of envVars) delete process.env[v];
+    await db.end();
+  }
+});
