@@ -5870,7 +5870,7 @@ const agentes = registrarRutasAgentes(app, {
 });
 
 // WhatsApp: bot con la API oficial de Meta y su módulo de administración (permiso "whatsapp").
-const botWhatsapp = crearBotWhatsapp({ db, ai, leerLista, notasTexto: notasVentasTexto, crearNotificacion });
+const botWhatsapp = crearBotWhatsapp({ db, ai, leerLista, notasTexto: notasVentasTexto, crearNotificacion, imagenesDir: IMAGENES_DIR });
 registrarRutasWhatsapp(app, { db, requirePermiso, bot: botWhatsapp });
 // Llamadas de WhatsApp: las atiende el servicio de voz (carpeta voz/); acá solo se le da contexto.
 registrarRutasVoz(app, { db, bot: botWhatsapp });

@@ -202,3 +202,95 @@ test("con base: dos fotos seguidas → el bot espera a mirar las dos y responde 
     await db.end();
   }
 });
+
+test("texto de una foto: producto reconocido, marca nuestra y parecidos", () => {
+  const productos = [
+    { codigo: "2301CS", nombre: "Cono Obrador Classic" },
+    { codigo: "2853-3R", nombre: "Columna con base" },
+  ];
+  const t = w.textoFoto({ vista: { descripcion: "Cono naranja alto con cabezal", marca: "CONOFLEX", candidatos: ["2301CS", "2853-3R"] }, eleccion: { codigo: "2301cs", seguridad: "alta" }, productos, textoCliente: "Estoy buscando este cono" });
+  assert.equal(t, "📷 Foto: Cono naranja alto con cabezal\nMarca: es un producto Conoflex (nuestro).\nProducto reconocido: 2301CS Cono Obrador Classic (seguridad alta).\nTexto del cliente: Estoy buscando este cono");
+  const dudosa = w.textoFoto({ vista: { descripcion: "x", marca: "NO SE VE", candidatos: ["2853-3R", "NOEXISTE", "2301CS"] }, eleccion: { codigo: "2853-3R", seguridad: "baja" }, productos });
+  assert.equal(dudosa, "📷 Foto: x\nProductos parecidos del catálogo: 2853-3R Columna con base · 2301CS Cono Obrador Classic.");
+});
+
+test("ruta en disco de una foto del catálogo", () => {
+  assert.equal(w.rutaImagenLocal("http://66.97.34.163:3001/imagenes/cono%20obrador.jpg", "/app/public/imagenes"), "/app/public/imagenes/cono obrador.jpg");
+  assert.equal(w.rutaImagenLocal("http://x/imagenes/../../etc/passwd", "/app/public/imagenes"), null);
+  assert.equal(w.rutaImagenLocal("https://otra.com/foto.jpg", "/dir"), null);
+  assert.equal(w.rutaImagenLocal("x", null), null);
+});
+
+test("con base: la foto se compara con el catálogo y con sus fotos, y el bot ve el producto reconocido", async () => {
+  let mysql;
+  try {
+    mysql = require("mysql2/promise");
+  } catch {
+    return;
+  }
+  const db = mysql.createPool({ host: process.env.TEST_DB_HOST || "localhost", user: process.env.TEST_DB_USER || "root", password: process.env.TEST_DB_PASSWORD || "", database: process.env.TEST_DB_NAME || "test" });
+  try {
+    await db.query("SELECT 1");
+  } catch {
+    await db.end().catch(() => {});
+    return;
+  }
+  const fs = require("fs");
+  const os = require("os");
+  const path = require("path");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "imagenes-"));
+  fs.writeFileSync(path.join(dir, "obrador.jpg"), Buffer.from("foto-obrador"));
+  fs.writeFileSync(path.join(dir, "columna.jpg"), Buffer.from("foto-columna"));
+  const fetchOriginal = global.fetch;
+  try {
+    for (const t of ["wa_mensajes", "wa_conversaciones", "wa_correcciones", "reglas", "productos"]) await db.query(`DROP TABLE IF EXISTS ${t}`);
+    await db.query("CREATE TABLE reglas (clave VARCHAR(255) PRIMARY KEY, valor TEXT)");
+    await db.query("CREATE TABLE productos (codigo VARCHAR(50), nombre VARCHAR(255), categoria VARCHAR(100), medidas TEXT, precio_lista TEXT, aplicacion TEXT, descripcion TEXT, usos_recomendados TEXT, advertencias TEXT, foto_catalogo TEXT, foto_tecnica TEXT)");
+    await db.query("INSERT INTO productos (codigo, nombre, precio_lista, foto_catalogo) VALUES ('2301CS','Cono Obrador Classic','$50.000','http://66.97.34.163:3001/imagenes/obrador.jpg'),('2853-3R','Columna con base','$74.219,01','http://66.97.34.163:3001/imagenes/columna.jpg')");
+    await w.asegurarTablasWhatsapp(db);
+    process.env.WHATSAPP_TOKEN = "t";
+    process.env.WHATSAPP_PHONE_NUMBER_ID = "1";
+    global.fetch = async (url, opts = {}) => {
+      const json = (o) => ({ ok: true, status: 200, json: async () => o, arrayBuffer: async () => new ArrayBuffer(4), headers: { get: () => "image/jpeg" } });
+      if (String(url).endsWith("/messages")) return json({ messages: [{ id: `wamid.${Math.random()}` }] });
+      return json({ url: "https://lookaside/x", mime_type: "image/jpeg" });
+    };
+    const pasos = [];
+    let pedidoRespuesta = null;
+    const ai = {
+      models: {
+        generateContent: async (p) => {
+          if (Array.isArray(p.contents) && p.contents[0]?.inlineData) {
+            pasos.push("catalogo");
+            assert.match(p.contents[1], /2301CS \| Cono Obrador Classic/);
+            return { text: JSON.stringify({ descripcion: "Cono naranja de más de 1 m con cabezal y 2 bandas", marca: "CONOFLEX", candidatos: ["2853-3R", "2301CS"] }) };
+          }
+          const partes = p.contents?.[0]?.parts;
+          if (partes?.some((x) => x.inlineData)) {
+            pasos.push("fotos");
+            const fotos = partes.filter((x) => x.inlineData).map((x) => Buffer.from(x.inlineData.data, "base64").toString());
+            assert.deepEqual(fotos.slice(1), ["foto-columna", "foto-obrador"]); // las del catálogo, en el orden de los candidatos
+            return { text: JSON.stringify({ codigo: "2301CS", seguridad: "alta", motivo: "mismo cabezal" }) };
+          }
+          pedidoRespuesta = p;
+          return { text: JSON.stringify({ respuesta: "Es nuestro Obrador Classic" }) };
+        },
+      },
+    };
+    const bot = w.crearBotWhatsapp({ db, ai, leerLista: () => null, notasTexto: async () => "", imagenesDir: dir });
+    await bot.recibir({ waId: "wf1", telefono: "549222", nombre: "Jefa", tipo: "image", mediaId: "m1", mime: "image/jpeg", texto: "Estoy buscando este cono" });
+    await new Promise((r) => setTimeout(r, 3400));
+    assert.deepEqual(pasos, ["catalogo", "fotos"]);
+    const [[m]] = await db.query("SELECT texto FROM wa_mensajes WHERE direccion = 'IN'");
+    assert.match(m.texto, /Producto reconocido: 2301CS Cono Obrador Classic \(seguridad alta\)/);
+    assert.match(m.texto, /Marca: es un producto Conoflex/);
+    assert.match(pedidoRespuesta.contents.at(-1).parts[0].text, /Producto reconocido: 2301CS/);
+    assert.match(pedidoRespuesta.config.systemInstruction, /Nunca digas que un producto es "de otra marca"/);
+  } finally {
+    global.fetch = fetchOriginal;
+    delete process.env.WHATSAPP_TOKEN;
+    delete process.env.WHATSAPP_PHONE_NUMBER_ID;
+    fs.rmSync(dir, { recursive: true, force: true });
+    await db.end();
+  }
+});

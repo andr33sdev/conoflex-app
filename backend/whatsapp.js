@@ -178,7 +178,9 @@ PRODUCTOS Y PRECIOS
 - Podés pasar precios de lista a cualquiera que pregunte, tal cual figuran en el catálogo (respetá las condiciones de las reglas: IVA, envío, etc.).
 - Si un precio tiene variantes (ej. con o sin fijación), mostralas o preguntá cuál necesita.
 - NUNCA hagas cuentas vos. Si el cliente da cantidades, completá "items" con código y cantidad: el sistema agrega el cálculo exacto debajo de tu mensaje. En tu texto no escribas totales.
-- Si el cliente manda una foto de otro producto (de la competencia o roto), ofrecé el equivalente del catálogo y explicá por qué.
+- Fotos: si la foto trae "Producto reconocido", ESE es el producto: nombralo y pasá su precio directo. Si trae "Productos parecidos", ofrecé el primero y preguntá si es ese.
+- Nunca digas que un producto es "de otra marca" salvo que la foto diga "Marca:" con otra marca. Nuestro logo CONOFLEX suele verse borroso en las fotos.
+- Si el cliente manda una foto de un producto de la competencia o roto, ofrecé el equivalente del catálogo y explicá por qué.
 - Si quieren ver un producto, poné su código en "fotos" (solo si dice "tiene foto"; máximo ${MAX_FOTOS}).
 ${tieneLista ? '- Si piden la lista de precios completa o el catálogo, poné "enviar_lista": true.' : "- Hoy no hay lista de precios en PDF para mandar: pasá los precios por mensaje."}
 
@@ -273,6 +275,43 @@ function reenviarLlamada(rawBody) {
   fetch(`http://127.0.0.1:${puerto}/llamada`, { method: "POST", headers: { "Content-Type": "application/json", "x-voz-secreto": process.env.VOZ_SECRETO || "" }, body: rawBody })
     .then((r) => console.log(`[whatsapp] llamada reenviada al servicio de voz (${r.status})`))
     .catch((e) => console.error("[whatsapp] el servicio de voz no responde:", e.message));
+}
+
+/** Ruta en disco de una foto del catálogo (".../imagenes/x.jpg" → <dir>/x.jpg). null si no es de la app. */
+function rutaImagenLocal(url, dir) {
+  if (!url || !dir) return null;
+  const i = String(url).indexOf("/imagenes/");
+  if (i < 0) return null;
+  const nombre = decodeURIComponent(String(url).slice(i + "/imagenes/".length).split(/[?#]/)[0]);
+  if (!nombre || nombre.includes("..")) return null;
+  return require("path").join(dir, nombre);
+}
+
+const MIME_IMAGEN = { ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".webp": "image/webp" };
+
+/**
+ * Texto que queda de una foto del cliente, para la bandeja y para el bot.
+ *  vista: { descripcion, marca, candidatos:[codigo] }   (paso 1: la foto contra el catálogo escrito)
+ *  eleccion: { codigo, seguridad, motivo } | null       (paso 2: la foto contra las fotos del catálogo)
+ */
+function textoFoto({ vista, eleccion, productos, textoCliente }) {
+  const porCodigo = new Map(productos.map((p) => [normCodigo(p.codigo), p]));
+  const nombre = (c) => {
+    const p = porCodigo.get(normCodigo(c));
+    return p ? `${p.codigo} ${p.nombre}` : null;
+  };
+  const lineas = [`📷 Foto: ${String(vista?.descripcion || "sin descripción").trim()}`];
+  const marca = String(vista?.marca || "").toUpperCase();
+  if (marca === "CONOFLEX") lineas.push("Marca: es un producto Conoflex (nuestro).");
+  else if (marca && marca !== "NO SE VE") lineas.push(`Marca: ${vista.marca}.`);
+  const elegido = eleccion?.codigo && nombre(eleccion.codigo);
+  if (elegido && eleccion.seguridad !== "baja") lineas.push(`Producto reconocido: ${elegido} (seguridad ${eleccion.seguridad || "media"}).`);
+  else {
+    const parecidos = (vista?.candidatos || []).map(nombre).filter(Boolean).slice(0, 3);
+    if (parecidos.length) lineas.push(`Productos parecidos del catálogo: ${parecidos.join(" · ")}.`);
+  }
+  if (textoCliente) lineas.push(`Texto del cliente: ${textoCliente}`);
+  return lineas.join("\n");
 }
 
 // ---------------------------------------------------------------- base de datos
@@ -372,7 +411,7 @@ function urlFotoPublica(url) {
 
 // ---------------------------------------------------------------- el bot
 
-function crearBotWhatsapp({ db, ai, leerLista, notasTexto, crearNotificacion }) {
+function crearBotWhatsapp({ db, ai, leerLista, notasTexto, crearNotificacion, imagenesDir = null }) {
   const temporizadores = new Map(); // conversacion_id → timer
   const ocupadas = new Set(); // conversaciones respondiendo ahora mismo
   const pendientes = new Set(); // llegaron mensajes mientras se respondía
@@ -421,10 +460,67 @@ function crearBotWhatsapp({ db, ai, leerLista, notasTexto, crearNotificacion }) 
   }
 
   /** Audios y fotos se pasan a texto con la IA: así el bot los entiende y en la bandeja se pueden leer. */
+  /**
+   * Foto del cliente → qué producto del catálogo es.
+   * Paso 1: la foto contra el catálogo escrito (forma, altura, bandas, cabezal, base, logo) → hasta 4 candidatos.
+   * Paso 2: la foto contra las fotos de esos candidatos en el catálogo → cuál es, y con qué seguridad.
+   */
+  async function reconocerFoto(media, textoCliente) {
+    const { productos } = await contexto();
+    const r1 = await ai.models.generateContent({
+      model: MODELO,
+      contents: [
+        { inlineData: media },
+        `Sos experto en los productos de Conoflex, fábrica argentina de seguridad vial. Un cliente mandó esta foto por WhatsApp${textoCliente ? ` con el texto: "${textoCliente}"` : ""}.
+1) Describí el producto en 2 oraciones: tipo, color, forma, altura aproximada, cantidad de bandas reflectivas, cabezal o asa, base, texto visible.
+2) Marca: los productos Conoflex llevan el logo CONOFLEX en relieve, que en fotos suele leerse mal (ONDIFLEX, CONOPLEX, CONOFLE...). Si se parece a CONOFLEX, poné "CONOFLEX". Si se lee claramente otra marca, poné esa. Si no se ve, "NO SE VE".
+3) Elegí del CATÁLOGO hasta 4 códigos que más se parezcan, del más al menos parecido. Fijate sobre todo en la forma y en el nombre del modelo (un cono alto con cabezal es un cono, no una columna).
+Respondé solo JSON: {"descripcion": "...", "marca": "...", "candidatos": ["codigo", ...]}
+
+CATÁLOGO (código | nombre | categoría | medidas | precio | uso)
+${catalogoTexto(productos)}`,
+      ],
+      config: { temperature: 0, responseMimeType: "application/json" },
+    });
+    const vista = parsearJson(r1.text) || { descripcion: String(r1.text || "").slice(0, 400), candidatos: [] };
+
+    // Paso 2, solo si hay fotos de catálogo para comparar.
+    let eleccion = null;
+    const porCodigo = new Map(productos.map((p) => [normCodigo(p.codigo), p]));
+    const conFoto = [];
+    for (const c of (Array.isArray(vista.candidatos) ? vista.candidatos : []).slice(0, 4)) {
+      const p = porCodigo.get(normCodigo(c));
+      const ruta = p && rutaImagenLocal(p.foto_catalogo || p.foto_tecnica, imagenesDir);
+      const mime = ruta && MIME_IMAGEN[require("path").extname(ruta).toLowerCase()];
+      if (!mime) continue;
+      try {
+        const buf = await require("fs").promises.readFile(ruta);
+        if (buf.length <= 5 * 1024 * 1024) conFoto.push({ p, img: { mimeType: mime, data: buf.toString("base64") } });
+      } catch {
+        /* foto que no está en disco: se sigue sin ella */
+      }
+    }
+    if (conFoto.length) {
+      const partes = [{ text: "FOTO DEL CLIENTE:" }, { inlineData: media }];
+      for (const { p, img } of conFoto) partes.push({ text: `OPCIÓN ${p.codigo} — ${p.nombre}${p.medidas ? ` (${corto(p.medidas, 80)})` : ""}:` }, { inlineData: img });
+      partes.push({
+        text: 'Comparando forma, proporciones, cabezal, base y bandas: ¿cuál de las opciones es el mismo producto que la foto del cliente? Si ninguna es, codigo null. Respondé solo JSON: {"codigo": "..." | null, "seguridad": "alta" | "media" | "baja", "motivo": "..."}',
+      });
+      try {
+        const r2 = await ai.models.generateContent({ model: MODELO, contents: [{ role: "user", parts: partes }], config: { temperature: 0, responseMimeType: "application/json" } });
+        eleccion = parsearJson(r2.text);
+      } catch (e) {
+        console.error("[whatsapp] comparar fotos:", e.message);
+      }
+    }
+    return textoFoto({ vista, eleccion, productos, textoCliente });
+  }
+
   async function aTexto(m) {
     if (!m.mediaId || !["audio", "image"].includes(m.tipo)) return m.texto;
     try {
       const media = await descargarMedia(m.mediaId);
+      if (m.tipo === "image") return await reconocerFoto(media, m.texto);
       const pedido =
         m.tipo === "audio"
           ? "Transcribí este audio de WhatsApp tal cual, en español. Devolvé solo la transcripción."
@@ -716,6 +812,8 @@ module.exports = {
   textoWhatsapp,
   instrucciones,
   urlFotoPublica,
+  rutaImagenLocal,
+  textoFoto,
   tieneLlamadas,
   corto,
   enviarTexto,
