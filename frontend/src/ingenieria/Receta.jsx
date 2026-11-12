@@ -32,7 +32,7 @@ export default function Receta({ r, onActivar, onEditar, onEliminar, ocupado }) 
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <h3 className="text-lg font-extrabold text-white leading-tight break-words">{r.nombre_version}</h3>
-            {r.proceso && <span className="inline-flex items-center rounded-full border border-[#FFD60A]/35 bg-[#FFD60A]/10 px-2.5 py-1 text-[11px] font-extrabold uppercase tracking-wide text-[#FFD60A]">{{ INYECCION: "Inyección", ROTOMOLDEO: "Rotomoldeo", EXTRUSION: "Extrusión" }[r.proceso] || r.proceso}</span>}
+            {r.proceso && <span className="inline-flex items-center rounded-full border border-[#FFD60A]/35 bg-[#FFD60A]/10 px-2.5 py-1 text-[11px] font-extrabold uppercase tracking-wide text-[#FFD60A]">{{ INYECCION: "Inyección", ROTOMOLDEO: "Rotomoldeo", EXTRUSION: "Extrusión", TERCERIZADO: "Tercerizado" }[r.proceso] || r.proceso}</span>}
             {r.es_activa && (
               <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-400/40 bg-emerald-500/15 px-2.5 py-1 text-[11px] font-extrabold uppercase tracking-wide text-emerald-300">
                 <CheckCircle2 size={13} /> Activa en planta
@@ -92,7 +92,7 @@ export default function Receta({ r, onActivar, onEditar, onEliminar, ocupado }) 
         </div>
       ) : mp.length > 0 ? (
         <div className="mt-4">
-          <p className="text-[11px] font-extrabold uppercase tracking-[0.1em] text-zinc-500 mb-2">Cantidad por unidad producida</p>
+          <p className="text-[11px] font-extrabold uppercase tracking-[0.1em] text-zinc-500 mb-2">{r.proceso === "TERCERIZADO" ? "Materias primas por cada pieza (tercerizado)" : "Cantidad por unidad producida"}</p>
           <ul className="divide-y divide-white/[0.05]">
             {mp.map((i) => (
               <li key={i.id} className="flex items-center gap-3 py-2.5">
@@ -101,7 +101,7 @@ export default function Receta({ r, onActivar, onEditar, onEliminar, ocupado }) 
               </li>
             ))}
           </ul>
-          <p className="mt-2 text-xs text-zinc-500">Esta receta se cargó por pieza. Al editarla podés pasarla a fórmula por tachada.</p>
+          {r.proceso !== "TERCERIZADO" && <p className="mt-2 text-xs text-zinc-500">Esta receta se cargó por pieza. Al editarla podés pasarla a fórmula por tachada.</p>}
         </div>
       ) : null}
 

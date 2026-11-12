@@ -57,7 +57,8 @@ async function asegurarTablasIngenieria(db) {
 }
 
 // Cómo se fabrica un semielaborado. Solo el rotomoldeo lleva ciclos; solo la inyección se define por tachada.
-const PROCESOS = { INYECCION: "Inyección", ROTOMOLDEO: "Rotomoldeo", EXTRUSION: "Extrusión" };
+// Tercerizado: lo hace otro; la receta dice qué materias primas (en sus unidades) equivalen a una pieza.
+const PROCESOS = { INYECCION: "Inyección", ROTOMOLDEO: "Rotomoldeo", EXTRUSION: "Extrusión", TERCERIZADO: "Tercerizado" };
 const procesoValido = (p) => (Object.prototype.hasOwnProperty.call(PROCESOS, String(p || "").toUpperCase()) ? String(p).toUpperCase() : null);
 
 const ACCIONES = {
@@ -160,7 +161,7 @@ function prepararReceta(body, { esSE = false } = {}) {
   let proceso = null;
   if (esSE) {
     proceso = procesoValido(body.proceso);
-    if (!proceso) return { error: "Elegí en qué máquina se hace: Inyección, Rotomoldeo o Extrusión." };
+    if (!proceso) return { error: "Elegí cómo se hace: Inyección, Rotomoldeo, Extrusión o Tercerizado." };
   }
   const tieneTachada = mp.some((i) => i.cantidad_tachada != null && i.cantidad_tachada !== "");
   if (proceso === "INYECCION" && mp.length && !mp.every((i) => i.cantidad_tachada != null && i.cantidad_tachada !== "")) return { error: "La inyección se define por tachada: poné los kg de cada material por tachada." };
@@ -184,7 +185,7 @@ function prepararReceta(body, { esSE = false } = {}) {
       filas.push({ materia_prima_id: i.materia_prima_id, semielaborado_id: null, cantidad: c, cantidad_tachada: null, unidad_medida: i.unidad_medida || "Unidades" });
     }
     const p = F.numero(body.peso_pieza_kg);
-    if (p > 0) peso = p;
+    if (p > 0 && proceso !== "TERCERIZADO") peso = p;
   }
   const seIds = new Set();
   for (const i of se) {
