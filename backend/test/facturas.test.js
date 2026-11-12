@@ -77,7 +77,10 @@ test("informe: importes neto y total, y rentabilidad en US$ con el tipo de cambi
   const a = r.filas.find((f) => f.codigo === "A");
   assert.deepEqual([a.unidades, a.importe_neto, a.importe_total, a.costo_total, a.rentabilidad], [9, 500, 605, 3.6, 1.4]); // 500 $ / 100 = US$ 5 − 3,6
   assert.equal(r.filas.find((f) => f.codigo === "B").rentabilidad, null); // costo incompleto: no se calcula
-  assert.equal(r.filas.find((f) => f.codigo === "C").importe_incompleto, true);
+  const c = r.filas.find((f) => f.codigo === "C");
+  assert.equal(c.importe_incompleto, true);
+  assert.equal(c.importe_neto, null); // no se leyó ninguno: vacío, no $ 0
+  assert.match(c.aviso_importe, /ninguno/);
   assert.equal(r.totales.importe_neto, 900);
   assert.equal(r.totales.importe_total, 1089);
   assert.equal(r.filas.find((f) => f.codigo === "C").rentabilidad, null); // sin importe: no se calcula

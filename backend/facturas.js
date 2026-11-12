@@ -88,12 +88,17 @@ function armarInforme(lineas, productos, { tipoCambio = null } = {}) {
     if (!l.signo) continue;
     const k = norm(l.codigo);
     if (!k) continue;
-    const a = porCodigo.get(k) || { codigo: String(l.codigo).trim(), descripcion: l.descripcion || "", unidades: 0, neto: 0, total: 0, sinImporte: false };
+    const a = porCodigo.get(k) || { codigo: String(l.codigo).trim(), descripcion: l.descripcion || "", unidades: 0, neto: 0, total: 0, renglones: 0, sinImporte: 0, letrasSin: new Set() };
     a.unidades += l.signo * (Number(l.cantidad) || 0);
-    if (l.subtotal != null && Number.isFinite(Number(l.subtotal))) a.neto += l.signo * Math.abs(Number(l.subtotal));
-    else a.sinImporte = true;
-    if (l.total_item != null && Number.isFinite(Number(l.total_item))) a.total += l.signo * Math.abs(Number(l.total_item));
-    else a.sinImporte = true;
+    a.renglones++;
+    const okNeto = l.subtotal != null && Number.isFinite(Number(l.subtotal));
+    const okTotal = l.total_item != null && Number.isFinite(Number(l.total_item));
+    if (okNeto) a.neto += l.signo * Math.abs(Number(l.subtotal));
+    if (okTotal) a.total += l.signo * Math.abs(Number(l.total_item));
+    if (!okNeto || !okTotal) {
+      a.sinImporte++;
+      if (l.letra) a.letrasSin.add(l.letra);
+    }
     if (!a.descripcion && l.descripcion) a.descripcion = l.descripcion;
     porCodigo.set(k, a);
   }
@@ -114,14 +119,20 @@ function armarInforme(lineas, productos, { tipoCambio = null } = {}) {
     const neto = r2(a.neto);
     // Rentabilidad solo con costo e importe completos: con datos parciales daría cualquier cosa.
     const rentabilidad = tc && costoTotal != null && p?.completo && !a.sinImporte ? r2(neto / tc - costoTotal) : null;
+    const nadaLeido = a.sinImporte === a.renglones;
+    const letras = [...a.letrasSin].sort().join(", ");
+    const avisoImporte = !a.sinImporte
+      ? ""
+      : `${nadaLeido ? "No se pudo leer el importe de ninguno" : `No se pudo leer el importe de ${a.sinImporte} de ${a.renglones}`} de sus comprobantes${letras ? ` (factura/NC ${letras})` : ""}${nadaLeido ? "." : ": el importe es parcial."}`;
     filas.push({
       codigo: a.codigo, producto: p?.codigo || null, descripcion: a.descripcion, unidades,
       costo_unitario: costo, costo_total: costoTotal,
-      importe_neto: neto, importe_total: r2(a.total), importe_incompleto: a.sinImporte,
+      importe_neto: nadaLeido ? null : neto, importe_total: nadaLeido ? null : r2(a.total),
+      importe_incompleto: a.sinImporte > 0, aviso_importe: avisoImporte,
       rentabilidad, observacion: obs,
     });
   }
-  filas.sort((a, b) => (b.costo_total ?? -1) - (a.costo_total ?? -1) || b.importe_neto - a.importe_neto || b.unidades - a.unidades);
+  filas.sort((a, b) => (b.costo_total ?? -1) - (a.costo_total ?? -1) || (b.importe_neto ?? 0) - (a.importe_neto ?? 0) || b.unidades - a.unidades);
   return {
     filas,
     totales: {
@@ -130,8 +141,8 @@ function armarInforme(lineas, productos, { tipoCambio = null } = {}) {
       costo_total: r2(filas.reduce((s, f) => s + (f.costo_total || 0), 0)),
       sin_costo: filas.filter((f) => f.costo_unitario == null).length,
       incompletos: filas.filter((f) => f.costo_unitario != null && f.observacion).length,
-      importe_neto: r2(filas.reduce((s, f) => s + f.importe_neto, 0)),
-      importe_total: r2(filas.reduce((s, f) => s + f.importe_total, 0)),
+      importe_neto: r2(filas.reduce((s, f) => s + (f.importe_neto || 0), 0)),
+      importe_total: r2(filas.reduce((s, f) => s + (f.importe_total || 0), 0)),
       rentabilidad: tc ? r2(filas.reduce((s, f) => s + (f.rentabilidad || 0), 0)) : null,
       sin_rentabilidad: tc ? filas.filter((f) => f.rentabilidad == null).length : 0,
       sin_importe: filas.filter((f) => f.importe_incompleto).length,
@@ -218,7 +229,7 @@ async function guardarLote(db, comprobantes) {
 
 async function informe(db, desde, hasta, { tipoCambio = null } = {}) {
   const [lineas] = await db.query(
-    `SELECT i.codigo, i.descripcion, i.cantidad, i.subtotal, f.signo, f.id AS factura_id, f.total AS total_factura
+    `SELECT i.codigo, i.descripcion, i.cantidad, i.subtotal, f.signo, f.letra, f.id AS factura_id, f.total AS total_factura
        FROM factura_items i JOIN facturas f ON f.id = i.factura_id
       WHERE f.fecha BETWEEN ? AND ? AND f.signo <> 0`,
     [desde, hasta],

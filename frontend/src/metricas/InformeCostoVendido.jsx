@@ -54,7 +54,7 @@ async function descargarExcel(d, sel) {
   const obs = (f) => {
     const o = [];
     if (conCosto && f.observacion) o.push(f.observacion);
-    if (conImporte && f.importe_incompleto) o.push("Algún comprobante no trae el importe del producto: el importe es parcial.");
+    if (conImporte && f.aviso_importe) o.push(f.aviso_importe);
     if (sel.rentabilidad && f.rentabilidad == null && !o.length) o.push("Sin rentabilidad: falta costo o importe.");
     return o.join(" ");
   };
