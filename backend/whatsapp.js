@@ -18,6 +18,9 @@
 //   WHATSAPP_PUBLIC_BASE      (opcional) dirección pública para las fotos, por defecto https://conoflex-app.vercel.app
 //   WHATSAPP_API_VERSION      (opcional) por defecto v23.0
 const crypto = require("crypto");
+const fs = require("fs");
+const path = require("path");
+const fotos = require("./fotosCatalogo");
 const { leerPrecios } = require("./comercial/catalogo");
 
 const MODELO = "gemini-2.5-flash";
@@ -178,7 +181,8 @@ PRODUCTOS Y PRECIOS
 - Podés pasar precios de lista a cualquiera que pregunte, tal cual figuran en el catálogo (respetá las condiciones de las reglas: IVA, envío, etc.).
 - Si un precio tiene variantes (ej. con o sin fijación), mostralas o preguntá cuál necesita.
 - NUNCA hagas cuentas vos. Si el cliente da cantidades, completá "items" con código y cantidad: el sistema agrega el cálculo exacto debajo de tu mensaje. En tu texto no escribas totales.
-- Fotos: si la foto trae "Producto reconocido", ESE es el producto: nombralo y pasá su precio directo. Si trae "Productos parecidos", ofrecé el primero y preguntá si es ese.
+- Fotos: si la foto trae "Producto reconocido", ESE es el producto: nombralo y pasá su precio directo.
+- Si la foto dice "No es seguro. Opciones más parecidas", NO afirmes cuál es ni ofrezcas otros modelos: poné en "fotos" los códigos de esas opciones (máximo 3, en ese orden) y preguntale al cliente cuál de esas es, nombrándolas.
 - Nunca digas que un producto es "de otra marca" salvo que la foto diga "Marca:" con otra marca. Nuestro logo CONOFLEX suele verse borroso en las fotos.
 - Si el cliente manda una foto de un producto de la competencia o roto, ofrecé el equivalente del catálogo y explicá por qué.
 - Si quieren ver un producto, poné su código en "fotos" (solo si dice "tiene foto"; máximo ${MAX_FOTOS}).
@@ -277,43 +281,6 @@ function reenviarLlamada(rawBody) {
     .catch((e) => console.error("[whatsapp] el servicio de voz no responde:", e.message));
 }
 
-/** Ruta en disco de una foto del catálogo (".../imagenes/x.jpg" → <dir>/x.jpg). null si no es de la app. */
-function rutaImagenLocal(url, dir) {
-  if (!url || !dir) return null;
-  const i = String(url).indexOf("/imagenes/");
-  if (i < 0) return null;
-  const nombre = decodeURIComponent(String(url).slice(i + "/imagenes/".length).split(/[?#]/)[0]);
-  if (!nombre || nombre.includes("..")) return null;
-  return require("path").join(dir, nombre);
-}
-
-const MIME_IMAGEN = { ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".webp": "image/webp" };
-
-/**
- * Texto que queda de una foto del cliente, para la bandeja y para el bot.
- *  vista: { descripcion, marca, candidatos:[codigo] }   (paso 1: la foto contra el catálogo escrito)
- *  eleccion: { codigo, seguridad, motivo } | null       (paso 2: la foto contra las fotos del catálogo)
- */
-function textoFoto({ vista, eleccion, productos, textoCliente }) {
-  const porCodigo = new Map(productos.map((p) => [normCodigo(p.codigo), p]));
-  const nombre = (c) => {
-    const p = porCodigo.get(normCodigo(c));
-    return p ? `${p.codigo} ${p.nombre}` : null;
-  };
-  const lineas = [`📷 Foto: ${String(vista?.descripcion || "sin descripción").trim()}`];
-  const marca = String(vista?.marca || "").toUpperCase();
-  if (marca === "CONOFLEX") lineas.push("Marca: es un producto Conoflex (nuestro).");
-  else if (marca && marca !== "NO SE VE") lineas.push(`Marca: ${vista.marca}.`);
-  const elegido = eleccion?.codigo && nombre(eleccion.codigo);
-  if (elegido && eleccion.seguridad !== "baja") lineas.push(`Producto reconocido: ${elegido} (seguridad ${eleccion.seguridad || "media"}).`);
-  else {
-    const parecidos = (vista?.candidatos || []).map(nombre).filter(Boolean).slice(0, 3);
-    if (parecidos.length) lineas.push(`Productos parecidos del catálogo: ${parecidos.join(" · ")}.`);
-  }
-  if (textoCliente) lineas.push(`Texto del cliente: ${textoCliente}`);
-  return lineas.join("\n");
-}
-
 // ---------------------------------------------------------------- base de datos
 
 async function asegurarTablasWhatsapp(db) {
@@ -342,6 +309,21 @@ async function asegurarTablasWhatsapp(db) {
     error VARCHAR(300) NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     INDEX (conversacion_id, id)
+  )`);
+  // Foto guardada del cliente y producto que confirmó el equipo.
+  for (const [col, def] of [["media_archivo", "VARCHAR(255) NULL"], ["producto_confirmado", "VARCHAR(100) NULL"]]) {
+    const [c] = await db.query("SELECT 1 FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'wa_mensajes' AND column_name = ?", [col]);
+    if (!c.length) await db.query(`ALTER TABLE wa_mensajes ADD COLUMN ${col} ${def}`);
+  }
+  // Fotos reales de clientes confirmadas por el equipo: el reconocimiento las usa como ejemplos de cada producto.
+  await db.query(`CREATE TABLE IF NOT EXISTS wa_fotos_referencia (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    codigo VARCHAR(100) NOT NULL,
+    archivo VARCHAR(255) NOT NULL,
+    mensaje_id INT NULL UNIQUE,
+    usuario_id INT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    INDEX (codigo)
   )`);
   // Último mensaje del cliente ya respondido (por el bot o por una persona).
   const [col] = await db.query("SELECT 1 FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'wa_conversaciones' AND column_name = 'ultimo_in_respondido'");
@@ -411,7 +393,7 @@ function urlFotoPublica(url) {
 
 // ---------------------------------------------------------------- el bot
 
-function crearBotWhatsapp({ db, ai, leerLista, notasTexto, crearNotificacion, imagenesDir = null }) {
+function crearBotWhatsapp({ db, ai, leerLista, notasTexto, crearNotificacion, imagenesDir = null, fotosDir = path.join(__dirname, "datos", "whatsapp-fotos") }) {
   const temporizadores = new Map(); // conversacion_id → timer
   const ocupadas = new Set(); // conversaciones respondiendo ahora mismo
   const pendientes = new Set(); // llegaron mensajes mientras se respondía
@@ -460,67 +442,45 @@ function crearBotWhatsapp({ db, ai, leerLista, notasTexto, crearNotificacion, im
   }
 
   /** Audios y fotos se pasan a texto con la IA: así el bot los entiende y en la bandeja se pueden leer. */
-  /**
-   * Foto del cliente → qué producto del catálogo es.
-   * Paso 1: la foto contra el catálogo escrito (forma, altura, bandas, cabezal, base, logo) → hasta 4 candidatos.
-   * Paso 2: la foto contra las fotos de esos candidatos en el catálogo → cuál es, y con qué seguridad.
-   */
-  async function reconocerFoto(media, textoCliente) {
-    const { productos } = await contexto();
-    const r1 = await ai.models.generateContent({
-      model: MODELO,
-      contents: [
-        { inlineData: media },
-        `Sos experto en los productos de Conoflex, fábrica argentina de seguridad vial. Un cliente mandó esta foto por WhatsApp${textoCliente ? ` con el texto: "${textoCliente}"` : ""}.
-1) Describí el producto en 2 oraciones: tipo, color, forma, altura aproximada, cantidad de bandas reflectivas, cabezal o asa, base, texto visible.
-2) Marca: los productos Conoflex llevan el logo CONOFLEX en relieve, que en fotos suele leerse mal (ONDIFLEX, CONOPLEX, CONOFLE...). Si se parece a CONOFLEX, poné "CONOFLEX". Si se lee claramente otra marca, poné esa. Si no se ve, "NO SE VE".
-3) Elegí del CATÁLOGO hasta 4 códigos que más se parezcan, del más al menos parecido. Fijate sobre todo en la forma y en el nombre del modelo (un cono alto con cabezal es un cono, no una columna).
-Respondé solo JSON: {"descripcion": "...", "marca": "...", "candidatos": ["codigo", ...]}
-
-CATÁLOGO (código | nombre | categoría | medidas | precio | uso)
-${catalogoTexto(productos)}`,
-      ],
-      config: { temperature: 0, responseMimeType: "application/json" },
-    });
-    const vista = parsearJson(r1.text) || { descripcion: String(r1.text || "").slice(0, 400), candidatos: [] };
-
-    // Paso 2, solo si hay fotos de catálogo para comparar.
-    let eleccion = null;
-    const porCodigo = new Map(productos.map((p) => [normCodigo(p.codigo), p]));
-    const conFoto = [];
-    for (const c of (Array.isArray(vista.candidatos) ? vista.candidatos : []).slice(0, 4)) {
-      const p = porCodigo.get(normCodigo(c));
-      const ruta = p && rutaImagenLocal(p.foto_catalogo || p.foto_tecnica, imagenesDir);
-      const mime = ruta && MIME_IMAGEN[require("path").extname(ruta).toLowerCase()];
-      if (!mime) continue;
-      try {
-        const buf = await require("fs").promises.readFile(ruta);
-        if (buf.length <= 5 * 1024 * 1024) conFoto.push({ p, img: { mimeType: mime, data: buf.toString("base64") } });
-      } catch {
-        /* foto que no está en disco: se sigue sin ella */
-      }
+  /** Fotos reales que el equipo confirmó para cada producto: Map(codigo → [rutas]). */
+  async function referencias() {
+    const [rows] = await db.query("SELECT codigo, archivo FROM wa_fotos_referencia ORDER BY id DESC");
+    const m = new Map();
+    for (const r of rows) {
+      const k = normCodigo(r.codigo);
+      if (!m.has(k)) m.set(k, []);
+      m.get(k).push(path.join(fotosDir, r.archivo));
     }
-    if (conFoto.length) {
-      const partes = [{ text: "FOTO DEL CLIENTE:" }, { inlineData: media }];
-      for (const { p, img } of conFoto) partes.push({ text: `OPCIÓN ${p.codigo} — ${p.nombre}${p.medidas ? ` (${corto(p.medidas, 80)})` : ""}:` }, { inlineData: img });
-      partes.push({
-        text: 'Comparando forma, proporciones, cabezal, base y bandas: ¿cuál de las opciones es el mismo producto que la foto del cliente? Si ninguna es, codigo null. Respondé solo JSON: {"codigo": "..." | null, "seguridad": "alta" | "media" | "baja", "motivo": "..."}',
-      });
-      try {
-        const r2 = await ai.models.generateContent({ model: MODELO, contents: [{ role: "user", parts: partes }], config: { temperature: 0, responseMimeType: "application/json" } });
-        eleccion = parsearJson(r2.text);
-      } catch (e) {
-        console.error("[whatsapp] comparar fotos:", e.message);
-      }
-    }
-    return textoFoto({ vista, eleccion, productos, textoCliente });
+    return m;
   }
 
-  async function aTexto(m) {
+  /** Foto del cliente → qué producto es (ver fotosCatalogo.js). */
+  async function reconocerFoto(media, textoCliente) {
+    const { productos } = await contexto();
+    const { vista, decision } = await fotos.reconocer({ ai, modelo: MODELO, media, textoCliente, productos, imagenesDir, referencias: await referencias() });
+    return fotos.textoFoto({ vista, decision, productos, textoCliente });
+  }
+
+  /** Guarda la foto del cliente (fuera de la carpeta pública) para mostrarla en la bandeja y usarla de referencia. */
+  async function guardarFotoCliente(mensajeId, media) {
+    try {
+      await fs.promises.mkdir(fotosDir, { recursive: true });
+      const archivo = `${mensajeId}${media.mimeType === "image/png" ? ".png" : media.mimeType === "image/webp" ? ".webp" : ".jpg"}`;
+      await fs.promises.writeFile(path.join(fotosDir, archivo), Buffer.from(media.data, "base64"));
+      await db.query("UPDATE wa_mensajes SET media_archivo = ? WHERE id = ?", [archivo, mensajeId]);
+    } catch (e) {
+      console.error("[whatsapp] guardar foto:", e.message);
+    }
+  }
+
+  async function aTexto(m, mensajeId = null) {
     if (!m.mediaId || !["audio", "image"].includes(m.tipo)) return m.texto;
     try {
       const media = await descargarMedia(m.mediaId);
-      if (m.tipo === "image") return await reconocerFoto(media, m.texto);
+      if (m.tipo === "image") {
+        if (mensajeId) await guardarFotoCliente(mensajeId, media);
+        return await reconocerFoto(media, m.texto);
+      }
       const pedido =
         m.tipo === "audio"
           ? "Transcribí este audio de WhatsApp tal cual, en español. Devolvé solo la transcripción."
@@ -559,7 +519,7 @@ ${catalogoTexto(productos)}`,
       // Mientras se mira la foto o se escucha el audio, el bot no responde: si no, contestaría sin verla.
       procesandoMedia.set(conv.id, (procesandoMedia.get(conv.id) || 0) + 1);
       try {
-        const texto = await aTexto(m);
+        const texto = await aTexto(m, id);
         await db.query("UPDATE wa_mensajes SET texto = ? WHERE id = ?", [texto, id]);
         await db.query("UPDATE wa_conversaciones SET ultimo_texto = ? WHERE id = ?", [corto(texto, 280), conv.id]);
       } finally {
@@ -641,7 +601,7 @@ ${catalogoTexto(productos)}`,
     await db.query(`UPDATE wa_conversaciones SET pausado_hasta = NOW() + INTERVAL ${PAUSA_HORAS} HOUR, derivada = 0, motivo_derivacion = NULL WHERE id = ?`, [conversacionId]);
   }
 
-  return { recibir, pensar, enviarPersona, botGlobal, responder, contexto, guardarMensaje, asegurarConversacion, derivar };
+  return { recibir, pensar, enviarPersona, botGlobal, responder, contexto, guardarMensaje, asegurarConversacion, derivar, fotosDir };
 }
 
 // ---------------------------------------------------------------- rutas
@@ -705,7 +665,7 @@ function registrarRutasWhatsapp(app, { db, requirePermiso, bot }) {
 
   app.get("/api/whatsapp/conversaciones/:id/mensajes", permiso, async (req, res) => {
     try {
-      const [rows] = await db.query("SELECT id, direccion, autor, tipo, texto, error, created_at FROM (SELECT * FROM wa_mensajes WHERE conversacion_id = ? ORDER BY id DESC LIMIT 300) t ORDER BY id", [req.params.id]);
+      const [rows] = await db.query("SELECT id, direccion, autor, tipo, texto, error, created_at, media_archivo IS NOT NULL AS tiene_foto, producto_confirmado FROM (SELECT * FROM wa_mensajes WHERE conversacion_id = ? ORDER BY id DESC LIMIT 300) t ORDER BY id", [req.params.id]);
       await db.query("UPDATE wa_conversaciones SET no_leidos = 0 WHERE id = ?", [req.params.id]);
       res.json(rows);
     } catch (e) {
@@ -730,6 +690,51 @@ function registrarRutasWhatsapp(app, { db, requirePermiso, bot }) {
       if (req.body?.activo) await db.query("UPDATE wa_conversaciones SET pausado_hasta = NULL, derivada = 0, motivo_derivacion = NULL WHERE id = ?", [req.params.id]);
       else await db.query(`UPDATE wa_conversaciones SET pausado_hasta = NOW() + INTERVAL ${PAUSA_HORAS} HOUR WHERE id = ?`, [req.params.id]);
       res.json({ ok: true });
+    } catch (e) {
+      err(res, e);
+    }
+  });
+
+  // Foto que mandó el cliente (no es pública: solo con sesión y permiso).
+  app.get("/api/whatsapp/mensajes/:id/foto", permiso, async (req, res) => {
+    try {
+      const [[m]] = await db.query("SELECT media_archivo FROM wa_mensajes WHERE id = ?", [req.params.id]);
+      if (!m?.media_archivo || m.media_archivo.includes("..")) return res.sendStatus(404);
+      res.sendFile(path.join(bot.fotosDir, m.media_archivo), (e) => e && !res.headersSent && res.sendStatus(404));
+    } catch (e) {
+      err(res, e);
+    }
+  });
+
+  app.get("/api/whatsapp/productos", permiso, async (req, res) => {
+    try {
+      const [rows] = await db.query("SELECT codigo, nombre FROM productos WHERE codigo IS NOT NULL AND codigo <> '' ORDER BY codigo");
+      res.json(rows);
+    } catch (e) {
+      err(res, e);
+    }
+  });
+
+  // El equipo dice qué producto era la foto: queda como foto de referencia de ese producto para las próximas.
+  app.post("/api/whatsapp/mensajes/:id/producto", permiso, async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      const codigo = String(req.body?.codigo || "").trim();
+      const [[m]] = await db.query("SELECT media_archivo FROM wa_mensajes WHERE id = ? AND direccion = 'IN'", [id]);
+      if (!m?.media_archivo) return res.status(404).json({ error: "Ese mensaje no tiene una foto guardada." });
+      if (!codigo) {
+        await db.query("DELETE FROM wa_fotos_referencia WHERE mensaje_id = ?", [id]);
+        await db.query("UPDATE wa_mensajes SET producto_confirmado = NULL WHERE id = ?", [id]);
+        return res.json({ ok: true });
+      }
+      const [[p]] = await db.query("SELECT codigo, nombre FROM productos WHERE codigo = ?", [codigo]);
+      if (!p) return res.status(400).json({ error: "Ese código no está en el catálogo." });
+      await db.query(
+        "INSERT INTO wa_fotos_referencia (codigo, archivo, mensaje_id, usuario_id) VALUES (?,?,?,?) ON DUPLICATE KEY UPDATE codigo = VALUES(codigo), usuario_id = VALUES(usuario_id)",
+        [p.codigo, m.media_archivo, id, req.user?.id || null],
+      );
+      await db.query("UPDATE wa_mensajes SET producto_confirmado = ? WHERE id = ?", [p.codigo, id]);
+      res.json({ ok: true, codigo: p.codigo, nombre: p.nombre });
     } catch (e) {
       err(res, e);
     }
@@ -812,8 +817,6 @@ module.exports = {
   textoWhatsapp,
   instrucciones,
   urlFotoPublica,
-  rutaImagenLocal,
-  textoFoto,
   tieneLlamadas,
   corto,
   enviarTexto,
