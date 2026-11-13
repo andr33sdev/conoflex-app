@@ -30,6 +30,7 @@ const VisorAR = lazy(() => import("./VisorAR"));
 const SolicitudesCompraModule = lazy(() => import("./SolicitudesCompraModule"));
 const SugerenciasCompra = lazy(() => import("./SugerenciasCompra"));
 const FirmaSolicitudPublica = lazy(() => import("./FirmaSolicitudPublica"));
+const LlamadaPublica = lazy(() => import("./voz/LlamadaPublica"));
 const Agentes = lazy(() => import("./Agentes"));
 import { itemPorId, tieneAlgunAgente } from "./menu";
 import PantallaCarga, { CargandoModulo } from "./PantallaCarga";
@@ -110,6 +111,7 @@ function AppInterna() {
   const params = new URLSearchParams(window.location.search);
   const firmarScId = params.get("firmar_sc");
   const firmarRol = params.get("rol") || "gerente";
+  const llamarToken = params.get("llamar");
 
   // Botones atrás/adelante del navegador.
   useEffect(() => {
@@ -172,6 +174,14 @@ function AppInterna() {
           rol={firmarRol}
           onVolver={() => (window.location.href = "/")}
         />
+      </Suspense>
+    );
+  }
+
+  if (llamarToken) {
+    return (
+      <Suspense fallback={<CargandoModulo />}>
+        <LlamadaPublica token={llamarToken} />
       </Suspense>
     );
   }

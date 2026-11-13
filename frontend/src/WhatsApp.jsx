@@ -1,14 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { AlertCircle, CheckCircle2, FlaskConical, GraduationCap, MessagesSquare, X } from "lucide-react";
+import { AlertCircle, CheckCircle2, FlaskConical, GraduationCap, MessagesSquare, PhoneCall, X } from "lucide-react";
 import { api } from "./produccion/util";
 import Conversaciones from "./whatsapp/Conversaciones";
 import Entrenar from "./whatsapp/Entrenar";
 import Probar from "./whatsapp/Probar";
+import Llamar from "./whatsapp/Llamar";
 
 const TABS = [
   { id: "conversaciones", texto: "Conversaciones", icono: MessagesSquare },
   { id: "entrenar", texto: "Entrenar", icono: GraduationCap },
   { id: "probar", texto: "Probar", icono: FlaskConical },
+  { id: "llamar", texto: "Llamar", icono: PhoneCall },
 ];
 
 export default function WhatsApp() {
@@ -63,6 +65,7 @@ export default function WhatsApp() {
         {tab === "conversaciones" && <Conversaciones aviso={aviso} estado={estado} />}
         {tab === "entrenar" && <Entrenar aviso={aviso} />}
         {tab === "probar" && <Probar aviso={aviso} />}
+        {tab === "llamar" && <Llamar aviso={aviso} />}
       </main>
 
       {toast && (

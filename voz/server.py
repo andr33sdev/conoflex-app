@@ -1,4 +1,4 @@
-"""Servicio de voz de Conoflex: atiende las llamadas de WhatsApp.
+"""Servicio de voz de Conoflex: atiende las llamadas de WhatsApp y las que entran desde el navegador.
 
 No está expuesto a internet: escucha en 127.0.0.1. El backend del chat recibe el aviso de Meta,
 valida la firma y le reenvía acá solo los eventos de llamadas. Si este servicio se cae, el chat
@@ -26,19 +26,23 @@ import puertos  # noqa: E402
 
 puertos.instalar()
 
+from pipecat.transports.smallwebrtc.connection import IceServer, SmallWebRTCConnection  # noqa: E402
 from pipecat.transports.whatsapp.api import WhatsAppApi, WhatsAppWebhookRequest  # noqa: E402
 from pipecat.transports.whatsapp.client import WhatsAppClient  # noqa: E402
 
 import conoflex  # noqa: E402
-from bot import run_bot  # noqa: E402
+from bot import run_bot, run_bot_web  # noqa: E402
 
 TOKEN = os.getenv("WHATSAPP_TOKEN", "")
 PHONE_ID = os.getenv("WHATSAPP_PHONE_NUMBER_ID", "")
 SECRETO = os.getenv("VOZ_SECRETO", "")
 PUERTO = int(os.getenv("VOZ_PUERTO", "3002"))
+WEB_MAX = int(os.getenv("VOZ_WEB_MAX", "4"))  # llamadas desde el navegador al mismo tiempo
+STUN = [u.strip() for u in os.getenv("VOZ_STUN", "stun:stun.l.google.com:19302").split(",") if u.strip()]
 
 estado: dict = {}
 llamadas: set[asyncio.Task] = set()
+llamadas_web: set[asyncio.Task] = set()
 
 
 @asynccontextmanager
@@ -64,7 +68,7 @@ app = FastAPI(title="Conoflex voz", lifespan=lifespan)
 
 @app.get("/salud")
 async def salud():
-    return {"ok": True, "llamadas_en_curso": len(llamadas)}
+    return {"ok": True, "llamadas_en_curso": len(llamadas), "llamadas_web": len(llamadas_web)}
 
 
 def _llamadas_entrantes(body: WhatsAppWebhookRequest):
@@ -126,6 +130,30 @@ async def llamada(request: Request):
         logger.error(f"[voz] error atendiendo: {e}")
         raise HTTPException(status_code=500)
     return {"ok": True}
+
+
+@app.post("/web/oferta")
+async def web_oferta(request: Request):
+    """Llamada desde el navegador. El backend ya validó quién llama y manda lo que sabe la asistente."""
+    if not SECRETO or request.headers.get("x-voz-secreto") != SECRETO:
+        raise HTTPException(status_code=403)
+    datos = await request.json()
+    ctx, llamada_id = datos.get("ctx") or {}, datos.get("llamada_id")
+    if not ctx.get("instrucciones") or datos.get("type") != "offer" or not datos.get("sdp"):
+        raise HTTPException(status_code=400)
+    if len(llamadas_web) >= WEB_MAX:
+        raise HTTPException(status_code=429)
+
+    conexion = SmallWebRTCConnection(ice_servers=[IceServer(urls=u) for u in STUN])
+    try:
+        await conexion.initialize(sdp=datos["sdp"], type="offer")
+    except Exception as e:
+        logger.error(f"[voz-web] oferta inválida: {e}")
+        raise HTTPException(status_code=400)
+    tarea = asyncio.create_task(run_bot_web(conexion, llamada_id, ctx, estado["http"]))
+    llamadas_web.add(tarea)
+    tarea.add_done_callback(llamadas_web.discard)
+    return conexion.get_answer()
 
 
 if __name__ == "__main__":
