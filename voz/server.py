@@ -57,6 +57,8 @@ async def lifespan(app: FastAPI):
     motor = proveedor()
     if motor == "openai" and not os.getenv("OPENAI_API_KEY"):
         faltan.append("OPENAI_API_KEY")
+    elif motor == "elevenlabs" and not (os.getenv("OPENAI_API_KEY") and os.getenv("ELEVENLABS_API_KEY") and os.getenv("VOZ_ELEVEN_VOZ")):
+        faltan.append("OPENAI_API_KEY, ELEVENLABS_API_KEY y VOZ_ELEVEN_VOZ")
     elif motor == "vertex" and not (os.getenv("VOZ_VERTEX_PROYECTO") and (os.getenv("VOZ_VERTEX_CREDENCIALES") or os.getenv("GOOGLE_APPLICATION_CREDENTIALS"))):
         faltan.append("VOZ_VERTEX_PROYECTO y VOZ_VERTEX_CREDENCIALES")
     elif motor == "gemini" and not (os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")):
