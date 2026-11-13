@@ -14,6 +14,7 @@ import aiohttp
 from loguru import logger
 from pipecat.adapters.llm.schemas.function_schema import FunctionSchema
 from pipecat.audio.vad.silero import SileroVADAnalyzer
+from pipecat.audio.vad.vad_analyzer import VADParams
 from pipecat.adapters.llm.schemas.tools_schema import ToolsSchema
 from pipecat.frames.frames import LLMFullResponseStartFrame, LLMRunFrame, LLMTextFrame, TranscriptionFrame
 from pipecat.processors.frame_processor import FrameProcessor
@@ -193,18 +194,61 @@ def _crear_llm(ctx: dict, herramientas: list):
     )
 
 
+# Palabras que la voz pronuncia "en inglés": se le pasan escritas como suenan en castellano.
+# Se pueden sumar más sin tocar código con VOZ_PRONUNCIAR="palabra=como se dice;otra=como se dice".
+PRONUNCIAR = {
+    "semiflexible": "semi flexible",
+    "semiflexibles": "semi flexibles",
+    "pvc": "pe ve ce",
+    "iva": "iva",
+    "king cone": "king con",
+    "light": "lait",
+    "wet floor": "uet flor",
+    "mp": "eme pe",
+}
+
+
+def tabla_pronunciacion() -> dict:
+    tabla = dict(PRONUNCIAR)
+    for par in (os.getenv("VOZ_PRONUNCIAR") or "").split(";"):
+        if "=" in par:
+            k, v = par.split("=", 1)
+            if k.strip():
+                tabla[k.strip().lower()] = v.strip()
+    return tabla
+
+
+def pronunciar(texto: str, tabla: dict) -> str:
+    """Reemplaza palabras completas (sin importar mayúsculas) en una sola pasada, las más largas primero."""
+    claves = [k for k in sorted(tabla, key=len, reverse=True) if tabla[k].lower() != k]
+    if not claves:
+        return texto
+    patron = re.compile(r"(?<![\w])(" + "|".join(re.escape(k) for k in claves) + r")(?![\w])", re.IGNORECASE)
+    return patron.sub(lambda m: tabla[m.group(1).lower()], texto)
+
+
 def _oido_y_voz():
-    """STT y TTS de la cascada."""
+    """Oído y voz de la cascada.
+    Oído: el VAD local avisa apenas dejás de hablar (0,2 s) y la transcripción viene en vivo
+    (gpt-realtime-whisper, demora mínima), así no se espera a que el servidor decida ni a transcribir todo al final."""
     from pipecat.services.elevenlabs.tts import ElevenLabsTTSService
     from pipecat.services.openai.stt import OpenAIRealtimeSTTService
 
     stt = OpenAIRealtimeSTTService(
         api_key=os.getenv("OPENAI_API_KEY", ""),
-        turn_detection={"type": "server_vad", "threshold": 0.55, "prefix_padding_ms": 250, "silence_duration_ms": int(os.getenv("VOZ_SILENCIO_MS", "450"))},
-        settings=OpenAIRealtimeSTTService.Settings(model=os.getenv("VOZ_STT", "gpt-transcribe"), language=Language.ES, noise_reduction="near_field"),
+        turn_detection=False,
+        settings=OpenAIRealtimeSTTService.Settings(
+            model=os.getenv("VOZ_STT", "gpt-realtime-whisper"), language=Language.ES, noise_reduction="near_field", delay="minimal"
+        ),
     )
+    tabla = tabla_pronunciacion()
+
+    async def a_castellano(texto, _tipo):
+        return pronunciar(texto, tabla)
+
     tts = ElevenLabsTTSService(
         api_key=os.getenv("ELEVENLABS_API_KEY", ""),
+        text_transforms=[("*", a_castellano)],
         settings=ElevenLabsTTSService.Settings(
             voice=os.getenv("VOZ_ELEVEN_VOZ", ""),
             model=os.getenv("VOZ_ELEVEN_MODELO", "eleven_flash_v2_5"),
@@ -215,6 +259,22 @@ def _oido_y_voz():
         ),
     )
     return stt, tts
+
+
+def _medidor(nombre: str):
+    """Deja en el log cuánto tardó cada respuesta y en qué se fue el tiempo."""
+    from pipecat.observers.user_bot_latency_observer import UserBotLatencyObserver
+
+    obs = UserBotLatencyObserver()
+
+    @obs.event_handler("on_latency_breakdown")
+    async def _(observer, breakdown):
+        try:
+            logger.info(f"[voz] {nombre} demora: " + " | ".join(l.strip() for l in breakdown.turn_contribution_lines()))
+        except Exception:
+            pass
+
+    return obs
 
 
 MARCA_FICHAS = "FICHAS DEL CATÁLOGO"
@@ -287,14 +347,19 @@ async def _armar(transport, llm, ctx: dict | None = None, herramientas: list | N
     Con OpenAI los turnos los decide su servidor; con Gemini, el VAD local; en la cascada, el oído de OpenAI."""
     cascada = es_cascada()
     context = LLMContext(tools=ToolsSchema(standard_tools=herramientas)) if cascada and herramientas else LLMContext()
-    params = LLMUserAggregatorParams() if proveedor() in ("openai", "elevenlabs") else LLMUserAggregatorParams(vad_analyzer=SileroVADAnalyzer())
+    if proveedor() == "openai":
+        params = LLMUserAggregatorParams()
+    elif cascada:
+        params = LLMUserAggregatorParams(vad_analyzer=SileroVADAnalyzer(params=VADParams(stop_secs=float(os.getenv("VOZ_PAUSA", "0.2")))))
+    else:
+        params = LLMUserAggregatorParams(vad_analyzer=SileroVADAnalyzer())
     user_aggregator, assistant_aggregator = LLMContextAggregatorPair(context, realtime_service_mode=not cascada, user_params=params)
     if cascada:
         stt, tts = _oido_y_voz()
         etapas = [transport.input(), stt, FichasAutomaticas(context, (ctx or {}).get("catalogo", [])), user_aggregator, llm, SoloLoQueSeDice(), tts, transport.output(), assistant_aggregator]
     else:
         etapas = [transport.input(), user_aggregator, llm, transport.output(), assistant_aggregator]
-    worker = PipelineWorker(Pipeline(etapas), params=PipelineParams(enable_metrics=True))
+    worker = PipelineWorker(Pipeline(etapas), params=PipelineParams(enable_metrics=True), observers=[_medidor(proveedor())])
     runner = WorkerRunner(handle_sigint=False)
     await runner.add_workers(worker)
     return context, user_aggregator, assistant_aggregator, worker, runner
