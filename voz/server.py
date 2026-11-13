@@ -22,6 +22,12 @@ from loguru import logger
 load_dotenv(Path(__file__).resolve().parent.parent / "backend" / ".env")
 load_dotenv(Path(__file__).resolve().parent / ".env", override=True)
 
+import sys  # noqa: E402
+
+# Los logs DEBUG de pipecat escriben muchísimo por llamada y le roban CPU al audio.
+logger.remove()
+logger.add(sys.stderr, level=os.getenv("VOZ_LOG", "INFO").upper())
+
 import puertos  # noqa: E402
 
 puertos.instalar()

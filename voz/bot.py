@@ -74,6 +74,14 @@ HERRAMIENTAS = [
 ]
 
 
+BUSCAR = FunctionSchema(
+    name="buscar_catalogo",
+    description="Busca en el catálogo y devuelve las fichas completas (precio, medidas, altura, peso, usos). Usala antes de dar cualquier dato de un producto.",
+    properties={"consulta": {"type": "string", "description": "Lo que busca el cliente, en pocas palabras: producto, código o medida (ej: 'conos 120 cm')"}},
+    required=["consulta"],
+)
+HERRAMIENTAS.append(BUSCAR)
+
 HERRAMIENTAS_WEB = [
     HERRAMIENTAS[0],
     FunctionSchema(
@@ -89,6 +97,7 @@ HERRAMIENTAS_WEB = [
         required=["motivo"],
     ),
     HERRAMIENTAS[3],
+    BUSCAR,
 ]
 
 
@@ -97,6 +106,18 @@ def proveedor() -> str:
     u "openai" (OpenAI Realtime, el de ChatGPT voz). Se elige con VOZ_PROVEEDOR."""
     p = (os.getenv("VOZ_PROVEEDOR") or "gemini").strip().lower()
     return p if p in ("gemini", "vertex", "openai") else "gemini"
+
+
+def _turnos_openai():
+    """Cuándo terminó de hablar el cliente. "rapido" (por defecto): corta tras ~0,45 s de silencio, como
+    una charla; "semantico": espera a que la frase tenga sentido (más natural, a veces más lento)."""
+    if (os.getenv("VOZ_TURNOS") or "rapido").strip().lower() == "semantico":
+        from pipecat.services.openai.realtime import events as oa
+
+        return oa.SemanticTurnDetection(eagerness="high")
+    from pipecat.services.openai.realtime import events as oa
+
+    return oa.TurnDetection(threshold=0.55, prefix_padding_ms=250, silence_duration_ms=int(os.getenv("VOZ_SILENCIO_MS", "450")))
 
 
 def _crear_llm(ctx: dict, herramientas: list):
@@ -116,7 +137,7 @@ def _crear_llm(ctx: dict, herramientas: list):
                         input=oa.AudioInput(
                             transcription=oa.InputAudioTranscription(language="es"),
                             noise_reduction=oa.InputAudioNoiseReduction(type="near_field"),
-                            turn_detection=oa.SemanticTurnDetection(eagerness="high"),
+                            turn_detection=_turnos_openai(),
                         ),
                         output=oa.AudioOutput(voice=os.getenv("VOZ_VOZ_OPENAI", "marin")),
                     ),
@@ -158,6 +179,13 @@ async def _armar(transport, llm):
     runner = WorkerRunner(handle_sigint=False)
     await runner.add_workers(worker)
     return context, user_aggregator, assistant_aggregator, worker, runner
+
+
+def _buscador(ctx: dict):
+    async def h_buscar(params: FunctionCallParams):
+        await params.result_callback(conoflex.buscar_catalogo((params.arguments or {}).get("consulta", ""), ctx.get("catalogo", [])))
+
+    return h_buscar
 
 
 def _tope(context, worker, cortando: asyncio.Event, cortar, despedida: str):
@@ -224,6 +252,7 @@ async def run_bot(webrtc_connection, call, nombre_cliente: str | None, ctx: dict
         asyncio.create_task(cortar(espera=2.5))
 
     llm.register_function("calcular_presupuesto", h_calcular)
+    llm.register_function("buscar_catalogo", _buscador(ctx))
     llm.register_function("enviar_por_whatsapp", h_enviar, timeout_secs=20)
     llm.register_function("derivar_a_persona", h_derivar, timeout_secs=20)
     llm.register_function("cortar_llamada", h_cortar)
@@ -305,6 +334,7 @@ async def run_bot_web(connection, llamada_id: int, ctx: dict, http: aiohttp.Clie
         asyncio.create_task(cortar(espera=2.5))
 
     llm.register_function("calcular_presupuesto", h_calcular)
+    llm.register_function("buscar_catalogo", _buscador(ctx))
     llm.register_function("dejar_contacto", h_contacto, timeout_secs=20)
     llm.register_function("cortar_llamada", h_cortar)
 

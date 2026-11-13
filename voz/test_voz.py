@@ -78,3 +78,26 @@ class Puertos(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class Catalogo(unittest.TestCase):
+    CAT = [
+        {"codigo": "2300-2R", "texto": "2300-2R | VENCEDOR | Conos | altura: 120 cm | precio: $126.263,07"},
+        {"codigo": "1200-2R", "texto": "1200-2R | Rutero PVC | Conos | altura: 90 cm | precio: consultar"},
+        {"codigo": "2400-2R", "texto": "2400-2R | AUTOPISTA | Conos | datos: Altura: 120 cm. | precio: $225.855,99"},
+        {"codigo": "MP3040", "texto": "MP3040 | TOPE DE ESTACIONAMIENTO | General | precio: $34.289,89"},
+    ]
+
+    def test_medida(self):
+        r = conoflex.buscar_catalogo("conos de 120 centímetros", self.CAT)
+        self.assertEqual(len(r["resultados"]), 3)
+        self.assertTrue(r["resultados"][0].startswith(("2300", "2400")))
+        self.assertTrue(r["resultados"][1].startswith(("2300", "2400")))
+
+    def test_nombre_sin_tildes(self):
+        r = conoflex.buscar_catalogo("tope estacionamiento", self.CAT)
+        self.assertTrue(r["resultados"][0].startswith("MP3040"))
+
+    def test_nada(self):
+        self.assertEqual(conoflex.buscar_catalogo("helicóptero", self.CAT)["resultados"], [])
+        self.assertEqual(conoflex.buscar_catalogo("de la", self.CAT)["resultados"], [])

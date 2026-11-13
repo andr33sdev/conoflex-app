@@ -13,8 +13,8 @@
 //   POST /api/public/voz/web-fin            (solo el servicio de voz) transcripción al cortar
 //   POST /api/public/voz/web-contacto       (solo el servicio de voz) datos que dejó el cliente
 const crypto = require("crypto");
-const { instruccionesVoz, preciosVoz, esLocalConSecreto, NOMBRE_VOZ } = require("./whatsappVoz");
-const { catalogoTexto, corto } = require("./whatsapp");
+const { instruccionesVoz, preciosVoz, esLocalConSecreto, datosCatalogoVoz, NOMBRE_VOZ } = require("./whatsappVoz");
+const { corto } = require("./whatsapp");
 
 const ROLES_CONTACTO = ["ADMIN", "COMERCIAL"];
 const ORIGENES = ["APP", "LINK"];
@@ -103,7 +103,10 @@ function registrarRutasVozWeb(app, { db, bot, requirePermiso, crearNotificacion,
           sdp: oferta.sdp,
           type: oferta.type,
           llamada_id: llamadaId,
-          ctx: { nombre: NOMBRE_VOZ, quien, instrucciones: instruccionesVoz({ ...ctx, catalogo: catalogoTexto(ctx.productos), nombreCliente: quien, canal: "web" }), precios: preciosVoz(ctx.productos) },
+          ctx: (() => {
+            const cat = datosCatalogoVoz(ctx.productos);
+            return { nombre: NOMBRE_VOZ, quien, instrucciones: instruccionesVoz({ ...ctx, catalogo: cat.catalogo, nombreCliente: quien, canal: "web" }), precios: preciosVoz(ctx.productos), catalogo: cat.detalle };
+          })(),
         }),
         signal: AbortSignal.timeout(20000),
       });

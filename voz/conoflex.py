@@ -1,6 +1,7 @@
 """Comunicación con el backend de la app (el mismo servidor, puerto 3001) y cálculos puros."""
 
 import os
+import re
 
 import aiohttp
 
@@ -57,6 +58,42 @@ def calcular_presupuesto(items: list, precios: list) -> dict:
         )
     total = round(sum(l.pop("_sub") for l in lineas), 2)
     return {"lineas": lineas, "total": pesos(total) if lineas else None, "sin_precio": sin_precio}
+
+
+def _sin_tildes(t: str) -> str:
+    import unicodedata
+
+    return "".join(c for c in unicodedata.normalize("NFD", str(t or "").lower()) if unicodedata.category(c) != "Mn")
+
+
+_VACIAS = {"de", "del", "la", "el", "los", "las", "un", "una", "unos", "para", "con", "y", "o", "en", "que", "cm", "centimetros", "centimetro", "por", "me", "quiero", "tenes", "tienen", "hay", "algo"}
+
+
+def buscar_catalogo(consulta: str, catalogo: list, maximo: int = 8) -> dict:
+    """Fichas del catálogo que mejor coinciden con lo que pidió el cliente (palabras y medidas)."""
+    palabras = [w for w in re.findall(r"[a-z0-9]+", _sin_tildes(consulta)) if w not in _VACIAS]
+    if not palabras:
+        return {"resultados": [], "nota": "Decí qué producto o medida buscás."}
+    puntajes = []
+    for i, item in enumerate(catalogo or []):
+        texto = _sin_tildes(item.get("texto", ""))
+        codigo = _sin_tildes(item.get("codigo", ""))
+        tokens = set(re.findall(r"[a-z0-9]+", texto))
+        puntos = 0
+        for w in palabras:
+            if w.isdigit():
+                # una medida tiene que aparecer como número entero ("120" no matchea "1200")
+                if re.search(rf"(?<![\d.,]){w}\s*(cm|kg|mm)\b", texto) or w in codigo.split():
+                    puntos += 3
+                elif w in tokens:
+                    puntos += 1
+            elif w in tokens or any(t.startswith(w) and len(w) >= 4 for t in tokens):
+                puntos += 2 if w in codigo else 1
+        if puntos:
+            puntajes.append((-puntos, i))
+    puntajes.sort()
+    resultados = [catalogo[i]["texto"] for _, i in puntajes[:maximo]]
+    return {"resultados": resultados, "total_coincidencias": len(puntajes)} if resultados else {"resultados": [], "nota": "No figura en el catálogo: ofrecé que lo confirme un vendedor."}
 
 
 def transcripcion(mensajes: list) -> list:
