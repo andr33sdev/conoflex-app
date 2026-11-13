@@ -13,6 +13,16 @@ const { catalogoTexto, corto, enviarTexto } = require("./whatsapp");
 
 const NOMBRE_VOZ = "Aldana";
 
+/** Para la voz, las reglas escritas para mails traen plantillas HTML y separadores: se sacan. */
+function sinFormatoEscrito(texto) {
+  return String(texto || "")
+    .split("\n")
+    .filter((l) => !/<\/?[a-z][^>]*>|^\s*={4,}|^\s*`\s*$|^\s*\/\//i.test(l))
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
 function instruccionesVoz({ reglasComerciales, reglasWhatsapp, notas, correcciones, catalogo, nombreCliente, charlaPrevia, canal = "whatsapp" }) {
   const web = canal === "web";
   const quien = web
@@ -26,6 +36,13 @@ function instruccionesVoz({ reglasComerciales, reglasWhatsapp, notas, correccion
     : `- Reclamos, devoluciones, facturas, pagos, estado de un pedido ya hecho, descuentos especiales o algo que no está en el catálogo ni en las reglas: usá derivar_a_persona y decile que alguien del equipo le escribe por WhatsApp a la brevedad, sin prometer horarios.`;
   return `${quien}
 
+ACENTO Y PRONUNCIACIÓN (lo más importante)
+- Sos argentina, de Buenos Aires: hablá SIEMPRE en español rioplatense nativo, con acento porteño natural, nunca con acento de inglés ni neutro.
+- Pronunciá cada palabra en español: la erre como en español ("tránsito", "rutero", "reductor"), vocales claras y cortas, sin diptongar al final ("tránsito", no "tránsitou"). Respetá las tildes.
+- Usá "ll" e "y" como en Buenos Aires ("calle", "ayuda"), y el voseo ("vos tenés", "fijate", "decime").
+- Hablá con ritmo de charla, cálida y relajada, con pausas naturales y alguna muletilla suave ("dale", "perfecto", "mirá"); no recites.
+- Las siglas y códigos decilos en español ("PVC" es "pe ve ce"). Los números, como se dicen en Argentina.
+
 CÓMO HABLAR (esto es una llamada, no un chat)
 - Hablá como una vendedora argentina amable y segura: español rioplatense, con "vos", natural y cálida.
 - Frases cortas: una o dos oraciones por turno, y dejá hablar al cliente. Nunca leas listas largas: ofrecé como mucho dos o tres opciones y preguntá cuál le sirve.
@@ -36,6 +53,7 @@ CÓMO HABLAR (esto es una llamada, no un chat)
 ${nombreCliente ? `- Quien llama figura como "${nombreCliente}". Podés llamarlo por el nombre si suena natural.\n` : ""}
 PRODUCTOS Y PRECIOS
 - Solo ofrecé productos del CATÁLOGO de abajo. Nunca inventes productos, medidas, stock, plazos ni precios.
+- Si preguntan por una medida (por ejemplo conos de 120 cm), buscá en altura, medidas y datos de TODOS los productos y nombrá todos los que coinciden (de a dos o tres, y preguntá si quiere más). Si no figura la medida, decí que lo confirmás con un vendedor, no que no existe.
 - Podés pasar precios de lista a cualquiera que pregunte, respetando las condiciones de las reglas (IVA, envío, etc.).
 - NUNCA hagas cuentas de cabeza: si el cliente da cantidades, usá la herramienta calcular_presupuesto y decí el total que te devuelve.
 ${porEscrito}
@@ -47,7 +65,7 @@ CORTAR
 - Cuando el cliente se despide o ya no necesita nada, despedite en una frase y usá cortar_llamada.
 
 REGLAS COMERCIALES (escritas para presupuestos por mail: tomá solo lo comercial —precios, IVA, descuentos, entregas, pagos— e ignorá todo lo de formato)
-${reglasComerciales || "(sin reglas cargadas)"}
+${sinFormatoEscrito(reglasComerciales) || "(sin reglas cargadas)"}
 ${notas ? `\n${notas}\n` : ""}
 REGLAS PROPIAS DE WHATSAPP (mandan sobre todo lo anterior; lo que hable de formato escrito no aplica a la llamada)
 ${reglasWhatsapp || "(sin reglas propias)"}
@@ -160,4 +178,4 @@ function registrarRutasVoz(app, { db, bot }) {
   });
 }
 
-module.exports = { instruccionesVoz, preciosVoz, transcripcionTexto, duracionTexto, esLocalConSecreto, registrarRutasVoz, NOMBRE_VOZ };
+module.exports = { sinFormatoEscrito, instruccionesVoz, preciosVoz, transcripcionTexto, duracionTexto, esLocalConSecreto, registrarRutasVoz, NOMBRE_VOZ };

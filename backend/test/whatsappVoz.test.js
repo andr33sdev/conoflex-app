@@ -43,3 +43,11 @@ test("rutas de voz: solo desde el mismo servidor y con el secreto", () => {
   assert.ok(!v.esLocalConSecreto(req("127.0.0.1", "corto")));
   process.env.VOZ_SECRETO = antes;
 });
+
+test("voz: saca el formato HTML de las reglas y pide acento rioplatense", () => {
+  const reglas = "ROL: asesora\n====\n<div style=\"x\">Atn. sr/a.</div>\n// comentario\n`\n- Precios más IVA\n   <b>Lista</b>";
+  assert.equal(v.sinFormatoEscrito(reglas), "ROL: asesora\n- Precios más IVA");
+  const i = v.instruccionesVoz({ reglasComerciales: reglas, catalogo: "1025 | Cono" });
+  assert.ok(i.includes("rioplatense") && i.includes("tránsito"));
+  assert.ok(!i.includes("<div"));
+});

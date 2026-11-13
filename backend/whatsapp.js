@@ -106,7 +106,9 @@ function catalogoTexto(productos) {
       const uso = corto(p.aplicacion || p.descripcion || "", 180);
       const usos = corto(String(p.usos_recomendados || "").split(/\s*\|\s*/).map((u) => u.split(":")[0].trim()).filter(Boolean).slice(0, 5).join(", "), 120);
       const h = fotos.alturaCm(p);
-      return [p.codigo, p.nombre, p.categoria, h != null && `altura: ${h} cm`, p.medidas && `medidas: ${corto(p.medidas, 160)}`, `precio: ${corto(p.precio_lista, 160) || "consultar"}`, uso && `para qué sirve: ${uso}`, usos && `usos: ${usos}`, p.advertencias && `ojo: ${corto(p.advertencias, 120)}`, (p.foto_catalogo || p.foto_tecnica) ? "tiene foto" : null]
+      // La especificación (altura, peso, material) suele venir de la lista de precios y no está en "medidas".
+      const espec = p.especificacion && String(p.especificacion).trim() !== String(p.medidas || "").trim() ? corto(p.especificacion, 160) : "";
+      return [p.codigo, p.nombre, p.categoria, h != null && `altura: ${h} cm`, p.medidas && `medidas: ${corto(p.medidas, 160)}`, espec && `datos: ${espec}`, `precio: ${corto(p.precio_lista, 160) || "consultar"}`, uso && `para qué sirve: ${uso}`, usos && `usos: ${usos}`, p.advertencias && `ojo: ${corto(p.advertencias, 120)}`, (p.foto_catalogo || p.foto_tecnica) ? "tiene foto" : null]
         .filter(Boolean)
         .map((x) => String(x).replace(/\|/g, "/"))
         .join(" | ");
@@ -405,7 +407,7 @@ function crearBotWhatsapp({ db, ai, leerLista, notasTexto, crearNotificacion, im
   const procesandoMedia = new Map(); // conversacion_id → fotos/audios que todavía se están pasando a texto
 
   async function contexto() {
-    const [productos] = await db.query("SELECT codigo, nombre, categoria, medidas, precio_lista, aplicacion, descripcion, usos_recomendados, advertencias, foto_catalogo, foto_tecnica FROM productos");
+    const [productos] = await db.query("SELECT codigo, nombre, categoria, medidas, especificacion, precio_lista, aplicacion, descripcion, usos_recomendados, advertencias, foto_catalogo, foto_tecnica FROM productos");
     const [corr] = await db.query("SELECT pregunta, respuesta FROM wa_correcciones WHERE activa = 1 ORDER BY id DESC LIMIT 40");
     return {
       productos,
