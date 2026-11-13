@@ -114,3 +114,12 @@ class Fichas(unittest.TestCase):
         self.assertEqual(len(m), 3)
         self.assertIn("RUTERO", m[-1]["content"])
         self.assertNotIn("VENCEDOR", " ".join(x["content"] for x in m))
+
+
+class Limpieza(unittest.TestCase):
+    def test_html_en_pedazos(self):
+        import bot
+
+        f = bot.SoloLoQueSeDice()
+        partes = ["<html> <body style=\"x\">", "<p>Hola **Andrés**", ", te habla Aldana</", "p> 🙂</body>"]
+        self.assertEqual("".join(f.limpiar(p) for p in partes).split(), ["Hola", "Andrés,", "te", "habla", "Aldana"])

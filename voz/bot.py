@@ -7,6 +7,7 @@ al atender, y tiene herramientas para hacer cuentas exactas, mandar cosas al cha
 
 import asyncio
 import os
+import re
 import time
 
 import aiohttp
@@ -14,7 +15,7 @@ from loguru import logger
 from pipecat.adapters.llm.schemas.function_schema import FunctionSchema
 from pipecat.audio.vad.silero import SileroVADAnalyzer
 from pipecat.adapters.llm.schemas.tools_schema import ToolsSchema
-from pipecat.frames.frames import LLMRunFrame, TranscriptionFrame
+from pipecat.frames.frames import LLMFullResponseStartFrame, LLMRunFrame, LLMTextFrame, TranscriptionFrame
 from pipecat.processors.frame_processor import FrameProcessor
 from pipecat.pipeline.pipeline import Pipeline
 from pipecat.pipeline.worker import PipelineParams, PipelineWorker
@@ -121,7 +122,7 @@ NOTA_CASCADA = """
 FICHAS DEL CATÁLOGO
 - Las fichas de los productos que menciona el cliente te llegan solas en un mensaje "FICHAS DEL CATÁLOGO". Usalas directo.
 - Nunca digas que vas a buscar, ni "a ver", "dame un segundo" o "ya te encontré": respondé de una con el dato, como alguien que se sabe el catálogo.
-- Escribí solo lo que se dice en voz alta: sin listas, símbolos, asteriscos ni emojis. Frases cortas.
+- Escribí SOLO texto plano, exactamente lo que se dice en voz alta: NUNCA HTML ni etiquetas, sin listas, símbolos, asteriscos ni emojis. Frases cortas. Las reglas sobre formato de mails no aplican acá.
 - Los precios escribilos en palabras como se dicen ("veinticuatro mil doscientos pesos más IVA")."""
 
 
@@ -225,6 +226,40 @@ def con_fichas(mensajes: list, fichas: list) -> list:
     return otros + [{"role": "developer", "content": f"{MARCA_FICHAS} (lo que el cliente puede estar pidiendo):\n" + "\n".join(fichas)}]
 
 
+class SoloLoQueSeDice(FrameProcessor):
+    """Antes de la voz: saca etiquetas HTML, markdown y emojis aunque el modelo los escriba
+    (vienen en pedacitos, así que recuerda si quedó adentro de una etiqueta)."""
+
+    def __init__(self):
+        super().__init__()
+        self._en_etiqueta = False
+
+    def limpiar(self, texto: str) -> str:
+        out = []
+        for c in texto:
+            if self._en_etiqueta:
+                if c == ">":
+                    self._en_etiqueta = False
+                continue
+            if c == "<":
+                self._en_etiqueta = True
+                continue
+            out.append(c)
+        t = "".join(out)
+        t = re.sub(r"[*_#`~|]+", "", t)
+        return re.sub(r"[\U0001F000-\U0001FAFF\u2600-\u27BF]", "", t)
+
+    async def process_frame(self, frame, direction):
+        await super().process_frame(frame, direction)
+        if isinstance(frame, LLMTextFrame):
+            frame.text = self.limpiar(frame.text)
+            if not frame.text:
+                return
+        elif isinstance(frame, LLMFullResponseStartFrame):
+            self._en_etiqueta = False
+        await self.push_frame(frame, direction)
+
+
 class FichasAutomaticas(FrameProcessor):
     """Con cada frase del cliente busca en el catálogo y le deja las fichas a mano a la asistente,
     así responde con el dato sin anunciar que "va a buscar"."""
@@ -256,7 +291,7 @@ async def _armar(transport, llm, ctx: dict | None = None, herramientas: list | N
     user_aggregator, assistant_aggregator = LLMContextAggregatorPair(context, realtime_service_mode=not cascada, user_params=params)
     if cascada:
         stt, tts = _oido_y_voz()
-        etapas = [transport.input(), stt, FichasAutomaticas(context, (ctx or {}).get("catalogo", [])), user_aggregator, llm, tts, transport.output(), assistant_aggregator]
+        etapas = [transport.input(), stt, FichasAutomaticas(context, (ctx or {}).get("catalogo", [])), user_aggregator, llm, SoloLoQueSeDice(), tts, transport.output(), assistant_aggregator]
     else:
         etapas = [transport.input(), user_aggregator, llm, transport.output(), assistant_aggregator]
     worker = PipelineWorker(Pipeline(etapas), params=PipelineParams(enable_metrics=True))
