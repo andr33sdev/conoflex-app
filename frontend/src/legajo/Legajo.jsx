@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Loader2, X } from "lucide-react";
 import Sanciones from "./Sanciones";
+import Notas from "./Notas";
 
 const API_BASE_URL = import.meta.env?.VITE_API_URL || "";
 const fmt = (n, d = 1) => Number(n || 0).toLocaleString("es-AR", { maximumFractionDigits: d });
@@ -143,6 +144,7 @@ export default function Legajo({ operarioInicial, onCerrar }) {
   const [datos, setDatos] = useState(null);
   const [error, setError] = useState("");
   const [version, setVersion] = useState(0);
+  const [cantNotas, setCantNotas] = useState(null);
 
   useEffect(() => {
     pedir("/api/legajo/operarios").then((l) => { setLista(l); setOperario((o) => o || l[0]?.nombre || ""); }).catch((e) => setError(e.message));
@@ -161,6 +163,16 @@ export default function Legajo({ operarioInicial, onCerrar }) {
     };
   }, [operario, fechas, version]);
 
+  // Cuántas notas propias tiene el operario (para mostrarlo en la pestaña sin tener que abrirla).
+  useEffect(() => {
+    if (!operario) return undefined;
+    let vivo = true;
+    pedir(`/api/legajo/notas?operario=${encodeURIComponent(operario)}`).then((d) => vivo && setCantNotas(d.total)).catch(() => {});
+    return () => {
+      vivo = false;
+    };
+  }, [operario]);
+
   const elegirRango = (r) => {
     setRango(r.id);
     const [d, h] = r.calc(new Date());
@@ -168,7 +180,7 @@ export default function Legajo({ operarioInicial, onCerrar }) {
   };
   const alCambiar = useCallback(() => setVersion((v) => v + 1), []);
   const sanciones = datos?.sanciones;
-  const tabs = useMemo(() => [["asistencia", "Asistencia"], ["produccion", "Producción"], ["sanciones", `Amonestaciones${sanciones?.vigentes ? ` (${sanciones.vigentes})` : ""}`]], [sanciones]);
+  const tabs = useMemo(() => [["asistencia", "Asistencia"], ["produccion", "Producción"], ["notas", `Mis notas${cantNotas ? ` (${cantNotas})` : ""}`], ["sanciones", `Amonestaciones${sanciones?.vigentes ? ` (${sanciones.vigentes})` : ""}`]], [sanciones, cantNotas]);
   const cargando = operario && !datos && !error;
 
   return (
@@ -176,13 +188,13 @@ export default function Legajo({ operarioInicial, onCerrar }) {
       <div className="bg-[#0D0D0D] border border-zinc-800 rounded-xl w-full max-w-3xl h-[92vh] shadow-2xl flex flex-col overflow-hidden text-zinc-200">
         <div className="flex items-center gap-3 px-5 py-4 border-b border-zinc-800 bg-[#121212]">
           <h3 className="text-xs font-black tracking-widest uppercase text-white shrink-0">Legajo</h3>
-          <select value={operario} onChange={(e) => { setOperario(e.target.value); setDatos(null); }} className="flex-1 min-w-0 bg-[#18181b] border border-zinc-700 text-white font-bold text-xs p-2 rounded focus:border-[#FF5A00] outline-none">
+          <select value={operario} onChange={(e) => { setOperario(e.target.value); setDatos(null); setCantNotas(null); }} className="flex-1 min-w-0 bg-[#18181b] border border-zinc-700 text-white font-bold text-xs p-2 rounded focus:border-[#FF5A00] outline-none">
             {lista.map((o) => <option key={o.nombre} value={o.nombre}>{o.nombre}{o.sanciones ? ` · ${o.sanciones} sanc.` : ""}</option>)}
           </select>
           <button onClick={onCerrar} className="text-zinc-500 hover:text-white p-1 rounded hover:bg-zinc-800 cursor-pointer" aria-label="Cerrar"><X size={16} /></button>
         </div>
 
-        <div className="px-5 py-3 border-b border-zinc-800 flex flex-wrap items-center gap-1.5">
+        <div className={`px-5 py-3 border-b border-zinc-800 flex-wrap items-center gap-1.5 ${tab === "notas" ? "hidden" : "flex"}`}>
           {RANGOS.map((r) => (
             <button key={r.id} onClick={() => elegirRango(r)} className={`px-3 py-1 rounded text-[11px] font-bold cursor-pointer ${rango === r.id ? "bg-[#FF5A00] text-white" : "bg-zinc-900 text-zinc-400 hover:text-white"}`}>{r.texto}</button>
           ))}
@@ -200,10 +212,11 @@ export default function Legajo({ operarioInicial, onCerrar }) {
         </div>
 
         <div className="flex-1 overflow-y-auto p-5">
-          {cargando && <div className="grid place-items-center py-16 text-zinc-500"><Loader2 className="animate-spin" size={22} /></div>}
+          {cargando && tab !== "notas" && <div className="grid place-items-center py-16 text-zinc-500"><Loader2 className="animate-spin" size={22} /></div>}
           {error && <p className="text-sm text-rose-300">{error}</p>}
           {datos && tab === "asistencia" && <Asistencia a={datos.asistencia} />}
           {datos && tab === "produccion" && <Produccion p={datos.produccion} />}
+          {operario && tab === "notas" && <Notas key={operario} operario={operario} alContar={setCantNotas} />}
           {datos && tab === "sanciones" && <Sanciones operario={datos.operario} datos={datos.sanciones} alCambiar={alCambiar} />}
         </div>
       </div>

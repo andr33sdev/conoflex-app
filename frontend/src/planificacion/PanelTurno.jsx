@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { AlertTriangle, BadgeCheck, ChevronDown, FlaskConical, Lock, MessageSquareText, Moon, PackagePlus, Rocket, Sun, Trash2, Undo2 } from "lucide-react";
+import { AlertTriangle, BadgeCheck, ChevronDown, FlaskConical, MessageSquareText, Moon, PackagePlus, Radio, Rocket, Sun, Trash2, Undo2 } from "lucide-react";
 import { Barra, Boton, Chip, Drawer, Etiqueta } from "../produccion/ui";
 import { campo } from "../produccion/estilos";
 import { api, nombreDia, diaMes, num, turnoLabel } from "../produccion/util";
@@ -92,7 +92,7 @@ function Receta({ a, bloqueado, onCambio, toast }) {
   );
 }
 
-function Asignacion({ a, maquinas, operarios, bloqueado, choque, onCambio, toast, compacta }) {
+function Asignacion({ a, maquinas, operarios, bloqueado, enTablet, choque, onCambio, toast, compacta }) {
   const [cant, setCant] = useState(String(a.cantidad));
   const [quitar, setQuitar] = useState(false);
   // Con varios productos en el turno cada uno aparece como una línea; se abre para editar o ver el detalle.
@@ -126,10 +126,20 @@ function Asignacion({ a, maquinas, operarios, bloqueado, choque, onCambio, toast
   };
   const borrar = async () => {
     try {
-      await api(`/api/prod/asignaciones/${a.id}`, { method: "DELETE" });
+      // Si ya tiene producción cargada, el aviso de abajo ya lo explicó: se confirma directamente.
+      const r = await api(`/api/prod/asignaciones/${a.id}${a.real ? "?con_cargas=1" : ""}`, { method: "DELETE" });
+      if (r?.cargas_eliminadas) toast(`Sacado del turno, con lo cargado${r.materiales_devueltos ? " (materia prima devuelta al stock)" : ""}.`);
       onCambio();
     } catch (e) {
-      toast(e.message, "error");
+      // Se cargó producción mientras estaba abierto el panel: confirmar antes de borrarla.
+      if (e.status === 409 && e.datos?.tiene_cargas && window.confirm(`${e.message}\n\n¿Sacarlo igual?`)) {
+        try {
+          await api(`/api/prod/asignaciones/${a.id}?con_cargas=1`, { method: "DELETE" });
+          onCambio();
+        } catch (e2) {
+          toast(e2.message, "error");
+        }
+      } else toast(e.message, "error");
     }
   };
   const activas = maquinas.filter((m) => m.activa);
@@ -161,7 +171,11 @@ function Asignacion({ a, maquinas, operarios, bloqueado, choque, onCambio, toast
         {quitar && (
           <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
             <div className="mt-3 flex items-center gap-2 rounded-xl bg-rose-500/10 border border-rose-500/25 p-3">
-              <p className="text-sm text-rose-100 flex-1">¿Sacar este lote del turno? Vuelve a la lista de la semana como pendiente de repartir.</p>
+              <p className="text-sm text-rose-100 flex-1">
+                {a.real
+                  ? `Ya tiene producción cargada (${num(a.real.buenas)} buenas, ${a.real.estado === "APROBADA" ? "aprobada" : "por aprobar"}). Si lo sacás, también se elimina lo cargado${a.real.estado === "APROBADA" ? " y se devuelve la materia prima al stock" : ""}.`
+                  : "¿Sacar este lote del turno? Vuelve a la lista de la semana como pendiente de repartir."}
+              </p>
               <Boton variante="peligro" onClick={borrar}>Sacar</Boton>
               <Boton variante="fantasma" onClick={() => setQuitar(false)}>No</Boton>
             </div>
@@ -171,6 +185,11 @@ function Asignacion({ a, maquinas, operarios, bloqueado, choque, onCambio, toast
 
       {abierta && (
         <>
+      {enTablet && faltan > 0 && (
+        <p className="mt-3 flex items-start gap-2 text-xs text-[#FFD60A] bg-[#FFD60A]/[0.08] border border-[#FFD60A]/25 rounded-xl px-3 py-2">
+          <AlertTriangle size={14} className="mt-0.5 shrink-0" /> Todavía no aparece en la tablet: completá máquina, operario y receta.
+        </p>
+      )}
       {choque && (
         <p className="mt-3 flex items-start gap-2 text-xs text-[#FFD60A] bg-[#FFD60A]/[0.08] border border-[#FFD60A]/25 rounded-xl px-3 py-2">
           <AlertTriangle size={14} className="mt-0.5 shrink-0" /> Hay otra producción en esta misma máquina y turno.
@@ -230,7 +249,7 @@ function Asignacion({ a, maquinas, operarios, bloqueado, choque, onCambio, toast
           <div className="mt-2"><Barra total={a.cantidad} hecho={a.real.buenas} /></div>
           <p className="mt-2 text-xs text-zinc-400">Total {num(a.real.total)} · fallas {num(a.real.fallas)} · cargó {a.real.operario}</p>
         </div>
-      ) : bloqueado ? (
+      ) : enTablet ? (
         <p className="mt-4 text-sm text-zinc-500">Todavía no se cargó lo producido.</p>
       ) : null}
 
@@ -293,8 +312,8 @@ export default function PanelTurno({ turnoAbierto, plan, maquinas, operarios, on
       pie={abierto && !sin && (
         lanzado ? (
           <div className="flex items-center gap-3">
-            <p className="flex-1 text-sm text-emerald-200 leading-snug"><Lock size={14} className="inline mr-1.5 -mt-0.5" />Ya está en la tablet. Para cambiarlo, retiralo: sale de la tablet, pero solo si todavía no se cargó producción.</p>
-            <Boton variante="suave" icono={Undo2} onClick={retirar} disabled={ocupado}>Retirar de la tablet</Boton>
+            <p className="flex-1 text-sm text-emerald-200 leading-snug"><Radio size={14} className="inline mr-1.5 -mt-0.5" />Está en la tablet. Podés agregar, cambiar o sacar productos: se ve al instante en planta.</p>
+            {!asigs.some((x) => x.real) && <Boton variante="suave" icono={Undo2} onClick={retirar} disabled={ocupado}>Retirar de la tablet</Boton>}
           </div>
         ) : (
           <div>
@@ -312,7 +331,7 @@ export default function PanelTurno({ turnoAbierto, plan, maquinas, operarios, on
             <Boton variante="primario" grande className="w-full" icono={Rocket} onClick={lanzar} disabled={ocupado || asigs.length === 0 || problemas.length > 0}>
               Lanzar a la tablet
             </Boton>
-            {asigs.length > 0 && problemas.length === 0 && <p className="mt-2 text-xs text-zinc-400 text-center leading-snug">Aparece en la tablet de planta y los operarios pueden cargar lo producido. Mientras esté lanzado no se puede editar.</p>}
+            {asigs.length > 0 && problemas.length === 0 && <p className="mt-2 text-xs text-zinc-400 text-center leading-snug">Aparece en la tablet de planta y los operarios pueden cargar lo producido. Después lo podés seguir cambiando.</p>}
           </div>
         )
       )}
@@ -364,13 +383,13 @@ export default function PanelTurno({ turnoAbierto, plan, maquinas, operarios, on
                 <ul className="flex flex-col gap-3">
                   <AnimatePresence initial={false}>
                     {asigs.map((a) => (
-                      <Asignacion key={a.id} a={a} maquinas={maquinas} operarios={operarios} bloqueado={lanzado} choque={idsChoque.has(a.id)} onCambio={onCambio} toast={toast} compacta={asigs.length > 2} />
+                      <Asignacion key={a.id} a={a} maquinas={maquinas} operarios={operarios} bloqueado={false} enTablet={lanzado} choque={idsChoque.has(a.id)} onCambio={onCambio} toast={toast} compacta={asigs.length > 2} />
                     ))}
                   </AnimatePresence>
                 </ul>
               )}
 
-              {!lanzado && (
+              {(
                 <div>
                   <h3 className="text-xs font-extrabold uppercase tracking-[0.1em] text-zinc-400 mb-2.5 flex items-center gap-2"><PackagePlus size={15} /> Tomar de la lista de la semana</h3>
                   {plan.items.length === 0 ? (

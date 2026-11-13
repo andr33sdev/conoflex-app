@@ -17,7 +17,7 @@ export function estadoTurno(info, asigs) {
     const hechas = asigs.filter((a) => a.real).length;
     if (asigs.length && hechas === asigs.length) return { tono: "verde", texto: "Cargado", ayuda: "Ya se cargó todo lo producido en este turno." };
     if (hechas > 0) return { tono: "amarillo", texto: `Cargado ${hechas}/${asigs.length}`, ayuda: "Faltan cargar algunas producciones desde la tablet." };
-    return { tono: "azul", texto: "En tablet", ayuda: "Está en la tablet de planta: los operarios van a cargar lo producido. Mientras esté ahí no se puede editar." };
+    return { tono: "azul", texto: "En tablet", ayuda: "Está en la tablet de planta: los operarios van a cargar lo producido. Lo podés seguir cambiando y se ve al instante." };
   }
   if (info?.sin_produccion) return { tono: "gris", texto: "Sin producción", ayuda: "La tablet va a mostrar que en este turno no se produce." };
   if (!asigs.length) return { tono: "gris", texto: "Sin armar", ayuda: "Todavía no tiene nada asignado. Tomá lotes de la lista de la semana." };
@@ -52,7 +52,7 @@ export function proximoPaso(plan, hoy) {
   const listo = sinLanzar.find(([fecha, turno]) => problemasDeTurno(asigs.filter((a) => a.fecha === fecha && a.turno === turno)).length === 0);
   const nombre = (f, t) => `${nombreDiaISO(f)} ${f === hoy ? "(hoy) " : ""}de ${t === "NOCHE" ? "noche" : "día"}`;
   if (listo) {
-    return { paso: 3, titulo: `El turno del ${nombre(listo[0], listo[1])} está listo para lanzar`, ayuda: "Al lanzarlo aparece en la tablet de planta y los operarios ya pueden cargar lo producido. Después no se puede editar.", accion: { texto: "Abrir el turno", tipo: "turno", fecha: listo[0], turno: listo[1] } };
+    return { paso: 3, titulo: `El turno del ${nombre(listo[0], listo[1])} está listo para lanzar`, ayuda: "Al lanzarlo aparece en la tablet de planta y los operarios ya pueden cargar lo producido. Lo podés seguir cambiando después.", accion: { texto: "Abrir el turno", tipo: "turno", fecha: listo[0], turno: listo[1] } };
   }
   if (sinLanzar.length) {
     const [f, t] = sinLanzar[0];

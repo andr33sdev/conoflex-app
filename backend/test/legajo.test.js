@@ -115,3 +115,39 @@ test("legajo: sanciones con archivos, anulación, resumen de asistencia y produc
     await pool.end();
   }
 });
+
+test("legajo: notas personales positivas, negativas o neutras; cada jefe ve y edita solo las suyas", async () => {
+  let pool;
+  try {
+    pool = mysql.createPool({ host: process.env.TEST_DB_HOST || "localhost", user: process.env.TEST_DB_USER || "root", password: process.env.TEST_DB_PASSWORD || "", database: process.env.TEST_DB_NAME || "test" });
+    await pool.query("SELECT 1");
+  } catch { if (pool) await pool.end().catch(() => {}); return; }
+  try {
+    await pool.query("DROP TABLE IF EXISTS legajo_notas");
+    const andres = { autorId: 1, autorNombre: "Andrés" };
+    await assert.rejects(L.crearNota(pool, { operario: "Juan", texto: "  ", ...andres }), /vacía/);
+    await assert.rejects(L.crearNota(pool, { operario: "Juan", texto: "x", fecha: "2999-01-01", ...andres }), /futura/);
+    const a = await L.crearNota(pool, { operario: "Juan", texto: "Se quedó para terminar el pedido de Vialidad", tono: "POSITIVO", fecha: "2026-10-02", ...andres });
+    await L.crearNota(pool, { operario: "Juan", texto: "Llegó tarde y sin avisar", tono: "NEGATIVO", fecha: "2026-11-01", ...andres });
+    await L.crearNota(pool, { operario: "Juan", texto: "Pidió cambiar a turno noche", ...andres });
+    await L.crearNota(pool, { operario: "Juan", texto: "Nota de otro jefe", tono: "POSITIVO", autorId: 2, autorNombre: "Gonzalo" });
+    await L.crearNota(pool, { operario: "Pedro", texto: "Otro operario", ...andres });
+
+    const r = await L.leerNotas(pool, { operario: "Juan", autorId: 1 });
+    assert.deepEqual([r.total, r.positivas, r.negativas], [3, 1, 1]);
+    assert.equal(r.notas[0].tono, null); // hoy, la más nueva primero
+    assert.ok(!r.notas.some((n) => n.texto === "Nota de otro jefe"));
+
+    // Solo quien la escribió la cambia o la borra.
+    await assert.rejects(L.editarNota(pool, { id: a.id, autorId: 2, texto: "hackeo" }), /no existe/);
+    await assert.rejects(L.borrarNota(pool, { id: a.id, autorId: 2 }), /no existe/);
+    await L.editarNota(pool, { id: a.id, autorId: 1, tono: null });
+    const editada = (await L.leerNotas(pool, { operario: "Juan", autorId: 1 })).notas.find((n) => n.id === a.id);
+    assert.deepEqual([editada.tono, editada.texto, !!editada.editado_en], [null, "Se quedó para terminar el pedido de Vialidad", true]);
+    await L.borrarNota(pool, { id: a.id, autorId: 1 });
+    assert.equal((await L.leerNotas(pool, { operario: "Juan", autorId: 1 })).total, 2);
+  } finally {
+    await pool.query("DROP TABLE IF EXISTS legajo_notas").catch(() => {});
+    await pool.end();
+  }
+});

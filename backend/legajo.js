@@ -1,5 +1,6 @@
 "use strict";
-// Legajo por operario: resumen de asistencia y producción en el rango que se elija, y sanciones (amonestaciones y suspensión).
+// Legajo por operario: resumen de asistencia y producción en el rango que se elija, sanciones (amonestaciones y suspensión)
+// y notas personales de cada jefe sobre el operario (positivas, negativas o neutras; cada uno ve solo las suyas).
 // Regla de la empresa: la 1.ª y la 2.ª sanción son amonestaciones y la 3.ª es suspensión. El número se calcula siempre sobre las
 // sanciones vigentes (las anuladas no cuentan), ordenadas por fecha, así que anular o cargar una con fecha anterior renumera solo.
 const { liquidarDesdeBD } = require("./liquidacionDb");
@@ -39,6 +40,86 @@ async function asegurarLegajo(db) {
     subido_en DATETIME DEFAULT CURRENT_TIMESTAMP,
     KEY idx_sancion (sancion_id)
   )`);
+}
+
+async function asegurarNotas(db) {
+  await db.query(`CREATE TABLE IF NOT EXISTS legajo_notas (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    operario VARCHAR(150) NOT NULL,
+    fecha DATE NOT NULL,
+    texto TEXT NOT NULL,
+    tono VARCHAR(10) NULL,
+    autor_id INT NOT NULL,
+    autor_nombre VARCHAR(120) NULL,
+    creado_en DATETIME DEFAULT CURRENT_TIMESTAMP,
+    editado_en DATETIME NULL,
+    KEY idx_autor_operario (autor_id, operario, fecha)
+  )`);
+}
+
+const TONOS = ["POSITIVO", "NEGATIVO"];
+const hoyLocal = () => fechaDe(new Date());
+
+function datosNota(b, { parcial = false } = {}) {
+  const out = {};
+  if (!parcial || b.texto !== undefined) {
+    const t = String(b.texto || "").trim();
+    if (!t) throw err(400, "La nota está vacía.");
+    out.texto = t.slice(0, 5000);
+  }
+  if (!parcial || b.tono !== undefined) out.tono = TONOS.includes(b.tono) ? b.tono : null;
+  if (!parcial || b.fecha !== undefined) {
+    const f = b.fecha ? String(b.fecha) : hoyLocal();
+    if (!FECHA.test(f)) throw err(400, "Fecha inválida.");
+    if (f > hoyLocal()) throw err(400, "La fecha no puede ser futura.");
+    out.fecha = f;
+  }
+  return out;
+}
+
+/** Notas que escribió este usuario sobre el operario (las de otros no se ven), más nuevas primero, con el balance. */
+async function leerNotas(db, { operario, autorId }) {
+  await asegurarNotas(db);
+  const [notas] = await db.query(
+    `SELECT id, operario, DATE_FORMAT(fecha, '%Y-%m-%d') AS fecha, texto, tono, autor_nombre,
+            DATE_FORMAT(creado_en, '%Y-%m-%d %H:%i') AS creado_en, DATE_FORMAT(editado_en, '%Y-%m-%d %H:%i') AS editado_en
+       FROM legajo_notas WHERE autor_id = ? AND operario = ? ORDER BY fecha DESC, id DESC`,
+    [autorId, operario],
+  );
+  return { notas, positivas: notas.filter((n) => n.tono === "POSITIVO").length, negativas: notas.filter((n) => n.tono === "NEGATIVO").length, total: notas.length };
+}
+
+async function crearNota(db, { operario, autorId, autorNombre, ...b }) {
+  await asegurarNotas(db);
+  operario = String(operario || "").trim();
+  if (!operario) throw err(400, "Falta el operario.");
+  if (!autorId) throw err(401, "Sesión inválida.");
+  const d = datosNota(b);
+  const [r] = await db.query("INSERT INTO legajo_notas (operario, fecha, texto, tono, autor_id, autor_nombre) VALUES (?,?,?,?,?,?)", [operario.slice(0, 150), d.fecha, d.texto, d.tono, autorId, autorNombre ? String(autorNombre).slice(0, 120) : null]);
+  return { ok: true, id: r.insertId };
+}
+
+/** Solo quien la escribió puede cambiarla o borrarla. */
+async function notaPropia(db, id, autorId) {
+  await asegurarNotas(db);
+  const [[n]] = await db.query("SELECT id, autor_id FROM legajo_notas WHERE id = ?", [id]);
+  if (!n || n.autor_id !== autorId) throw err(404, "Esa nota no existe.");
+  return n;
+}
+
+async function editarNota(db, { id, autorId, ...b }) {
+  await notaPropia(db, id, autorId);
+  const d = datosNota(b, { parcial: true });
+  const campos = Object.keys(d);
+  if (!campos.length) return { ok: true };
+  await db.query(`UPDATE legajo_notas SET ${campos.map((c) => `${c} = ?`).join(", ")}, editado_en = NOW() WHERE id = ?`, [...campos.map((c) => d[c]), id]);
+  return { ok: true };
+}
+
+async function borrarNota(db, { id, autorId }) {
+  await notaPropia(db, id, autorId);
+  await db.query("DELETE FROM legajo_notas WHERE id = ?", [id]);
+  return { ok: true };
 }
 
 /** Qué sería la sanción número n según la regla de la empresa. */
@@ -233,4 +314,4 @@ async function resumenLegajo(db, { operario, desde, hasta }) {
   return { operario, desde, hasta, asistencia, produccion, sanciones };
 }
 
-module.exports = { asegurarLegajo, numerarSanciones, tipoDeSancion, leerSanciones, crearSancion, adjuntarArchivos, anularSancion, archivoPorId, quitarArchivo, listarLegajos, resumenAsistencia, resumenProduccion, resumenLegajo, fechaDe, MAX_ARCHIVO };
+module.exports = { asegurarNotas, leerNotas, crearNota, editarNota, borrarNota, asegurarLegajo, numerarSanciones, tipoDeSancion, leerSanciones, crearSancion, adjuntarArchivos, anularSancion, archivoPorId, quitarArchivo, listarLegajos, resumenAsistencia, resumenProduccion, resumenLegajo, fechaDe, MAX_ARCHIVO };
