@@ -31,7 +31,7 @@ from pipecat.transports.whatsapp.api import WhatsAppApi, WhatsAppWebhookRequest 
 from pipecat.transports.whatsapp.client import WhatsAppClient  # noqa: E402
 
 import conoflex  # noqa: E402
-from bot import run_bot, run_bot_web  # noqa: E402
+from bot import proveedor, run_bot, run_bot_web  # noqa: E402
 
 TOKEN = os.getenv("WHATSAPP_TOKEN", "")
 PHONE_ID = os.getenv("WHATSAPP_PHONE_NUMBER_ID", "")
@@ -48,7 +48,12 @@ llamadas_web: set[asyncio.Task] = set()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     faltan = [n for n, v in [("WHATSAPP_TOKEN", TOKEN), ("WHATSAPP_PHONE_NUMBER_ID", PHONE_ID), ("VOZ_SECRETO", SECRETO)] if not v]
-    if not (os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")):
+    motor = proveedor()
+    if motor == "openai" and not os.getenv("OPENAI_API_KEY"):
+        faltan.append("OPENAI_API_KEY")
+    elif motor == "vertex" and not (os.getenv("VOZ_VERTEX_PROYECTO") and (os.getenv("VOZ_VERTEX_CREDENCIALES") or os.getenv("GOOGLE_APPLICATION_CREDENTIALS"))):
+        faltan.append("VOZ_VERTEX_PROYECTO y VOZ_VERTEX_CREDENCIALES")
+    elif motor == "gemini" and not (os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")):
         faltan.append("GEMINI_API_KEY")
     if faltan:
         raise RuntimeError(f"Faltan variables en el .env: {', '.join(faltan)}")
@@ -56,7 +61,7 @@ async def lifespan(app: FastAPI):
         estado["http"] = http
         estado["api"] = WhatsAppApi(whatsapp_token=TOKEN, phone_number_id=PHONE_ID, session=http)
         estado["cliente"] = WhatsAppClient(whatsapp_token=TOKEN, phone_number_id=PHONE_ID, session=http)
-        logger.info(f"Servicio de voz listo en 127.0.0.1:{PUERTO}")
+        logger.info(f"Servicio de voz listo en 127.0.0.1:{PUERTO} (motor: {motor})")
         try:
             yield
         finally:

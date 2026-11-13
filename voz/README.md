@@ -31,6 +31,8 @@ Al cortar: la transcripción queda en WhatsApp → Conversaciones
 | `VOZ_ACTIVA` | `0` para no atender llamadas sin apagar nada (rechaza y el cliente ve "no atendió"). |
 | `VOZ_MAX_MINUTOS` | Tope por llamada (por defecto 10). |
 | `VOZ_VOZ` | Voz de Gemini (por defecto `Aoede`, femenina). |
+| `VOZ_PROVEEDOR` | Motor de voz: `gemini` (por defecto), `openai` (OpenAI Realtime, necesita `OPENAI_API_KEY`) o `vertex` (Gemini por Google Cloud, necesita `VOZ_VERTEX_PROYECTO` y `VOZ_VERTEX_CREDENCIALES` con la ruta al JSON de la cuenta de servicio; región en `VOZ_VERTEX_REGION`, por defecto `us-central1`). |
+| `VOZ_VOZ_OPENAI` | Voz de OpenAI (por defecto `marin`). |
 | `VOZ_WEB_MAX` | Llamadas desde el navegador al mismo tiempo (por defecto 4). |
 | `VOZ_STUN` | Servidor STUN (por defecto el de Google). Vacío para no usar. |
 
@@ -58,6 +60,12 @@ Para subir: completar la **verificación del negocio** (Configuración del negoc
 o llegar a 2.000 mensajes enviados con buena calidad. Ver el nivel en WhatsApp Manager →
 Herramientas de la cuenta → Límites de mensajes. Cuando esté en 2.000: `uv run python activar_llamadas.py`
 y suscribir el webhook a `calls`.
+
+## Si la llamada conecta pero nunca contesta
+
+Mirá `pm2 logs conoflex-voz`. Si dice **"User location is not supported for the API use"**, Google
+no deja usar Gemini Live desde la IP del VPS. Cambiá de motor: `VOZ_PROVEEDOR=openai` y
+`OPENAI_API_KEY=...` en `backend/.env`, y `pm2 restart conoflex-voz --update-env`.
 
 ## Del día a día
 

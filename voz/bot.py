@@ -92,25 +92,67 @@ HERRAMIENTAS_WEB = [
 ]
 
 
-def _crear_llm(ctx: dict, herramientas: list) -> GeminiLiveLLMService:
+def proveedor() -> str:
+    """Motor de voz: "gemini" (Gemini Live, clave de AI Studio), "vertex" (Gemini Live por Google Cloud)
+    u "openai" (OpenAI Realtime, el de ChatGPT voz). Se elige con VOZ_PROVEEDOR."""
+    p = (os.getenv("VOZ_PROVEEDOR") or "gemini").strip().lower()
+    return p if p in ("gemini", "vertex", "openai") else "gemini"
+
+
+def _crear_llm(ctx: dict, herramientas: list):
+    p = proveedor()
+    if p == "openai":
+        from pipecat.services.openai.realtime import events as oa
+        from pipecat.services.openai.realtime.llm import OpenAIRealtimeLLMService
+
+        return OpenAIRealtimeLLMService(
+            api_key=os.getenv("OPENAI_API_KEY", ""),
+            settings=OpenAIRealtimeLLMService.Settings(
+                model=os.getenv("VOZ_MODELO") or "gpt-realtime-2.1",
+                system_instruction=ctx["instrucciones"],
+                session_properties=oa.SessionProperties(
+                    tools=herramientas,
+                    audio=oa.AudioConfiguration(
+                        input=oa.AudioInput(
+                            transcription=oa.InputAudioTranscription(language="es"),
+                            noise_reduction=oa.InputAudioNoiseReduction(type="near_field"),
+                            turn_detection=oa.SemanticTurnDetection(eagerness="high"),
+                        ),
+                        output=oa.AudioOutput(voice=os.getenv("VOZ_VOZ_OPENAI", "marin")),
+                    ),
+                ),
+            ),
+        )
+
+    settings = dict(
+        voice=os.getenv("VOZ_VOZ", "Aoede"),  # voz femenina
+        language=Language.ES_US,  # código que Gemini Live acepta; el acento rioplatense lo da la instrucción
+        system_instruction=ctx["instrucciones"],
+        **({"model": os.getenv("VOZ_MODELO")} if os.getenv("VOZ_MODELO") else {}),
+    )
+    if p == "vertex":
+        from pipecat.services.google.gemini_live.vertex.llm import GeminiLiveVertexLLMService
+
+        return GeminiLiveVertexLLMService(
+            credentials_path=os.getenv("VOZ_VERTEX_CREDENCIALES") or os.getenv("GOOGLE_APPLICATION_CREDENTIALS"),
+            project_id=os.getenv("VOZ_VERTEX_PROYECTO", ""),
+            location=os.getenv("VOZ_VERTEX_REGION", "us-central1"),
+            tools=herramientas,
+            settings=GeminiLiveVertexLLMService.Settings(**settings),
+        )
     return GeminiLiveLLMService(
         api_key=os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY"),
         tools=herramientas,
-        settings=GeminiLiveLLMService.Settings(
-            voice=os.getenv("VOZ_VOZ", "Aoede"),  # voz femenina
-            language=Language.ES_US,  # código que Gemini Live acepta; el acento rioplatense lo da la instrucción
-            system_instruction=ctx["instrucciones"],
-            **({"model": os.getenv("VOZ_MODELO")} if os.getenv("VOZ_MODELO") else {}),
-        ),
+        settings=GeminiLiveLLMService.Settings(**settings),
     )
 
 
 async def _armar(transport, llm):
-    """Audio ⇄ Gemini Live, con el contexto de la charla (para la transcripción) y el corte por VAD."""
+    """Audio ⇄ modelo de voz, con el contexto de la charla (para la transcripción) y el corte de turnos.
+    Con OpenAI los turnos los decide su servidor (VAD semántico); con Gemini, el VAD local."""
     context = LLMContext()
-    user_aggregator, assistant_aggregator = LLMContextAggregatorPair(
-        context, realtime_service_mode=True, user_params=LLMUserAggregatorParams(vad_analyzer=SileroVADAnalyzer())
-    )
+    params = LLMUserAggregatorParams() if proveedor() == "openai" else LLMUserAggregatorParams(vad_analyzer=SileroVADAnalyzer())
+    user_aggregator, assistant_aggregator = LLMContextAggregatorPair(context, realtime_service_mode=True, user_params=params)
     pipeline = Pipeline([transport.input(), user_aggregator, llm, transport.output(), assistant_aggregator])
     worker = PipelineWorker(pipeline, params=PipelineParams(enable_metrics=True))
     runner = WorkerRunner(handle_sigint=False)
