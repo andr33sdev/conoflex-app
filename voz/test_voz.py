@@ -101,3 +101,16 @@ class Catalogo(unittest.TestCase):
     def test_nada(self):
         self.assertEqual(conoflex.buscar_catalogo("helicóptero", self.CAT)["resultados"], [])
         self.assertEqual(conoflex.buscar_catalogo("de la", self.CAT)["resultados"], [])
+
+
+class Fichas(unittest.TestCase):
+    def test_reemplaza_las_anteriores(self):
+        import bot
+
+        m = [{"role": "user", "content": "hola"}]
+        m = bot.con_fichas(m, ["2300-2R | VENCEDOR"])
+        m.append({"role": "assistant", "content": "¡Hola!"})
+        m = bot.con_fichas(m, ["1200-2R | RUTERO"])
+        self.assertEqual(len(m), 3)
+        self.assertIn("RUTERO", m[-1]["content"])
+        self.assertNotIn("VENCEDOR", " ".join(x["content"] for x in m))

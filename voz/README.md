@@ -31,7 +31,8 @@ Al cortar: la transcripción queda en WhatsApp → Conversaciones
 | `VOZ_ACTIVA` | `0` para no atender llamadas sin apagar nada (rechaza y el cliente ve "no atendió"). |
 | `VOZ_MAX_MINUTOS` | Tope por llamada (por defecto 10). |
 | `VOZ_VOZ` | Voz de Gemini (por defecto `Aoede`, femenina). |
-| `VOZ_PROVEEDOR` | Motor de voz: `gemini` (por defecto), `openai` (OpenAI Realtime, necesita `OPENAI_API_KEY`) o `vertex` (Gemini por Google Cloud, necesita `VOZ_VERTEX_PROYECTO` y `VOZ_VERTEX_CREDENCIALES` con la ruta al JSON de la cuenta de servicio; región en `VOZ_VERTEX_REGION`, por defecto `us-central1`). |
+| `VOZ_PROVEEDOR` | Motor de voz: `gemini` (por defecto), `elevenlabs` (oído y cerebro de OpenAI + voz argentina de ElevenLabs, la más natural), `openai` (OpenAI Realtime, necesita `OPENAI_API_KEY`) o `vertex` (Gemini por Google Cloud, necesita `VOZ_VERTEX_PROYECTO` y `VOZ_VERTEX_CREDENCIALES` con la ruta al JSON de la cuenta de servicio; región en `VOZ_VERTEX_REGION`, por defecto `us-central1`). |
+| `VOZ_ELEVEN_VOZ` | Con `VOZ_PROVEEDOR=elevenlabs`: el Voice ID de la voz elegida en ElevenLabs (además `ELEVENLABS_API_KEY` y `OPENAI_API_KEY`). Opcionales: `VOZ_LLM` (por defecto `gpt-4.1-mini`), `VOZ_ELEVEN_MODELO` (`eleven_flash_v2_5`), `VOZ_ELEVEN_ESTABILIDAD` (0.45), `VOZ_ELEVEN_VELOCIDAD` (1.0). |
 | `VOZ_VOZ_OPENAI` | Voz de OpenAI (por defecto `marin`). |
 | `VOZ_TURNOS` | Con OpenAI: `rapido` (por defecto, contesta tras ~0,45 s de silencio) o `semantico` (espera a que la frase cierre; más natural, a veces más lento). |
 | `VOZ_SILENCIO_MS` | Silencio que espera en modo `rapido` (por defecto 450). Subilo si la interrumpe mientras pensás. |

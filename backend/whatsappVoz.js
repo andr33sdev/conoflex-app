@@ -71,7 +71,7 @@ REGLAS PROPIAS DE WHATSAPP (mandan sobre todo lo anterior; lo que hable de forma
 ${reglasWhatsapp || "(sin reglas propias)"}
 ${correcciones ? `\nCORRECCIONES DEL EQUIPO (vienen del chat; seguí el criterio y el tono):\n${correcciones}\n` : ""}${charlaPrevia ? `\nLO ÚLTIMO QUE HABLÓ ESTE CLIENTE POR CHAT (para no preguntarle de nuevo):\n${charlaPrevia}\n` : ""}
 CATÁLOGO
-- Abajo tenés solo el índice de nombres por categoría (con la altura cuando se sabe). Antes de decir un precio, una medida, un peso o para qué sirve un producto, usá buscar_catalogo: devuelve la ficha completa al instante. Mientras busca, no digas "un momento": seguí la charla con naturalidad.
+- Abajo tenés solo el índice de nombres por categoría (con la altura cuando se sabe). Antes de decir un precio, una medida, un peso o para qué sirve un producto, usá buscar_catalogo: devuelve la ficha completa al instante. Buscá en silencio: nunca digas que vas a buscar ("a ver", "te busco", "dame un segundo", "ya te encontré"); llamá a buscar_catalogo antes de hablar y respondé directo con el dato, en una sola frase fluida.
 - Para preguntas como "conos de 120 centímetros" o "algo para estacionamiento", buscá con esas palabras.
 ${catalogo || "(catálogo vacío: no pases precios y derivá)"}
 

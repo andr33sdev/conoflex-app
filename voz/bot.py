@@ -13,7 +13,9 @@ import aiohttp
 from loguru import logger
 from pipecat.adapters.llm.schemas.function_schema import FunctionSchema
 from pipecat.audio.vad.silero import SileroVADAnalyzer
-from pipecat.frames.frames import LLMRunFrame
+from pipecat.adapters.llm.schemas.tools_schema import ToolsSchema
+from pipecat.frames.frames import LLMRunFrame, TranscriptionFrame
+from pipecat.processors.frame_processor import FrameProcessor
 from pipecat.pipeline.pipeline import Pipeline
 from pipecat.pipeline.worker import PipelineParams, PipelineWorker
 from pipecat.processors.aggregators.llm_context import LLMContext
@@ -105,7 +107,22 @@ def proveedor() -> str:
     """Motor de voz: "gemini" (Gemini Live, clave de AI Studio), "vertex" (Gemini Live por Google Cloud)
     u "openai" (OpenAI Realtime, el de ChatGPT voz). Se elige con VOZ_PROVEEDOR."""
     p = (os.getenv("VOZ_PROVEEDOR") or "gemini").strip().lower()
-    return p if p in ("gemini", "vertex", "openai") else "gemini"
+    return p if p in ("gemini", "vertex", "openai", "elevenlabs") else "gemini"
+
+
+def es_cascada() -> bool:
+    """"elevenlabs": oído (OpenAI) → cerebro de texto (OpenAI) → voz de ElevenLabs. Permite una voz
+    argentina nativa y meter las fichas del catálogo sin que la asistente tenga que "ir a buscar"."""
+    return proveedor() == "elevenlabs"
+
+
+NOTA_CASCADA = """
+
+FICHAS DEL CATÁLOGO
+- Las fichas de los productos que menciona el cliente te llegan solas en un mensaje "FICHAS DEL CATÁLOGO". Usalas directo.
+- Nunca digas que vas a buscar, ni "a ver", "dame un segundo" o "ya te encontré": respondé de una con el dato, como alguien que se sabe el catálogo.
+- Escribí solo lo que se dice en voz alta: sin listas, símbolos, asteriscos ni emojis. Frases cortas.
+- Los precios escribilos en palabras como se dicen ("veinticuatro mil doscientos pesos más IVA")."""
 
 
 def _turnos_openai():
@@ -122,6 +139,13 @@ def _turnos_openai():
 
 def _crear_llm(ctx: dict, herramientas: list):
     p = proveedor()
+    if p == "elevenlabs":
+        from pipecat.services.openai.llm import OpenAILLMService
+
+        return OpenAILLMService(
+            api_key=os.getenv("OPENAI_API_KEY", ""),
+            settings=OpenAILLMService.Settings(model=os.getenv("VOZ_LLM", "gpt-4.1-mini"), system_instruction=ctx["instrucciones"] + NOTA_CASCADA, temperature=0.6),
+        )
     if p == "openai":
         from pipecat.services.openai.realtime import events as oa
         from pipecat.services.openai.realtime.llm import OpenAIRealtimeLLMService
@@ -168,17 +192,82 @@ def _crear_llm(ctx: dict, herramientas: list):
     )
 
 
-async def _armar(transport, llm):
+def _oido_y_voz():
+    """STT y TTS de la cascada."""
+    from pipecat.services.elevenlabs.tts import ElevenLabsTTSService
+    from pipecat.services.openai.stt import OpenAIRealtimeSTTService
+
+    stt = OpenAIRealtimeSTTService(
+        api_key=os.getenv("OPENAI_API_KEY", ""),
+        turn_detection={"type": "server_vad", "threshold": 0.55, "prefix_padding_ms": 250, "silence_duration_ms": int(os.getenv("VOZ_SILENCIO_MS", "450"))},
+        settings=OpenAIRealtimeSTTService.Settings(model=os.getenv("VOZ_STT", "gpt-transcribe"), language=Language.ES, noise_reduction="near_field"),
+    )
+    tts = ElevenLabsTTSService(
+        api_key=os.getenv("ELEVENLABS_API_KEY", ""),
+        settings=ElevenLabsTTSService.Settings(
+            voice=os.getenv("VOZ_ELEVEN_VOZ", ""),
+            model=os.getenv("VOZ_ELEVEN_MODELO", "eleven_flash_v2_5"),
+            language=Language.ES,
+            stability=float(os.getenv("VOZ_ELEVEN_ESTABILIDAD", "0.45")),
+            similarity_boost=0.8,
+            speed=float(os.getenv("VOZ_ELEVEN_VELOCIDAD", "1.0")),
+        ),
+    )
+    return stt, tts
+
+
+MARCA_FICHAS = "FICHAS DEL CATÁLOGO"
+
+
+def con_fichas(mensajes: list, fichas: list) -> list:
+    """Reemplaza el mensaje de fichas anterior por uno nuevo, al final (justo antes de lo que dice el cliente)."""
+    otros = [m for m in mensajes if not (isinstance(m, dict) and str(m.get("content", "")).startswith(MARCA_FICHAS))]
+    return otros + [{"role": "developer", "content": f"{MARCA_FICHAS} (lo que el cliente puede estar pidiendo):\n" + "\n".join(fichas)}]
+
+
+class FichasAutomaticas(FrameProcessor):
+    """Con cada frase del cliente busca en el catálogo y le deja las fichas a mano a la asistente,
+    así responde con el dato sin anunciar que "va a buscar"."""
+
+    def __init__(self, context: LLMContext, catalogo: list):
+        super().__init__()
+        self._context = context
+        self._catalogo = catalogo or []
+        self._anteriores: list[str] = []
+
+    async def process_frame(self, frame, direction):
+        await super().process_frame(frame, direction)
+        if isinstance(frame, TranscriptionFrame) and frame.text and self._catalogo:
+            nuevas = conoflex.buscar_catalogo(frame.text, self._catalogo, maximo=6).get("resultados", [])
+            if nuevas:
+                # se conservan las de antes para preguntas de seguimiento ("¿y cuánto sale?")
+                fichas = list(dict.fromkeys(nuevas + self._anteriores))[:8]
+                self._anteriores = fichas
+                self._context.set_messages(con_fichas(self._context.get_messages(), fichas))
+        await self.push_frame(frame, direction)
+
+
+async def _armar(transport, llm, ctx: dict | None = None, herramientas: list | None = None):
     """Audio ⇄ modelo de voz, con el contexto de la charla (para la transcripción) y el corte de turnos.
-    Con OpenAI los turnos los decide su servidor (VAD semántico); con Gemini, el VAD local."""
-    context = LLMContext()
-    params = LLMUserAggregatorParams() if proveedor() == "openai" else LLMUserAggregatorParams(vad_analyzer=SileroVADAnalyzer())
-    user_aggregator, assistant_aggregator = LLMContextAggregatorPair(context, realtime_service_mode=True, user_params=params)
-    pipeline = Pipeline([transport.input(), user_aggregator, llm, transport.output(), assistant_aggregator])
-    worker = PipelineWorker(pipeline, params=PipelineParams(enable_metrics=True))
+    Con OpenAI los turnos los decide su servidor; con Gemini, el VAD local; en la cascada, el oído de OpenAI."""
+    cascada = es_cascada()
+    context = LLMContext(tools=ToolsSchema(standard_tools=herramientas)) if cascada and herramientas else LLMContext()
+    params = LLMUserAggregatorParams() if proveedor() in ("openai", "elevenlabs") else LLMUserAggregatorParams(vad_analyzer=SileroVADAnalyzer())
+    user_aggregator, assistant_aggregator = LLMContextAggregatorPair(context, realtime_service_mode=not cascada, user_params=params)
+    if cascada:
+        stt, tts = _oido_y_voz()
+        etapas = [transport.input(), stt, FichasAutomaticas(context, (ctx or {}).get("catalogo", [])), user_aggregator, llm, tts, transport.output(), assistant_aggregator]
+    else:
+        etapas = [transport.input(), user_aggregator, llm, transport.output(), assistant_aggregator]
+    worker = PipelineWorker(Pipeline(etapas), params=PipelineParams(enable_metrics=True))
     runner = WorkerRunner(handle_sigint=False)
     await runner.add_workers(worker)
     return context, user_aggregator, assistant_aggregator, worker, runner
+
+
+def _herramientas(lista: list) -> list:
+    """En la cascada las fichas llegan solas: sin la herramienta de búsqueda no hay "ahí te busco"."""
+    return [h for h in lista if h.name != "buscar_catalogo"] if es_cascada() else lista
 
 
 def _buscador(ctx: dict):
@@ -214,8 +303,9 @@ async def run_bot(webrtc_connection, call, nombre_cliente: str | None, ctx: dict
         params=TransportParams(audio_in_enabled=True, audio_out_enabled=True, audio_out_10ms_chunks=2),
     )
 
-    llm = _crear_llm(ctx, HERRAMIENTAS)
-    context, user_aggregator, assistant_aggregator, worker, runner = await _armar(transport, llm)
+    herramientas = _herramientas(HERRAMIENTAS)
+    llm = _crear_llm(ctx, herramientas)
+    context, user_aggregator, assistant_aggregator, worker, runner = await _armar(transport, llm, ctx, herramientas)
 
     async def cortar(espera: float = 0):
         if cortando.is_set():
@@ -292,8 +382,9 @@ async def run_bot_web(connection, llamada_id: int, ctx: dict, http: aiohttp.Clie
         webrtc_connection=connection,
         params=TransportParams(audio_in_enabled=True, audio_out_enabled=True, audio_out_10ms_chunks=2),
     )
-    llm = _crear_llm(ctx, HERRAMIENTAS_WEB)
-    context, user_aggregator, assistant_aggregator, worker, runner = await _armar(transport, llm)
+    herramientas = _herramientas(HERRAMIENTAS_WEB)
+    llm = _crear_llm(ctx, herramientas)
+    context, user_aggregator, assistant_aggregator, worker, runner = await _armar(transport, llm, ctx, herramientas)
 
     def al_navegador(**datos):
         try:
