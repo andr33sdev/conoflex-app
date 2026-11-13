@@ -116,22 +116,20 @@ function catalogoTexto(productos) {
     .join("\n");
 }
 
-/** Índice corto del catálogo (código | nombre | altura): para la voz, que busca el detalle con una herramienta. */
+/** Índice mínimo del catálogo para la voz: nombres (con altura) agrupados por categoría, sin repetir.
+ *  El detalle (código, precio, medidas) lo trae la herramienta buscar_catalogo. Cuanto más corto, más barata y rápida es cada respuesta. */
 function catalogoBreve(productos) {
-  const vistos = new Set();
-  return productos
-    .filter((p) => p.codigo || p.nombre)
-    .filter((p) => {
-      const k = `${p.codigo || ""}|${p.nombre || ""}`.toUpperCase();
-      if (vistos.has(k)) return false;
-      vistos.add(k);
-      return true;
-    })
-    .map((p) => {
-      const h = fotos.alturaCm(p);
-      return [p.codigo, p.nombre, h != null && `${h} cm`].filter(Boolean).map((x) => String(x).replace(/\|/g, "/")).join(" | ");
-    })
-    .join("\n");
+  const porCategoria = new Map();
+  for (const p of productos) {
+    if (!p.nombre && !p.codigo) continue;
+    const h = fotos.alturaCm(p);
+    const nombre = String(p.nombre || p.codigo).replace(/\s+/g, " ").trim();
+    const item = h != null ? `${nombre} ${h}cm` : nombre;
+    const cat = String(p.categoria || "General").trim();
+    if (!porCategoria.has(cat)) porCategoria.set(cat, new Set());
+    porCategoria.get(cat).add(item);
+  }
+  return [...porCategoria].map(([cat, items]) => `${cat}: ${[...items].join("; ")}`).join("\n");
 }
 
 const pesos = (n) => `$${Number(n).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;

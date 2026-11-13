@@ -208,3 +208,12 @@ test("catálogo: suma la especificación (altura de los conos)", () => {
   assert.match(t, /altura: 120 cm/);
   assert.match(t, /datos: Altura: 120 cm\. \/ Peso: 6 kg\./);
 });
+
+test("índice de voz: nombres por categoría, sin repetir", () => {
+  const t = w.catalogoBreve([
+    { codigo: "2300-2R", nombre: "VENCEDOR", categoria: "Conos", especificacion: "Altura: 120 cm" },
+    { codigo: "2300-2R NA", nombre: "VENCEDOR", categoria: "Conos", especificacion: "Altura: 120 cm" },
+    { codigo: "MP3040", nombre: "TOPE  DE ESTACIONAMIENTO" },
+  ]);
+  assert.equal(t, "Conos: VENCEDOR 120cm\nGeneral: TOPE DE ESTACIONAMIENTO");
+});
