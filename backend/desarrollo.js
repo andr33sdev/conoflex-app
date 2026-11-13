@@ -57,6 +57,8 @@ async function asegurarTablasDesarrollo(db) {
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     UNIQUE KEY (proyecto_id, etapa)
   )`);
+  // Aprobación cargada a mano (aprobó por teléfono, en persona, etc.): quién la cargó.
+  await db.query("ALTER TABLE dp_etapas ADD COLUMN IF NOT EXISTS aprobacion_registrada_por VARCHAR(120) NULL");
   await db.query(`CREATE TABLE IF NOT EXISTS dp_eventos (
     id INT AUTO_INCREMENT PRIMARY KEY,
     proyecto_id INT NOT NULL,
@@ -407,7 +409,7 @@ function registrarRutasDesarrollo(app, { db, requirePermiso, crearNotificacion, 
       const [[e]] = await db.query("SELECT detalle FROM dp_etapas WHERE proyecto_id = ? AND etapa = ?", [id, def.id]);
       if (!String(e?.detalle || "").replace(/[\s-]/g, "")) return res.status(400).json({ error: "Escribí el detalle de la etapa antes de pedir la aprobación." });
       await db.query(
-        "UPDATE dp_etapas SET estado = 'LISTA', aprobacion_estado = 'PEDIDA', aprobador_id = ?, aprobador_nombre = ?, aprobacion_pedida_por = ?, aprobacion_pedida_at = NOW(), aprobado_at = NULL, aprobacion_comentario = NULL WHERE proyecto_id = ? AND etapa = ?",
+        "UPDATE dp_etapas SET estado = 'LISTA', aprobacion_estado = 'PEDIDA', aprobador_id = ?, aprobador_nombre = ?, aprobacion_pedida_por = ?, aprobacion_pedida_at = NOW(), aprobado_at = NULL, aprobacion_comentario = NULL, aprobacion_registrada_por = NULL WHERE proyecto_id = ? AND etapa = ?",
         [a.id, a.nombre, u.nombre, id, def.id],
       );
       await evento(db, id, u, "APROBACION", `Pidió a ${a.nombre} que apruebe «${def.nombre}».`, { etapa: def.id });
@@ -434,7 +436,7 @@ function registrarRutasDesarrollo(app, { db, requirePermiso, crearNotificacion, 
       const comentario = texto(req.body?.comentario, 500);
       if (!aprueba && !comentario) return res.status(400).json({ error: "Contá por qué no se aprueba, así se puede corregir." });
       await db.query(
-        `UPDATE dp_etapas SET aprobacion_estado = ?, aprobado_at = NOW(), aprobacion_comentario = ?, aprobador_id = ?, aprobador_nombre = ?, estado = ? WHERE id = ?`,
+        `UPDATE dp_etapas SET aprobacion_estado = ?, aprobado_at = NOW(), aprobacion_comentario = ?, aprobador_id = ?, aprobador_nombre = ?, estado = ?, aprobacion_registrada_por = NULL WHERE id = ?`,
         [aprueba ? "APROBADA" : "RECHAZADA", comentario, u.id, u.nombre, aprueba ? "LISTA" : "EN_CURSO", e.id],
       );
       await evento(db, id, u, "APROBACION", `${aprueba ? "Aprobó" : "No aprobó"} «${def.nombre}»${comentario ? `: ${comentario}` : "."}`, { etapa: def.id });
@@ -443,6 +445,34 @@ function registrarRutasDesarrollo(app, { db, requirePermiso, crearNotificacion, 
       for (const destino of new Set([p2?.responsable_id, pidio?.id].filter((x) => x && x !== u.id))) {
         await avisar(u, destino, `${aprueba ? "Aprobado" : "No aprobado"}: ${def.nombre}`, `${u.nombre} ${aprueba ? "aprobó" : "no aprobó"} «${def.nombre}» de ${p.nombre}.${comentario ? ` ${comentario}` : ""}`, id);
       }
+      res.json({ ok: true });
+    } catch (e) {
+      err(res, e);
+    }
+  });
+
+  // Cargar a mano quién aprobó (sin esperar a que lo apruebe desde la app). Queda quién lo cargó y cuándo.
+  app.post("/api/desarrollo/proyectos/:id/etapas/:etapa/registrar-aprobacion", puede, async (req, res) => {
+    try {
+      const u = await usuario(db, req);
+      const id = Number(req.params.id);
+      const p = await existe(id);
+      if (!p) return res.status(404).json({ error: "No existe ese desarrollo." });
+      const def = L.etapasDe(p.tipo).find((d) => d.id === req.params.etapa && d.aprobable);
+      if (!def) return res.status(400).json({ error: "Esa etapa no se aprueba." });
+      const nombre = texto(req.body?.nombre, 120);
+      if (!nombre) return res.status(400).json({ error: "Escribí quién aprobó." });
+      const f = fecha(req.body?.fecha);
+      if (req.body?.fecha && !f) return res.status(400).json({ error: "Fecha inválida." });
+      if (f && f > new Date().toISOString().slice(0, 10)) return res.status(400).json({ error: "La fecha de aprobación no puede ser futura." });
+      const comentario = texto(req.body?.comentario, 500);
+      await db.query("INSERT IGNORE INTO dp_etapas (proyecto_id, etapa) VALUES (?, ?)", [id, def.id]);
+      const [[usu]] = await db.query("SELECT id FROM usuarios WHERE nombre = ? LIMIT 1", [nombre]);
+      await db.query(
+        `UPDATE dp_etapas SET estado = 'LISTA', aprobacion_estado = 'APROBADA', aprobador_id = ?, aprobador_nombre = ?, aprobado_at = ${f ? "?" : "NOW()"}, aprobacion_comentario = ?, aprobacion_registrada_por = ?, fecha = COALESCE(fecha, CURDATE()) WHERE proyecto_id = ? AND etapa = ?`,
+        [usu?.id ?? null, nombre, ...(f ? [`${f} 12:00:00`] : []), comentario, u.nombre, id, def.id],
+      );
+      await evento(db, id, u, "APROBACION", `Cargó que ${nombre} aprobó «${def.nombre}»${f ? ` el ${f.split("-").reverse().join("/")}` : ""}${comentario ? `: ${comentario}` : "."}`, { etapa: def.id });
       res.json({ ok: true });
     } catch (e) {
       err(res, e);
