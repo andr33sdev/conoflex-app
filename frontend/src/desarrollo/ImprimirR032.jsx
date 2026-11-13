@@ -25,6 +25,9 @@ function sello(e) {
   return ["vacio", "Sin aprobar"];
 }
 
+/** Una sección con título: si es corta va entera a la hoja siguiente en vez de partirse; si es larga, se parte entre filas. */
+const seccion = (titulo, contenido, filas) => `<section class="${filas <= 12 ? "junta" : "larga"}"><h2>${titulo}</h2>${contenido}</section>`;
+
 function armarHtml(p, imagenes) {
   const pts = p.items.filter((x) => x.tipo === "PT");
   const cuentan = p.etapas.filter((e) => e.etapa !== "CAMBIOS");
@@ -33,7 +36,7 @@ function armarHtml(p, imagenes) {
     const hecho = e.cerrada;
     return `<div class="paso ${hecho ? "hecho" : c === "pend" ? "pend" : ""}"><span class="bola">${hecho ? "✓" : i + 1}</span><span class="paso-n">${esc(e.nombre)}</span><span class="paso-s">${hecho ? (e.estado === "NO_APLICA" ? "No aplica" : fecha(e.aprobado_at)) : c === "pend" ? "Pendiente" : "—"}</span></div>`;
   }).join("");
-  const etapas = p.etapas.map((e, i) => {
+  const tarjetas = p.etapas.map((e, i) => {
     const [c, t] = sello(e);
     const l = lineas(e.detalle);
     return `<section class="etapa">
@@ -42,19 +45,20 @@ function armarHtml(p, imagenes) {
       ${e.aprobacion_comentario ? `<p class="coment">“${esc(e.aprobacion_comentario)}”</p>` : ""}
       ${e.fecha ? `<p class="meta">Fecha: ${fecha(e.fecha)}${e.actualizado_por ? ` · Registró: ${esc(e.actualizado_por)}` : ""}</p>` : ""}
     </section>`;
-  }).join("");
+  });
+  const etapas = `<div class="junta"><h2>Registro del desarrollo</h2>${tarjetas[0] || ""}</div>${tarjetas.slice(1).join("")}`;
   const pruebas = p.pruebas.length
-    ? `<h2>Pruebas de verificación y validación</h2><table><thead><tr><th>Tipo</th><th>Qué se prueba</th><th>Método</th><th>Objetivo</th><th>Resultado</th><th class="c">Cumple</th><th class="c">Fecha</th></tr></thead><tbody>${p.pruebas.map((x) => `<tr><td>${x.tipo === "VALIDACION" ? "Validación" : "Verificación"}</td><td><b>${esc(x.que)}</b></td><td>${esc(x.metodo)}</td><td>${esc(x.objetivo)}</td><td>${esc(x.resultado)}${x.cumple === "NO" && x.accion ? `<div class="accion">Acción: ${esc(x.accion)}</div>` : ""}</td><td class="c"><span class="pill ${x.cumple === "SI" ? "ok" : x.cumple === "NO" ? "no" : "pend"}">${x.cumple === "SI" ? "Sí" : x.cumple === "NO" ? "No" : "Pendiente"}</span></td><td class="c">${fecha(x.fecha)}</td></tr>`).join("")}</tbody></table>`
+    ? seccion("Pruebas de verificación y validación", `<table><thead><tr><th>Tipo</th><th>Qué se prueba</th><th>Método</th><th>Objetivo</th><th>Resultado</th><th class="c">Cumple</th><th class="c">Fecha</th></tr></thead><tbody>${p.pruebas.map((x) => `<tr><td>${x.tipo === "VALIDACION" ? "Validación" : "Verificación"}</td><td><b>${esc(x.que)}</b></td><td>${esc(x.metodo)}</td><td>${esc(x.objetivo)}</td><td>${esc(x.resultado)}${x.cumple === "NO" && x.accion ? `<div class="accion">Acción: ${esc(x.accion)}</div>` : ""}</td><td class="c"><span class="pill ${x.cumple === "SI" ? "ok" : x.cumple === "NO" ? "no" : "pend"}">${x.cumple === "SI" ? "Sí" : x.cumple === "NO" ? "No" : "Pendiente"}</span></td><td class="c">${fecha(x.fecha)}</td></tr>`).join("")}</tbody></table>`, p.pruebas.length)
     : "";
   const items = p.items.length
-    ? `<h2>Ítems en la app</h2><table><thead><tr><th>Código</th><th>Descripción</th><th>Tipo</th><th class="c">Receta</th></tr></thead><tbody>${p.items.map((x) => `<tr><td><b>${esc(x.codigo)}</b></td><td>${esc(x.nombre)}</td><td>${x.tipo === "PT" ? "Producto terminado" : "Semielaborado"}</td><td class="c"><span class="pill ${x.tiene_receta ? "ok" : "pend"}">${x.tiene_receta ? "Cargada" : "Falta"}</span></td></tr>`).join("")}</tbody></table>`
+    ? seccion("Ítems en la app", `<table><thead><tr><th>Código</th><th>Descripción</th><th>Tipo</th><th class="c">Receta</th></tr></thead><tbody>${p.items.map((x) => `<tr><td><b>${esc(x.codigo)}</b></td><td>${esc(x.nombre)}</td><td>${x.tipo === "PT" ? "Producto terminado" : "Semielaborado"}</td><td class="c"><span class="pill ${x.tiene_receta ? "ok" : "pend"}">${x.tiene_receta ? "Cargada" : "Falta"}</span></td></tr>`).join("")}</tbody></table>`, p.items.length)
     : "";
   const difusion = p.avisos.length
-    ? `<h2>Difusión</h2><table><thead><tr><th>Persona</th><th class="c">Avisado</th><th class="c">Confirmó</th><th>Comentario</th></tr></thead><tbody>${p.avisos.map((a) => `<tr><td><b>${esc(a.usuario_nombre)}</b></td><td class="c">${fecha(a.enviado_at)}</td><td class="c">${a.enterado_at ? `<span class="pill ok">${fecha(a.enterado_at)}</span>` : `<span class="pill pend">Pendiente</span>`}</td><td>${esc(a.comentario)}</td></tr>`).join("")}</tbody></table>`
+    ? seccion("Difusión", `<table><thead><tr><th>Persona</th><th class="c">Avisado</th><th class="c">Confirmó</th><th>Comentario</th></tr></thead><tbody>${p.avisos.map((a) => `<tr><td><b>${esc(a.usuario_nombre)}</b></td><td class="c">${fecha(a.enviado_at)}</td><td class="c">${a.enterado_at ? `<span class="pill ok">${fecha(a.enterado_at)}</span>` : `<span class="pill pend">Pendiente</span>`}</td><td>${esc(a.comentario)}</td></tr>`).join("")}</tbody></table>`, p.avisos.length)
     : "";
   const iso = `<div class="iso ${p.iso.completo ? "completo" : ""}"><div><b>Revisión ISO 9001 · P-11</b><span>${p.iso.completo ? "Documentación completa." : `${p.iso.ok} de ${p.iso.total} requisitos cumplidos.`}</span></div>${p.iso.completo ? "" : `<ul>${p.iso.items.filter((x) => !x.ok).map((x) => `<li>${esc(x.texto)}</li>`).join("")}</ul>`}</div>`;
   const fotos = imagenes.length
-    ? `<section class="salto"><h2>Imágenes del diseño 2D/3D oficial y aprobado</h2><p class="gris" style="margin-left:0">Aprobadas previo a la primera producción real.</p><div class="fotos">${imagenes.map((i) => `<figure><div class="marco"><img src="${i.src}"></div><figcaption><b>${esc(i.nombre)}</b>${i.descripcion ? `<br>${esc(i.descripcion)}` : ""}</figcaption></figure>`).join("")}</div></section>`
+    ? `<section class="salto"><h2>Imágenes del diseño 2D/3D oficial y aprobado</h2><p class="gris" style="margin-left:0">Aprobadas previo a la primera producción real.</p><div class="fotos${imagenes.length === 1 ? " una" : ""}">${imagenes.map((i) => `<figure><div class="marco"><img src="${i.src}"></div><figcaption><b>${esc(i.nombre)}</b>${i.descripcion ? `<br>${esc(i.descripcion)}` : ""}</figcaption></figure>`).join("")}</div></section>`
     : "";
   const dato = (k, v) => `<div class="dato"><span>${k}</span><b>${v || "—"}</b></div>`;
   const pie = `Conoflex · R.032 Rev.1 · ${p.codigo}`;
@@ -109,8 +113,17 @@ function armarHtml(p, imagenes) {
     .iso.completo { background: #e3f4ea; border-color: #b9e2c8; }
     .iso > div { display: flex; gap: 8px; align-items: baseline; } .iso span { color: #6b6b6b; }
     .iso ul { margin-top: 4px; padding-left: 18px; color: #6b6b6b; font-size: 8.5pt; }
-    .salto { page-break-before: always; }
+    .salto { page-break-before: always; break-before: page; }
+    .junta, .etapa, figure, .iso, .datos, .tracker { break-inside: avoid; page-break-inside: avoid; }
+    .larga h2 { break-after: avoid; page-break-after: avoid; }
+    h2 { break-after: avoid; page-break-after: avoid; }
+    thead { display: table-header-group; }
+    tr, td, th { break-inside: avoid; page-break-inside: avoid; }
+    p, li { orphans: 3; widows: 3; }
+    section.junta, section.larga { margin-top: 18px; }
+    section.junta > h2, section.larga > h2 { margin-top: 0; }
     .fotos { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 8px; }
+    .fotos.una { grid-template-columns: 1fr; } .fotos.una .marco img { max-height: 170mm; }
     figure { margin: 0; page-break-inside: avoid; }
     .marco { border: 1px solid #e6e2de; border-radius: 8px; padding: 8px; background: #fff; }
     .marco img { width: 100%; max-height: 105mm; object-fit: contain; display: block; }
@@ -131,12 +144,11 @@ function armarHtml(p, imagenes) {
       ${dato("Listado en ventas", p.listado_ventas ? `<span class="si">✓ Sí</span>` : `<span class="nop">✕ No</span>`)}
     </div>
     ${p.punto_partida ? `<p style="margin:0 0 12px"><span class="gris" style="margin:0">Punto de partida:</span> ${esc(p.punto_partida)}</p>` : ""}
-    <div class="tracker">${tracker}</div>
-    <h2>Registro del desarrollo</h2>
+    <div class="tracker junta">${tracker}</div>
     ${etapas}
     ${pruebas}${items}${difusion}
-    ${iso}
-    <p class="firma">Generado desde la app de Conoflex el ${new Date().toLocaleString("es-AR")}. La bitácora completa, con cada cambio, aprobación y archivo, queda en el módulo Desarrollo de productos.</p>
+    <div class="junta">${iso}
+    <p class="firma">Generado desde la app de Conoflex el ${new Date().toLocaleString("es-AR")}. La bitácora completa, con cada cambio, aprobación y archivo, queda en el módulo Desarrollo de productos.</p></div>
     ${fotos}
   </body></html>`;
 }

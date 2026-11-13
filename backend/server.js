@@ -5169,6 +5169,37 @@ app.post("/api/legajo/sanciones/:id/anular", requireLegajo, async (req, res) => 
     responderLegajo(res, error);
   }
 });
+// Notas personales sobre el operario: cada usuario ve, edita y borra solo las suyas.
+app.get("/api/legajo/notas", requireLegajo, async (req, res) => {
+  try {
+    res.json(await legajo.leerNotas(db, { operario: String(req.query.operario || "").trim(), autorId: req.user?.id }));
+  } catch (error) {
+    responderLegajo(res, error);
+  }
+});
+app.post("/api/legajo/notas", requireLegajo, async (req, res) => {
+  try {
+    const b = req.body || {};
+    res.json(await legajo.crearNota(db, { operario: b.operario, texto: b.texto, tono: b.tono, fecha: b.fecha, autorId: req.user?.id, autorNombre: await nombreAdmin(req) }));
+  } catch (error) {
+    responderLegajo(res, error);
+  }
+});
+app.put("/api/legajo/notas/:id", requireLegajo, async (req, res) => {
+  try {
+    const b = req.body || {};
+    res.json(await legajo.editarNota(db, { id: Number(req.params.id), autorId: req.user?.id, texto: b.texto, tono: b.tono, fecha: b.fecha }));
+  } catch (error) {
+    responderLegajo(res, error);
+  }
+});
+app.delete("/api/legajo/notas/:id", requireLegajo, async (req, res) => {
+  try {
+    res.json(await legajo.borrarNota(db, { id: Number(req.params.id), autorId: req.user?.id }));
+  } catch (error) {
+    responderLegajo(res, error);
+  }
+});
 app.get("/api/legajo/archivos/:id", requireLegajo, async (req, res) => {
   try {
     const a = await legajo.archivoPorId(db, Number(req.params.id));

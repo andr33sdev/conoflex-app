@@ -387,12 +387,15 @@ function registrarRutasProduccion(app, db, requirePermiso) {
     res.json({ ok: true });
   }));
 
+  // Quita un lote de la lista de la semana junto con sus turnos. Si ya tiene producción cargada, pide confirmación.
   app.delete("/api/prod/plan/items/:id", PLAN, seguro(async (req, res) => {
-    const [[{ n }]] = await db.query("SELECT COUNT(*) AS n FROM prod_asignaciones WHERE item_id = ?", [req.params.id]);
-    if (Number(n) > 0) return res.status(409).json({ error: "Este lote ya tiene producción asignada en algún turno. Sacalo de los turnos primero." });
-    const [r] = await db.query("DELETE FROM prod_plan_items WHERE id = ?", [req.params.id]);
-    if (!r.affectedRows) return res.status(404).json({ error: "Renglón no encontrado." });
-    res.json({ ok: true });
+    const [[it]] = await db.query("SELECT id FROM prod_plan_items WHERE id = ?", [req.params.id]);
+    if (!it) return res.status(404).json({ error: "Renglón no encontrado." });
+    const [as] = await db.query("SELECT id FROM prod_asignaciones WHERE item_id = ?", [it.id]);
+    const r = await borrarAsignaciones(as.map((a) => a.id), { conCargas: req.query.con_cargas === "1", usuario: await quien(req) });
+    if (r.confirmar) return res.status(409).json(r.confirmar);
+    await db.query("DELETE FROM prod_plan_items WHERE id = ?", [it.id]);
+    res.json({ ok: true, turnos_quitados: as.length, ...r });
   }));
 
   // ---------------------------------------------------------------- turnos y asignaciones
@@ -429,7 +432,7 @@ function registrarRutasProduccion(app, db, requirePermiso) {
     const [it] = await db.query("SELECT id, semielaborado_id, " + FECHA("semana_inicio") + " AS semana_inicio FROM prod_plan_items WHERE id = ?", [item_id]);
     if (!it.length) return res.status(404).json({ error: "Ese renglón de la lista semanal no existe." });
     if (P.lunesDe(fecha) !== it[0].semana_inicio) return res.status(400).json({ error: "El día elegido no pertenece a la semana de ese lote." });
-    if (await turnoLanzado(fecha, turno)) return bloqueado(res);
+    // Aunque el turno ya esté en la tablet se puede sumar producción: aparece en planta cuando tenga máquina, operario y receta.
     const [filaTurno] = await db.query("SELECT sin_produccion FROM prod_turnos WHERE fecha = ? AND turno = ?", [fecha, turno]);
     if (filaTurno[0]?.sin_produccion) return res.status(409).json({ error: "Ese turno está marcado como \"sin producción\"." });
 
@@ -457,7 +460,7 @@ function registrarRutasProduccion(app, db, requirePermiso) {
   app.put("/api/prod/asignaciones/:id", PLAN, seguro(async (req, res) => {
     const a = await asignacion(req.params.id);
     if (!a) return res.status(404).json({ error: "Asignación no encontrada." });
-    if (await turnoLanzado(a.fecha_iso, a.turno)) return bloqueado(res);
+    // Editable aunque el turno esté en la tablet o ya tenga producción cargada (lo cargado guarda sus propios datos).
     const sets = [];
     const vals = [];
     if (req.body.cantidad !== undefined) {
@@ -478,13 +481,55 @@ function registrarRutasProduccion(app, db, requirePermiso) {
     res.json({ ok: true });
   }));
 
+  // Saca una producción del turno aunque esté en la tablet. Si ya tiene producción cargada, pide confirmación
+  // (con_cargas=1) y la elimina también, deshaciendo lo aprobado (stock, métricas, alertas).
   app.delete("/api/prod/asignaciones/:id", PLAN, seguro(async (req, res) => {
     const a = await asignacion(req.params.id);
     if (!a) return res.status(404).json({ error: "Asignación no encontrada." });
-    if (await turnoLanzado(a.fecha_iso, a.turno)) return bloqueado(res);
-    await db.query("DELETE FROM prod_asignaciones WHERE id = ?", [req.params.id]);
-    res.json({ ok: true });
+    const r = await borrarAsignaciones([a.id], { conCargas: req.query.con_cargas === "1", usuario: await quien(req) });
+    if (r.confirmar) return res.status(409).json(r.confirmar);
+    res.json({ ok: true, ...r });
   }));
+
+  /**
+   * Borra asignaciones en una transacción. Si alguna tiene cargas y no se confirmó, no borra nada y devuelve
+   * { confirmar: { error, tiene_cargas, aprobadas } }. Si un turno lanzado queda vacío, sale de la tablet.
+   */
+  async function borrarAsignaciones(ids, { conCargas, usuario }) {
+    if (!ids.length) return { cargas_eliminadas: 0 };
+    const [cs] = await db.query("SELECT estado FROM prod_cargas WHERE asignacion_id IN (?)", [ids]);
+    const vivas = cs.filter((c) => c.estado !== "RECHAZADA");
+    if (vivas.length && !conCargas) {
+      const aprobadas = vivas.filter((c) => c.estado === "APROBADA").length;
+      return {
+        confirmar: {
+          error: `Ya tiene producción cargada por los operarios (${vivas.length} ${vivas.length === 1 ? "carga" : "cargas"}${aprobadas ? `, ${aprobadas} aprobada${aprobadas === 1 ? "" : "s"}` : ""}). Si seguís, también se elimina lo cargado${aprobadas ? " y se devuelve la materia prima al stock" : ""}.`,
+          tiene_cargas: vivas.length,
+          aprobadas,
+        },
+      };
+    }
+    const conn = await db.getConnection();
+    try {
+      await conn.beginTransaction();
+      const [cargas] = await conn.query(`SELECT *, ${FECHA("fecha")} AS fecha_iso FROM prod_cargas WHERE asignacion_id IN (?) FOR UPDATE`, [ids]);
+      let materiales = 0;
+      for (const c of cargas) materiales += (await deshacerCarga(conn, c, usuario)).devueltos.length;
+      const [turnos] = await conn.query(`SELECT DISTINCT ${FECHA("fecha")} AS fecha, turno FROM prod_asignaciones WHERE id IN (?)`, [ids]);
+      await conn.query("DELETE FROM prod_asignaciones WHERE id IN (?)", [ids]);
+      for (const t of turnos) {
+        const [[{ quedan }]] = await conn.query("SELECT COUNT(*) AS quedan FROM prod_asignaciones WHERE fecha = ? AND turno = ?", [t.fecha, t.turno]);
+        if (!Number(quedan)) await conn.query("UPDATE prod_turnos SET lanzado = 0, lanzado_at = NULL WHERE fecha = ? AND turno = ?", [t.fecha, t.turno]);
+      }
+      await conn.commit();
+      return { cargas_eliminadas: cargas.length, materiales_devueltos: materiales };
+    } catch (e) {
+      await conn.rollback();
+      throw e;
+    } finally {
+      conn.release();
+    }
+  }
 
   // Versiones de receta del semielaborado de esa asignación, con sus ingredientes, para confirmarla.
   app.get("/api/prod/asignaciones/:id/recetas", PLAN, seguro(async (req, res) => {
@@ -507,7 +552,6 @@ function registrarRutasProduccion(app, db, requirePermiso) {
   app.put("/api/prod/asignaciones/:id/confirmar-receta", PLAN, seguro(async (req, res) => {
     const a = await asignacion(req.params.id);
     if (!a) return res.status(404).json({ error: "Asignación no encontrada." });
-    if (await turnoLanzado(a.fecha_iso, a.turno)) return bloqueado(res);
     const [ing] = await db.query("SELECT id FROM ingenierias WHERE id = ? AND semielaborado_id = ?", [req.body.ingenieria_id, a.semielaborado_id]);
     if (!ing.length) return res.status(400).json({ error: "Esa receta no corresponde a este producto." });
     await db.query("UPDATE prod_asignaciones SET ingenieria_id = ?, receta_confirmada = 1 WHERE id = ?", [ing[0].id, req.params.id]);
@@ -557,7 +601,8 @@ function registrarRutasProduccion(app, db, requirePermiso) {
          JOIN prod_turnos t ON t.fecha = a.fecha AND t.turno = a.turno AND t.lanzado = 1
          LEFT JOIN prod_maquinas m ON m.id = a.maquina_id
          LEFT JOIN ingenierias ing ON ing.id = a.ingenieria_id
-        WHERE a.fecha = ? ORDER BY a.turno, m.nombre, a.id`,
+        WHERE a.fecha = ? AND a.maquina_id IS NOT NULL AND a.operario IS NOT NULL AND a.operario <> '' AND a.receta_confirmada = 1
+        ORDER BY a.turno, m.nombre, a.id`,
       [fecha],
     );
     const ids = asig.map((a) => a.id);
@@ -777,6 +822,36 @@ function registrarRutasProduccion(app, db, requirePermiso) {
     res.json({ ok: true });
   }));
 
+  /** Deshace una carga y la borra: si estaba aprobada, devuelve la materia prima, la saca de métricas y cierra su alerta. */
+  async function deshacerCarga(conn, c, nombre) {
+    const devueltos = [];
+    let semiDevuelto = 0;
+    if (c.estado === "APROBADA") {
+      const [movs] = await conn.query(
+        "SELECT materia_prima_id, cantidad FROM mp_movimientos WHERE referencia_tipo = 'CARGA' AND referencia_id = ? AND tipo = 'CONSUMO_PRODUCCION'",
+        [c.id],
+      );
+      for (const m of movs) {
+        const r = await moverStock(conn, {
+          mp_id: m.materia_prima_id,
+          delta: -Number(m.cantidad),
+          tipo: "REVERSA_PRODUCCION",
+          usuario: nombre,
+          referencia_tipo: "CARGA",
+          referencia_id: c.id,
+          referencia_texto: `${c.lote || "Sin lote"} · ${c.modelo_nombre || c.modelo_codigo || ""}`.trim(),
+          detalle: { lote: c.lote, fecha: c.fecha_iso, turno: c.turno, maquina: c.maquina, modelo_nombre: c.modelo_nombre, operario: c.operario, total: c.total_producido, fallas: c.fallas },
+        });
+        if (r) devueltos.push({ materia_prima_id: m.materia_prima_id, cantidad: -Number(m.cantidad) });
+      }
+      if (c.registro_id) await conn.query("DELETE FROM registro_produccion WHERE id = ?", [c.registro_id]); // sus materiales se borran en cascada
+      await conn.query("DELETE FROM ingenieria_alertas WHERE carga_id = ? AND estado = 'ABIERTA'", [c.id]);
+      semiDevuelto = await devolverPorCarga(conn, c.id);
+    }
+    await conn.query("DELETE FROM prod_cargas WHERE id = ?", [c.id]);
+    return { devueltos, semiDevuelto };
+  }
+
   // Elimina una carga. Si estaba aprobada, deshace todo lo que hizo al aprobarse: sale de métricas,
   // se devuelve la materia prima al stock (queda en su historial) y se cierra su alerta de receta.
   // Con sacar_de_tablet también se borra la producción asignada, así deja de aparecer en la tablet.
@@ -790,31 +865,7 @@ function registrarRutasProduccion(app, db, requirePermiso) {
       const c = cs[0];
       if (!c) { await conn.rollback(); return res.status(404).json({ error: "Esa carga no existe (puede que ya la hayan eliminado)." }); }
 
-      const devueltos = [];
-      let semiDevuelto = 0;
-      if (c.estado === "APROBADA") {
-        const [movs] = await conn.query(
-          "SELECT materia_prima_id, cantidad FROM mp_movimientos WHERE referencia_tipo = 'CARGA' AND referencia_id = ? AND tipo = 'CONSUMO_PRODUCCION'",
-          [c.id],
-        );
-        for (const m of movs) {
-          const r = await moverStock(conn, {
-            mp_id: m.materia_prima_id,
-            delta: -Number(m.cantidad),
-            tipo: "REVERSA_PRODUCCION",
-            usuario: nombre,
-            referencia_tipo: "CARGA",
-            referencia_id: c.id,
-            referencia_texto: `${c.lote || "Sin lote"} · ${c.modelo_nombre || c.modelo_codigo || ""}`.trim(),
-            detalle: { lote: c.lote, fecha: c.fecha_iso, turno: c.turno, maquina: c.maquina, modelo_nombre: c.modelo_nombre, operario: c.operario, total: c.total_producido, fallas: c.fallas },
-          });
-          if (r) devueltos.push({ materia_prima_id: m.materia_prima_id, cantidad: -Number(m.cantidad) });
-        }
-        if (c.registro_id) await conn.query("DELETE FROM registro_produccion WHERE id = ?", [c.registro_id]); // sus materiales se borran en cascada
-        await conn.query("DELETE FROM ingenieria_alertas WHERE carga_id = ? AND estado = 'ABIERTA'", [c.id]);
-        semiDevuelto = await devolverPorCarga(conn, c.id);
-      }
-      await conn.query("DELETE FROM prod_cargas WHERE id = ?", [c.id]);
+      const { devueltos, semiDevuelto } = await deshacerCarga(conn, c, nombre);
 
       let sacada = false;
       let quedanPartes = 0;

@@ -25,14 +25,21 @@ function Renglon({ item, onCambio, toast }) {
       setOcupado(false);
     }
   };
-  const borrar = async () => {
+  const [conCargas, setConCargas] = useState(null);
+  const borrar = async (forzar = false) => {
     setOcupado(true);
     try {
-      await api(`/api/prod/plan/items/${item.id}`, { method: "DELETE" });
+      const r = await api(`/api/prod/plan/items/${item.id}${forzar ? "?con_cargas=1" : ""}`, { method: "DELETE" });
+      if (r?.cargas_eliminadas) toast(`${item.lote} quitado, con ${r.cargas_eliminadas} ${r.cargas_eliminadas === 1 ? "carga" : "cargas"}${r.materiales_devueltos ? " (materia prima devuelta al stock)" : ""}.`);
+      setConCargas(null);
       onCambio();
     } catch (e) {
-      toast(e.message, "error");
-      setQuitar(false);
+      // Ya hay producción cargada: se pide confirmar antes de borrarla.
+      if (e.status === 409 && e.datos?.tiene_cargas) setConCargas(e.message);
+      else {
+        toast(e.message, "error");
+        setQuitar(false);
+      }
     } finally {
       setOcupado(false);
     }
@@ -64,9 +71,9 @@ function Renglon({ item, onCambio, toast }) {
             </div>
           ) : quitar ? (
             <div className="mt-2.5 flex flex-wrap items-center gap-2">
-              <span className="text-[13px] text-rose-200">¿Quitar {item.lote} de la semana? Se liberan sus turnos.</span>
-              <Boton variante="peligro" onClick={borrar} disabled={ocupado} className="!min-h-[34px] !px-3 !text-xs">Quitar</Boton>
-              <Boton variante="fantasma" onClick={() => setQuitar(false)} className="!min-h-[34px] !px-3 !text-xs">No</Boton>
+              <span className="text-[13px] text-rose-200 basis-full sm:basis-auto">{conCargas || `¿Quitar ${item.lote} de la semana? También sale de sus turnos (y de la tablet).`}</span>
+              <Boton variante="peligro" onClick={() => borrar(!!conCargas)} disabled={ocupado} className="!min-h-[34px] !px-3 !text-xs">{conCargas ? "Quitar igual" : "Quitar"}</Boton>
+              <Boton variante="fantasma" onClick={() => { setQuitar(false); setConCargas(null); }} className="!min-h-[34px] !px-3 !text-xs">No</Boton>
             </div>
           ) : (
             <div className="mt-2 flex gap-1.5 -ml-2">
