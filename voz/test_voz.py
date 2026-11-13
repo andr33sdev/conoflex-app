@@ -123,3 +123,22 @@ class Limpieza(unittest.TestCase):
         f = bot.SoloLoQueSeDice()
         partes = ["<html> <body style=\"x\">", "<p>Hola **Andrés**", ", te habla Aldana</", "p> 🙂</body>"]
         self.assertEqual("".join(f.limpiar(p) for p in partes).split(), ["Hola", "Andrés,", "te", "habla", "Aldana"])
+
+
+class Pronunciacion(unittest.TestCase):
+    def test_palabras_completas(self):
+        import bot
+
+        t = bot.tabla_pronunciacion()
+        self.assertEqual(bot.pronunciar("El Econo Semiflexible y el King Cone de PVC.", t), "El Econo semi flexible y el king con de pe ve ce.")
+        self.assertEqual(bot.pronunciar("Los semiflexibles, flexibles.", t), "Los semi flexibles, flexibles.")
+        self.assertEqual(bot.pronunciar("Precio más IVA", t), "Precio más IVA")
+
+    def test_extra_por_env(self):
+        import bot
+
+        os.environ["VOZ_PRONUNCIAR"] = "Vencedor=Vencedór; =x"
+        try:
+            self.assertEqual(bot.pronunciar("el vencedor", bot.tabla_pronunciacion()), "el Vencedór")
+        finally:
+            del os.environ["VOZ_PRONUNCIAR"]

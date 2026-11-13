@@ -33,6 +33,8 @@ Al cortar: la transcripción queda en WhatsApp → Conversaciones
 | `VOZ_VOZ` | Voz de Gemini (por defecto `Aoede`, femenina). |
 | `VOZ_PROVEEDOR` | Motor de voz: `gemini` (por defecto), `elevenlabs` (oído y cerebro de OpenAI + voz argentina de ElevenLabs, la más natural), `openai` (OpenAI Realtime, necesita `OPENAI_API_KEY`) o `vertex` (Gemini por Google Cloud, necesita `VOZ_VERTEX_PROYECTO` y `VOZ_VERTEX_CREDENCIALES` con la ruta al JSON de la cuenta de servicio; región en `VOZ_VERTEX_REGION`, por defecto `us-central1`). |
 | `VOZ_ELEVEN_VOZ` | Con `VOZ_PROVEEDOR=elevenlabs`: el Voice ID de la voz elegida en ElevenLabs (además `ELEVENLABS_API_KEY` y `OPENAI_API_KEY`). Opcionales: `VOZ_LLM` (por defecto `gpt-4.1-mini`), `VOZ_ELEVEN_MODELO` (`eleven_flash_v2_5`), `VOZ_ELEVEN_ESTABILIDAD` (0.45), `VOZ_ELEVEN_VELOCIDAD` (1.0). |
+| `VOZ_PAUSA` | Con ElevenLabs: segundos de silencio para dar por terminada tu frase (por defecto 0.2; además un modelo de fin de turno evita cortarte a mitad de idea). |
+| `VOZ_PRONUNCIAR` | Palabras que la voz dice "en inglés", escritas como suenan: `semiflexible=semi flexible;Vencedor=Vencedór`. |
 | `VOZ_VOZ_OPENAI` | Voz de OpenAI (por defecto `marin`). |
 | `VOZ_TURNOS` | Con OpenAI: `rapido` (por defecto, contesta tras ~0,45 s de silencio) o `semantico` (espera a que la frase cierre; más natural, a veces más lento). |
 | `VOZ_SILENCIO_MS` | Silencio que espera en modo `rapido` (por defecto 450). Subilo si la interrumpe mientras pensás. |
@@ -70,6 +72,11 @@ y suscribir el webhook a `calls`.
 Mirá `pm2 logs conoflex-voz`. Si dice **"User location is not supported for the API use"**, Google
 no deja usar Gemini Live desde la IP del VPS. Cambiá de motor: `VOZ_PROVEEDOR=openai` y
 `OPENAI_API_KEY=...` en `backend/.env`, y `pm2 restart conoflex-voz --update-env`.
+
+## Cuánto tarda en contestar
+
+Cada respuesta deja en `pm2 logs conoflex-voz` una línea `demora:` con el total y en qué se fue
+(esperar el fin de la frase, transcribir, pensar, armar la voz).
 
 ## Del día a día
 
