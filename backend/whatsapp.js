@@ -116,6 +116,24 @@ function catalogoTexto(productos) {
     .join("\n");
 }
 
+/** Índice corto del catálogo (código | nombre | altura): para la voz, que busca el detalle con una herramienta. */
+function catalogoBreve(productos) {
+  const vistos = new Set();
+  return productos
+    .filter((p) => p.codigo || p.nombre)
+    .filter((p) => {
+      const k = `${p.codigo || ""}|${p.nombre || ""}`.toUpperCase();
+      if (vistos.has(k)) return false;
+      vistos.add(k);
+      return true;
+    })
+    .map((p) => {
+      const h = fotos.alturaCm(p);
+      return [p.codigo, p.nombre, h != null && `${h} cm`].filter(Boolean).map((x) => String(x).replace(/\|/g, "/")).join(" | ");
+    })
+    .join("\n");
+}
+
 const pesos = (n) => `$${Number(n).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const redondear2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
 const normCodigo = (c) => String(c || "").trim().toUpperCase().replace(/\s+/g, " ");
@@ -810,6 +828,7 @@ function registrarRutasWhatsapp(app, { db, requirePermiso, bot }) {
 }
 
 module.exports = {
+  catalogoBreve,
   firmaValida,
   extraerMensajes,
   parsearJson,

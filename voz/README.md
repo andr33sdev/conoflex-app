@@ -33,6 +33,9 @@ Al cortar: la transcripción queda en WhatsApp → Conversaciones
 | `VOZ_VOZ` | Voz de Gemini (por defecto `Aoede`, femenina). |
 | `VOZ_PROVEEDOR` | Motor de voz: `gemini` (por defecto), `openai` (OpenAI Realtime, necesita `OPENAI_API_KEY`) o `vertex` (Gemini por Google Cloud, necesita `VOZ_VERTEX_PROYECTO` y `VOZ_VERTEX_CREDENCIALES` con la ruta al JSON de la cuenta de servicio; región en `VOZ_VERTEX_REGION`, por defecto `us-central1`). |
 | `VOZ_VOZ_OPENAI` | Voz de OpenAI (por defecto `marin`). |
+| `VOZ_TURNOS` | Con OpenAI: `rapido` (por defecto, contesta tras ~0,45 s de silencio) o `semantico` (espera a que la frase cierre; más natural, a veces más lento). |
+| `VOZ_SILENCIO_MS` | Silencio que espera en modo `rapido` (por defecto 450). Subilo si la interrumpe mientras pensás. |
+| `VOZ_LOG` | Nivel de logs (por defecto `INFO`; `DEBUG` solo para investigar, escribe muchísimo). |
 | `VOZ_WEB_MAX` | Llamadas desde el navegador al mismo tiempo (por defecto 4). |
 | `VOZ_STUN` | Servidor STUN (por defecto el de Google). Vacío para no usar. |
 

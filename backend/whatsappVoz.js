@@ -9,7 +9,7 @@
 // Solo responde a pedidos del mismo servidor (127.0.0.1) que traigan el secreto VOZ_SECRETO.
 const crypto = require("crypto");
 const { leerPrecios } = require("./comercial/catalogo");
-const { catalogoTexto, corto, enviarTexto } = require("./whatsapp");
+const { catalogoBreve, catalogoTexto, corto, enviarTexto } = require("./whatsapp");
 
 const NOMBRE_VOZ = "Aldana";
 
@@ -70,8 +70,20 @@ ${notas ? `\n${notas}\n` : ""}
 REGLAS PROPIAS DE WHATSAPP (mandan sobre todo lo anterior; lo que hable de formato escrito no aplica a la llamada)
 ${reglasWhatsapp || "(sin reglas propias)"}
 ${correcciones ? `\nCORRECCIONES DEL EQUIPO (vienen del chat; seguí el criterio y el tono):\n${correcciones}\n` : ""}${charlaPrevia ? `\nLO ÚLTIMO QUE HABLÓ ESTE CLIENTE POR CHAT (para no preguntarle de nuevo):\n${charlaPrevia}\n` : ""}
-CATÁLOGO (código | nombre | categoría | medidas | precio | uso)
+CATÁLOGO
+- Abajo tenés solo el índice (código | nombre | altura). Antes de decir un precio, una medida, un peso o para qué sirve un producto, usá buscar_catalogo: devuelve la ficha completa al instante. Mientras busca, no digas "un momento": seguí la charla con naturalidad.
+- Para preguntas como "conos de 120 centímetros" o "algo para estacionamiento", buscá con esas palabras.
 ${catalogo || "(catálogo vacío: no pases precios y derivá)"}`;
+}
+
+/** Ficha completa de cada producto, para la herramienta buscar_catalogo del servicio de voz. */
+function catalogoVoz(productos) {
+  return productos.filter((p) => p.codigo || p.nombre).map((p) => ({ codigo: p.codigo || "", texto: catalogoTexto([p]) }));
+}
+
+/** Lo que el servicio de voz necesita saber del catálogo. */
+function datosCatalogoVoz(productos) {
+  return { catalogo: catalogoBreve(productos), detalle: catalogoVoz(productos) };
 }
 
 /** Precios únicos por código, para que el servicio de voz calcule totales exactos. */
@@ -131,7 +143,8 @@ function registrarRutasVoz(app, { db, bot }) {
       res.json({
         atender: (await bot.botGlobal()) && process.env.VOZ_ACTIVA !== "0",
         nombre: NOMBRE_VOZ,
-        instrucciones: instruccionesVoz({ ...ctx, catalogo: catalogoTexto(ctx.productos), nombreCliente, charlaPrevia }),
+        instrucciones: instruccionesVoz({ ...ctx, catalogo: catalogoBreve(ctx.productos), nombreCliente, charlaPrevia }),
+        catalogo: catalogoVoz(ctx.productos),
         precios: preciosVoz(ctx.productos),
       });
     } catch (e) {
@@ -178,4 +191,4 @@ function registrarRutasVoz(app, { db, bot }) {
   });
 }
 
-module.exports = { sinFormatoEscrito, instruccionesVoz, preciosVoz, transcripcionTexto, duracionTexto, esLocalConSecreto, registrarRutasVoz, NOMBRE_VOZ };
+module.exports = { catalogoVoz, datosCatalogoVoz, sinFormatoEscrito, instruccionesVoz, preciosVoz, transcripcionTexto, duracionTexto, esLocalConSecreto, registrarRutasVoz, NOMBRE_VOZ };
