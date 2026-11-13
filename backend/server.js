@@ -54,6 +54,7 @@ const { asegurarTablasWhatsapp, crearBotWhatsapp, registrarRutasWhatsapp } = req
 const { registrarRutasVoz } = require("./whatsappVoz");
 const { asegurarTablasCostos, asegurarPTDesdePedidos, registrarRutasCostos, costosCompletos } = require("./mpCostos");
 const { asegurarTablasDesarrollo, registrarRutasDesarrollo } = require("./desarrollo");
+const { asegurarTablasProyectos, registrarRutasProyectos } = require("./proyectos");
 const { registrarRutasCostosSheets } = require("./costosSheets");
 const { asegurarTablasFacturas, registrarRutasFacturas } = require("./facturas");
 const { avisarCostosViejos } = require("./costosAvisos");
@@ -873,6 +874,7 @@ async function initDB() {
     await asegurarTablasCostos(db);
     await asegurarTablasFacturas(db);
     await asegurarTablasDesarrollo(db);
+    await asegurarTablasProyectos(db);
 
     console.log("✅ Estructura MySQL inicializada correctamente.");
   } catch (err) {
@@ -5907,6 +5909,8 @@ const botWhatsapp = crearBotWhatsapp({ db, ai, leerLista, notasTexto: notasVenta
 registrarRutasWhatsapp(app, { db, requirePermiso, bot: botWhatsapp });
 // Desarrollo de productos (P-11 / R.032): proyectos, aprobaciones, archivos, pruebas, ítems y difusión.
 registrarRutasDesarrollo(app, { db, requirePermiso, crearNotificacion, ai, modelo: process.env.DESARROLLO_MODELO || "gemini-2.5-flash", multer, costosCompletos });
+// Proyectos y pruebas: pruebas con proveedores, máquinas, objetivos, ideas y mejoras, con su estado y próximo paso.
+registrarRutasProyectos(app, { db, requirePermiso, crearNotificacion, ai, modelo: process.env.DESARROLLO_MODELO || "gemini-2.5-flash", multer });
 // Llamadas de WhatsApp: las atiende el servicio de voz (carpeta voz/); acá solo se le da contexto.
 registrarRutasVoz(app, { db, bot: botWhatsapp });
 

@@ -26,6 +26,7 @@ import {
   MessageCircle,
   DollarSign,
   FlaskConical,
+  Microscope,
 } from "lucide-react";
 
 export const INICIO = {
@@ -80,6 +81,15 @@ export const ALL_MENU_ITEMS = [
     icon: FlaskConical,
     desc: "Productos nuevos y cambios: etapas, fotos, pruebas y aprobaciones",
     kw: "r032 r.032 p-11 iso diseño prototipo matriz nuevo producto modificacion aprobacion",
+  },
+  {
+    id: "proyectos",
+    corto: "Proyectos",
+    grupo: "produccion",
+    label: "Proyectos y pruebas",
+    icon: Microscope,
+    desc: "Pruebas con proveedores, máquinas, objetivos e ideas: en qué quedó cada uno",
+    kw: "prueba proveedor maquina embaladora pintura objetivo idea mejora seguimiento ensayo aprobado rechazado",
   },
   {
     id: "costos",
