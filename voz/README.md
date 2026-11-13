@@ -34,6 +34,8 @@ Al cortar: la transcripción queda en WhatsApp → Conversaciones
 | `VOZ_PROVEEDOR` | Motor de voz: `gemini` (por defecto), `elevenlabs` (oído y cerebro de OpenAI + voz argentina de ElevenLabs, la más natural), `openai` (OpenAI Realtime, necesita `OPENAI_API_KEY`) o `vertex` (Gemini por Google Cloud, necesita `VOZ_VERTEX_PROYECTO` y `VOZ_VERTEX_CREDENCIALES` con la ruta al JSON de la cuenta de servicio; región en `VOZ_VERTEX_REGION`, por defecto `us-central1`). |
 | `VOZ_ELEVEN_VOZ` | Con `VOZ_PROVEEDOR=elevenlabs`: el Voice ID de la voz elegida en ElevenLabs (además `ELEVENLABS_API_KEY` y `OPENAI_API_KEY`). Opcionales: `VOZ_LLM` (por defecto `gpt-4.1-mini`), `VOZ_ELEVEN_MODELO` (`eleven_flash_v2_5`), `VOZ_ELEVEN_ESTABILIDAD` (0.45), `VOZ_ELEVEN_VELOCIDAD` (1.0). |
 | `VOZ_PAUSA` | Con ElevenLabs: segundos de silencio para dar por terminada tu frase (por defecto 0.2; además un modelo de fin de turno evita cortarte a mitad de idea). |
+| `VOZ_ESPERA` | Con ElevenLabs: cuánto más espera, después de la pausa, por si seguís hablando (por defecto 0.35 s). Subilo si te corta. |
+| `VOZ_LLM` | Modelo que piensa las respuestas (por defecto `gpt-4.1-mini`; `gpt-4.1-nano` contesta más rápido pero es menos fino). |
 | `VOZ_PRONUNCIAR` | Palabras que la voz dice "en inglés", escritas como suenan: `semiflexible=semi flexible;Vencedor=Vencedór`. |
 | `VOZ_VOZ_OPENAI` | Voz de OpenAI (por defecto `marin`). |
 | `VOZ_TURNOS` | Con OpenAI: `rapido` (por defecto, contesta tras ~0,45 s de silencio) o `semantico` (espera a que la frase cierre; más natural, a veces más lento). |
