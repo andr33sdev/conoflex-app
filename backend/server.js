@@ -52,6 +52,7 @@ const { asegurarTablasSugerencias, registrarRutasSugerencias } = require("./suge
 const { asegurarTablaClientesNuevos, registrarRutasClientesNuevos, iniciarBusquedaSemanal } = require("./clientesNuevosDatos");
 const { asegurarTablasWhatsapp, crearBotWhatsapp, registrarRutasWhatsapp } = require("./whatsapp");
 const { registrarRutasVoz } = require("./whatsappVoz");
+const { asegurarTablasVozWeb, registrarRutasVozWeb } = require("./vozWeb");
 const { asegurarTablasCostos, asegurarPTDesdePedidos, registrarRutasCostos, costosCompletos } = require("./mpCostos");
 const { asegurarTablasDesarrollo, registrarRutasDesarrollo } = require("./desarrollo");
 const { asegurarTablasProyectos, registrarRutasProyectos } = require("./proyectos");
@@ -871,6 +872,7 @@ async function initDB() {
     await asegurarTablasSugerencias(db);
     await asegurarTablaClientesNuevos(db);
     await asegurarTablasWhatsapp(db);
+    await asegurarTablasVozWeb(db);
     await asegurarTablasCostos(db);
     await asegurarTablasFacturas(db);
     await asegurarTablasDesarrollo(db);
@@ -5913,6 +5915,8 @@ registrarRutasDesarrollo(app, { db, requirePermiso, crearNotificacion, ai, model
 registrarRutasProyectos(app, { db, requirePermiso, crearNotificacion, ai, modelo: process.env.DESARROLLO_MODELO || "gemini-2.5-flash", multer });
 // Llamadas de WhatsApp: las atiende el servicio de voz (carpeta voz/); acá solo se le da contexto.
 registrarRutasVoz(app, { db, bot: botWhatsapp });
+// Llamar a la asistente desde el navegador (botón en la app y links para compartir), sin WhatsApp.
+registrarRutasVozWeb(app, { db, bot: botWhatsapp, requirePermiso, crearNotificacion });
 
 app.listen(PORT, () => {
   console.log(`🚀 Servidor Conoflex unificado ejecutándose en puerto ${PORT}`);

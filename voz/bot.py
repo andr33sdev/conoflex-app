@@ -74,6 +74,65 @@ HERRAMIENTAS = [
 ]
 
 
+HERRAMIENTAS_WEB = [
+    HERRAMIENTAS[0],
+    FunctionSchema(
+        name="dejar_contacto",
+        description="Le pasa a un vendedor los datos del cliente para que lo contacte. Usala cuando quiera una cotización formal, comprar, o algo que vos no podés resolver. Necesita al menos teléfono o mail.",
+        properties={
+            "nombre": {"type": "string"},
+            "empresa": {"type": "string"},
+            "telefono": {"type": "string", "description": "Solo números, como lo dictó"},
+            "mail": {"type": "string"},
+            "motivo": {"type": "string", "description": "Qué necesita, en una línea (productos y cantidades si los dijo)"},
+        },
+        required=["motivo"],
+    ),
+    HERRAMIENTAS[3],
+]
+
+
+def _crear_llm(ctx: dict, herramientas: list) -> GeminiLiveLLMService:
+    return GeminiLiveLLMService(
+        api_key=os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY"),
+        tools=herramientas,
+        settings=GeminiLiveLLMService.Settings(
+            voice=os.getenv("VOZ_VOZ", "Aoede"),  # voz femenina
+            language=Language.ES_US,  # código que Gemini Live acepta; el acento rioplatense lo da la instrucción
+            system_instruction=ctx["instrucciones"],
+            **({"model": os.getenv("VOZ_MODELO")} if os.getenv("VOZ_MODELO") else {}),
+        ),
+    )
+
+
+async def _armar(transport, llm):
+    """Audio ⇄ Gemini Live, con el contexto de la charla (para la transcripción) y el corte por VAD."""
+    context = LLMContext()
+    user_aggregator, assistant_aggregator = LLMContextAggregatorPair(
+        context, realtime_service_mode=True, user_params=LLMUserAggregatorParams(vad_analyzer=SileroVADAnalyzer())
+    )
+    pipeline = Pipeline([transport.input(), user_aggregator, llm, transport.output(), assistant_aggregator])
+    worker = PipelineWorker(pipeline, params=PipelineParams(enable_metrics=True))
+    runner = WorkerRunner(handle_sigint=False)
+    await runner.add_workers(worker)
+    return context, user_aggregator, assistant_aggregator, worker, runner
+
+
+def _tope(context, worker, cortando: asyncio.Event, cortar, despedida: str):
+    """Tope de duración (cuida el costo y la calidad: las sesiones muy largas se ponen lentas)."""
+
+    async def tope():
+        await asyncio.sleep(max(30.0, MAX_MINUTOS * 60 - 30))
+        if cortando.is_set():
+            return
+        context.add_message({"role": "developer", "content": despedida})
+        await worker.queue_frames([LLMRunFrame()])
+        await asyncio.sleep(25)
+        await cortar()
+
+    return asyncio.create_task(tope())
+
+
 async def run_bot(webrtc_connection, call, nombre_cliente: str | None, ctx: dict, http: aiohttp.ClientSession, api: WhatsAppApi):
     telefono = call.from_
     inicio = time.monotonic()
@@ -85,25 +144,8 @@ async def run_bot(webrtc_connection, call, nombre_cliente: str | None, ctx: dict
         params=TransportParams(audio_in_enabled=True, audio_out_enabled=True, audio_out_10ms_chunks=2),
     )
 
-    llm = GeminiLiveLLMService(
-        api_key=os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY"),
-        tools=HERRAMIENTAS,
-        settings=GeminiLiveLLMService.Settings(
-            voice=os.getenv("VOZ_VOZ", "Aoede"),  # voz femenina
-            language=Language.ES_US,  # código que Gemini Live acepta; el acento rioplatense lo da la instrucción
-            system_instruction=ctx["instrucciones"],
-            **({"model": os.getenv("VOZ_MODELO")} if os.getenv("VOZ_MODELO") else {}),
-        ),
-    )
-
-    context = LLMContext()
-    user_aggregator, assistant_aggregator = LLMContextAggregatorPair(
-        context, realtime_service_mode=True, user_params=LLMUserAggregatorParams(vad_analyzer=SileroVADAnalyzer())
-    )
-    pipeline = Pipeline([transport.input(), user_aggregator, llm, transport.output(), assistant_aggregator])
-    worker = PipelineWorker(pipeline, params=PipelineParams(enable_metrics=True))
-    runner = WorkerRunner(handle_sigint=False)
-    await runner.add_workers(worker)
+    llm = _crear_llm(ctx, HERRAMIENTAS)
+    context, user_aggregator, assistant_aggregator, worker, runner = await _armar(transport, llm)
 
     async def cortar(espera: float = 0):
         if cortando.is_set():
@@ -144,17 +186,7 @@ async def run_bot(webrtc_connection, call, nombre_cliente: str | None, ctx: dict
     llm.register_function("derivar_a_persona", h_derivar, timeout_secs=20)
     llm.register_function("cortar_llamada", h_cortar)
 
-    # ---- tope de duración (cuida el costo y la calidad: las sesiones muy largas se ponen lentas)
-    async def tope():
-        await asyncio.sleep(max(30.0, MAX_MINUTOS * 60 - 30))
-        if cortando.is_set():
-            return
-        context.add_message({"role": "developer", "content": "Se termina el tiempo de la llamada: avisale que le seguimos por WhatsApp y despedite en una frase."})
-        await worker.queue_frames([LLMRunFrame()])
-        await asyncio.sleep(25)
-        await cortar()
-
-    tarea_tope = asyncio.create_task(tope())
+    tarea_tope = _tope(context, worker, cortando, cortar, "Se termina el tiempo de la llamada: avisale que le seguimos por WhatsApp y despedite en una frase.")
 
     @transport.event_handler("on_client_connected")
     async def on_client_connected(transport, client):
@@ -176,3 +208,110 @@ async def run_bot(webrtc_connection, call, nombre_cliente: str | None, ctx: dict
             await conoflex.avisar(http, "fin", {**datos_cliente, "duracion": duracion, "transcripcion": conoflex.transcripcion(context.get_messages())})
         except Exception as e:
             logger.error(f"[voz] no se pudo guardar la transcripción de {call.id}: {e}")
+
+
+async def run_bot_web(connection, llamada_id: int, ctx: dict, http: aiohttp.ClientSession):
+    """Llamada desde el navegador (app o link). Igual que la de WhatsApp, pero sin chat atrás:
+    en vez de mandar cosas por escrito, toma los datos del cliente para que lo llame un vendedor.
+    Además le va mandando al navegador lo que se dice, para mostrarlo como subtítulos."""
+    inicio = time.monotonic()
+    cortando = asyncio.Event()
+
+    transport = SmallWebRTCTransport(
+        webrtc_connection=connection,
+        params=TransportParams(audio_in_enabled=True, audio_out_enabled=True, audio_out_10ms_chunks=2),
+    )
+    llm = _crear_llm(ctx, HERRAMIENTAS_WEB)
+    context, user_aggregator, assistant_aggregator, worker, runner = await _armar(transport, llm)
+
+    def al_navegador(**datos):
+        try:
+            connection.send_app_message({"type": "conoflex", **datos})
+        except Exception as e:  # el navegador ya se fue
+            logger.debug(f"[voz-web] {e}")
+
+    async def cortar(espera: float = 0):
+        if cortando.is_set():
+            return
+        cortando.set()
+        await asyncio.sleep(espera)  # deja terminar la despedida
+        al_navegador(evento="fin")
+        await asyncio.sleep(0.3)  # que el aviso llegue antes de cerrar
+        try:
+            await connection.disconnect()
+        except Exception as e:
+            logger.debug(f"[voz-web] al cortar {llamada_id}: {e}")
+        await runner.cancel()
+
+    async def h_calcular(params: FunctionCallParams):
+        await params.result_callback(conoflex.calcular_presupuesto(params.arguments.get("items"), ctx.get("precios", [])))
+
+    async def h_contacto(params: FunctionCallParams):
+        a = params.arguments or {}
+        if not (str(a.get("telefono") or "").strip() or str(a.get("mail") or "").strip()):
+            await params.result_callback({"ok": False, "error": "Falta un teléfono o un mail: pedíselo antes."})
+            return
+        try:
+            await conoflex.avisar(http, "web-contacto", {**a, "llamada_id": llamada_id})
+            await params.result_callback({"ok": True})
+        except Exception as e:
+            logger.error(f"[voz-web] dejar_contacto: {e}")
+            await params.result_callback({"ok": False, "error": "No se pudo pasar; pedile que escriba a ventas por WhatsApp."})
+
+    async def h_cortar(params: FunctionCallParams):
+        await params.result_callback({"ok": True})
+        asyncio.create_task(cortar(espera=2.5))
+
+    llm.register_function("calcular_presupuesto", h_calcular)
+    llm.register_function("dejar_contacto", h_contacto, timeout_secs=20)
+    llm.register_function("cortar_llamada", h_cortar)
+
+    # ---- subtítulos en vivo
+    @user_aggregator.event_handler("on_user_turn_message_added")
+    async def on_user_text(aggregator, message):
+        if getattr(message, "content", None):
+            al_navegador(rol="cliente", texto=message.content)
+
+    @assistant_aggregator.event_handler("on_assistant_turn_stopped")
+    async def on_bot_text(aggregator, message):
+        texto = getattr(message, "content", None)
+        if texto:
+            al_navegador(rol="bot", texto=texto, interrumpida=bool(getattr(message, "interrupted", False)))
+
+    tarea_tope = _tope(context, worker, cortando, cortar, "Se termina el tiempo de la llamada: si quiere seguir, ofrecé tomar sus datos para que lo llame un vendedor, y despedite en una frase.")
+
+    @transport.event_handler("on_client_connected")
+    async def on_client_connected(transport, client):
+        logger.info(f"[voz-web] llamada {llamada_id} conectada")
+        quien = ctx.get("quien")
+        saludo = f"Atendé: saludá breve{f' a {quien}' if quien else ''}, presentate como {ctx.get('nombre', 'Aldana')} de Conoflex y preguntá en qué podés ayudar."
+        context.add_message({"role": "developer", "content": saludo})
+        await worker.queue_frames([LLMRunFrame()])
+
+    @transport.event_handler("on_app_message")
+    async def on_app_message(transport, message, sender):
+        if isinstance(message, dict) and message.get("type") == "conoflex" and message.get("evento") == "colgar":
+            logger.info(f"[voz-web] llamada {llamada_id}: colgó el cliente")
+            await runner.cancel()
+
+    @transport.event_handler("on_client_disconnected")
+    async def on_client_disconnected(transport, client):
+        logger.info(f"[voz-web] llamada {llamada_id} terminada")
+        await runner.cancel()
+
+    try:
+        await runner.run()
+    finally:
+        tarea_tope.cancel()
+        try:
+            await connection.disconnect()
+        except Exception:
+            pass
+        try:
+            await conoflex.avisar(
+                http,
+                "web-fin",
+                {"llamada_id": llamada_id, "duracion": round(time.monotonic() - inicio), "transcripcion": conoflex.transcripcion(context.get_messages())},
+            )
+        except Exception as e:
+            logger.error(f"[voz-web] no se pudo guardar la transcripción de {llamada_id}: {e}")
