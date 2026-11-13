@@ -17,7 +17,7 @@ const NOMBRE_VOZ = "Aldana";
 function sinFormatoEscrito(texto) {
   return String(texto || "")
     .split("\n")
-    .filter((l) => !/<\/?[a-z][^>]*>|^\s*={4,}|^\s*`\s*$|^\s*\/\//i.test(l))
+    .filter((l) => !/<\/?[a-z][^>]*>|^\s*={4,}|^\s*`\s*$|^\s*\/\/|\bhtml\b|tarjeta|mosaico|\[FOTO|ADJUNTAR_LISTA|fondo|negrita|<td|celda/i.test(l))
     .join("\n")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
