@@ -202,3 +202,9 @@ test("con base: dos fotos seguidas → el bot espera a mirar las dos y responde 
     await db.end();
   }
 });
+
+test("catálogo: suma la especificación (altura de los conos)", () => {
+  const t = w.catalogoTexto([{ codigo: "2300-2R", nombre: "VENCEDOR", categoria: "Conos", medidas: "Base: 45x45cm.", especificacion: "Altura: 120 cm. / Peso: 6 kg." }]);
+  assert.match(t, /altura: 120 cm/);
+  assert.match(t, /datos: Altura: 120 cm\. \/ Peso: 6 kg\./);
+});
