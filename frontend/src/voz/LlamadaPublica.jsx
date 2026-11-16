@@ -33,7 +33,7 @@ export default function LlamadaPublica({ token }) {
             <p className="text-sm text-zinc-400 mt-2">Pedile a Conoflex uno nuevo, o escribinos por WhatsApp.</p>
           </div>
         )}
-        {estado === "ok" && <PantallaLlamada urlOferta={`/api/public/voz-web/${encodeURIComponent(token)}/llamar`} nombre={nombre} subtitulo="Atención comercial de Conoflex" />}
+        {estado === "ok" && <PantallaLlamada rutaBase={`/api/public/voz-web/${encodeURIComponent(token)}`} publico nombre={nombre} subtitulo="Atención comercial de Conoflex" />}
       </main>
       <footer className="pb-5 text-center text-[11px] text-zinc-600 px-6">Es una asistente con inteligencia artificial. La llamada usa tu micrófono y queda registrada para mejorar la atención.</footer>
     </div>

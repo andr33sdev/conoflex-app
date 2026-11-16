@@ -5914,7 +5914,7 @@ registrarRutasDeposito(app, { db, requirePermiso, estadoEspejo: () => ({ ...esta
 // Llamadas de WhatsApp: las atiende el servicio de voz (carpeta voz/); acá solo se le da contexto.
 registrarRutasVoz(app, { db, bot: botWhatsapp });
 // Llamar a la asistente desde el navegador (botón en la app y links para compartir), sin WhatsApp.
-registrarRutasVozWeb(app, { db, bot: botWhatsapp, requirePermiso, crearNotificacion });
+registrarRutasVozWeb(app, { db, bot: botWhatsapp, ai, requirePermiso, crearNotificacion });
 
 app.listen(PORT, () => {
   console.log(`🚀 Servidor Conoflex unificado ejecutándose en puerto ${PORT}`);

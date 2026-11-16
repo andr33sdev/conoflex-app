@@ -1,224 +1,253 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { getApiUrl } from "../apiConfig";
+import { getApiUrl, getAuthHeaders } from "../apiConfig";
 
-// Llamada de voz con la asistente, directo desde el navegador (WebRTC).
-// El backend recibe la "oferta" y la pasa al servicio de voz; el audio va directo navegador ⇄ servidor.
+// Llamada de voz con Aldana, por turnos (como Jared), para que suene fluida y bien pronunciada.
+//
+// El navegador transcribe lo que decís (reconocimiento de voz del navegador) y manda el texto.
+// El backend responde en streaming: una oración por vez, cada una con su audio ya listo. Apenas
+// dejás de hablar suena una muletilla para que no haya silencio.
 //
 // estado: "lista" | "conectando" | "en_llamada" | "terminada" | "error"
-// niveles: ref con { mic, bot } entre 0 y 1, se actualiza ~60 veces por segundo (para animar sin re-render).
+// niveles: ref { mic, bot } 0..1 para animar la esfera sin re-render.
 
-const ICE = [{ urls: "stun:stun.l.google.com:19302" }];
-const ESPERA_CONEXION_MS = 20000;
+const getSR = () => (typeof window !== "undefined" ? window.SpeechRecognition || window.webkitSpeechRecognition : null);
+export const hayReconocimiento = !!getSR();
 
-function esperarCandidatos(pc, ms = 2500) {
-  if (pc.iceGatheringState === "complete") return Promise.resolve();
-  return new Promise((ok) => {
-    const t = setTimeout(listo, ms);
-    function listo() {
-      clearTimeout(t);
-      pc.removeEventListener("icegatheringstatechange", alCambiar);
-      ok();
-    }
-    function alCambiar() {
-      if (pc.iceGatheringState === "complete") listo();
-    }
-    pc.addEventListener("icegatheringstatechange", alCambiar);
-  });
-}
-
-function mensajeError(e) {
-  if (e?.name === "NotAllowedError" || e?.name === "SecurityError") return "Necesito permiso para usar el micrófono. Habilitalo en el navegador y probá de nuevo.";
-  if (e?.name === "NotFoundError") return "No encontré un micrófono en este dispositivo.";
-  return e?.message || "No se pudo conectar la llamada.";
-}
-
-export default function useLlamada(urlOferta) {
+export default function useLlamada(rutaBase, { publico = false } = {}) {
   const [estado, setEstado] = useState("lista");
   const [error, setError] = useState(null);
   const [silenciado, setSilenciado] = useState(false);
   const [subtitulos, setSubtitulos] = useState([]);
   const [inicio, setInicio] = useState(null);
   const niveles = useRef({ mic: 0, bot: 0 });
-  const r = useRef({});
+  const motor = useRef(null);
 
-  const limpiar = useCallback(() => {
-    const x = r.current;
-    clearInterval(x.ping);
-    clearTimeout(x.espera);
-    cancelAnimationFrame(x.raf);
-    try {
-      x.pc?.close();
-    } catch {
-      /* ya cerrada */
-    }
-    x.mic?.getTracks().forEach((t) => t.stop());
-    x.ctx?.close().catch(() => {});
-    if (x.audio) {
-      x.audio.pause();
-      x.audio.srcObject = null;
-    }
-    niveles.current = { mic: 0, bot: 0 };
-    r.current = {};
-  }, []);
+  // Todo el motor de la llamada se arma una sola vez: así las funciones se llaman entre ellas sin
+  // problemas de "closures viejas" de React. Avisa los cambios por los setters (que son estables).
+  if (!motor.current) {
+    const m = {
+      vivo: false,
+      llamadaId: null,
+      muletillas: [],
+      cola: [],
+      reproduciendo: false,
+      escuchando: false,
+      procesando: false,
+      silenciado: false,
+      alTerminarAudio: null,
+      audio: null,
+      rec: null,
+      mic: null,
+      ctx: null,
+      raf: 0,
+    };
 
-  const terminar = useCallback(
-    (motivo) => {
-      if (!r.current.pc) return;
-      limpiar();
-      if (motivo) {
-        setError(motivo);
-        setEstado("error");
-      } else {
-        setEstado("terminada");
+    const headers = () => (publico ? { "Content-Type": "application/json" } : getAuthHeaders());
+    const subtitulo = (rol, texto) => texto && setSubtitulos((s) => [...s.slice(-40), { rol, texto, id: `${Date.now()}-${Math.random()}` }]);
+
+    function bombear() {
+      if (m.reproduciendo || !m.cola.length) return;
+      m.reproduciendo = true;
+      niveles.current.bot = 0.6;
+      // Cuando termina (o falla) este audio: sigue el siguiente, o avisa que terminó de hablar.
+      const siguiente = () => {
+        if (!m.reproduciendo) return; // ya seguimos por otro camino
+        m.reproduciendo = false;
+        niveles.current.bot = 0;
+        if (m.cola.length) bombear();
+        else if (m.alTerminarAudio) {
+          const cb = m.alTerminarAudio;
+          m.alTerminarAudio = null;
+          cb();
+        }
+      };
+      const audio = m.audio || (m.audio = new Audio());
+      audio.onended = siguiente;
+      audio.onerror = siguiente;
+      audio.src = "data:audio/mpeg;base64," + m.cola.shift();
+      audio.play().catch(siguiente);
+    }
+    function reproducir(base64) {
+      m.cola.push(base64);
+      bombear();
+    }
+    function pararAudio() {
+      m.cola = [];
+      m.alTerminarAudio = null;
+      if (m.audio) {
+        m.audio.pause();
+        m.audio.onended = null;
       }
-    },
-    [limpiar],
-  );
-
-  const colgar = useCallback(() => {
-    try {
-      r.current.dc?.readyState === "open" && r.current.dc.send(JSON.stringify({ type: "conoflex", evento: "colgar" }));
-    } catch {
-      /* nada */
+      m.reproduciendo = false;
+      niveles.current.bot = 0;
     }
-    // un instante para que el aviso salga antes de cerrar
-    setTimeout(() => terminar(), 150);
-  }, [terminar]);
 
-  const medir = useCallback(() => {
-    const x = r.current;
-    const nivel = (an, buf) => {
-      if (!an) return 0;
-      an.getFloatTimeDomainData(buf);
-      let s = 0;
-      for (let i = 0; i < buf.length; i++) s += buf[i] * buf[i];
-      return Math.min(1, Math.sqrt(s / buf.length) * 4);
-    };
-    const paso = () => {
-      const n = niveles.current;
-      n.mic = n.mic * 0.6 + nivel(x.anMic, x.bufMic) * 0.4;
-      n.bot = n.bot * 0.6 + nivel(x.anBot, x.bufBot) * 0.4;
-      x.raf = requestAnimationFrame(paso);
-    };
-    x.raf = requestAnimationFrame(paso);
-  }, []);
-
-  const llamar = useCallback(async () => {
-    if (r.current.pc) return;
-    setError(null);
-    setSubtitulos([]);
-    setSilenciado(false);
-    setInicio(null);
-    setEstado("conectando");
-    // El audio se crea dentro del clic: así iOS/Safari lo deja sonar.
-    const audio = new Audio();
-    audio.autoplay = true;
-    audio.playsInline = true;
-    r.current.audio = audio;
-    try {
-      const AC = window.AudioContext || window.webkitAudioContext;
-      const ctx = new AC();
-      r.current.ctx = ctx;
-      ctx.resume().catch(() => {});
-      const mic = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
-      r.current.mic = mic;
-      const anMic = ctx.createAnalyser();
-      anMic.fftSize = 512;
-      ctx.createMediaStreamSource(mic).connect(anMic);
-      Object.assign(r.current, { anMic, bufMic: new Float32Array(anMic.fftSize) });
-
-      const pc = new RTCPeerConnection({ iceServers: ICE });
-      r.current.pc = pc;
-      pc.addTransceiver(mic.getAudioTracks()[0], { direction: "sendrecv", streams: [mic] });
-
-      const dc = pc.createDataChannel("chat", { ordered: true });
-      r.current.dc = dc;
-      dc.onopen = () => {
-        r.current.ping = setInterval(() => dc.readyState === "open" && dc.send(`ping: ${Date.now()}`), 1000);
+    function escuchar() {
+      const SR = getSR();
+      if (!m.vivo || !SR || m.escuchando || m.silenciado || m.reproduciendo || m.procesando) return;
+      const rec = new SR();
+      m.rec = rec;
+      rec.lang = "es-AR";
+      rec.interimResults = false;
+      rec.continuous = false;
+      m.escuchando = true;
+      rec.onresult = (e) => {
+        const texto = Array.from(e.results).map((res) => res[0].transcript).join(" ").trim();
+        m.escuchando = false;
+        try { rec.stop(); } catch { /* ya parado */ }
+        if (texto) enviarTurno(texto);
       };
-      dc.onmessage = (ev) => {
-        let m;
-        try {
-          m = JSON.parse(ev.data);
-        } catch {
-          return;
-        }
-        if (m?.type === "signalling" && m.message?.type === "peerLeft") return terminar();
-        if (m?.type !== "conoflex") return;
-        if (m.evento === "fin") return terminar();
-        if (m.texto) setSubtitulos((s) => [...s.slice(-30), { rol: m.rol === "bot" ? "bot" : "cliente", texto: m.texto, id: `${Date.now()}-${Math.random()}` }]);
-      };
-
-      pc.ontrack = (ev) => {
-        const stream = ev.streams[0] || new MediaStream([ev.track]);
-        audio.srcObject = stream;
-        audio.play().catch(() => {});
-        try {
-          const anBot = ctx.createAnalyser();
-          anBot.fftSize = 512;
-          ctx.createMediaStreamSource(stream).connect(anBot);
-          Object.assign(r.current, { anBot, bufBot: new Float32Array(anBot.fftSize) });
-        } catch {
-          /* sin animación del bot, la llamada sigue */
+      rec.onerror = (e) => {
+        m.escuchando = false;
+        if (e.error === "not-allowed" || e.error === "service-not-allowed") {
+          setError("Necesito permiso para el micrófono. Habilitalo y volvé a llamar.");
+          terminar(true);
+        } else if (m.vivo) {
+          setTimeout(escuchar, 300); // no-speech / aborted: seguir escuchando
         }
       };
-      pc.onconnectionstatechange = () => {
-        const s = pc.connectionState;
-        if (s === "connected") {
-          clearTimeout(r.current.espera);
-          setInicio(Date.now());
-          setEstado("en_llamada");
-        } else if (s === "failed") {
-          terminar("Se cortó la conexión de audio. Revisá internet y probá de nuevo.");
-        } else if (s === "closed") {
-          terminar();
-        }
+      rec.onend = () => {
+        m.escuchando = false;
+        if (m.vivo && !m.reproduciendo && !m.procesando && !m.silenciado) setTimeout(escuchar, 150);
       };
+      try { rec.start(); } catch { m.escuchando = false; }
+    }
 
-      await pc.setLocalDescription(await pc.createOffer());
-      await esperarCandidatos(pc);
-      if (r.current.pc !== pc) return; // colgó mientras conectaba
-
-      let res;
+    async function enviarTurno(texto) {
+      if (!m.vivo) return;
+      m.procesando = true;
+      subtitulo("cliente", texto);
+      if (m.muletillas.length) reproducir(m.muletillas[Math.floor(Math.random() * m.muletillas.length)]);
+      let cortar = false;
       try {
-        res = await fetch(getApiUrl(urlOferta), {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ sdp: pc.localDescription.sdp, type: "offer" }),
-        });
-      } catch {
-        throw new Error("No hay conexión con el servidor.");
+        const res = await fetch(getApiUrl(`${rutaBase}/turno`), { method: "POST", headers: headers(), body: JSON.stringify({ llamada_id: m.llamadaId, texto }) });
+        if (!res.ok || !res.body) throw new Error((await res.json().catch(() => ({}))).error || "No se pudo responder.");
+        const lector = res.body.getReader();
+        const dec = new TextDecoder();
+        let resto = "";
+        for (;;) {
+          const { value, done } = await lector.read();
+          if (done) break;
+          resto += dec.decode(value, { stream: true });
+          const lineas = resto.split("\n");
+          resto = lineas.pop() || "";
+          for (const linea of lineas) {
+            if (!linea.trim()) continue;
+            let ev;
+            try { ev = JSON.parse(linea); } catch { continue; }
+            if (ev.tipo === "chunk") {
+              subtitulo("bot", ev.texto);
+              if (ev.audio) reproducir(ev.audio);
+            } else if (ev.tipo === "fin") cortar = ev.cortar;
+            else if (ev.tipo === "error") setError(ev.error);
+          }
+        }
+      } catch (e) {
+        setError(e.message);
+      } finally {
+        m.procesando = false;
+        const seguir = () => (cortar ? terminar(false) : escuchar());
+        if (m.reproduciendo || m.cola.length) m.alTerminarAudio = seguir;
+        else seguir();
       }
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(json.error || "No se pudo conectar la llamada.");
-      if (r.current.pc !== pc) return;
-      await pc.setRemoteDescription({ type: "answer", sdp: json.sdp });
-      r.current.espera = setTimeout(() => {
-        if (pc.connectionState !== "connected") terminar("No se pudo establecer el audio. Puede que la red bloquee las llamadas (probá con datos del celular).");
-      }, ESPERA_CONEXION_MS);
-      medir();
-    } catch (e) {
-      limpiar();
-      setError(mensajeError(e));
-      setEstado("error");
     }
-  }, [urlOferta, limpiar, terminar, medir]);
 
-  const silenciar = useCallback(() => {
-    const t = r.current.mic?.getAudioTracks()[0];
-    if (!t) return;
-    t.enabled = !t.enabled;
-    setSilenciado(!t.enabled);
-  }, []);
-
-  useEffect(() => () => {
-    try {
-      r.current.dc?.readyState === "open" && r.current.dc.send(JSON.stringify({ type: "conoflex", evento: "colgar" }));
-    } catch {
-      /* nada */
+    async function medirMic() {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
+        m.mic = stream;
+        const AC = window.AudioContext || window.webkitAudioContext;
+        const ctx = new AC();
+        m.ctx = ctx;
+        const an = ctx.createAnalyser();
+        an.fftSize = 512;
+        ctx.createMediaStreamSource(stream).connect(an);
+        const buf = new Float32Array(an.fftSize);
+        const paso = () => {
+          if (!m.vivo) return;
+          an.getFloatTimeDomainData(buf);
+          let s = 0;
+          for (let i = 0; i < buf.length; i++) s += buf[i] * buf[i];
+          niveles.current.mic = m.reproduciendo ? 0 : Math.min(1, Math.sqrt(s / buf.length) * 4);
+          m.raf = requestAnimationFrame(paso);
+        };
+        paso();
+      } catch {
+        /* sin medidor; la llamada igual funciona */
+      }
     }
-    limpiar();
-  }, [limpiar]);
 
-  return { estado, error, silenciado, subtitulos, inicio, niveles, llamar, colgar, silenciar };
+    async function llamar() {
+      if (m.vivo) return;
+      if (!getSR()) {
+        setError("Esta llamada funciona en Google Chrome (en la compu o en Android). En este navegador no puedo escucharte.");
+        setEstado("error");
+        return;
+      }
+      setError(null);
+      setSubtitulos([]);
+      setSilenciado(false);
+      m.silenciado = false;
+      setInicio(null);
+      setEstado("conectando");
+      m.vivo = true;
+      try {
+        const res = await fetch(getApiUrl(`${rutaBase}/inicio`), { method: "POST", headers: headers(), body: "{}" });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || "No se pudo iniciar la llamada.");
+        if (!m.vivo) return;
+        m.llamadaId = data.llamada_id;
+        m.muletillas = data.muletillas || [];
+        setEstado("en_llamada");
+        setInicio(Date.now());
+        subtitulo("bot", data.texto);
+        medirMic();
+        m.alTerminarAudio = escuchar;
+        if (data.audio) reproducir(data.audio);
+        else escuchar();
+      } catch (e) {
+        m.vivo = false;
+        setError(e.message);
+        setEstado("error");
+      }
+    }
+
+    function terminar(conError) {
+      if (!m.vivo && !conError) return;
+      const id = m.llamadaId;
+      m.vivo = false;
+      try { m.rec?.stop(); } catch { /* nada */ }
+      pararAudio();
+      cancelAnimationFrame(m.raf);
+      m.mic?.getTracks().forEach((t) => t.stop());
+      m.ctx?.close().catch(() => {});
+      niveles.current = { mic: 0, bot: 0 };
+      if (id) fetch(getApiUrl(`${rutaBase}/fin`), { method: "POST", headers: headers(), body: JSON.stringify({ llamada_id: id }) }).catch(() => {});
+      m.llamadaId = null;
+      setEstado((e) => (conError ? "error" : e === "conectando" || e === "en_llamada" ? "terminada" : e));
+    }
+
+    function silenciar() {
+      m.silenciado = !m.silenciado;
+      setSilenciado(m.silenciado);
+      if (m.silenciado) {
+        try { m.rec?.stop(); } catch { /* nada */ }
+      } else if (m.vivo && !m.reproduciendo && !m.procesando) {
+        setTimeout(escuchar, 100);
+      }
+    }
+
+    m.llamar = llamar;
+    m.colgar = () => terminar(false);
+    m.silenciar = silenciar;
+    motor.current = m;
+  }
+
+  const llamar = useCallback(() => motor.current.llamar(), []);
+  const colgar = useCallback(() => motor.current.colgar(), []);
+  const silenciar = useCallback(() => motor.current.silenciar(), []);
+
+  useEffect(() => () => motor.current?.colgar(), []);
+
+  return { estado, error, silenciado, subtitulos, inicio, niveles, llamar, colgar, silenciar, hayReconocimiento };
 }
