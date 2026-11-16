@@ -10,6 +10,7 @@ import { nf, norm } from "./materias/util";
 import CamionParaguay from "./semielaborados/CamionParaguay";
 import FichaSemi from "./semielaborados/FichaSemi";
 import SincronizarSemis from "./semielaborados/SincronizarSemis";
+import Comprometido from "./deposito/Comprometido";
 
 const EASE = [0.22, 1, 0.36, 1];
 const PAGINA = 25;
@@ -50,6 +51,15 @@ function Segmentado({ opciones, valor, onChange, etiqueta, id }) {
         );
       })}
     </div>
+  );
+}
+
+/** "30 comprometido en el 33": abre de qué pedidos armados sale. */
+function ChipComprometido({ n, onClick }) {
+  return (
+    <button onClick={(e) => { e.stopPropagation(); onClick(); }} title="Comprometido en pedidos armados sin despachar (33). Tocá para ver cuáles." className="mt-0.5 block ml-auto rounded-full border border-sky-400/30 bg-sky-400/[0.08] px-2 py-0.5 text-[11px] font-bold text-sky-200 hover:bg-sky-400/20 cursor-pointer whitespace-nowrap tabular-nums">
+      {nf(n)} comprometido
+    </button>
   );
 }
 
@@ -98,6 +108,9 @@ export default function Semielaborados() {
   const [pag, setPag] = useState({ firma: "", n: 1 });
 
   const [fichaId, setFichaId] = useState(null);
+  // Comprometido en pedidos armados sin despachar (módulo Depósito): { semielaborado_id: cantidad }.
+  const [comprometido, setComprometido] = useState({});
+  const [verComprometido, setVerComprometido] = useState(null);
   const [verCamion, setVerCamion] = useState(false);
   const [sincronizando, setSincronizando] = useState(false);
   const [aplicando, setAplicando] = useState(false);
@@ -112,6 +125,7 @@ export default function Semielaborados() {
     if (!silencioso) setCargando(true);
     try {
       const d = await api(`/api/semielaborados?meses=${meses}`);
+      api("/api/deposito/comprometido").then(setComprometido).catch(() => {});
       setItems(Array.isArray(d) ? d : []);
       setErrorCarga("");
       return Array.isArray(d) ? d : [];
@@ -240,7 +254,7 @@ export default function Semielaborados() {
     setAplicando(true);
     try {
       const r = await api("/api/semielaborados/aplicar-sincronizacion", { method: "POST", body: cambios });
-      toast(`Sincronizado: ${r.actualizados || 0} actualizados${r.creados ? `, ${r.creados} nuevos` : ""}`);
+      toast(`Sincronizado: ${r.actualizados || 0} actualizados${r.creados ? `, ${r.creados} nuevos` : ""}${r.aviso ? `. ${r.aviso}` : ""}`);
       setSheets(null);
       await cargar(true);
     } catch (e) {
@@ -369,7 +383,10 @@ export default function Semielaborados() {
                             </td>
                             <td className="px-3 py-1.5 text-right text-sm tabular-nums text-zinc-400">{x.demanda_mensual ? `${nf(x.demanda_mensual, 0)} u.` : "—"}</td>
                             <td className="px-3 py-1.5 text-center">{marcado ? <Dias d={x.dias_stock} /> : <span className="text-zinc-600 text-xs">sin seguimiento</span>}</td>
-                            <td className={`px-3 py-1.5 text-right text-base font-extrabold tabular-nums ${st <= 0 ? "text-rose-300" : "text-white"}`}>{nf(st)}</td>
+                            <td className={`px-3 py-1.5 text-right text-base font-extrabold tabular-nums ${st <= 0 ? "text-rose-300" : "text-white"}`}>
+                              {nf(st)}
+                              {comprometido[x.id] > 0 && (dep === "33" || dep === "GENERAL") && <ChipComprometido n={comprometido[x.id]} onClick={() => setVerComprometido(x)} />}
+                            </td>
                             <td className="px-3 py-1.5 text-center"><Tilde marcado={marcado} cambiado={cambiado} onChange={(v) => marcar(x, v)} etiqueta={`Seguir demanda de ${x.codigo}`} /></td>
                           </tr>
                         );
@@ -394,6 +411,7 @@ export default function Semielaborados() {
                           <div className="text-right shrink-0">
                             <span className={`block text-2xl font-extrabold tabular-nums leading-none ${st <= 0 ? "text-rose-300" : "text-white"}`}>{nf(st)}</span>
                             <span className="text-[11px] text-zinc-500">stock {dep === "GENERAL" ? "total" : nombreDep}</span>
+                            {comprometido[x.id] > 0 && (dep === "33" || dep === "GENERAL") && <ChipComprometido n={comprometido[x.id]} onClick={() => setVerComprometido(x)} />}
                           </div>
                         </div>
                         <div className="mt-3 pt-3 border-t border-white/[0.06] flex items-center justify-between gap-3">
@@ -440,7 +458,8 @@ export default function Semielaborados() {
         </AnimatePresence>
 
         {toastNodo}
-        <FichaSemi item={ficha} seguir={ficha ? efectivo(ficha) : false} onCerrar={() => setFichaId(null)} onClasificar={clasificar} onCambio={() => cargar(true)} />
+        <Comprometido key={verComprometido?.id || "nada"} semi={verComprometido} onCerrar={() => setVerComprometido(null)} />
+        <FichaSemi item={ficha} comprometido={ficha ? comprometido[ficha.id] || 0 : 0} onVerComprometido={() => setVerComprometido(ficha)} seguir={ficha ? efectivo(ficha) : false} onCerrar={() => setFichaId(null)} onClasificar={clasificar} onCambio={() => cargar(true)} />
         {verCamion && <CamionParaguay onClose={() => setVerCamion(false)} />}
         {sheets && <SincronizarSemis key={sheetsKey} datos={sheets} aplicando={aplicando} onCerrar={() => setSheets(null)} onAplicar={aplicarSheets} />}
       </div>

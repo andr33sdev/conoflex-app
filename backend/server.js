@@ -37,7 +37,7 @@ const { asegurarTablasFichasPdf, registrarRutasFichasPdf } = require("./comercia
 const importarFichas = require("./comercial/importarFichas");
 const { asegurarColumnasGestion, registrarRutasGestion } = require("./comprasGestion");
 const { asegurarSemis, registrarRutasSemis } = require("./semisGestion");
-const { asegurarMovimientos, registrarRutasMovimientos, sincronizarHojas, iniciarEspejo33 } = require("./semiMovimientos");
+const { asegurarMovimientos, registrarRutasMovimientos, sincronizarHojas, iniciarEspejo33, estadoEspejo33 } = require("./semiMovimientos");
 const { registrarRutasFotos } = require("./comercial/fotos");
 const { generarCotizacion } = require("./comercial/cotizador");
 const { crearCorreoCrudo } = require("./comercial/correo");
@@ -56,6 +56,7 @@ const { asegurarTablasVozWeb, registrarRutasVozWeb } = require("./vozWeb");
 const { asegurarTablasCostos, asegurarPTDesdePedidos, registrarRutasCostos, costosCompletos } = require("./mpCostos");
 const { asegurarTablasDesarrollo, registrarRutasDesarrollo } = require("./desarrollo");
 const { asegurarTablasProyectos, registrarRutasProyectos } = require("./proyectos");
+const { asegurarTablasDeposito, registrarRutasDeposito, aplicarMarcasEnPedidos, espejoActivo } = require("./deposito");
 const { registrarRutasCostosSheets } = require("./costosSheets");
 const { asegurarTablasFacturas, registrarRutasFacturas } = require("./facturas");
 const { avisarCostosViejos } = require("./costosAvisos");
@@ -877,6 +878,7 @@ async function initDB() {
     await asegurarTablasFacturas(db);
     await asegurarTablasDesarrollo(db);
     await asegurarTablasProyectos(db);
+    await asegurarTablasDeposito(db);
 
     console.log("✅ Estructura MySQL inicializada correctamente.");
   } catch (err) {
@@ -3106,8 +3108,9 @@ app.post("/api/semielaborados/previsualizar-sheets", async (req, res) => {
 app.post("/api/semielaborados/aplicar-sincronizacion", async (req, res) => {
   try {
     const { nuevos, modificados } = req.body || {};
-    const r = await aplicarPlanilla(db, { nuevos: Array.isArray(nuevos) ? nuevos : [], modificados: Array.isArray(modificados) ? modificados : [] });
-    res.json({ success: true, ...r });
+    const sin33 = !(await espejoActivo(db));
+    const r = await aplicarPlanilla(db, { nuevos: Array.isArray(nuevos) ? nuevos : [], modificados: Array.isArray(modificados) ? modificados : [], sin33 });
+    res.json({ success: true, ...r, ...(sin33 ? { aviso: "El stock del 33 no se tocó: lo lleva la app (sincronización del 33 apagada)." } : {}) });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -5349,14 +5352,12 @@ app.get("/api/estado-pedidos/pendientes-despacho", async (req, res) => {
 });
 
 // 2. Sincronizar desde Sheets guardando fecha y hora exacta de ejecución
-app.post("/api/estado-pedidos/sincronizar", async (req, res) => {
-  try {
+// Trae la planilla de ventas a estado_pedidos (la vacía y la vuelve a llenar) y reaplica las marcas del depósito.
+async function sincronizarEstadoPedidos() {
     let csvUrl = process.env.GOOGLE_SHEETS_PEDIDOS_URL || VENTAS_CSV_URL;
 
     if (!csvUrl) {
-      return res
-        .status(400)
-        .json({ error: "No se configuró GOOGLE_SHEETS_PEDIDOS_URL en .env" });
+      throw Object.assign(new Error("No se configuró GOOGLE_SHEETS_PEDIDOS_URL en .env"), { status: 400 });
     }
 
     // AGREGAR CACHE-BUSTER PARA FORZAR DATOS FRESCOS DE GOOGLE
@@ -5406,7 +5407,7 @@ app.post("/api/estado-pedidos/sincronizar", async (req, res) => {
 
     const lines = csvText.split(/\r?\n/).filter((l) => l.trim().length > 0);
     if (lines.length < 2) {
-      return res.status(400).json({ error: "El archivo no contiene filas." });
+      throw Object.assign(new Error("El archivo no contiene filas."), { status: 400 });
     }
 
     const headers = parseCSVLine(lines[0]).map((h) => h.toUpperCase().trim());
@@ -5511,18 +5512,26 @@ app.post("/api/estado-pedidos/sincronizar", async (req, res) => {
       );
 
       await conn.commit();
-      res.json({
+      // Las marcas de armado/despacho hechas en la app (módulo Depósito) se vuelven a escribir: la planilla no las tiene.
+      await aplicarMarcasEnPedidos(db).catch((e) => console.error("[deposito] no se pudieron reaplicar las marcas:", e.message));
+      return {
         success: true,
         mensaje: `Se sincronizaron ${valuesToInsert.length} pedidos.`,
         ultimaSincronizacion: ahora.toISOString(),
-      });
+      };
     } catch (err) {
       await conn.rollback();
       throw err;
     } finally {
       conn.release();
     }
+}
+
+app.post("/api/estado-pedidos/sincronizar", async (req, res) => {
+  try {
+    res.json(await sincronizarEstadoPedidos());
   } catch (error) {
+    if (error.status) return res.status(error.status).json({ error: error.message });
     console.error("Error al sincronizar estado_pedidos:", error);
     res.status(500).json({ error: "Error procesando la sincronización." });
   }
@@ -5913,6 +5922,8 @@ registrarRutasWhatsapp(app, { db, requirePermiso, bot: botWhatsapp });
 registrarRutasDesarrollo(app, { db, requirePermiso, crearNotificacion, ai, modelo: process.env.DESARROLLO_MODELO || "gemini-2.5-flash", multer, costosCompletos });
 // Proyectos y pruebas: pruebas con proveedores, máquinas, objetivos, ideas y mejoras, con su estado y próximo paso.
 registrarRutasProyectos(app, { db, requirePermiso, crearNotificacion, ai, modelo: process.env.DESARROLLO_MODELO || "gemini-2.5-flash", multer });
+// Depósito: armar y despachar pedidos (descuenta semielaborados del 33) y la llave de la sincronización del 33.
+registrarRutasDeposito(app, { db, requirePermiso, estadoEspejo: () => ({ ...estadoEspejo33() }), sincronizarPedidos: () => sincronizarEstadoPedidos() });
 // Llamadas de WhatsApp: las atiende el servicio de voz (carpeta voz/); acá solo se le da contexto.
 registrarRutasVoz(app, { db, bot: botWhatsapp });
 // Llamar a la asistente desde el navegador (botón en la app y links para compartir), sin WhatsApp.
@@ -5922,7 +5933,7 @@ app.listen(PORT, () => {
   console.log(`🚀 Servidor Conoflex unificado ejecutándose en puerto ${PORT}`);
   migrarPermisoConnie(db);
   migrarPermisoSugerencias(db);
-  iniciarEspejo33(db); // el stock del 33 se copia de la planilla (STOCK 33) cada 10 minutos
+  iniciarEspejo33(db, { activo: () => espejoActivo(db) }); // el stock del 33 se copia de la planilla (STOCK 33) cada 10 minutos, si está activado
   iniciarBusquedaSemanal(db, { ai, modelo: modeloClientesNuevos, crearNotificacion }); // clientes nuevos: búsqueda automática los lunes y avisos de cierres
   connie.calentarEsquema();
   asegurarPush(db)

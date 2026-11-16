@@ -76,7 +76,9 @@ function compararPlanilla(filas, semis) {
 }
 
 /** Aplica nuevos y modificados. Devuelve cuántos. Un código que ya existe no se duplica: se actualiza. */
-async function aplicarPlanilla(db, { nuevos = [], modificados = [] }) {
+async function aplicarPlanilla(db, { nuevos = [], modificados = [], sin33 = false }) {
+  // sin33: la sincronización del 33 está apagada (el 33 lo lleva la app con los despachos): no se pisa en los que ya existen.
+  const deps = sin33 ? DEPOSITOS.filter((d) => d !== "stock_33") : DEPOSITOS;
   const conn = await db.getConnection();
   let creados = 0;
   let actualizados = 0;
@@ -88,7 +90,7 @@ async function aplicarPlanilla(db, { nuevos = [], modificados = [] }) {
       const vals = DEPOSITOS.map((d) => Number(n[d]) || 0);
       const [ya] = await conn.query("SELECT id FROM semielaborados WHERE UPPER(TRIM(codigo)) = ? LIMIT 1", [codigo]);
       if (ya.length) {
-        await conn.query(`UPDATE semielaborados SET ${DEPOSITOS.map((d) => `${d} = ?`).join(", ")} WHERE id = ?`, [...vals, ya[0].id]);
+        await conn.query(`UPDATE semielaborados SET ${deps.map((d) => `${d} = ?`).join(", ")} WHERE id = ?`, [...deps.map((d) => Number(n[d]) || 0), ya[0].id]);
         actualizados++;
       } else {
         await conn.query(`INSERT INTO semielaborados (codigo, nombre, ${DEPOSITOS.join(", ")}) VALUES (?, ?, ?, ?, ?, ?)`, [codigo, n.nombre || codigo, ...vals]);
@@ -97,7 +99,7 @@ async function aplicarPlanilla(db, { nuevos = [], modificados = [] }) {
     }
     for (const m of modificados) {
       if (!m.id || !m.nuevo) continue;
-      const [r] = await conn.query(`UPDATE semielaborados SET ${DEPOSITOS.map((d) => `${d} = ?`).join(", ")} WHERE id = ?`, [...DEPOSITOS.map((d) => Number(m.nuevo[d]) || 0), m.id]);
+      const [r] = await conn.query(`UPDATE semielaborados SET ${deps.map((d) => `${d} = ?`).join(", ")} WHERE id = ?`, [...deps.map((d) => Number(m.nuevo[d]) || 0), m.id]);
       actualizados += r.affectedRows ? 1 : 0;
     }
     await conn.commit();

@@ -75,6 +75,10 @@ test("aplicarPlanilla: deja la app igual a la planilla, crea lo nuevo y no dupli
     await S.aplicarPlanilla(pool, { nuevos: [{ codigo: "new", nombre: "Nuevo", stock_33: 9 }] });
     const [[n]] = await pool.query("SELECT COUNT(*) AS n FROM semielaborados WHERE codigo = 'NEW'");
     assert.equal(Number(n.n), 1);
+    // con la sincronización del 33 apagada, el 33 de los que ya existen no se pisa (sí los otros depósitos)
+    await S.aplicarPlanilla(pool, { modificados: [{ id: 1, nuevo: { stock_33: 1, stock_26: 2, stock_ayolas: 3, stock_37: 4 } }], sin33: true });
+    const [[ab]] = await pool.query("SELECT stock_33, stock_26 FROM semielaborados WHERE id = 1");
+    assert.deepEqual([ab.stock_33, ab.stock_26], [1280, 2]);
   } finally {
     await pool.query("DROP TABLE IF EXISTS semielaborados").catch(() => {});
     await pool.end();

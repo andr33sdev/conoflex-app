@@ -283,7 +283,8 @@ async function compararStock33(db, { traer = (u) => fetch(u).then((r) => (r.ok ?
 
 // ---------- Espejo del 33: la app copia la pestaña STOCK 33 ----------
 const traerTexto = (u) => fetch(u).then((r) => (r.ok ? r.text() : Promise.reject(new Error(`HTTP ${r.status}`))));
-const estadoEspejo = { ultima: null, ok: null, actualizados: 0, comparados: 0, error: null };
+const estadoEspejo = { ultima: null, ok: null, actualizados: 0, comparados: 0, error: null, pausado: false };
+const estadoEspejo33 = () => ({ ...estadoEspejo });
 
 /**
  * Deja el stock del 33 de la app igual al de la pestaña STOCK 33 (código en A, stock en E). Solo toca stock_33 de los semielaborados que
@@ -323,13 +324,19 @@ async function correrEspejo33(db, opciones) {
 }
 
 /** Copia el 33 de la planilla al arrancar y después cada `minutos`. STOCK33_ESPEJO_MIN=0 lo apaga. */
-function iniciarEspejo33(db, { minutos = Number(process.env.STOCK33_ESPEJO_MIN ?? 10), arranqueMs = 15000 } = {}) {
+function iniciarEspejo33(db, { minutos = Number(process.env.STOCK33_ESPEJO_MIN ?? 10), arranqueMs = 15000, activo = async () => true } = {}) {
   if (!(minutos > 0)) return null;
   let corriendo = false;
   const vuelta = async () => {
     if (corriendo) return;
     corriendo = true;
     try {
+      // Se puede apagar desde la app (Depósito): ahí el stock del 33 lo lleva la app y la planilla no lo pisa.
+      if (!(await activo().catch(() => true))) {
+        estadoEspejo.pausado = true;
+        return;
+      }
+      estadoEspejo.pausado = false;
       await correrEspejo33(db);
     } finally {
       corriendo = false;
@@ -483,7 +490,7 @@ function registrarRutasMovimientos(app, db, { nombreDeUsuario = async (req) => r
   app.post("/api/semielaborados/leer-planilla-movimientos", manejar(() => sincronizarHojas(db)));
 }
 
-module.exports = {
+module.exports = { estadoEspejo33,
   asegurarMovimientos, parsearHoja, filasCSV, fechaISO, depositoDe, guardarHoja, sincronizarHojas, entradasPendientes,
   marcarAvisadas, entradasParaRecordar, marcarRecordadas, ajustarStock, compararStock33, parsearStockPlanilla, numeroPlanilla, copiarStock33, correrEspejo33, iniciarEspejo33, MIN_RECORDATORIO,
   transferir, anularTransferencia, ajustesDeLaApp, conAjustesDeLaApp, historial, registrarRutasMovimientos, DEPOSITOS, NOMBRE_DEPOSITO,
