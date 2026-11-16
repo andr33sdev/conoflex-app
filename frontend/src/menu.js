@@ -27,6 +27,7 @@ import {
   DollarSign,
   FlaskConical,
   Microscope,
+  Warehouse,
 } from "lucide-react";
 
 export const INICIO = {
@@ -181,6 +182,15 @@ export const ALL_MENU_ITEMS = [
     icon: Truck,
     desc: "Preparar y despachar lo vendido",
     kw: "despacho envios",
+  },
+  {
+    id: "deposito",
+    corto: "Depósito",
+    grupo: "comercial",
+    label: "Depósito",
+    icon: Warehouse,
+    desc: "Buscá una OP y marcala como armada o despachada",
+    kw: "op armar armado despachar despacho preparado pedido stock 33 comprometido",
   },
   {
     id: "hoja-de-ruta",

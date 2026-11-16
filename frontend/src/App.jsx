@@ -19,6 +19,7 @@ const WhatsApp = lazy(() => import("./WhatsApp"));
 const Costos = lazy(() => import("./Costos"));
 const DesarrolloProductos = lazy(() => import("./DesarrolloProductos"));
 const ProyectosPruebas = lazy(() => import("./ProyectosPruebas"));
+const Deposito = lazy(() => import("./Deposito"));
 const SolicitudesInternas = lazy(() => import("./SolicitudesInternas"));
 const DespacharPedidos = lazy(() => import("./DespacharPedidos"));
 const HojaRuta = lazy(() => import("./hojaruta/HojaRuta"));
@@ -54,6 +55,7 @@ const PRECARGA = {
   costos: () => import("./Costos"),
   desarrollo: () => import("./DesarrolloProductos"),
   proyectos: () => import("./ProyectosPruebas"),
+  deposito: () => import("./Deposito"),
   "solicitudes-internas": () => import("./SolicitudesInternas"),
   "despachar-pedidos": () => import("./DespacharPedidos"),
   "hoja-de-ruta": () => import("./hojaruta/HojaRuta"),
@@ -302,6 +304,7 @@ function AppInterna() {
       {usuarioActual.rol?.toUpperCase() === "ADMIN" && activeModule === "costos" && <Costos />}
       {hasAccess("desarrollo") && activeModule === "desarrollo" && <DesarrolloProductos />}
       {hasAccess("proyectos") && activeModule === "proyectos" && <ProyectosPruebas />}
+      {hasAccess("deposito") && activeModule === "deposito" && <Deposito />}
 
       </Suspense>
     </Layout>

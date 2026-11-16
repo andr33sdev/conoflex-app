@@ -10,7 +10,7 @@ const ORIGENES = [["FABRICA", "Se fabrica"], ["PROVEEDOR", "Se compra"], ["PARAG
 const n0 = (v) => Number(v || 0).toLocaleString("es-AR", { maximumFractionDigits: 2 });
 
 /** Ficha lateral de un semielaborado: cómo se consigue, stock por depósito, movimientos y pegado. */
-export default function FichaSemi({ item, seguir, onCerrar, onClasificar, onCambio }) {
+export default function FichaSemi({ item, seguir, onCerrar, onClasificar, onCambio, comprometido = 0, onVerComprometido }) {
   const en3d = item ? modeloDe(item) : null;
   return (
     <Drawer
@@ -57,6 +57,11 @@ export default function FichaSemi({ item, seguir, onCerrar, onClasificar, onCamb
                 <div key={t} className="rounded-2xl border border-white/[0.07] bg-white/[0.03] p-3.5">
                   <span className="block text-[11px] font-bold uppercase tracking-[0.06em] text-zinc-500">{t}</span>
                   <strong className={`block mt-1 text-2xl font-extrabold tabular-nums ${Number(v) > 0 ? "text-white" : "text-zinc-600"}`}>{n0(v)}</strong>
+                  {t === "Depósito 33" && comprometido > 0 && (
+                    <button onClick={onVerComprometido} className="mt-1.5 text-left text-xs font-bold text-sky-200 hover:underline cursor-pointer">
+                      {n0(comprometido)} comprometido · {n0(Number(v) - comprometido)} disponible
+                    </button>
+                  )}
                 </div>
               ))}
             </div>
