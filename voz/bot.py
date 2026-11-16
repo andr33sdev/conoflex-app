@@ -124,7 +124,8 @@ FICHAS DEL CATÁLOGO
 - Las fichas de los productos que menciona el cliente te llegan solas en un mensaje "FICHAS DEL CATÁLOGO". Usalas directo.
 - Nunca digas que vas a buscar, ni "a ver", "dame un segundo" o "ya te encontré": respondé de una con el dato, como alguien que se sabe el catálogo.
 - Escribí SOLO texto plano, exactamente lo que se dice en voz alta: NUNCA HTML ni etiquetas, sin listas, símbolos, asteriscos ni emojis. Frases cortas. Las reglas sobre formato de mails no aplican acá.
-- Los precios escribilos en palabras como se dicen ("veinticuatro mil doscientos pesos más IVA")."""
+- Los precios escribilos en palabras como se dicen ("veinticuatro mil doscientos pesos más IVA").
+- Empezá cada respuesta con una frase muy corta terminada en punto ("Sí, claro.", "Dale.", "Mirá."), así tu voz arranca enseguida."""
 
 
 def _turnos_openai():
@@ -350,7 +351,14 @@ async def _armar(transport, llm, ctx: dict | None = None, herramientas: list | N
     if proveedor() == "openai":
         params = LLMUserAggregatorParams()
     elif cascada:
-        params = LLMUserAggregatorParams(vad_analyzer=SileroVADAnalyzer(params=VADParams(stop_secs=float(os.getenv("VOZ_PAUSA", "0.2")))))
+        # Fin de frase por silencio corto en vez del modelo "smart turn" (que sumaba 0,8 a 3 s por respuesta).
+        from pipecat.turns.user_stop.speech_timeout_user_turn_stop_strategy import SpeechTimeoutUserTurnStopStrategy
+        from pipecat.turns.user_turn_strategies import UserTurnStrategies
+
+        params = LLMUserAggregatorParams(
+            vad_analyzer=SileroVADAnalyzer(params=VADParams(stop_secs=float(os.getenv("VOZ_PAUSA", "0.2")))),
+            user_turn_strategies=UserTurnStrategies(stop=[SpeechTimeoutUserTurnStopStrategy(user_speech_timeout=float(os.getenv("VOZ_ESPERA", "0.35")))]),
+        )
     else:
         params = LLMUserAggregatorParams(vad_analyzer=SileroVADAnalyzer())
     user_aggregator, assistant_aggregator = LLMContextAggregatorPair(context, realtime_service_mode=not cascada, user_params=params)
