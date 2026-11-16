@@ -88,9 +88,9 @@ function BotonRedondo({ onClick, titulo, color = "zinc", grande, children, disab
   );
 }
 
-/** Pantalla de llamada completa. `urlOferta`: a dónde se manda la oferta (app o link público). */
-export default function PantallaLlamada({ urlOferta, nombre = "Aldana", subtitulo = "Asistente de Conoflex", compacta, onEstado }) {
-  const { estado, error, silenciado, subtitulos, inicio, niveles, llamar, colgar, silenciar } = useLlamada(urlOferta);
+/** Pantalla de llamada completa. `rutaBase`: base de los endpoints (app o link público). */
+export default function PantallaLlamada({ rutaBase, publico = false, nombre = "Aldana", subtitulo = "Asistente de Conoflex", compacta, onEstado }) {
+  const { estado, error, silenciado, subtitulos, inicio, niveles, llamar, colgar, silenciar } = useLlamada(rutaBase, { publico });
   const [verTexto, setVerTexto] = useState(true);
   const finTexto = useRef(null);
   const alCambiar = useRef(onEstado);

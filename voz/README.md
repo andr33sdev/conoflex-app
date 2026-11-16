@@ -1,13 +1,28 @@
 # Servicio de voz (llamadas con la asistente)
 
-Atiende llamadas con voz en tiempo real (Gemini Live, audio nativo: responde casi al instante
-y se la puede interrumpir). Es un proceso **aparte** del backend: si se cae, el chat sigue funcionando.
+> **La llamada desde el navegador (app y link) ya NO usa este servicio.** Desde noviembre 2026 se
+> hace por turnos en el backend (`backend/vozLlamada.js` + `backend/vozWeb.js`), al estilo de Jared:
+> el navegador transcribe con el reconocimiento de voz del navegador y manda el texto; el backend
+> responde con Gemini en streaming y cada oración completa la convierte en voz con **ElevenLabs**
+> (por eso suena fluida y bien pronunciada). Variables en `backend/.env`:
+> `ELEVENLABS_API_KEY`, `VOZ_ELEVEN_VOZ` (Voice ID), `VOZ_ELEVEN_MODELO` (por defecto
+> `eleven_flash_v2_5`), `VOZ_LLM` (por defecto `gemini-2.5-flash`), `VOZ_PRONUNCIAR`
+> (`palabra=como suena;...`), `VOZ_WEB_MAX`, `VOZ_PAUSA_MS`. No hace falta tener este servicio
+> `voz/` levantado para la llamada web; sí la clave de ElevenLabs.
+>
+> Este servicio queda **solo para las llamadas por WhatsApp** (cuando el número llegue al límite de
+> 2.000 de Meta).
 
-Hay dos formas de llamar:
+Atiende llamadas con voz en tiempo real (Gemini Live, audio nativo). Es un proceso **aparte** del
+backend: si se cae, el chat sigue funcionando.
 
-1. **Desde el navegador** (anda ya, no depende de Meta): WhatsApp → pestaña **Llamar** en la app,
-   o un link para compartir (`https://<la app>/?llamar=<código>`) que se abre en cualquier celular sin cuenta.
-2. **Por WhatsApp**: solo cuando el número tenga límite de mensajería de 2.000 o más (ver abajo).
+Formas de llamar:
+
+1. **Desde el navegador** (anda ya, no depende de Meta ni de este servicio): WhatsApp → pestaña
+   **Llamar** en la app, o un link para compartir (`https://<la app>/?llamar=<código>`) que se abre
+   en Chrome (compu o Android) sin cuenta.
+2. **Por WhatsApp**: solo cuando el número tenga límite de mensajería de 2.000 o más (ver abajo),
+   y usa este servicio.
 
 ```
 Navegador → backend /api/voz/llamar (o /api/public/voz-web/<código>/llamar) → este servicio /web/oferta

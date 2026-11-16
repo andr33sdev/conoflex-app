@@ -141,8 +141,8 @@ export default function Llamar({ aviso }) {
     <div className="h-full overflow-y-auto">
       <div className="max-w-6xl mx-auto px-4 py-6 sm:py-10 grid gap-8 lg:grid-cols-[1fr_380px] items-start">
         <div className="flex flex-col items-center lg:pt-6">
-          <PantallaLlamada urlOferta="/api/voz/llamar" onEstado={(e) => (e === "terminada" || e === "error") && setTimeout(() => setVersion((v) => v + 1), 1500)} />
-          <p className="text-xs text-zinc-600 mt-6 text-center max-w-sm">Sabe lo mismo que el bot de WhatsApp: catálogo, precios y reglas. Podés interrumpirla cuando habla. Usá auriculares si estás en un lugar con ruido.</p>
+          <PantallaLlamada rutaBase="/api/voz/llamar" onEstado={(e) => (e === "terminada" || e === "error") && setTimeout(() => setVersion((v) => v + 1), 1500)} />
+          <p className="text-xs text-zinc-600 mt-6 text-center max-w-sm">Sabe lo mismo que el bot de WhatsApp: catálogo, precios y reglas. Hablale como a una persona y esperá su respuesta. Mejor en Google Chrome y con auriculares si hay ruido.</p>
         </div>
         <div className="space-y-4">
           <Links aviso={aviso} />
