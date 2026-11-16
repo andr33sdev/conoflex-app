@@ -855,32 +855,19 @@ async function initDB() {
       );
     }
 
-    await asegurarTablasProduccion(db);
-    await asegurarTablaReflectivas(db);
-    await asegurarTablasIngenieria(db);
-    await asegurarTablaHojaRuta(db);
-    await asegurarTablasMapa(db);
-    await asegurarTablasNotificaciones(db);
-    await asegurarTablaMovimientos(db);
-    await asegurarColumnasCatalogo(db);
-    await asegurarTablasPrecios(db);
-    await asegurarTablasFichasPdf(db);
-    await asegurarColumnaTema(db);
-    await asegurarComprasStock(db);
-    await asegurarSemis(db);
-    await asegurarMovimientos(db);
-    await asegurarColumnasGestion(db);
-    await asegurarTablasSugerencias(db);
-    await asegurarTablaClientesNuevos(db);
-    await asegurarTablasWhatsapp(db);
-    await asegurarTablasVozWeb(db);
-    await asegurarTablasCostos(db);
-    await asegurarTablasFacturas(db);
-    await asegurarTablasDesarrollo(db);
-    await asegurarTablasProyectos(db);
-    await asegurarTablasDeposito(db);
-
-    console.log("✅ Estructura MySQL inicializada correctamente.");
+    // Cada módulo crea sus tablas por separado: si uno falla, los demás igual quedan listos (antes un error cortaba todo lo que venía después).
+    const pasos = { asegurarTablasProduccion, asegurarTablaReflectivas, asegurarTablasIngenieria, asegurarTablaHojaRuta, asegurarTablasMapa, asegurarTablasNotificaciones, asegurarTablaMovimientos, asegurarColumnasCatalogo, asegurarTablasPrecios, asegurarTablasFichasPdf, asegurarColumnaTema, asegurarComprasStock, asegurarSemis, asegurarMovimientos, asegurarColumnasGestion, asegurarTablasSugerencias, asegurarTablaClientesNuevos, asegurarTablasWhatsapp, asegurarTablasVozWeb, asegurarTablasCostos, asegurarTablasFacturas, asegurarTablasDesarrollo, asegurarTablasProyectos, asegurarTablasDeposito };
+    const fallaron = [];
+    for (const [nombre, paso] of Object.entries(pasos)) {
+      try {
+        await paso(db);
+      } catch (e) {
+        fallaron.push(nombre);
+        console.error(`❌ ${nombre} falló:`, e.message);
+      }
+    }
+    if (fallaron.length) console.error(`⚠️ Estructura MySQL con fallas en: ${fallaron.join(", ")}`);
+    else console.log("✅ Estructura MySQL inicializada correctamente.");
   } catch (err) {
     console.error("❌ Error inicializando base de datos MySQL:", err);
   }

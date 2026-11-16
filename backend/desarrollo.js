@@ -58,7 +58,9 @@ async function asegurarTablasDesarrollo(db) {
     UNIQUE KEY (proyecto_id, etapa)
   )`);
   // Aprobación cargada a mano (aprobó por teléfono, en persona, etc.): quién la cargó.
-  await db.query("ALTER TABLE dp_etapas ADD COLUMN IF NOT EXISTS aprobacion_registrada_por VARCHAR(120) NULL");
+  // (MySQL no acepta "ADD COLUMN IF NOT EXISTS": se pregunta antes.)
+  const [col] = await db.query("SELECT 1 FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'dp_etapas' AND COLUMN_NAME = 'aprobacion_registrada_por'");
+  if (!col.length) await db.query("ALTER TABLE dp_etapas ADD COLUMN aprobacion_registrada_por VARCHAR(120) NULL");
   await db.query(`CREATE TABLE IF NOT EXISTS dp_eventos (
     id INT AUTO_INCREMENT PRIMARY KEY,
     proyecto_id INT NOT NULL,
