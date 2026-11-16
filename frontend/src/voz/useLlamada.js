@@ -82,33 +82,55 @@ export default function useLlamada(rutaBase, { publico = false } = {}) {
       niveles.current.bot = 0;
     }
 
+    // Cuánto silencio esperamos después de que hablás para dar por cerrado el turno.
+    const SILENCIO_MS = 1100;
+
     function escuchar() {
       const SR = getSR();
       if (!m.vivo || !SR || m.escuchando || m.silenciado || m.reproduciendo || m.procesando) return;
       const rec = new SR();
       m.rec = rec;
       rec.lang = "es-AR";
-      rec.interimResults = false;
-      rec.continuous = false;
+      // Escucha continua con resultados parciales: así nosotros decidimos cuándo cerrás el turno
+      // (por silencio), en vez de depender del corte interno de Chrome, que a veces no llega nunca.
+      rec.interimResults = true;
+      rec.continuous = true;
       m.escuchando = true;
+      let textoFinal = "";
+      let hablo = false;
+      let temporizador = null;
+      const cerrarPorSilencio = () => {
+        clearTimeout(temporizador);
+        if (hablo) temporizador = setTimeout(() => { try { rec.stop(); } catch { /* ya parado */ } }, SILENCIO_MS);
+      };
       rec.onresult = (e) => {
-        const texto = Array.from(e.results).map((res) => res[0].transcript).join(" ").trim();
-        m.escuchando = false;
-        try { rec.stop(); } catch { /* ya parado */ }
-        if (texto) enviarTurno(texto);
+        let parcial = "";
+        for (let i = e.resultIndex; i < e.results.length; i++) {
+          const t = e.results[i][0].transcript;
+          if (e.results[i].isFinal) textoFinal += t + " ";
+          else parcial += t;
+        }
+        if ((textoFinal + parcial).trim()) {
+          hablo = true;
+          cerrarPorSilencio(); // cada vez que llega algo, reiniciamos la cuenta de silencio
+        }
       };
       rec.onerror = (e) => {
+        clearTimeout(temporizador);
         m.escuchando = false;
         if (e.error === "not-allowed" || e.error === "service-not-allowed") {
           setError("Necesito permiso para el micrófono. Habilitalo y volvé a llamar.");
           terminar(true);
-        } else if (m.vivo) {
+        } else if (m.vivo && !m.silenciado) {
           setTimeout(escuchar, 300); // no-speech / aborted: seguir escuchando
         }
       };
       rec.onend = () => {
+        clearTimeout(temporizador);
         m.escuchando = false;
-        if (m.vivo && !m.reproduciendo && !m.procesando && !m.silenciado) setTimeout(escuchar, 150);
+        const limpio = textoFinal.trim();
+        if (limpio && m.vivo && !m.silenciado) enviarTurno(limpio);
+        else if (m.vivo && !m.reproduciendo && !m.procesando && !m.silenciado) setTimeout(escuchar, 150);
       };
       try { rec.start(); } catch { m.escuchando = false; }
     }
