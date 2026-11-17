@@ -216,12 +216,26 @@ async function asegurarTablasCostos(db) {
   )`);
 }
 
-/** Los productos terminados salen de los modelos de estado_pedidos: se agregan los que falten (no se borra nada). */
+/**
+ * Los productos terminados salen de los modelos de estado_pedidos: se agregan los que falten
+ * SOLO de pedidos con fecha a partir de la fecha de corte (de ahí en adelante). Hacia atrás no,
+ * así un PT viejo que se borró a mano no vuelve a aparecer. La fecha de corte se fija sola la
+ * primera vez (el día que se despliega esto) y queda guardada en `reglas`.
+ */
 async function asegurarPTDesdePedidos(db) {
   try {
+    const [[regla]] = await db.query("SELECT valor FROM reglas WHERE clave = 'pt_autocrear_desde' LIMIT 1");
+    let desde = regla?.valor;
+    if (!desde) {
+      await db.query("INSERT INTO reglas (clave, valor) VALUES ('pt_autocrear_desde', CURDATE()) ON DUPLICATE KEY UPDATE valor = valor");
+      const [[r2]] = await db.query("SELECT valor FROM reglas WHERE clave = 'pt_autocrear_desde' LIMIT 1");
+      desde = r2?.valor || new Date().toISOString().slice(0, 10);
+    }
     const [r] = await db.query(
       `INSERT IGNORE INTO productos_terminados (codigo, nombre)
-       SELECT DISTINCT UPPER(TRIM(modelo)), UPPER(TRIM(modelo)) FROM estado_pedidos WHERE modelo IS NOT NULL AND TRIM(modelo) <> ''`,
+       SELECT DISTINCT UPPER(TRIM(modelo)), UPPER(TRIM(modelo)) FROM estado_pedidos
+       WHERE modelo IS NOT NULL AND TRIM(modelo) <> '' AND fecha >= ?`,
+      [desde],
     );
     return r.affectedRows || 0;
   } catch (e) {
