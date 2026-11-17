@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import { History, Loader2, Plus, ScrollText } from "lucide-react";
+import { History, Loader2, Plus, ScrollText, Trash2 } from "lucide-react";
 import { Drawer } from "../produccion/ui";
 import { api } from "../produccion/util";
 import AlertaCambio from "./AlertaCambio";
@@ -8,7 +8,7 @@ import Historial from "./Historial";
 import Receta from "./Receta";
 
 /** Todas las recetas de un producto + su historial de cambios + avisos de producción. */
-export default function LibroRecetas({ parent, abierto, onCerrar, onCambio, onNueva, onEditar, version, admin, toast }) {
+export default function LibroRecetas({ parent, abierto, onCerrar, onCambio, onNueva, onEditar, version, admin, toast, onEliminarProducto }) {
   const [recetas, setRecetas] = useState(null);
   const [historial, setHistorial] = useState([]);
   const [alertas, setAlertas] = useState([]);
@@ -90,6 +90,17 @@ export default function LibroRecetas({ parent, abierto, onCerrar, onCambio, onNu
               recetas.map((r) => <Receta key={r.id} r={r} ocupado={ocupado} onActivar={() => activar(r)} onEditar={() => onEditar(r, recetas.length)} onEliminar={() => eliminar(r)} />)
             )}
           </>
+        )}
+
+        {onEliminarProducto && recetas && tab === "recetas" && (
+          <div className="mt-2 pt-5 border-t border-white/[0.06]">
+            <button
+              onClick={() => onEliminarProducto(parent)}
+              className="w-full min-h-[48px] rounded-2xl border border-rose-500/25 bg-rose-500/[0.06] text-sm font-bold text-rose-300 hover:bg-rose-500/[0.12] inline-flex items-center justify-center gap-2 cursor-pointer transition-colors"
+            >
+              <Trash2 size={16} /> Eliminar {parent?.type === "PT" ? "producto terminado" : "semielaborado"}
+            </button>
+          </div>
         )}
       </div>
     </Drawer>

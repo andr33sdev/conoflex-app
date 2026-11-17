@@ -98,6 +98,25 @@ function registrarRutasSemis(app, { db, nombreDeUsuario = () => null }) {
     await db.query("DELETE FROM paraguay_proximo_items");
     res.json({ ok: true });
   }));
+
+  // Borrar un semielaborado. Si está en recetas, primero devuelve el impacto (409) salvo ?forzar=1.
+  app.delete("/api/semielaborados/:id", seguro(async (req, res) => {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) return res.status(400).json({ error: "Id inválido." });
+    const [[semi]] = await db.query("SELECT id, codigo, nombre FROM semielaborados WHERE id = ?", [id]);
+    if (!semi) return res.status(404).json({ error: "Ese semielaborado no existe." });
+    const [[usan]] = await db.query("SELECT COUNT(DISTINCT ingenieria_id) AS n FROM ingenieria_detalles WHERE semielaborado_id = ?", [id]);
+    const [[propias]] = await db.query("SELECT COUNT(*) AS n FROM ingenierias WHERE semielaborado_id = ?", [id]);
+    const recetasUsan = Number(usan?.n) || 0;
+    const recetasPropias = Number(propias?.n) || 0;
+    // Sin ?forzar=1 no se borra nada: solo se devuelve el impacto para confirmar.
+    if (req.query.forzar !== "1") {
+      return res.json({ impacto: true, recetas_usan: recetasUsan, recetas_propias: recetasPropias, codigo: semi.codigo, nombre: semi.nombre });
+    }
+    // El borrado en cascada limpia las líneas de receta y las recetas propias de este semielaborado.
+    await db.query("DELETE FROM semielaborados WHERE id = ?", [id]);
+    res.json({ ok: true, eliminado: semi.codigo });
+  }));
 }
 
 module.exports = { asegurarSemis, registrarRutasSemis, listaParaguay, sugeridoParaguay, ORIGENES, CAPACIDAD_CAMION, MESES_COBERTURA_CAMION };

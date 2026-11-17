@@ -11,6 +11,7 @@ import CamionParaguay from "./semielaborados/CamionParaguay";
 import FichaSemi from "./semielaborados/FichaSemi";
 import SincronizarSemis from "./semielaborados/SincronizarSemis";
 import Comprometido from "./deposito/Comprometido";
+import ConfirmarBorrado from "./produccion/ConfirmarBorrado";
 
 const EASE = [0.22, 1, 0.36, 1];
 const PAGINA = 25;
@@ -120,6 +121,8 @@ export default function Semielaborados() {
   // Cambios de "seguir demanda" tildados en la tabla y todavía sin confirmar: { id: 0 | 1 }.
   const [pend, setPend] = useState({});
   const [guardando, setGuardando] = useState(false);
+  // Borrado de un semielaborado: { item, impacto, borrando } mientras se confirma.
+  const [borrar, setBorrar] = useState(null);
 
   const cargar = useCallback(async (silencioso = false) => {
     if (!silencioso) setCargando(true);
@@ -237,6 +240,34 @@ export default function Semielaborados() {
     }
   };
 
+  // ---- borrar semielaborado ----
+  const pedirBorrar = async (item) => {
+    setBorrar({ item, impacto: null, borrando: false });
+    try {
+      const d = await api(`/api/semielaborados/${item.id}`, { method: "DELETE" });
+      setBorrar((b) => (b && b.item.id === item.id ? { ...b, impacto: d } : b));
+    } catch (e) {
+      setBorrar(null);
+      toast(e.message || "No se pudo preparar el borrado.", "error");
+    }
+  };
+  const confirmarBorrar = async () => {
+    if (!borrar) return;
+    const { item } = borrar;
+    setBorrar((b) => ({ ...b, borrando: true }));
+    try {
+      await api(`/api/semielaborados/${item.id}?forzar=1`, { method: "DELETE" });
+      setItems((prev) => prev.filter((x) => x.id !== item.id));
+      setPend((p) => { const n = { ...p }; delete n[item.id]; return n; });
+      setFichaId((f) => (f === item.id ? null : f));
+      setBorrar(null);
+      toast(`${item.codigo} eliminado`);
+    } catch (e) {
+      setBorrar((b) => (b ? { ...b, borrando: false } : b));
+      toast(e.message || "No se pudo eliminar.", "error");
+    }
+  };
+
   // ---- planilla ----
   const sincronizar = async () => {
     setSincronizando(true);
@@ -350,11 +381,11 @@ export default function Semielaborados() {
             ) : (
               <>
                 {/* Escritorio: tabla */}
-                <div className="hidden md:block rounded-3xl border border-white/[0.08] bg-[#0d0d10]/80 overflow-hidden">
+                <div className="hidden md:block rounded-3xl border border-white/[0.07] bg-[#0c0c0f]/70 overflow-hidden">
                   <table className="w-full text-left border-collapse">
                     <thead>
-                      <tr className="bg-white/[0.03] border-b border-white/[0.06]">
-                        <th className={`${th} w-[150px]`}>Código</th>
+                      <tr className="bg-white/[0.02] border-b border-white/[0.05]">
+                        <th className={`${th} w-[160px]`}>Código</th>
                         <th className={th}>Semielaborado</th>
                         <th className={`${th} text-right`}>Demanda</th>
                         <th className={`${th} text-center`}>Días de stock</th>
@@ -373,21 +404,21 @@ export default function Semielaborados() {
                         const marcado = efectivo(x);
                         const cambiado = pend[x.id] !== undefined;
                         return (
-                          <tr key={x.id} onClick={() => setFichaId(x.id)} className={`border-t border-white/[0.05] cursor-pointer transition-colors hover:bg-white/[0.04] ${cambiado ? "bg-[#FFD60A]/[0.04]" : ""}`}>
-                            <td className="px-3 py-1.5"><span className="font-mono text-[13px] font-bold text-[#FFD60A]">{x.codigo}</span></td>
-                            <td className="px-3 py-1.5">
+                          <tr key={x.id} onClick={() => setFichaId(x.id)} className={`border-t border-white/[0.04] cursor-pointer transition-colors hover:bg-white/[0.035] ${cambiado ? "bg-[#FFD60A]/[0.04]" : ""}`}>
+                            <td className="px-4 py-3.5"><span className="font-mono text-[13px] font-semibold tracking-tight text-[#FFD60A]/90">{x.codigo}</span></td>
+                            <td className="px-4 py-3.5">
                               <span className="flex items-center gap-2 min-w-0">
-                                <span className={`text-sm font-bold truncate ${marcado ? "text-white" : "text-zinc-400"}`}>{x.nombre}</span>
+                                <span className={`text-[15px] font-semibold truncate ${marcado ? "text-zinc-100" : "text-zinc-500"}`}>{x.nombre}</span>
                                 <Origen o={x.origen} />
                               </span>
                             </td>
-                            <td className="px-3 py-1.5 text-right text-sm tabular-nums text-zinc-400">{x.demanda_mensual ? `${nf(x.demanda_mensual, 0)} u.` : "—"}</td>
-                            <td className="px-3 py-1.5 text-center">{marcado ? <Dias d={x.dias_stock} /> : <span className="text-zinc-600 text-xs">sin seguimiento</span>}</td>
-                            <td className={`px-3 py-1.5 text-right text-base font-extrabold tabular-nums ${st <= 0 ? "text-rose-300" : "text-white"}`}>
+                            <td className="px-4 py-3.5 text-right text-sm tabular-nums text-zinc-400">{x.demanda_mensual ? `${nf(x.demanda_mensual, 0)} u.` : "—"}</td>
+                            <td className="px-4 py-3.5 text-center">{marcado ? <Dias d={x.dias_stock} /> : <span className="text-zinc-600 text-xs">sin seguimiento</span>}</td>
+                            <td className={`px-4 py-3.5 text-right text-base font-extrabold tabular-nums ${st <= 0 ? "text-rose-300" : "text-zinc-50"}`}>
                               {nf(st)}
                               {comprometido[x.id] > 0 && (dep === "33" || dep === "GENERAL") && <ChipComprometido n={comprometido[x.id]} onClick={() => setVerComprometido(x)} />}
                             </td>
-                            <td className="px-3 py-1.5 text-center"><Tilde marcado={marcado} cambiado={cambiado} onChange={(v) => marcar(x, v)} etiqueta={`Seguir demanda de ${x.codigo}`} /></td>
+                            <td className="px-4 py-3.5 text-center"><Tilde marcado={marcado} cambiado={cambiado} onChange={(v) => marcar(x, v)} etiqueta={`Seguir demanda de ${x.codigo}`} /></td>
                           </tr>
                         );
                       })}
@@ -459,7 +490,21 @@ export default function Semielaborados() {
 
         {toastNodo}
         <Comprometido key={verComprometido?.id || "nada"} semi={verComprometido} onCerrar={() => setVerComprometido(null)} />
-        <FichaSemi item={ficha} comprometido={ficha ? comprometido[ficha.id] || 0 : 0} onVerComprometido={() => setVerComprometido(ficha)} seguir={ficha ? efectivo(ficha) : false} onCerrar={() => setFichaId(null)} onClasificar={clasificar} onCambio={() => cargar(true)} />
+        <FichaSemi item={ficha} comprometido={ficha ? comprometido[ficha.id] || 0 : 0} onVerComprometido={() => setVerComprometido(ficha)} seguir={ficha ? efectivo(ficha) : false} onCerrar={() => setFichaId(null)} onClasificar={clasificar} onCambio={() => cargar(true)} onEliminar={pedirBorrar} />
+        <ConfirmarBorrado
+          abierto={!!borrar}
+          titulo={borrar ? `¿Eliminar ${borrar.item.codigo}?` : ""}
+          mensaje={borrar ? `Se elimina “${borrar.item.nombre}”. Esta acción no se puede deshacer.` : ""}
+          lineas={borrar?.impacto ? [
+            ...(borrar.impacto.recetas_usan > 0 ? [`Se quita de ${borrar.impacto.recetas_usan} ${borrar.impacto.recetas_usan === 1 ? "receta que lo usa" : "recetas que lo usan"} como ingrediente.`] : []),
+            ...(borrar.impacto.recetas_propias > 0 ? [`Se borran sus ${borrar.impacto.recetas_propias} ${borrar.impacto.recetas_propias === 1 ? "receta propia" : "recetas propias"}.`] : []),
+            ...(!borrar.impacto.recetas_usan && !borrar.impacto.recetas_propias ? ["No está en ninguna receta."] : []),
+          ] : (borrar ? ["Calculando impacto…"] : [])}
+          borrando={borrar?.borrando}
+          onConfirmar={confirmarBorrar}
+          onCancelar={() => setBorrar(null)}
+          textoConfirmar="Eliminar"
+        />
         {verCamion && <CamionParaguay onClose={() => setVerCamion(false)} />}
         {sheets && <SincronizarSemis key={sheetsKey} datos={sheets} aplicando={aplicando} onCerrar={() => setSheets(null)} onAplicar={aplicarSheets} />}
       </div>
