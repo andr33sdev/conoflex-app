@@ -1,5 +1,5 @@
 import { lazy, Suspense } from "react";
-import { Sparkle } from "lucide-react";
+import { Sparkle, Trash2 } from "lucide-react";
 import { Drawer } from "../produccion/ui";
 import Movimientos from "./Movimientos";
 import { modeloDe } from "../visor3d/modelos";
@@ -10,7 +10,7 @@ const ORIGENES = [["FABRICA", "Se fabrica"], ["PROVEEDOR", "Se compra"], ["PARAG
 const n0 = (v) => Number(v || 0).toLocaleString("es-AR", { maximumFractionDigits: 2 });
 
 /** Ficha lateral de un semielaborado: cómo se consigue, stock por depósito, movimientos y pegado. */
-export default function FichaSemi({ item, seguir, onCerrar, onClasificar, onCambio, comprometido = 0, onVerComprometido }) {
+export default function FichaSemi({ item, seguir, onCerrar, onClasificar, onCambio, comprometido = 0, onVerComprometido, onEliminar }) {
   const en3d = item ? modeloDe(item) : null;
   return (
     <Drawer
@@ -87,6 +87,17 @@ export default function FichaSemi({ item, seguir, onCerrar, onClasificar, onCamb
               <p className="mt-3 text-sm text-zinc-500">No requiere pegado.</p>
             )}
           </section>
+
+          {onEliminar && (
+            <section className="pt-1">
+              <button
+                onClick={() => onEliminar(item)}
+                className="w-full min-h-[48px] rounded-2xl border border-rose-500/25 bg-rose-500/[0.06] text-sm font-bold text-rose-300 hover:bg-rose-500/[0.12] inline-flex items-center justify-center gap-2 cursor-pointer transition-colors"
+              >
+                <Trash2 size={16} /> Eliminar semielaborado
+              </button>
+            </section>
+          )}
         </div>
       )}
     </Drawer>

@@ -3122,6 +3122,27 @@ app.get("/api/productos-terminados", async (req, res) => {
   }
 });
 
+// Borrar un producto terminado. Si tiene recetas, primero devuelve el impacto (409) salvo ?forzar=1.
+app.delete("/api/productos-terminados/:id", requirePermiso("ingenieria"), async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) return res.status(400).json({ error: "Id inválido." });
+    const [[pt]] = await db.query("SELECT id, codigo, nombre FROM productos_terminados WHERE id = ?", [id]);
+    if (!pt) return res.status(404).json({ error: "Ese producto terminado no existe." });
+    const [[r]] = await db.query("SELECT COUNT(*) AS n FROM ingenierias WHERE producto_terminado_id = ?", [id]);
+    const recetas = Number(r?.n) || 0;
+    // Sin ?forzar=1 no se borra nada: solo se devuelve el impacto para confirmar.
+    if (req.query.forzar !== "1") {
+      return res.json({ impacto: true, recetas, codigo: pt.codigo, nombre: pt.nombre });
+    }
+    // El borrado en cascada limpia sus recetas (ingenierías y sus detalles).
+    await db.query("DELETE FROM productos_terminados WHERE id = ?", [id]);
+    res.json({ ok: true, eliminado: pt.codigo });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 app.post("/api/productos-terminados/sincronizar-ventas", async (req, res) => {
   const csvUrl = req.body?.csvUrl || VENTAS_CSV_URL;
   if (!csvUrl || csvUrl.startsWith("PEGA_AQUI")) {

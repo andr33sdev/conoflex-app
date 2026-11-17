@@ -7,6 +7,7 @@ import { useToast } from "./produccion/useToast";
 import Confirmacion from "./ingenieria/Confirmacion";
 import EditorReceta from "./ingenieria/EditorReceta";
 import LibroRecetas from "./ingenieria/LibroRecetas";
+import ConfirmarBorrado from "./produccion/ConfirmarBorrado";
 import { fechaCorta, kgLindo, norm } from "./ingenieria/formato";
 
 const suave = [0.2, 0.8, 0.2, 1];
@@ -77,6 +78,7 @@ export default function Ingenieria({ usuarioActual }) {
   const [editor, setEditor] = useState({ k: 0, receta: null, cantidad: 0 });
   const [editorAbierto, setEditorAbierto] = useState(false);
   const [conf, setConf] = useState(null);
+  const [borrarProd, setBorrarProd] = useState(null);
   const [alertaPendiente, setAlertaPendiente] = useState(() => new URLSearchParams(window.location.search).get("alerta"));
   const { mostrar: toast, nodo: toastNodo } = useToast();
 
@@ -171,6 +173,34 @@ export default function Ingenieria({ usuarioActual }) {
   const abrirEditor = (receta, cantidad) => {
     setEditor((e) => ({ k: e.k + 1, receta, cantidad }));
     setEditorAbierto(true);
+  };
+  // Borrar el producto abierto (PT o SE).
+  const rutaBorrar = (p) => (p.type === "PT" ? `/api/productos-terminados/${p.id}` : `/api/semielaborados/${p.id}`);
+  const pedirBorrarProd = async (p) => {
+    setBorrarProd({ prod: p, impacto: null, borrando: false });
+    try {
+      // DELETE sin ?forzar=1 no borra: solo devuelve el impacto para confirmar.
+      const imp = await api(rutaBorrar(p), { method: "DELETE" });
+      setBorrarProd((b) => (b && b.prod.id === p.id ? { ...b, impacto: imp } : b));
+    } catch (e) {
+      setBorrarProd(null);
+      toast(e.message || "No se pudo preparar el borrado.", "error");
+    }
+  };
+  const confirmarBorrarProd = async () => {
+    if (!borrarProd) return;
+    const p = borrarProd.prod;
+    setBorrarProd((b) => ({ ...b, borrando: true }));
+    try {
+      await api(`${rutaBorrar(p)}?forzar=1`, { method: "DELETE" });
+      setBorrarProd(null);
+      setLibroAbierto(false);
+      setTick((t) => t + 1);
+      toast(`${p.codigo} eliminado`);
+    } catch (e) {
+      setBorrarProd((b) => (b ? { ...b, borrando: false } : b));
+      toast(e.message || "No se pudo eliminar.", "error");
+    }
   };
   const avisar = useCallback((texto, detalle) => {
     setConf({ texto, detalle });
@@ -327,7 +357,7 @@ export default function Ingenieria({ usuarioActual }) {
         )}
       </div>
 
-      <LibroRecetas parent={parent} abierto={libroAbierto} onCerrar={() => setLibroAbierto(false)} onCambio={avisar} onNueva={(n) => abrirEditor(null, n)} onEditar={abrirEditor} version={version} admin={admin} toast={toast} />
+      <LibroRecetas parent={parent} abierto={libroAbierto} onCerrar={() => setLibroAbierto(false)} onCambio={avisar} onNueva={(n) => abrirEditor(null, n)} onEditar={abrirEditor} version={version} admin={admin} toast={toast} onEliminarProducto={pedirBorrarProd} />
       <EditorReceta
         abierto={editorAbierto}
         clave={editor.k}
@@ -346,6 +376,26 @@ export default function Ingenieria({ usuarioActual }) {
         toast={toast}
       />
       <Confirmacion texto={conf?.texto} detalle={conf?.detalle} />
+      <ConfirmarBorrado
+        abierto={!!borrarProd}
+        titulo={borrarProd ? `¿Eliminar ${borrarProd.prod.codigo}?` : ""}
+        mensaje={borrarProd ? `Se elimina “${borrarProd.prod.nombre}”${borrarProd.prod.type === "PT" ? " (producto terminado)" : " (semielaborado)"}. Esta acción no se puede deshacer.` : ""}
+        lineas={borrarProd?.impacto ? (
+          borrarProd.prod.type === "PT"
+            ? (borrarProd.impacto.recetas > 0
+                ? [`Se borran sus ${borrarProd.impacto.recetas} ${borrarProd.impacto.recetas === 1 ? "receta" : "recetas"}.`]
+                : ["No tiene recetas cargadas."])
+            : [
+                ...(borrarProd.impacto.recetas_usan > 0 ? [`Se quita de ${borrarProd.impacto.recetas_usan} ${borrarProd.impacto.recetas_usan === 1 ? "receta que lo usa" : "recetas que lo usan"}.`] : []),
+                ...(borrarProd.impacto.recetas_propias > 0 ? [`Se borran sus ${borrarProd.impacto.recetas_propias} ${borrarProd.impacto.recetas_propias === 1 ? "receta propia" : "recetas propias"}.`] : []),
+                ...(!borrarProd.impacto.recetas_usan && !borrarProd.impacto.recetas_propias ? ["No está en ninguna receta."] : []),
+              ]
+        ) : (borrarProd ? ["Calculando impacto…"] : [])}
+        borrando={borrarProd?.borrando}
+        onConfirmar={confirmarBorrarProd}
+        onCancelar={() => setBorrarProd(null)}
+        textoConfirmar="Eliminar"
+      />
       {toastNodo}
     </div>
   );
