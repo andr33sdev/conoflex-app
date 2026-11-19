@@ -195,15 +195,16 @@ function ventanaAbierta(ultimoCliente, ahora = new Date()) {
  * Devuelve el texto (un JSON) para parsear con parsearJson. Se le "prefilla" una llave para
  * forzar que empiece el JSON. Si no hay ANTHROPIC_API_KEY, devuelve null (se usa Gemini).
  */
-async function llamarClaude(sistema, contents, { temperature = 0.3 } = {}) {
+async function llamarClaude(sistema, contents) {
   const key = process.env.ANTHROPIC_API_KEY;
   if (!key) return null;
   const messages = contents.map((c) => ({ role: c.role === "model" ? "assistant" : "user", content: [{ type: "text", text: c.parts.map((p) => p.text).join("\n") }] }));
   messages.push({ role: "assistant", content: [{ type: "text", text: "{" }] }); // prefill: fuerza a arrancar el JSON
+  // No se manda "temperature": los modelos nuevos (5.x) lo tienen deprecado.
   const res = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: { "x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json" },
-    body: JSON.stringify({ model: CLAUDE_MODELO, max_tokens: 1200, temperature, system: sistema, messages }),
+    body: JSON.stringify({ model: CLAUDE_MODELO, max_tokens: 1200, system: sistema, messages }),
     signal: AbortSignal.timeout(30000),
   });
   if (!res.ok) throw new Error(`Claude ${res.status}: ${corto(await res.text().catch(() => ""), 200)}`);
@@ -512,7 +513,7 @@ function crearBotWhatsapp({ db, ai, leerLista, notasTexto, crearNotificacion, im
     // Claude procesa la respuesta; si no hay clave o Claude falla, se usa Gemini como respaldo.
     let crudo = null;
     try {
-      crudo = await llamarClaude(sistema, contents, { temperature: 0.3 });
+      crudo = await llamarClaude(sistema, contents);
     } catch (e) {
       console.error("[whatsapp] Claude falló, uso Gemini:", e.message);
     }
