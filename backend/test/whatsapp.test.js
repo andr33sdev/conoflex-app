@@ -125,6 +125,18 @@ test("salida: captura la ficha de memoria del cliente", () => {
   assert.equal(w.normalizarSalida({ respuesta: "Hola" }).memoria, ""); // sin memoria → vacío
 });
 
+test("salida: capta el pedido de nota de voz (audio)", () => {
+  assert.equal(w.normalizarSalida({ respuesta: "Te explico", audio: true }).audio, true);
+  assert.equal(w.normalizarSalida({ respuesta: "Hola" }).audio, false); // por defecto no
+  assert.equal(w.normalizarSalida({ respuesta: "Hola", audio: "si" }).audio, false); // solo true literal
+});
+
+test("instrucciones: guía de nota de voz solo para explicaciones", () => {
+  const i = w.instrucciones({ reglasComerciales: "", reglasWhatsapp: "", notas: "", correcciones: "", catalogo: "1025 | Cono", tieneLista: false });
+  assert.match(i, /NOTA DE VOZ/);
+  assert.match(i, /"audio"/); // está en el formato de salida
+});
+
 test("presupuesto: con varios ítems el título cambia a Presupuesto", () => {
   const calc = { lineas: [
     { codigo: "A", nombre: "Cono", cantidad: 2, unitario: 100, subtotal: 200 },

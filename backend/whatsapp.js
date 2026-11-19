@@ -22,6 +22,9 @@ const fs = require("fs");
 const path = require("path");
 const fotos = require("./fotosCatalogo");
 const { leerPrecios } = require("./comercial/catalogo");
+// vozLlamada se carga de forma diferida (dentro de la función) para no crear dependencia circular:
+// vozLlamada ya requiere a este módulo (catalogoTexto, corto).
+const voz = () => require("./vozLlamada");
 
 const MODELO = "gemini-2.5-flash";
 const ESPERA_MS = 3000; // junta los mensajes que el cliente manda seguidos
@@ -218,6 +221,12 @@ PRODUCTOS Y PRECIOS
 - Si quieren ver un producto, poné su código en "fotos" (solo si dice "tiene foto"; máximo ${MAX_FOTOS}).
 ${tieneLista ? '- Si piden la lista de precios completa o el catálogo, poné "enviar_lista": true.' : "- Hoy no hay lista de precios en PDF para mandar: pasá los precios por mensaje."}
 
+CUÁNDO MANDAR UNA NOTA DE VOZ ("audio": true)
+- Solo cuando una EXPLICACIÓN se entiende mejor hablada que escrita: diferencias entre dos productos, cómo se instala o se usa algo, por qué conviene una opción, una recomendación con matices.
+- NO uses audio para: precios, códigos, medidas, presupuestos, listas de datos, confirmaciones cortas, un "sí/no", o cuando estás derivando. Eso va en texto (la voz puede leer mal un código o un número).
+- Si mandás audio, "respuesta" es lo que se va a decir: texto natural, hablado, sin asteriscos ni emojis ni códigos. Corto (unos pocos segundos, máximo ~4 renglones). No pongas "items" ni precios en un mensaje de audio.
+- En la duda, texto. El audio es el extra para lo que vale la pena decir en voz.
+
 NO INVENTES NUNCA
 - Precios, medidas, alturas, stock, plazos, descuentos, formas de pago: solo lo que está en el CATÁLOGO y las REGLAS. Si no está, no lo afirmes.
 - Si no sabés algo o el cliente pide algo que no figura, decilo con naturalidad y derivá, en vez de improvisar. Es mejor "lo confirmo con el equipo" que un dato inventado.
@@ -243,7 +252,7 @@ RECORDÁ: "respuesta" es texto plano de WhatsApp. NUNCA HTML (<div>, <table>, <b
 MEMORIA: en "memoria" devolvé una ficha breve y actualizada del cliente (máx 400 caracteres) para la próxima charla: nombre, zona/ciudad, rubro, qué productos le interesan, cantidades o pedidos que mencionó, y cualquier dato útil. Reescribí la ficha completa cada vez (no un historial largo): sumá lo nuevo y descartá lo que ya no sirve. Si no hay nada nuevo, repetí la ficha que ya tenías.
 
 FORMATO DE SALIDA: solo un JSON así:
-{"respuesta": "texto para el cliente", "items": [{"codigo": "...", "cantidad": 0}], "nota_total": "ej: más IVA", "fotos": ["codigo"], "enviar_lista": false, "derivar": false, "motivo": "por qué derivás (solo si derivar)", "memoria": "ficha breve del cliente para recordar"}`;
+{"respuesta": "texto para el cliente", "audio": false, "items": [{"codigo": "...", "cantidad": 0}], "nota_total": "ej: más IVA", "fotos": ["codigo"], "enviar_lista": false, "derivar": false, "motivo": "por qué derivás (solo si derivar)", "memoria": "ficha breve del cliente para recordar"}`;
 }
 
 /** Arma el historial para la IA: los mensajes en orden, cada uno con quién lo escribió. */
@@ -307,6 +316,7 @@ function normalizarSalida(crudo) {
     derivar: crudo.derivar === true,
     motivo: typeof crudo.motivo === "string" ? crudo.motivo.slice(0, 300) : "",
     memoria: typeof crudo.memoria === "string" ? crudo.memoria.trim().slice(0, 600) : "",
+    audio: crudo.audio === true,
   };
 }
 
@@ -414,6 +424,16 @@ async function enviarDocumento(to, { nombre, datos }) {
   return graph(`${cfg().phoneId}/messages`, { method: "POST", body: { messaging_product: "whatsapp", to, type: "document", document: { id: subida.id, filename: nombre } } });
 }
 
+/** Envía una nota de voz: sube el mp3 (base64) y lo manda como audio. */
+async function enviarAudio(to, base64mp3) {
+  const form = new FormData();
+  form.append("messaging_product", "whatsapp");
+  form.append("type", "audio/mpeg");
+  form.append("file", new Blob([Buffer.from(base64mp3, "base64")], { type: "audio/mpeg" }), "aldana.mp3");
+  const subida = await graph(`${cfg().phoneId}/media`, { method: "POST", form });
+  return graph(`${cfg().phoneId}/messages`, { method: "POST", body: { messaging_product: "whatsapp", to, type: "audio", audio: { id: subida.id } } });
+}
+
 /** Marca como leído y muestra "escribiendo…" mientras se arma la respuesta. Si falla no importa. */
 const marcarLeido = (waId) => graph(`${cfg().phoneId}/messages`, { method: "POST", body: { messaging_product: "whatsapp", status: "read", message_id: waId, typing_indicator: { type: "text" } } }).catch(() => null);
 
@@ -473,7 +493,9 @@ function crearBotWhatsapp({ db, ai, leerLista, notasTexto, crearNotificacion, im
       .filter(Boolean)
       .map((p) => ({ codigo: p.codigo, nombre: p.nombre, url: urlFotoPublica(p.foto_catalogo || p.foto_tecnica) }))
       .filter((f) => f.url);
-    return { texto, fotos, enviarLista: salida.enviarLista && ctx.tieneLista, derivar: salida.derivar, motivo: salida.motivo, memoria: salida.memoria };
+    // La nota de voz solo vale para explicaciones: sin cálculo, sin fotos de por medio, sin derivar y breve.
+    const audio = salida.audio && !calc && !salida.derivar && !!salida.respuesta && salida.respuesta.length <= 600;
+    return { texto, respuesta: salida.respuesta, fotos, enviarLista: salida.enviarLista && ctx.tieneLista, derivar: salida.derivar, motivo: salida.motivo, memoria: salida.memoria, audio };
   }
 
   async function guardarMensaje(conversacionId, { waId = null, direccion, autor, tipo = "text", texto, usuarioId = null, error = null }) {
@@ -607,12 +629,28 @@ function crearBotWhatsapp({ db, ai, leerLista, notasTexto, crearNotificacion, im
       if (r.memoria && r.memoria !== (conv.memoria || "")) {
         await db.query("UPDATE wa_conversaciones SET memoria = ? WHERE id = ?", [r.memoria.slice(0, 600), conversacionId]).catch(() => {});
       }
-      try {
-        const env = await enviarTexto(conv.telefono, r.texto);
-        await guardarMensaje(conversacionId, { waId: env?.messages?.[0]?.id, direccion: "OUT", autor: "BOT", texto: r.texto });
-      } catch (e) {
-        await guardarMensaje(conversacionId, { direccion: "OUT", autor: "BOT", texto: r.texto, error: corto(e.message, 290) });
-        throw e;
+      // Nota de voz: solo para explicaciones, si hay voz configurada y no está desactivada.
+      let audioEnviado = false;
+      if (r.audio && voz().vozConfigurada() && (await leerRegla(db, "wa_audio_activo")) !== "0") {
+        try {
+          const mp3 = await voz().sintetizar(r.respuesta);
+          if (mp3) {
+            const env = await enviarAudio(conv.telefono, mp3);
+            await guardarMensaje(conversacionId, { waId: env?.messages?.[0]?.id, direccion: "OUT", autor: "BOT", tipo: "audio", texto: `🎤 ${r.respuesta}` });
+            audioEnviado = true;
+          }
+        } catch (e) {
+          console.error("[whatsapp] audio:", e.message); // si falla, cae a texto
+        }
+      }
+      if (!audioEnviado) {
+        try {
+          const env = await enviarTexto(conv.telefono, r.texto);
+          await guardarMensaje(conversacionId, { waId: env?.messages?.[0]?.id, direccion: "OUT", autor: "BOT", texto: r.texto });
+        } catch (e) {
+          await guardarMensaje(conversacionId, { direccion: "OUT", autor: "BOT", texto: r.texto, error: corto(e.message, 290) });
+          throw e;
+        }
       }
       for (const f of r.fotos) {
         try {
