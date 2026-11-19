@@ -192,24 +192,23 @@ function ventanaAbierta(ultimoCliente, ahora = new Date()) {
 
 /**
  * Procesa la respuesta con Claude (Anthropic). Usa el mismo prompt de sistema y el historial.
- * Devuelve el texto (un JSON) para parsear con parsearJson. Se le "prefilla" una llave para
- * forzar que empiece el JSON. Si no hay ANTHROPIC_API_KEY, devuelve null (se usa Gemini).
+ * Devuelve el texto (un JSON) para parsear con parsearJson. Si no hay ANTHROPIC_API_KEY, devuelve
+ * null (se usa Gemini). Nota: no se manda "temperature" ni se "prefilla" la respuesta del
+ * asistente; los modelos nuevos (5.x) no lo aceptan. parsearJson extrae el JSON aunque venga texto alrededor.
  */
-async function llamarClaude(sistema, contents, { temperature = 0.3 } = {}) {
+async function llamarClaude(sistema, contents) {
   const key = process.env.ANTHROPIC_API_KEY;
   if (!key) return null;
   const messages = contents.map((c) => ({ role: c.role === "model" ? "assistant" : "user", content: [{ type: "text", text: c.parts.map((p) => p.text).join("\n") }] }));
-  messages.push({ role: "assistant", content: [{ type: "text", text: "{" }] }); // prefill: fuerza a arrancar el JSON
   const res = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: { "x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json" },
-    body: JSON.stringify({ model: CLAUDE_MODELO, max_tokens: 1200, temperature, system: sistema, messages }),
+    body: JSON.stringify({ model: CLAUDE_MODELO, max_tokens: 1200, system: sistema, messages }),
     signal: AbortSignal.timeout(30000),
   });
   if (!res.ok) throw new Error(`Claude ${res.status}: ${corto(await res.text().catch(() => ""), 200)}`);
   const data = await res.json();
-  const texto = (data?.content || []).filter((b) => b.type === "text").map((b) => b.text).join("");
-  return "{" + texto; // le devolvemos la llave que prefillamos
+  return (data?.content || []).filter((b) => b.type === "text").map((b) => b.text).join("");
 }
 
 function instrucciones({ reglasComerciales, reglasWhatsapp, notas, correcciones, catalogo, tieneLista, memoria, yaSaludoHoy }) {
@@ -512,7 +511,7 @@ function crearBotWhatsapp({ db, ai, leerLista, notasTexto, crearNotificacion, im
     // Claude procesa la respuesta; si no hay clave o Claude falla, se usa Gemini como respaldo.
     let crudo = null;
     try {
-      crudo = await llamarClaude(sistema, contents, { temperature: 0.3 });
+      crudo = await llamarClaude(sistema, contents);
     } catch (e) {
       console.error("[whatsapp] Claude falló, uso Gemini:", e.message);
     }
