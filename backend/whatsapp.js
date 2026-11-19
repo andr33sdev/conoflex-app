@@ -26,7 +26,8 @@ const { leerPrecios } = require("./comercial/catalogo");
 // vozLlamada ya requiere a este módulo (catalogoTexto, corto).
 const voz = () => require("./vozLlamada");
 
-const MODELO = "gemini-2.5-flash";
+const MODELO = "gemini-2.5-flash"; // Gemini: se usa para ver fotos y como respaldo si no hay clave de Claude
+const CLAUDE_MODELO = process.env.CLAUDE_MODELO || "claude-sonnet-4-5"; // Claude procesa las respuestas de texto
 const ESPERA_MS = 3000; // junta los mensajes que el cliente manda seguidos
 const PAUSA_HORAS = 12; // cuánto queda pausado el bot cuando interviene una persona o deriva
 const MAX_HISTORIAL = 24;
@@ -189,14 +190,37 @@ function ventanaAbierta(ultimoCliente, ahora = new Date()) {
   return ahora.getTime() - new Date(ultimoCliente).getTime() < 24 * 3600 * 1000;
 }
 
-function instrucciones({ reglasComerciales, reglasWhatsapp, notas, correcciones, catalogo, tieneLista, memoria }) {
+/**
+ * Procesa la respuesta con Claude (Anthropic). Usa el mismo prompt de sistema y el historial.
+ * Devuelve el texto (un JSON) para parsear con parsearJson. Se le "prefilla" una llave para
+ * forzar que empiece el JSON. Si no hay ANTHROPIC_API_KEY, devuelve null (se usa Gemini).
+ */
+async function llamarClaude(sistema, contents, { temperature = 0.3 } = {}) {
+  const key = process.env.ANTHROPIC_API_KEY;
+  if (!key) return null;
+  const messages = contents.map((c) => ({ role: c.role === "model" ? "assistant" : "user", content: [{ type: "text", text: c.parts.map((p) => p.text).join("\n") }] }));
+  messages.push({ role: "assistant", content: [{ type: "text", text: "{" }] }); // prefill: fuerza a arrancar el JSON
+  const res = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: { "x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json" },
+    body: JSON.stringify({ model: CLAUDE_MODELO, max_tokens: 1200, temperature, system: sistema, messages }),
+    signal: AbortSignal.timeout(30000),
+  });
+  if (!res.ok) throw new Error(`Claude ${res.status}: ${corto(await res.text().catch(() => ""), 200)}`);
+  const data = await res.json();
+  const texto = (data?.content || []).filter((b) => b.type === "text").map((b) => b.text).join("");
+  return "{" + texto; // le devolvemos la llave que prefillamos
+}
+
+function instrucciones({ reglasComerciales, reglasWhatsapp, notas, correcciones, catalogo, tieneLista, memoria, yaSaludoHoy }) {
   return `Sos Aldana, la vendedora que atiende el WhatsApp de ventas de Conoflex Argentina, fábrica de productos de seguridad vial (conos, reductores de velocidad, topes de estacionamiento, separadores de carril, delineadores y más). Atendés como una buena vendedora: resolvés rápido, asesorás y ayudás a cerrar la compra, sin ser insistente ni robótica.
 
 CÓMO ESCRIBIR
 - Es WhatsApp: mensajes cortos, claros y amables. Español rioplatense (vos). Nada de párrafos largos ni listas eternas.
 - Para resaltar usá *negrita* de WhatsApp (un asterisco). Nunca uses markdown con ** ni títulos con #.
 - Respondé exactamente lo que preguntan. Si falta un dato para ayudar (cantidad, medida, uso), preguntalo en una línea.
-- No saludes de nuevo si ya hay conversación. Si sabés el nombre del cliente, usalo con naturalidad (sin abusar).
+- Saludá con "¡Hola!" como mucho UNA vez por día. ${yaSaludoHoy ? "Ya lo saludaste hoy: NO vuelvas a saludar, seguí la charla directo." : "Todavía no lo saludaste hoy: podés saludar una vez."} Dentro de la misma charla no repitas el saludo.
+- Dirigite a la persona por su NOMBRE propio (si lo sabés por la ficha), con naturalidad y sin abusar. NUNCA la llames por su razón social ni la nombres en el mensaje: es raro saludar a una empresa. La razón social es solo un dato interno tuyo para ubicar al cliente. Si solo tenés la razón social y no un nombre de persona, no uses nombre.
 - Respondé siempre a lo ÚLTIMO que mandó el cliente. Si mandó una foto nueva, hablá de ESA foto: las anteriores ya se respondieron.
 
 CÓMO VENDER (sin ser pesada)
@@ -222,10 +246,10 @@ PRODUCTOS Y PRECIOS
 ${tieneLista ? '- Si piden la lista de precios completa o el catálogo, poné "enviar_lista": true.' : "- Hoy no hay lista de precios en PDF para mandar: pasá los precios por mensaje."}
 
 CUÁNDO MANDAR UNA NOTA DE VOZ ("audio": true)
-- Solo cuando una EXPLICACIÓN se entiende mejor hablada que escrita: diferencias entre dos productos, cómo se instala o se usa algo, por qué conviene una opción, una recomendación con matices.
-- NO uses audio para: precios, códigos, medidas, presupuestos, listas de datos, confirmaciones cortas, un "sí/no", o cuando estás derivando. Eso va en texto (la voz puede leer mal un código o un número).
-- Si mandás audio, "respuesta" es lo que se va a decir: texto natural, hablado, sin asteriscos ni emojis ni códigos. Corto (unos pocos segundos, máximo ~4 renglones). No pongas "items" ni precios en un mensaje de audio.
-- En la duda, texto. El audio es el extra para lo que vale la pena decir en voz.
+- Mandá audio cuando el cliente pide (o te conviene dar) una EXPLICACIÓN que se entiende mejor hablada: diferencias o comparación entre productos, cómo se instala o se usa algo, por qué conviene una opción, una recomendación con matices, un consejo. En esos casos, elegí audio.
+- NO uses audio para: precios, códigos, medidas, presupuestos, listas de datos, confirmaciones cortas, un "sí/no", pasar la lista, o cuando estás derivando. Eso va en texto (la voz puede leer mal un código o un número).
+- Si mandás audio, "respuesta" es lo que se va a decir: texto natural, hablado, sin asteriscos ni emojis ni códigos ni números largos. Corto (unos pocos segundos, máximo ~4 renglones). No pongas "items" ni precios en un mensaje de audio.
+- Regla práctica: si tu respuesta es sobre todo una explicación o comparación (no datos duros), mandala en audio.
 
 NO INVENTES NUNCA
 - Precios, medidas, alturas, stock, plazos, descuentos, formas de pago: solo lo que está en el CATÁLOGO y las REGLAS. Si no está, no lo afirmes.
@@ -249,7 +273,7 @@ ${catalogo || "(catálogo vacío: no pases precios y derivá)"}
 
 RECORDÁ: "respuesta" es texto plano de WhatsApp. NUNCA HTML (<div>, <table>, <b>, style=…), NUNCA markdown con ** ni #. Solo texto, saltos de línea y *negrita*.
 
-MEMORIA: en "memoria" devolvé una ficha breve y actualizada del cliente (máx 400 caracteres) para la próxima charla: nombre, zona/ciudad, rubro, qué productos le interesan, cantidades o pedidos que mencionó, y cualquier dato útil. Reescribí la ficha completa cada vez (no un historial largo): sumá lo nuevo y descartá lo que ya no sirve. Si no hay nada nuevo, repetí la ficha que ya tenías.
+MEMORIA: en "memoria" devolvé una ficha breve y actualizada del cliente (máx 400 caracteres) para la próxima charla. Guardá POR SEPARADO el nombre de la persona y la razón social (si la sabés), por ejemplo "Nombre: Andrés | Razón social: Conoflex SA (no nombrarla)". Sumá zona/ciudad, rubro, qué productos le interesan, cantidades o pedidos que mencionó, y cualquier dato útil. Reescribí la ficha completa cada vez (no un historial largo): sumá lo nuevo y descartá lo que ya no sirve. Si no hay nada nuevo, repetí la ficha que ya tenías.
 
 FORMATO DE SALIDA: solo un JSON así:
 {"respuesta": "texto para el cliente", "audio": false, "items": [{"codigo": "...", "cantidad": 0}], "nota_total": "ej: más IVA", "fotos": ["codigo"], "enviar_lista": false, "derivar": false, "motivo": "por qué derivás (solo si derivar)", "memoria": "ficha breve del cliente para recordar"}`;
@@ -377,8 +401,8 @@ async function asegurarTablasWhatsapp(db) {
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     INDEX (codigo)
   )`);
-  // Último mensaje del cliente ya respondido (por el bot o por una persona), y ficha de memoria del cliente.
-  for (const [col, def] of [["ultimo_in_respondido", "INT NULL"], ["memoria", "TEXT NULL"]]) {
+  // Último mensaje del cliente ya respondido, ficha de memoria, y fecha del último saludo (para no saludar dos veces por día).
+  for (const [col, def] of [["ultimo_in_respondido", "INT NULL"], ["memoria", "TEXT NULL"], ["ultimo_saludo_en", "DATE NULL"]]) {
     const [c] = await db.query("SELECT 1 FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'wa_conversaciones' AND column_name = ?", [col]);
     if (!c.length) await db.query(`ALTER TABLE wa_conversaciones ADD COLUMN ${col} ${def}`);
   }
@@ -477,13 +501,23 @@ function crearBotWhatsapp({ db, ai, leerLista, notasTexto, crearNotificacion, im
   }
 
   /** Lo que respondería el bot a esta conversación. No envía nada (lo usa también la pestaña Probar). */
-  async function pensar(mensajes, memoria = "") {
+  async function pensar(mensajes, memoria = "", yaSaludoHoy = false) {
     const ctx = await contexto();
-    const sistema = instrucciones({ ...ctx, catalogo: catalogoTexto(ctx.productos), memoria });
+    const sistema = instrucciones({ ...ctx, catalogo: catalogoTexto(ctx.productos), memoria, yaSaludoHoy });
     const contents = historialContents(mensajes.slice(-MAX_HISTORIAL));
     if (!contents.length) throw new Error("No hay mensajes del cliente para responder.");
-    const r = await ai.models.generateContent({ model: MODELO, contents, config: { systemInstruction: sistema, responseMimeType: "application/json", temperature: 0.3 } });
-    const salida = normalizarSalida(parsearJson(r.text));
+    // Claude procesa la respuesta; si no hay clave o Claude falla, se usa Gemini como respaldo.
+    let crudo = null;
+    try {
+      crudo = await llamarClaude(sistema, contents, { temperature: 0.3 });
+    } catch (e) {
+      console.error("[whatsapp] Claude falló, uso Gemini:", e.message);
+    }
+    if (crudo == null) {
+      const r = await ai.models.generateContent({ model: MODELO, contents, config: { systemInstruction: sistema, responseMimeType: "application/json", temperature: 0.3 } });
+      crudo = r.text;
+    }
+    const salida = normalizarSalida(parsearJson(crudo));
     if (!salida) throw new Error("La IA no devolvió una respuesta legible.");
     const calc = calcularItems(salida.items, ctx.productos);
     const texto = [salida.respuesta, textoCalculo(calc, salida.notaTotal)].filter(Boolean).join("\n\n");
@@ -619,15 +653,22 @@ function crearBotWhatsapp({ db, ai, leerLista, notasTexto, crearNotificacion, im
       const hasta = ultimoSinResponder(mensajes, conv.ultimo_in_respondido);
       if (!hasta) return; // ya se respondió todo
       await db.query("UPDATE wa_conversaciones SET ultimo_in_respondido = ? WHERE id = ?", [hasta, conversacionId]);
+      // ¿Ya lo saludamos hoy? (para que no salude dos veces en el día)
+      const hoy = new Date().toISOString().slice(0, 10);
+      const saludoGuardado = conv.ultimo_saludo_en ? new Date(conv.ultimo_saludo_en).toISOString().slice(0, 10) : null;
+      const yaSaludoHoy = saludoGuardado === hoy;
       let r;
       try {
-        r = await pensar(mensajes, conv.memoria || "");
+        r = await pensar(mensajes, conv.memoria || "", yaSaludoHoy);
       } catch (e) {
         console.error("[whatsapp] IA:", e.message);
         r = { texto: "Gracias por escribirnos. En un momento te responde alguien del equipo.", fotos: [], enviarLista: false, derivar: true, motivo: "El bot no pudo responder (error de la IA)." };
       }
       if (r.memoria && r.memoria !== (conv.memoria || "")) {
         await db.query("UPDATE wa_conversaciones SET memoria = ? WHERE id = ?", [r.memoria.slice(0, 600), conversacionId]).catch(() => {});
+      }
+      if (!yaSaludoHoy) {
+        await db.query("UPDATE wa_conversaciones SET ultimo_saludo_en = ? WHERE id = ?", [hoy, conversacionId]).catch(() => {});
       }
       // Nota de voz: solo para explicaciones, si hay voz configurada y no está desactivada.
       let audioEnviado = false;
@@ -902,6 +943,7 @@ module.exports = {
   normalizarSalida,
   textoWhatsapp,
   instrucciones,
+  llamarClaude,
   urlFotoPublica,
   tieneLlamadas,
   corto,
