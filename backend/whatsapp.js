@@ -27,7 +27,7 @@ const { leerPrecios } = require("./comercial/catalogo");
 const voz = () => require("./vozLlamada");
 
 const MODELO = "gemini-2.5-flash"; // Gemini: se usa para ver fotos y como respaldo si no hay clave de Claude
-const CLAUDE_MODELO = process.env.CLAUDE_MODELO || "claude-sonnet-4-5-20250929"; // Claude procesa las respuestas de texto (nombre con fecha; configurable por .env)
+const CLAUDE_MODELO = process.env.CLAUDE_MODELO || "claude-3-5-sonnet-20241022"; // Claude procesa las respuestas de texto (modelo disponible en todas las cuentas; configurable por .env)
 const ESPERA_MS = 3000; // junta los mensajes que el cliente manda seguidos
 const PAUSA_HORAS = 12; // cuánto queda pausado el bot cuando interviene una persona o deriva
 const MAX_HISTORIAL = 24;
