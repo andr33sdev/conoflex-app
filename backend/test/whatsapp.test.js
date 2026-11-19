@@ -137,6 +137,22 @@ test("instrucciones: guía de nota de voz solo para explicaciones", () => {
   assert.match(i, /"audio"/); // está en el formato de salida
 });
 
+test("instrucciones: saludo una vez por día y nombre, no razón social", () => {
+  const ya = w.instrucciones({ reglasComerciales: "", reglasWhatsapp: "", notas: "", correcciones: "", catalogo: "x", tieneLista: false, yaSaludoHoy: true });
+  assert.match(ya, /NO vuelvas a saludar/);
+  const no = w.instrucciones({ reglasComerciales: "", reglasWhatsapp: "", notas: "", correcciones: "", catalogo: "x", tieneLista: false, yaSaludoHoy: false });
+  assert.match(no, /Todavía no lo saludaste hoy/);
+  assert.match(no, /NUNCA la llames por su razón social/);
+});
+
+test("Claude: sin ANTHROPIC_API_KEY devuelve null (se usa Gemini)", async () => {
+  const prev = process.env.ANTHROPIC_API_KEY;
+  delete process.env.ANTHROPIC_API_KEY;
+  const r = await w.llamarClaude("sistema", [{ role: "user", parts: [{ text: "hola" }] }]);
+  assert.equal(r, null);
+  if (prev) process.env.ANTHROPIC_API_KEY = prev;
+});
+
 test("presupuesto: con varios ítems el título cambia a Presupuesto", () => {
   const calc = { lineas: [
     { codigo: "A", nombre: "Cono", cantidad: 2, unitario: 100, subtotal: 200 },
