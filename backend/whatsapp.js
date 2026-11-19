@@ -204,7 +204,7 @@ async function llamarClaude(sistema, contents) {
   const res = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: { "x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json" },
-    body: JSON.stringify({ model: CLAUDE_MODELO, max_tokens: 1200, system: sistema, messages }),
+    body: JSON.stringify({ model: CLAUDE_MODELO, max_tokens: 4096, system: sistema, messages }),
     signal: AbortSignal.timeout(30000),
   });
   if (!res.ok) throw new Error(`Claude ${res.status}: ${corto(await res.text().catch(() => ""), 200)}`);
@@ -509,18 +509,19 @@ function crearBotWhatsapp({ db, ai, leerLista, notasTexto, crearNotificacion, im
     const sistema = instrucciones({ ...ctx, catalogo: catalogoTexto(ctx.productos), memoria, yaSaludoHoy });
     const contents = historialContents(mensajes.slice(-MAX_HISTORIAL));
     if (!contents.length) throw new Error("No hay mensajes del cliente para responder.");
-    // Claude procesa la respuesta; si no hay clave o Claude falla, se usa Gemini como respaldo.
+    // Claude procesa la respuesta; si no hay clave, falla o devuelve algo ilegible, se usa Gemini como respaldo.
     let crudo = null;
     try {
       crudo = await llamarClaude(sistema, contents);
     } catch (e) {
       console.error("[whatsapp] Claude falló, uso Gemini:", e.message);
     }
-    if (crudo == null) {
+    let salida = crudo != null ? normalizarSalida(parsearJson(crudo)) : null;
+    if (!salida) {
+      if (crudo != null) console.error("[whatsapp] Claude devolvió algo ilegible, uso Gemini. Cruda:", corto(crudo, 400));
       const r = await ai.models.generateContent({ model: MODELO, contents, config: { systemInstruction: sistema, responseMimeType: "application/json", temperature: 0.3 } });
-      crudo = r.text;
+      salida = normalizarSalida(parsearJson(r.text));
     }
-    const salida = normalizarSalida(parsearJson(crudo));
     if (!salida) throw new Error("La IA no devolvió una respuesta legible.");
     const calc = calcularItems(salida.items, ctx.productos);
     const texto = [salida.respuesta, textoCalculo(calc, salida.notaTotal)].filter(Boolean).join("\n\n");
