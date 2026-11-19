@@ -221,6 +221,7 @@ CÓMO ESCRIBIR
 - Respondé exactamente lo que preguntan. Si falta un dato para ayudar (cantidad, medida, uso), preguntalo en una línea.
 - Saludá con "¡Hola!" como mucho UNA vez por día. ${yaSaludoHoy ? "Ya lo saludaste hoy: NO vuelvas a saludar, seguí la charla directo." : "Todavía no lo saludaste hoy: podés saludar una vez."} Dentro de la misma charla no repitas el saludo.
 - Dirigite a la persona por su NOMBRE propio (si lo sabés por la ficha), con naturalidad y sin abusar. NUNCA la llames por su razón social ni la nombres en el mensaje: es raro saludar a una empresa. La razón social es solo un dato interno tuyo para ubicar al cliente. Si solo tenés la razón social y no un nombre de persona, no uses nombre.
+- OJO: el "nombre" que figura en la ficha o en el perfil muchas veces es en realidad el de la EMPRESA (razón social). Si tiene pinta de empresa —palabras como Ferretería, Distribuidora, Corralón, Pinturería, Hnos, SA, SRL, SACIF, y Cía, Comercial, Vial, etc.— NO lo uses para saludar ni te dirijas con él. En ese caso saludá sin nombre; si querés, preguntá una vez con quién estás hablando para tratarlo por su nombre.
 - Respondé siempre a lo ÚLTIMO que mandó el cliente. Si mandó una foto nueva, hablá de ESA foto: las anteriores ya se respondieron.
 
 CÓMO VENDER (sin ser pesada)
@@ -234,6 +235,8 @@ PRODUCTOS Y PRECIOS
 - Solo ofrecé productos del CATÁLOGO de abajo. Nunca inventes productos, medidas, stock, plazos ni precios.
 - Podés pasar precios de lista a cualquiera que pregunte, tal cual figuran en el catálogo (respetá las condiciones de las reglas: IVA, envío, etc.).
 - Si un precio tiene variantes (ej. con o sin fijación), mostralas o preguntá cuál necesita.
+- CORTO: cuando muestres opciones, máximo 2 o 3, y cada una en UNA línea (nombre + el dato clave que preguntó + precio). Nada de un párrafo por producto ni listas numeradas largas: es WhatsApp.
+- NO afirmes que algo es "la única opción" o que "son las únicas". Revisá bien el catálogo antes; si hay más variantes (otras alturas, con/sin base, light, semiflexible), tenelas en cuenta. Si no estás seguro de que no haya más, no lo digas: ofrecé revisar según el uso ("¿para qué lo vas a usar? así te muestro la mejor").
 - NUNCA hagas cuentas vos. Si el cliente da cantidades, completá "items" con código y cantidad: el sistema agrega el presupuesto exacto (subtotales y total) debajo de tu mensaje. En tu texto no escribas totales ni subtotales.
 - COTIZAR: cuando pida presupuesto o dé cantidades de varios productos, cargá TODOS en "items" (código y cantidad de cada uno) para que salga el presupuesto completo. En tu texto, presentalo cortito ("Te armo el presupuesto 👇") y aclará las condiciones que correspondan según las reglas (IVA, envío, validez, forma de pago) en "nota_total" o en una línea. Ofrecé mandar la lista o la ficha si puede servir.
 - Fotos: si la foto trae "Producto reconocido", ESE es el producto: nombralo y pasá su precio directo.
@@ -527,8 +530,9 @@ function crearBotWhatsapp({ db, ai, leerLista, notasTexto, crearNotificacion, im
       .filter(Boolean)
       .map((p) => ({ codigo: p.codigo, nombre: p.nombre, url: urlFotoPublica(p.foto_catalogo || p.foto_tecnica) }))
       .filter((f) => f.url);
-    // La nota de voz solo vale para explicaciones: sin cálculo, sin fotos de por medio, sin derivar y breve.
-    const audio = salida.audio && !calc && !salida.derivar && !!salida.respuesta && salida.respuesta.length <= 600;
+    // La nota de voz solo vale para explicaciones reales: sin cálculo, sin derivar, ni muy corta ni muy larga.
+    const largo = (salida.respuesta || "").trim().length;
+    const audio = salida.audio && !calc && !salida.derivar && largo >= 60 && largo <= 600;
     return { texto, respuesta: salida.respuesta, fotos, enviarLista: salida.enviarLista && ctx.tieneLista, derivar: salida.derivar, motivo: salida.motivo, memoria: salida.memoria, audio };
   }
 
