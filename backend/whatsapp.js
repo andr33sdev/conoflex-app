@@ -190,25 +190,47 @@ function ventanaAbierta(ultimoCliente, ahora = new Date()) {
   return ahora.getTime() - new Date(ultimoCliente).getTime() < 24 * 3600 * 1000;
 }
 
+// Herramienta que obliga a Claude a devolver la respuesta estructurada (en vez de texto suelto).
+const HERRAMIENTA_RESPUESTA = {
+  name: "responder_cliente",
+  description: "Arma la respuesta para el cliente de WhatsApp con todos sus campos.",
+  input_schema: {
+    type: "object",
+    properties: {
+      respuesta: { type: "string", description: "El texto para el cliente (WhatsApp, con *negrita* si hace falta)." },
+      audio: { type: "boolean", description: "true solo si conviene mandarlo como nota de voz (explicación)." },
+      items: { type: "array", description: "Productos con cantidad para el presupuesto.", items: { type: "object", properties: { codigo: { type: "string" }, cantidad: { type: "number" } }, required: ["codigo", "cantidad"] } },
+      nota_total: { type: "string", description: "Aclaración del total, ej: 'más IVA'." },
+      fotos: { type: "array", description: "Códigos de productos para mandar foto.", items: { type: "string" } },
+      enviar_lista: { type: "boolean" },
+      derivar: { type: "boolean", description: "true si hay que pasar la conversación a una persona." },
+      motivo: { type: "string", description: "Por qué se deriva (solo si derivar es true)." },
+      memoria: { type: "string", description: "Ficha breve y actualizada del cliente para la próxima charla." },
+    },
+    required: ["respuesta"],
+  },
+};
+
 /**
  * Procesa la respuesta con Claude (Anthropic). Usa el mismo prompt de sistema y el historial.
- * Devuelve el texto (un JSON) para parsear con parsearJson. Se le "prefilla" una llave para
- * forzar que empiece el JSON. Si no hay ANTHROPIC_API_KEY, devuelve null (se usa Gemini).
+ * Fuerza el formato con una herramienta (tool_use): los modelos nuevos no devuelven JSON por texto.
+ * Devuelve un string JSON para parsear con parsearJson. Si no hay ANTHROPIC_API_KEY, devuelve null (se usa Gemini).
  */
 async function llamarClaude(sistema, contents) {
   const key = process.env.ANTHROPIC_API_KEY;
   if (!key) return null;
   const messages = contents.map((c) => ({ role: c.role === "model" ? "assistant" : "user", content: [{ type: "text", text: c.parts.map((p) => p.text).join("\n") }] }));
-  // No se manda "temperature" ni se "prefilla" la respuesta del asistente: los modelos nuevos (5.x)
-  // no los aceptan (la conversación debe terminar con un mensaje de usuario). parsearJson extrae el JSON igual.
   const res = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: { "x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json" },
-    body: JSON.stringify({ model: CLAUDE_MODELO, max_tokens: 4096, system: sistema, messages }),
+    body: JSON.stringify({ model: CLAUDE_MODELO, max_tokens: 4096, system: sistema, messages, tools: [HERRAMIENTA_RESPUESTA], tool_choice: { type: "tool", name: "responder_cliente" } }),
     signal: AbortSignal.timeout(30000),
   });
   if (!res.ok) throw new Error(`Claude ${res.status}: ${corto(await res.text().catch(() => ""), 200)}`);
   const data = await res.json();
+  const uso = (data?.content || []).find((b) => b.type === "tool_use" && b.name === "responder_cliente");
+  if (uso?.input) return JSON.stringify(uso.input); // el tool ya viene como objeto estructurado
+  // Respaldo por si vino como texto: devolvemos el texto y que parsearJson intente extraer el JSON.
   return (data?.content || []).filter((b) => b.type === "text").map((b) => b.text).join("");
 }
 
