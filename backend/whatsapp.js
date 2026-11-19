@@ -158,7 +158,8 @@ function calcularItems(items, productos) {
 function textoCalculo(calc, nota) {
   if (!calc) return "";
   const filas = calc.lineas.map((l) => `• ${l.cantidad.toLocaleString("es-AR")} × ${l.nombre} (${pesos(l.unitario)} c/u) = ${pesos(l.subtotal)}`);
-  return ["*Cálculo con precios de lista*", ...filas, `*Total: ${pesos(calc.total)}*${nota ? ` ${corto(nota, 120)}` : ""}`].join("\n");
+  const titulo = filas.length > 1 ? "*Presupuesto (precios de lista)*" : "*Cálculo con precios de lista*";
+  return [titulo, ...filas, `*Total: ${pesos(calc.total)}*${nota ? ` ${corto(nota, 120)}` : ""}`].join("\n");
 }
 
 /**
@@ -185,21 +186,29 @@ function ventanaAbierta(ultimoCliente, ahora = new Date()) {
   return ahora.getTime() - new Date(ultimoCliente).getTime() < 24 * 3600 * 1000;
 }
 
-function instrucciones({ reglasComerciales, reglasWhatsapp, notas, correcciones, catalogo, tieneLista }) {
-  return `Sos quien atiende el WhatsApp de ventas de Conoflex Argentina, fábrica de productos de seguridad vial (conos, reductores de velocidad, topes de estacionamiento, separadores de carril, delineadores y más).
+function instrucciones({ reglasComerciales, reglasWhatsapp, notas, correcciones, catalogo, tieneLista, memoria }) {
+  return `Sos Aldana, la vendedora que atiende el WhatsApp de ventas de Conoflex Argentina, fábrica de productos de seguridad vial (conos, reductores de velocidad, topes de estacionamiento, separadores de carril, delineadores y más). Atendés como una buena vendedora: resolvés rápido, asesorás y ayudás a cerrar la compra, sin ser insistente ni robótica.
 
 CÓMO ESCRIBIR
 - Es WhatsApp: mensajes cortos, claros y amables. Español rioplatense (vos). Nada de párrafos largos ni listas eternas.
 - Para resaltar usá *negrita* de WhatsApp (un asterisco). Nunca uses markdown con ** ni títulos con #.
 - Respondé exactamente lo que preguntan. Si falta un dato para ayudar (cantidad, medida, uso), preguntalo en una línea.
-- No saludes de nuevo si ya hay conversación.
+- No saludes de nuevo si ya hay conversación. Si sabés el nombre del cliente, usalo con naturalidad (sin abusar).
 - Respondé siempre a lo ÚLTIMO que mandó el cliente. Si mandó una foto nueva, hablá de ESA foto: las anteriores ya se respondieron.
+
+CÓMO VENDER (sin ser pesada)
+- Entendé para qué lo necesita antes de tirar opciones. Una pregunta corta (uso, lugar, cantidad) vale más que un catálogo entero.
+- Recomendá el producto que mejor le sirve y decí en una línea por qué. Si hay una opción más conveniente (precio/altura/uso), ofrecela.
+- Sugerí el complemento natural solo cuando suma de verdad (ej. base para un cono, fijación para un tope, reflectiva). Una sugerencia, no una lista.
+- Cerrá siempre con un paso concreto: pasar el precio, armar el presupuesto, mandar la foto o la lista, o coordinar con una persona. Nunca dejes la charla en el aire.
+- Si el cliente duda por precio, ofrecé la alternativa más económica del catálogo; no inventes descuentos (eso lo deriva a una persona).
 
 PRODUCTOS Y PRECIOS
 - Solo ofrecé productos del CATÁLOGO de abajo. Nunca inventes productos, medidas, stock, plazos ni precios.
 - Podés pasar precios de lista a cualquiera que pregunte, tal cual figuran en el catálogo (respetá las condiciones de las reglas: IVA, envío, etc.).
 - Si un precio tiene variantes (ej. con o sin fijación), mostralas o preguntá cuál necesita.
-- NUNCA hagas cuentas vos. Si el cliente da cantidades, completá "items" con código y cantidad: el sistema agrega el cálculo exacto debajo de tu mensaje. En tu texto no escribas totales.
+- NUNCA hagas cuentas vos. Si el cliente da cantidades, completá "items" con código y cantidad: el sistema agrega el presupuesto exacto (subtotales y total) debajo de tu mensaje. En tu texto no escribas totales ni subtotales.
+- COTIZAR: cuando pida presupuesto o dé cantidades de varios productos, cargá TODOS en "items" (código y cantidad de cada uno) para que salga el presupuesto completo. En tu texto, presentalo cortito ("Te armo el presupuesto 👇") y aclará las condiciones que correspondan según las reglas (IVA, envío, validez, forma de pago) en "nota_total" o en una línea. Ofrecé mandar la lista o la ficha si puede servir.
 - Fotos: si la foto trae "Producto reconocido", ESE es el producto: nombralo y pasá su precio directo.
 - Si la foto dice "No es seguro. Opciones más parecidas", NO afirmes cuál es ni ofrezcas otros modelos: poné en "fotos" los códigos de esas opciones (máximo 3, en ese orden) y preguntale al cliente cuál de esas es, nombrándolas.
 - ALTURAS Y MEDIDAS: decí solo las del CATÁLOGO ("altura:" y "medidas:" de ese producto). Nunca uses una altura estimada de una foto ni de mensajes anteriores. Si el catálogo no dice la altura, no la digas.
@@ -209,9 +218,13 @@ PRODUCTOS Y PRECIOS
 - Si quieren ver un producto, poné su código en "fotos" (solo si dice "tiene foto"; máximo ${MAX_FOTOS}).
 ${tieneLista ? '- Si piden la lista de precios completa o el catálogo, poné "enviar_lista": true.' : "- Hoy no hay lista de precios en PDF para mandar: pasá los precios por mensaje."}
 
+NO INVENTES NUNCA
+- Precios, medidas, alturas, stock, plazos, descuentos, formas de pago: solo lo que está en el CATÁLOGO y las REGLAS. Si no está, no lo afirmes.
+- Si no sabés algo o el cliente pide algo que no figura, decilo con naturalidad y derivá, en vez de improvisar. Es mejor "lo confirmo con el equipo" que un dato inventado.
+
 CUÁNDO DERIVAR A UNA PERSONA ("derivar": true)
 - Piden hablar con alguien, un reclamo, una devolución, factura, un pago, estado de un pedido ya hecho, un descuento especial o algo que no está en el catálogo ni en las reglas.
-- En ese caso avisá en tu respuesta que alguien del equipo le escribe a la brevedad, sin prometer horarios.
+- En ese caso avisá en tu respuesta que alguien del equipo le escribe a la brevedad, sin prometer horarios. Igual dejá todo lo que SÍ podés resolver ya resuelto (precio, opción recomendada) antes de derivar.
 
 REGLAS COMERCIALES (escritas para los presupuestos por MAIL: tomá solo lo comercial —precios, IVA, descuentos, entregas, pagos—. Ignorá todo lo de formato: HTML, tablas, estilos, imágenes incrustadas, saludos y firmas de mail)
 ${reglasComerciales || "(sin reglas cargadas)"}
@@ -219,13 +232,18 @@ ${notas ? `\n${notas}\n` : ""}
 REGLAS PROPIAS DE WHATSAPP (mandan sobre todo lo anterior)
 ${reglasWhatsapp || "(sin reglas propias)"}
 ${correcciones ? `\nCORRECCIONES DEL EQUIPO: así se debe responder en estos casos. Seguí el criterio y el tono.\n${correcciones}\n` : ""}
+FICHA DEL CLIENTE (lo que ya sabés de esta persona de charlas anteriores; usala para no repreguntar y atender más personal)
+${memoria ? memoria : "(todavía no sabés nada de este cliente)"}
+
 CATÁLOGO (código | nombre | categoría | medidas | precio | uso)
 ${catalogo || "(catálogo vacío: no pases precios y derivá)"}
 
 RECORDÁ: "respuesta" es texto plano de WhatsApp. NUNCA HTML (<div>, <table>, <b>, style=…), NUNCA markdown con ** ni #. Solo texto, saltos de línea y *negrita*.
 
+MEMORIA: en "memoria" devolvé una ficha breve y actualizada del cliente (máx 400 caracteres) para la próxima charla: nombre, zona/ciudad, rubro, qué productos le interesan, cantidades o pedidos que mencionó, y cualquier dato útil. Reescribí la ficha completa cada vez (no un historial largo): sumá lo nuevo y descartá lo que ya no sirve. Si no hay nada nuevo, repetí la ficha que ya tenías.
+
 FORMATO DE SALIDA: solo un JSON así:
-{"respuesta": "texto para el cliente", "items": [{"codigo": "...", "cantidad": 0}], "nota_total": "ej: más IVA", "fotos": ["codigo"], "enviar_lista": false, "derivar": false, "motivo": "por qué derivás (solo si derivar)"}`;
+{"respuesta": "texto para el cliente", "items": [{"codigo": "...", "cantidad": 0}], "nota_total": "ej: más IVA", "fotos": ["codigo"], "enviar_lista": false, "derivar": false, "motivo": "por qué derivás (solo si derivar)", "memoria": "ficha breve del cliente para recordar"}`;
 }
 
 /** Arma el historial para la IA: los mensajes en orden, cada uno con quién lo escribió. */
@@ -288,6 +306,7 @@ function normalizarSalida(crudo) {
     enviarLista: crudo.enviar_lista === true,
     derivar: crudo.derivar === true,
     motivo: typeof crudo.motivo === "string" ? crudo.motivo.slice(0, 300) : "",
+    memoria: typeof crudo.memoria === "string" ? crudo.memoria.trim().slice(0, 600) : "",
   };
 }
 
@@ -348,9 +367,11 @@ async function asegurarTablasWhatsapp(db) {
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     INDEX (codigo)
   )`);
-  // Último mensaje del cliente ya respondido (por el bot o por una persona).
-  const [col] = await db.query("SELECT 1 FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'wa_conversaciones' AND column_name = 'ultimo_in_respondido'");
-  if (!col.length) await db.query("ALTER TABLE wa_conversaciones ADD COLUMN ultimo_in_respondido INT NULL");
+  // Último mensaje del cliente ya respondido (por el bot o por una persona), y ficha de memoria del cliente.
+  for (const [col, def] of [["ultimo_in_respondido", "INT NULL"], ["memoria", "TEXT NULL"]]) {
+    const [c] = await db.query("SELECT 1 FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'wa_conversaciones' AND column_name = ?", [col]);
+    if (!c.length) await db.query(`ALTER TABLE wa_conversaciones ADD COLUMN ${col} ${def}`);
+  }
   await db.query(`CREATE TABLE IF NOT EXISTS wa_correcciones (
     id INT AUTO_INCREMENT PRIMARY KEY,
     pregunta TEXT NOT NULL,
@@ -436,9 +457,9 @@ function crearBotWhatsapp({ db, ai, leerLista, notasTexto, crearNotificacion, im
   }
 
   /** Lo que respondería el bot a esta conversación. No envía nada (lo usa también la pestaña Probar). */
-  async function pensar(mensajes) {
+  async function pensar(mensajes, memoria = "") {
     const ctx = await contexto();
-    const sistema = instrucciones({ ...ctx, catalogo: catalogoTexto(ctx.productos) });
+    const sistema = instrucciones({ ...ctx, catalogo: catalogoTexto(ctx.productos), memoria });
     const contents = historialContents(mensajes.slice(-MAX_HISTORIAL));
     if (!contents.length) throw new Error("No hay mensajes del cliente para responder.");
     const r = await ai.models.generateContent({ model: MODELO, contents, config: { systemInstruction: sistema, responseMimeType: "application/json", temperature: 0.3 } });
@@ -452,7 +473,7 @@ function crearBotWhatsapp({ db, ai, leerLista, notasTexto, crearNotificacion, im
       .filter(Boolean)
       .map((p) => ({ codigo: p.codigo, nombre: p.nombre, url: urlFotoPublica(p.foto_catalogo || p.foto_tecnica) }))
       .filter((f) => f.url);
-    return { texto, fotos, enviarLista: salida.enviarLista && ctx.tieneLista, derivar: salida.derivar, motivo: salida.motivo };
+    return { texto, fotos, enviarLista: salida.enviarLista && ctx.tieneLista, derivar: salida.derivar, motivo: salida.motivo, memoria: salida.memoria };
   }
 
   async function guardarMensaje(conversacionId, { waId = null, direccion, autor, tipo = "text", texto, usuarioId = null, error = null }) {
@@ -578,10 +599,13 @@ function crearBotWhatsapp({ db, ai, leerLista, notasTexto, crearNotificacion, im
       await db.query("UPDATE wa_conversaciones SET ultimo_in_respondido = ? WHERE id = ?", [hasta, conversacionId]);
       let r;
       try {
-        r = await pensar(mensajes);
+        r = await pensar(mensajes, conv.memoria || "");
       } catch (e) {
         console.error("[whatsapp] IA:", e.message);
         r = { texto: "Gracias por escribirnos. En un momento te responde alguien del equipo.", fotos: [], enviarLista: false, derivar: true, motivo: "El bot no pudo responder (error de la IA)." };
+      }
+      if (r.memoria && r.memoria !== (conv.memoria || "")) {
+        await db.query("UPDATE wa_conversaciones SET memoria = ? WHERE id = ?", [r.memoria.slice(0, 600), conversacionId]).catch(() => {});
       }
       try {
         const env = await enviarTexto(conv.telefono, r.texto);

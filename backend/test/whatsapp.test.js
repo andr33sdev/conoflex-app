@@ -109,6 +109,30 @@ test("instrucciones incluyen reglas, correcciones y catálogo", () => {
   assert.match(i, /enviar_lista/);
 });
 
+test("instrucciones: ficha del cliente (memoria) y guía de venta", () => {
+  const con = w.instrucciones({ reglasComerciales: "", reglasWhatsapp: "", notas: "", correcciones: "", catalogo: "1025 | Cono", tieneLista: false, memoria: "Juan, de Córdoba, busca conos 75cm" });
+  assert.match(con, /FICHA DEL CLIENTE/);
+  assert.match(con, /Juan, de Córdoba/);
+  assert.match(con, /CÓMO VENDER/);
+  assert.match(con, /"memoria"/); // está en el formato de salida
+  const sin = w.instrucciones({ reglasComerciales: "", reglasWhatsapp: "", notas: "", correcciones: "", catalogo: "1025 | Cono", tieneLista: false, memoria: "" });
+  assert.match(sin, /todavía no sabés nada de este cliente/);
+});
+
+test("salida: captura la ficha de memoria del cliente", () => {
+  const s = w.normalizarSalida({ respuesta: "Dale", memoria: "  Pedro, ferretería, pidió 10 topes  " });
+  assert.equal(s.memoria, "Pedro, ferretería, pidió 10 topes");
+  assert.equal(w.normalizarSalida({ respuesta: "Hola" }).memoria, ""); // sin memoria → vacío
+});
+
+test("presupuesto: con varios ítems el título cambia a Presupuesto", () => {
+  const calc = { lineas: [
+    { codigo: "A", nombre: "Cono", cantidad: 2, unitario: 100, subtotal: 200 },
+    { codigo: "B", nombre: "Base", cantidad: 2, unitario: 50, subtotal: 100 },
+  ], total: 300 };
+  assert.match(w.textoCalculo(calc, ""), /\*Presupuesto \(precios de lista\)\*/);
+});
+
 test("si la IA devuelve HTML de mail, queda texto plano de WhatsApp", () => {
   const html = '<div style="font-family: Arial; color: #1A1A1A;">\n  ¡Hola! Soy de <b>Conoflex Argentina</b>.&nbsp;Contame el uso.\n</div>\n<div>Adjunto precios:</div>\n<table><tr><td><img src="x.jpg"></td><td><strong>Cono 75</strong></td><td>$10.000</td></tr></table>';
   const t = w.textoWhatsapp(html);
