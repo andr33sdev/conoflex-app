@@ -22,6 +22,7 @@ const fs = require("fs");
 const path = require("path");
 const fotos = require("./fotosCatalogo");
 const { leerPrecios } = require("./comercial/catalogo");
+const { presupuestoPdf } = require("./comercial/presupuestoPdf");
 // vozLlamada se carga de forma diferida (dentro de la función) para no crear dependencia circular:
 // vozLlamada ya requiere a este módulo (catalogoTexto, corto).
 const voz = () => require("./vozLlamada");
@@ -203,6 +204,7 @@ const HERRAMIENTA_RESPUESTA = {
       nota_total: { type: "string", description: "Aclaración del total, ej: 'más IVA'." },
       fotos: { type: "array", description: "Códigos de productos para mandar foto.", items: { type: "string" } },
       enviar_lista: { type: "boolean" },
+      presupuesto: { type: "boolean", description: "true para mandar un PDF de presupuesto formal con los items. Usalo cuando el cliente pide un presupuesto/cotización o cuando das una cotización de varios items." },
       derivar: { type: "boolean", description: "true si hay que pasar la conversación a una persona." },
       motivo: { type: "string", description: "Por qué se deriva (solo si derivar es true)." },
       memoria: { type: "string", description: "Ficha breve y actualizada del cliente para la próxima charla." },
@@ -263,7 +265,8 @@ PRODUCTOS Y PRECIOS
 - CORTO: cuando muestres opciones, máximo 2 o 3, y cada una en UNA línea (nombre + el dato clave que preguntó + precio). Nada de un párrafo por producto ni listas numeradas largas: es WhatsApp.
 - NO afirmes que algo es "la única opción" o que "son las únicas". Revisá bien el catálogo antes; si hay más variantes (otras alturas, con/sin base, light, semiflexible), tenelas en cuenta. Si no estás seguro de que no haya más, no lo digas: ofrecé revisar según el uso ("¿para qué lo vas a usar? así te muestro la mejor").
 - NUNCA hagas cuentas vos. Si el cliente da cantidades, completá "items" con código y cantidad: el sistema agrega el presupuesto exacto (subtotales y total) debajo de tu mensaje. En tu texto no escribas totales ni subtotales.
-- COTIZAR: cuando pida presupuesto o dé cantidades de varios productos, cargá TODOS en "items" (código y cantidad de cada uno) para que salga el presupuesto completo. En tu texto, presentalo cortito ("Te armo el presupuesto 👇") y aclará las condiciones que correspondan según las reglas (IVA, envío, validez, forma de pago) en "nota_total" o en una línea. Ofrecé mandar la lista o la ficha si puede servir.
+- COTIZAR: cuando pida presupuesto o dé cantidades de varios productos, cargá TODOS en "items" (código y cantidad de cada uno) para que salga el presupuesto completo. En tu texto, presentalo cortito ("Te armo el presupuesto 👇") y aclará las condiciones que correspondan según las reglas (IVA, envío, validez, forma de pago) en "nota_total" o en una línea.
+- PRESUPUESTO EN PDF: cuando el cliente pide un presupuesto/cotización formal, o cuando cotizás varios items, poné "presupuesto": true. El sistema le manda automáticamente un PDF prolijo con la marca Conoflex, los items y el total. Avisale en el texto que le mandás el presupuesto en PDF. No hace falta para una sola consulta de precio suelta.
 - Fotos: si la foto trae "Producto reconocido", ESE es el producto: nombralo y pasá su precio directo.
 - Si la foto dice "No es seguro. Opciones más parecidas", NO afirmes cuál es ni ofrezcas otros modelos: poné en "fotos" los códigos de esas opciones (máximo 3, en ese orden) y preguntale al cliente cuál de esas es, nombrándolas.
 - ALTURAS Y MEDIDAS: decí solo las del CATÁLOGO ("altura:" y "medidas:" de ese producto). Nunca uses una altura estimada de una foto ni de mensajes anteriores. Si el catálogo no dice la altura, no la digas.
@@ -369,6 +372,7 @@ function normalizarSalida(crudo) {
     motivo: typeof crudo.motivo === "string" ? crudo.motivo.slice(0, 300) : "",
     memoria: typeof crudo.memoria === "string" ? crudo.memoria.trim().slice(0, 600) : "",
     audio: crudo.audio === true,
+    presupuesto: crudo.presupuesto === true,
   };
 }
 
@@ -559,7 +563,9 @@ function crearBotWhatsapp({ db, ai, leerLista, notasTexto, crearNotificacion, im
     // La nota de voz solo vale para explicaciones reales: sin cálculo, sin derivar, ni muy corta ni muy larga.
     const largo = (salida.respuesta || "").trim().length;
     const audio = salida.audio && !calc && !salida.derivar && largo >= 60 && largo <= 600;
-    return { texto, respuesta: salida.respuesta, fotos, enviarLista: salida.enviarLista && ctx.tieneLista, derivar: salida.derivar, motivo: salida.motivo, memoria: salida.memoria, audio };
+    // Presupuesto en PDF: solo si el modelo lo pidió y hay un cálculo real con items.
+    const presupuesto = salida.presupuesto && calc ? { ...calc, nota: salida.notaTotal || "" } : null;
+    return { texto, respuesta: salida.respuesta, fotos, enviarLista: salida.enviarLista && ctx.tieneLista, derivar: salida.derivar, motivo: salida.motivo, memoria: salida.memoria, audio, presupuesto };
   }
 
   async function guardarMensaje(conversacionId, { waId = null, direccion, autor, tipo = "text", texto, usuarioId = null, error = null }) {
@@ -737,6 +743,15 @@ function crearBotWhatsapp({ db, ai, leerLista, notasTexto, crearNotificacion, im
           await guardarMensaje(conversacionId, { waId: env?.messages?.[0]?.id, direccion: "OUT", autor: "BOT", tipo: "document", texto: "📄 Lista de precios (PDF)" });
         } catch (e) {
           console.error("[whatsapp] lista:", e.message);
+        }
+      }
+      if (r.presupuesto) {
+        try {
+          const pdf = presupuestoPdf({ cliente: conv.nombre || "", lineas: r.presupuesto.lineas, total: r.presupuesto.total, nota: r.presupuesto.nota });
+          const env = await enviarDocumento(conv.telefono, { nombre: pdf.nombre, datos: pdf.datos });
+          await guardarMensaje(conversacionId, { waId: env?.messages?.[0]?.id, direccion: "OUT", autor: "BOT", tipo: "document", texto: "📄 Presupuesto (PDF)" });
+        } catch (e) {
+          console.error("[whatsapp] presupuesto pdf:", e.message);
         }
       }
       if (r.derivar) await derivar(conv, r.motivo);
