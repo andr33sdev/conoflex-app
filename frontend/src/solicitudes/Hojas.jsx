@@ -3,7 +3,7 @@ import { Ban, Check, ChevronRight, History, Minus, Pencil, Plus, Search, X } fro
 import { Modal } from "../produccion/ui";
 import { Campo, inputCls } from "./Piezas";
 import { ChipEstado } from "./Piezas";
-import { formatFechaArg, formatHoraArg, motivoDe, solId, URGENCIA } from "./util";
+import { codigoMayus, formatFechaArg, formatHoraArg, motivoDe, nombreDeposito, solId, URGENCIA } from "./util";
 
 const BOTON_PRIMARIO = "w-full min-h-[56px] rounded-2xl bg-[#FFD60A] text-black text-base font-extrabold inline-flex items-center justify-center gap-2 hover:bg-white active:scale-[0.99] transition-all disabled:opacity-35 disabled:cursor-not-allowed cursor-pointer";
 
@@ -98,8 +98,8 @@ export function NuevaSolicitud({ abierto, onCerrar, semielaborados, activas, onC
           {elegido ? (
             <div className="flex items-center gap-3 rounded-2xl border border-[#FF5A00]/40 bg-[#FF5A00]/[0.07] px-4 py-3">
               <div className="min-w-0 flex-1">
-                <p className="text-[15px] font-bold text-white truncate">{elegido.nombre}</p>
-                <p className="font-mono text-xs font-bold text-[#ff8a4d]">{elegido.codigo}</p>
+                <p className="text-[15px] font-bold text-white truncate">{nombreDeposito(elegido.nombre)}</p>
+                <p className="font-mono text-xs font-bold text-[#ff8a4d]">{codigoMayus(elegido.codigo)}</p>
               </div>
               <button type="button" onClick={() => { setElegido(null); setTexto(""); }} aria-label="Cambiar semielaborado" className="w-10 h-10 rounded-xl grid place-items-center text-zinc-400 hover:text-white hover:bg-white/[0.08] cursor-pointer"><X size={18} /></button>
             </div>
@@ -116,8 +116,8 @@ export function NuevaSolicitud({ abierto, onCerrar, semielaborados, activas, onC
                   ) : resultados.map((r) => (
                     <li key={r.id ?? r.codigo}>
                       <button type="button" onClick={() => setElegido(r)} className="w-full min-h-[56px] px-4 py-2.5 text-left flex items-center gap-3 border-b border-white/[0.05] last:border-b-0 hover:bg-white/[0.05] active:bg-white/[0.09] cursor-pointer">
-                        <span className="font-mono text-[11px] font-bold text-[#ff8a4d] bg-[#FF5A00]/10 border border-[#FF5A00]/25 rounded-lg px-2 py-1 shrink-0">{r.codigo}</span>
-                        <span className="text-[15px] font-semibold text-zinc-100 truncate">{r.nombre}</span>
+                        <span className="font-mono text-[11px] font-bold text-[#ff8a4d] bg-[#FF5A00]/10 border border-[#FF5A00]/25 rounded-lg px-2 py-1 shrink-0">{codigoMayus(r.codigo)}</span>
+                        <span className="text-[15px] font-semibold text-zinc-100 truncate">{nombreDeposito(r.nombre)}</span>
                       </button>
                     </li>
                   ))}

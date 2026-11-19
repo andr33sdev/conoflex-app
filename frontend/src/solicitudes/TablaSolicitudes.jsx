@@ -1,5 +1,5 @@
 import { MoreHorizontal } from "lucide-react";
-import { archivada, hace, motivoDe, solId } from "./util";
+import { archivada, codigoMayus, hace, motivoDe, nombreDeposito, solId } from "./util";
 import { BarraRetiro, ChipEstado, ChipUrgencia } from "./Piezas";
 import { accionPrincipal, BOTON } from "./acciones";
 
@@ -22,8 +22,8 @@ export default function TablaSolicitudes({ items, permisos, onAccion, onMenu, ah
             <li key={s.id} className={`grid ${COLS} gap-3 items-center px-5 min-h-[64px] border-b border-white/[0.04] last:border-b-0 hover:bg-white/[0.025] transition-colors ${arch ? "opacity-70" : ""}`}>
               <span className="font-mono text-[12px] font-bold text-zinc-400">{solId(s)}</span>
               <span className="min-w-0">
-                <span className="block text-[14.5px] font-bold text-white truncate">{s.semielaboradoNombre}</span>
-                <span className="block text-xs text-zinc-500 truncate"><span className="font-mono text-[#ff8a4d]">{s.semielaboradoCodigo}</span> · {hace(s.solicitadoAt || s.solicitado_at, ahora)}</span>
+                <span className="block text-[14.5px] font-bold text-white truncate">{nombreDeposito(s.semielaboradoNombre)}</span>
+                <span className="block text-xs text-zinc-500 truncate"><span className="font-mono text-[#ff8a4d]">{codigoMayus(s.semielaboradoCodigo)}</span> · {hace(s.solicitadoAt || s.solicitado_at, ahora)}</span>
               </span>
               <span className="text-[13px] font-semibold uppercase text-zinc-300 truncate">{motivoDe(s) || "—"}</span>
               <span>
