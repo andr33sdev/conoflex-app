@@ -220,10 +220,13 @@ async function llamarClaude(sistema, contents) {
   const key = process.env.ANTHROPIC_API_KEY;
   if (!key) return null;
   const messages = contents.map((c) => ({ role: c.role === "model" ? "assistant" : "user", content: [{ type: "text", text: c.parts.map((p) => p.text).join("\n") }] }));
+  // Este modelo no deja forzar la herramienta (tool_choice "tool"/"any" no soportado), así que se usa
+  // "auto" + una instrucción directa de usarla siempre. Si igual no la usa, parsearJson intenta el texto.
+  const sistemaClaude = sistema + "\n\nMUY IMPORTANTE: respondé SIEMPRE llamando a la herramienta responder_cliente con sus campos (al menos \"respuesta\"). No escribas texto suelto fuera de la herramienta.";
   const res = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: { "x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json" },
-    body: JSON.stringify({ model: CLAUDE_MODELO, max_tokens: 4096, system: sistema, messages, tools: [HERRAMIENTA_RESPUESTA], tool_choice: { type: "tool", name: "responder_cliente" } }),
+    body: JSON.stringify({ model: CLAUDE_MODELO, max_tokens: 4096, system: sistemaClaude, messages, tools: [HERRAMIENTA_RESPUESTA], tool_choice: { type: "auto" } }),
     signal: AbortSignal.timeout(30000),
   });
   if (!res.ok) throw new Error(`Claude ${res.status}: ${corto(await res.text().catch(() => ""), 200)}`);
