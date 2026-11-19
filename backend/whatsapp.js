@@ -199,8 +199,8 @@ async function llamarClaude(sistema, contents) {
   const key = process.env.ANTHROPIC_API_KEY;
   if (!key) return null;
   const messages = contents.map((c) => ({ role: c.role === "model" ? "assistant" : "user", content: [{ type: "text", text: c.parts.map((p) => p.text).join("\n") }] }));
-  messages.push({ role: "assistant", content: [{ type: "text", text: "{" }] }); // prefill: fuerza a arrancar el JSON
-  // No se manda "temperature": los modelos nuevos (5.x) lo tienen deprecado.
+  // No se manda "temperature" ni se "prefilla" la respuesta del asistente: los modelos nuevos (5.x)
+  // no los aceptan (la conversación debe terminar con un mensaje de usuario). parsearJson extrae el JSON igual.
   const res = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: { "x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json" },
@@ -209,8 +209,7 @@ async function llamarClaude(sistema, contents) {
   });
   if (!res.ok) throw new Error(`Claude ${res.status}: ${corto(await res.text().catch(() => ""), 200)}`);
   const data = await res.json();
-  const texto = (data?.content || []).filter((b) => b.type === "text").map((b) => b.text).join("");
-  return "{" + texto; // le devolvemos la llave que prefillamos
+  return (data?.content || []).filter((b) => b.type === "text").map((b) => b.text).join("");
 }
 
 function instrucciones({ reglasComerciales, reglasWhatsapp, notas, correcciones, catalogo, tieneLista, memoria, yaSaludoHoy }) {
