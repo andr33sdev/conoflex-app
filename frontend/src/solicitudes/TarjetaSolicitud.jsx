@@ -2,7 +2,7 @@ import { motion } from "framer-motion";
 import { AlertTriangle, Clock, MoreHorizontal, Tag } from "lucide-react";
 import { accionPrincipal } from "./acciones";
 import { BOTON, ESPERA } from "./acciones";
-import { archivada, hace, horasDesde, motivoDe, solId, URGENCIA } from "./util";
+import { archivada, codigoMayus, hace, horasDesde, motivoDe, nombreDeposito, solId, URGENCIA } from "./util";
 import { BarraRetiro, ChipEstado, ChipUrgencia, Recorrido } from "./Piezas";
 
 export default function TarjetaSolicitud({ s, permisos, onAccion, onMenu, ahora, indice = 0 }) {
@@ -32,9 +32,9 @@ export default function TarjetaSolicitud({ s, permisos, onAccion, onMenu, ahora,
         </div>
 
         <div className="min-w-0">
-          <h3 className="text-[17px] font-extrabold text-white leading-snug line-clamp-2">{s.semielaboradoNombre}</h3>
+          <h3 className="text-[17px] font-extrabold text-white leading-snug line-clamp-2">{nombreDeposito(s.semielaboradoNombre)}</h3>
           <div className="mt-1.5 flex items-center gap-x-3 gap-y-1 flex-wrap text-[13px] text-zinc-500">
-            <span className="font-mono font-bold text-[#ff8a4d]">{s.semielaboradoCodigo}</span>
+            <span className="font-mono font-bold text-[#ff8a4d]">{codigoMayus(s.semielaboradoCodigo)}</span>
             {motivo && <span className="inline-flex items-center gap-1 min-w-0"><Tag size={12} className="shrink-0" /><span className="truncate uppercase font-semibold text-zinc-400">{motivo}</span></span>}
             <span className="inline-flex items-center gap-1"><Clock size={12} />{hace(s.solicitadoAt || s.solicitado_at, ahora)}</span>
           </div>

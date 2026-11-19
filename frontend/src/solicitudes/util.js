@@ -55,6 +55,18 @@ export const solId = (s) => {
 export const motivoDe = (s) => s?.motivoUso || s?.motivo_uso || s?.motivo || "";
 export const archivada = (s) => s.estado === "ENTREGADO" || s.estado === "CANCELADO";
 
+// Para depósito: nombre legible, SIEMPRE en mayúscula y sin las palabras "cono" y "semielaborado"
+// (que confunden a la gente de depósito). Se usa solo al mostrar, no cambia lo guardado.
+export const nombreDeposito = (s) =>
+  (s || "")
+    .replace(/semi\s*-?\s*elaborad[ao]s?/gi, " ")
+    .replace(/\bconos?\b/gi, " ")
+    .replace(/\s{2,}/g, " ")
+    .trim()
+    .toUpperCase();
+// Código siempre en mayúscula.
+export const codigoMayus = (s) => (s || "").toUpperCase();
+
 export const PASOS = ["SOLICITADO", "ATENDIDO", "DISPONIBLE", "ENTREGADO"];
 export const ESTADO = {
   SOLICITADO: { texto: "Solicitado", clase: "text-zinc-200 bg-white/[0.07] border-white/[0.12]", punto: "bg-zinc-300" },
