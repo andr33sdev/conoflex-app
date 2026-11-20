@@ -17,6 +17,8 @@ const crypto = require("crypto");
 const { crearConnie } = require("./connie");
 const { asegurarTablasAgentes, registrarRutasAgentes, iniciarVigilantes, ahoraArgentina } = require("./agentes");
 const { cierreQuincena } = require("./cierreQuincena");
+const { liquidarDesdeBD } = require("./liquidacionDb");
+const { detalleExtrasPdf } = require("./asistencia/detalleExtrasPdf");
 const { sinCita: sinCitaMail, notasTexto: notasVentasTexto, validarDescuento, ERROR_DESCUENTO, sugerirDescuento, ejemplosEnviadosTexto } = require("./agentes/ventasMails");
 const { registrarObservaciones } = require("./agentes/ventasAprendizaje");
 const { calcularMpSemana } = require("./mpPlanSemanal");
@@ -5113,6 +5115,28 @@ app.get("/api/fichero/cierre", requirePermiso("control-asistencia"), async (req,
   } catch (error) {
     console.error("Error en el cierre de quincena:", error);
     res.status(500).json({ error: "No se pudo armar el cierre." });
+  }
+});
+
+// PDF con el detalle de horas extra de un operario, día por día y hora por hora (sólo extras).
+// Período: mes (AAAA-MM) con quincena opcional (1|2), o días sueltos (fechas=YYYY-MM-DD,YYYY-MM-DD).
+app.get("/api/fichero/detalle-extras-pdf", requirePermiso("control-asistencia"), async (req, res) => {
+  try {
+    const operario = String(req.query.operario || "").trim();
+    if (!operario) return res.status(400).json({ error: "Falta el operario." });
+    const mes = req.query.mes ? String(req.query.mes) : undefined;
+    const quincena = req.query.quincena ? Number(req.query.quincena) : undefined;
+    const fechas = req.query.fechas ? String(req.query.fechas).split(",").map((f) => f.trim()).filter(Boolean) : undefined;
+    const liq = await liquidarDesdeBD(db, { operario, mes, quincena, fechas, detalle: "completo", solo_extras: true });
+    if (liq.error) return res.status(400).json({ error: liq.error });
+    const { nombre, datos } = detalleExtrasPdf(liq, { usuario: req.user?.nombre || req.user?.usuario || "" });
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `inline; filename*=UTF-8''${encodeURIComponent(nombre)}`);
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.send(datos);
+  } catch (error) {
+    console.error("Error armando el detalle de extras:", error);
+    res.status(500).json({ error: "No se pudo armar el detalle de horas extra." });
   }
 });
 
