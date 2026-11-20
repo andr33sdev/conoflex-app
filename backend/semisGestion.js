@@ -14,6 +14,9 @@ async function asegurarSemis(db) {
   const tiene = new Set(cols.map((x) => x.c));
   if (!tiene.has("origen")) await db.query("ALTER TABLE semielaborados ADD COLUMN origen VARCHAR(20) NOT NULL DEFAULT 'FABRICA'");
   if (!tiene.has("seguir_demanda")) await db.query("ALTER TABLE semielaborados ADD COLUMN seguir_demanda TINYINT NOT NULL DEFAULT 1");
+  // Margen de resguardo para la API de la tienda: % extra sobre lo que pide el cliente para
+  // mostrar "entrega inmediata". Configurable por producto. Default 10%.
+  if (!tiene.has("margen_web")) await db.query("ALTER TABLE semielaborados ADD COLUMN margen_web DECIMAL(6,2) NOT NULL DEFAULT 10");
   await db.query(`
     CREATE TABLE IF NOT EXISTS paraguay_proximo_items (
       semielaborado_id INT NOT NULL PRIMARY KEY,
@@ -67,6 +70,12 @@ function registrarRutasSemis(app, { db, nombreDeUsuario = () => null }) {
     if (req.body.seguir_demanda !== undefined) {
       sets.push("seguir_demanda = ?");
       vals.push(req.body.seguir_demanda ? 1 : 0);
+    }
+    if (req.body.margen_web !== undefined) {
+      const m = Number(req.body.margen_web);
+      if (!Number.isFinite(m) || m < 0 || m > 1000) return res.status(400).json({ error: "El margen web tiene que ser un porcentaje entre 0 y 1000." });
+      sets.push("margen_web = ?");
+      vals.push(Math.round(m * 100) / 100);
     }
     if (!sets.length) return res.status(400).json({ error: "No hay nada para cambiar." });
     const [r] = await db.query(`UPDATE semielaborados SET ${sets.join(", ")} WHERE id = ?`, [...vals, req.params.id]);

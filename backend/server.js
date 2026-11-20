@@ -5819,30 +5819,34 @@ function guardStockApi(req, res) {
   return true;
 }
 
+// cantidad que pide el cliente en el carrito (por defecto 1). Nunca se devuelve la cantidad en stock.
+function cantidadPedida(req) {
+  const n = Math.floor(Number(req.query.cantidad));
+  return Number.isFinite(n) && n > 0 ? n : 1;
+}
+
 app.get("/api/public/stock-semielaborados", async (req, res) => {
   if (!guardStockApi(req, res)) return;
   try {
-    const dep = stockApi.depositoConfigurado();
-    const items = await stockApi.listarStock(db);
+    const items = await stockApi.listarEstados(db, cantidadPedida(req));
     res.setHeader("Cache-Control", "no-store");
-    res.json({ deposito: dep.etiqueta, actualizado: new Date().toISOString(), semielaborados: items });
+    res.json({ actualizado: new Date().toISOString(), semielaborados: items });
   } catch (error) {
     console.error("Error en API de stock de semielaborados:", error);
-    res.status(500).json({ error: "No se pudo obtener el stock." });
+    res.status(500).json({ error: "No se pudo obtener el estado del stock." });
   }
 });
 
 app.get("/api/public/stock-semielaborados/:codigo", async (req, res) => {
   if (!guardStockApi(req, res)) return;
   try {
-    const dep = stockApi.depositoConfigurado();
-    const item = await stockApi.stockDe(db, req.params.codigo);
+    const item = await stockApi.estadoDe(db, req.params.codigo, cantidadPedida(req));
     if (!item) return res.status(404).json({ error: "Semielaborado no encontrado." });
     res.setHeader("Cache-Control", "no-store");
-    res.json({ deposito: dep.etiqueta, actualizado: new Date().toISOString(), ...item });
+    res.json({ actualizado: new Date().toISOString(), ...item });
   } catch (error) {
     console.error("Error en API de stock de semielaborados:", error);
-    res.status(500).json({ error: "No se pudo obtener el stock." });
+    res.status(500).json({ error: "No se pudo obtener el estado del stock." });
   }
 });
 

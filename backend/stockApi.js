@@ -1,6 +1,7 @@
 "use strict";
-// API pública de SOLO LECTURA del stock de semielaborados de un único depósito.
-// Expone únicamente: codigo, nombre y stock. Nada de costos, recetas ni otros depósitos.
+// API pública de SOLO LECTURA para la tienda oficial. Dice si un semielaborado de un único
+// depósito está "disponible" (entrega inmediata) o si hay que "consultar". NUNCA expone la
+// cantidad: solo el estado. Nada de costos, recetas ni otros depósitos.
 // Se protege con una API key propia (STOCK_API_KEY), distinta del login de la app.
 const crypto = require("crypto");
 const { comprometidos } = require("./deposito");
@@ -34,11 +35,24 @@ function estadoClaveApi(req) {
   return crypto.timingSafeEqual(a, b) ? "ok" : "invalida";
 }
 
-// Stock mostrado al público: nunca negativo, redondeado a 1 decimal.
-function formatearStock(n) {
-  const v = Number(n);
-  if (!Number.isFinite(v)) return 0;
-  return Math.max(0, Math.round(v * 10) / 10);
+const MARGEN_DEFAULT = 10;
+const TEXTO = { disponible: "Entrega inmediata", consultar: "Consultar" };
+
+// Estado de disponibilidad SIN exponer cantidades:
+// "disponible" (entrega inmediata) si lo disponible supera lo pedido más el margen de
+// resguardo del producto (%). Si no, "consultar".
+function estadoDisponibilidad(disponible, cantidadPedida, margenPct) {
+  const disp = Number(disponible) || 0;
+  const pedido = Math.max(1, Number(cantidadPedida) || 1);
+  const margen = Number.isFinite(Number(margenPct)) && Number(margenPct) >= 0 ? Number(margenPct) : MARGEN_DEFAULT;
+  const requerido = pedido * (1 + margen / 100);
+  // Tolerancia mínima para evitar que un redondeo de punto flotante (p. ej. 100*1.1 = 110.0000001)
+  // tire a "consultar" un caso que justo da igual.
+  return disp + 1e-9 >= requerido ? "disponible" : "consultar";
+}
+
+function conTexto(codigo, nombre, estado) {
+  return { codigo, nombre, estado, texto: TEXTO[estado] };
 }
 
 // Lo comprometido (semielaborados reservados en pedidos armados y aún no despachados)
@@ -61,30 +75,34 @@ async function resolverComprometido(db, clave, compMap) {
   return clave === "33" ? await comprometidoPorId(db) : new Map();
 }
 
-// Devuelve el stock DISPONIBLE: en el 33, total menos lo comprometido (nunca negativo).
-async function listarStock(db, compMap = null) {
+// Estado de todos los semielaborados para una cantidad pedida (por defecto 1).
+// Devuelve solo { codigo, nombre, estado, texto }. Nunca cantidades.
+async function listarEstados(db, cantidad = 1, compMap = null) {
   const { clave, columna } = depositoConfigurado();
   const [filas] = await db.query(
-    `SELECT id, codigo, nombre, ${columna} AS stock FROM semielaborados ORDER BY codigo`,
+    `SELECT id, codigo, nombre, ${columna} AS stock, margen_web FROM semielaborados ORDER BY codigo`,
   );
   const comp = await resolverComprometido(db, clave, compMap);
   return filas.map((f) => {
     const disponible = Number(f.stock || 0) - (comp.get(Number(f.id)) || 0);
-    return { codigo: f.codigo, nombre: f.nombre, stock: formatearStock(disponible) };
+    const estado = estadoDisponibilidad(disponible, cantidad, f.margen_web);
+    return conTexto(f.codigo, f.nombre, estado);
   });
 }
 
-async function stockDe(db, codigo, compMap = null) {
+// Estado de un semielaborado para una cantidad pedida. Devuelve solo estado, nunca cantidad.
+async function estadoDe(db, codigo, cantidad = 1, compMap = null) {
   const { clave, columna } = depositoConfigurado();
   const [filas] = await db.query(
-    `SELECT id, codigo, nombre, ${columna} AS stock FROM semielaborados WHERE codigo = ? LIMIT 1`,
+    `SELECT id, codigo, nombre, ${columna} AS stock, margen_web FROM semielaborados WHERE codigo = ? LIMIT 1`,
     [String(codigo || "").trim()],
   );
   if (!filas.length) return null;
   const f = filas[0];
   const comp = await resolverComprometido(db, clave, compMap);
   const disponible = Number(f.stock || 0) - (comp.get(Number(f.id)) || 0);
-  return { codigo: f.codigo, nombre: f.nombre, stock: formatearStock(disponible) };
+  const estado = estadoDisponibilidad(disponible, cantidad, f.margen_web);
+  return conTexto(f.codigo, f.nombre, estado);
 }
 
 // Límite simple por IP: 120 pedidos por minuto, en memoria.
@@ -107,4 +125,4 @@ setInterval(() => {
   for (const [ip, reg] of golpes) if (ahora >= reg.resetAt) golpes.delete(ip);
 }, 5 * VENTANA_MS).unref?.();
 
-module.exports = { COLUMNAS_DEPOSITO, depositoConfigurado, estadoClaveApi, formatearStock, listarStock, stockDe, limiteSuperado };
+module.exports = { COLUMNAS_DEPOSITO, MARGEN_DEFAULT, depositoConfigurado, estadoClaveApi, estadoDisponibilidad, listarEstados, estadoDe, limiteSuperado };
