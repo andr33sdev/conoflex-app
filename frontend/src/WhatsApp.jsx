@@ -1,13 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { AlertCircle, CheckCircle2, FlaskConical, GraduationCap, MessagesSquare, PhoneCall, X } from "lucide-react";
+import { AlertCircle, BarChart3, CheckCircle2, FlaskConical, GraduationCap, MessagesSquare, PhoneCall, X } from "lucide-react";
 import { api } from "./produccion/util";
 import Conversaciones from "./whatsapp/Conversaciones";
+import Tablero from "./whatsapp/Tablero";
 import Entrenar from "./whatsapp/Entrenar";
 import Probar from "./whatsapp/Probar";
 import Llamar from "./whatsapp/Llamar";
 
 const TABS = [
   { id: "conversaciones", texto: "Conversaciones", icono: MessagesSquare },
+  { id: "tablero", texto: "Tablero", icono: BarChart3 },
   { id: "entrenar", texto: "Entrenar", icono: GraduationCap },
   { id: "probar", texto: "Probar", icono: FlaskConical },
   { id: "llamar", texto: "Llamar", icono: PhoneCall },
@@ -63,6 +65,7 @@ export default function WhatsApp() {
 
       <main className="flex-1 min-h-0 relative">
         {tab === "conversaciones" && <Conversaciones aviso={aviso} estado={estado} />}
+        {tab === "tablero" && <Tablero aviso={aviso} />}
         {tab === "entrenar" && <Entrenar aviso={aviso} />}
         {tab === "probar" && <Probar aviso={aviso} />}
         {tab === "llamar" && <Llamar aviso={aviso} />}
