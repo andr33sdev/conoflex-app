@@ -19,6 +19,7 @@ const { asegurarTablasAgentes, registrarRutasAgentes, iniciarVigilantes, ahoraAr
 const { cierreQuincena } = require("./cierreQuincena");
 const { liquidarDesdeBD } = require("./liquidacionDb");
 const { detalleExtrasPdf } = require("./asistencia/detalleExtrasPdf");
+const stockApi = require("./stockApi");
 const { sinCita: sinCitaMail, notasTexto: notasVentasTexto, validarDescuento, ERROR_DESCUENTO, sugerirDescuento, ejemplosEnviadosTexto } = require("./agentes/ventasMails");
 const { registrarObservaciones } = require("./agentes/ventasAprendizaje");
 const { calcularMpSemana } = require("./mpPlanSemanal");
@@ -5795,6 +5796,53 @@ app.put("/api/compras/items/:itemId", async (req, res) => {
     res.status(500).json({ error: error.message });
   } finally {
     conn.release();
+  }
+});
+
+// API PÚBLICA DE SOLO LECTURA: stock de semielaborados de un único depósito.
+// Expone solo codigo, nombre y stock. Protegida con API key (STOCK_API_KEY).
+function guardStockApi(req, res) {
+  const estado = stockApi.estadoClaveApi(req);
+  if (estado === "sin_configurar") {
+    res.status(503).json({ error: "La API de stock no está configurada." });
+    return false;
+  }
+  if (estado !== "ok") {
+    res.status(401).json({ error: "API key inválida." });
+    return false;
+  }
+  const ip = req.headers["x-forwarded-for"]?.split(",")[0]?.trim() || req.ip || req.socket?.remoteAddress || "desconocida";
+  if (stockApi.limiteSuperado(ip)) {
+    res.status(429).json({ error: "Demasiados pedidos. Esperá un momento." });
+    return false;
+  }
+  return true;
+}
+
+app.get("/api/public/stock-semielaborados", async (req, res) => {
+  if (!guardStockApi(req, res)) return;
+  try {
+    const dep = stockApi.depositoConfigurado();
+    const items = await stockApi.listarStock(db);
+    res.setHeader("Cache-Control", "no-store");
+    res.json({ deposito: dep.etiqueta, actualizado: new Date().toISOString(), semielaborados: items });
+  } catch (error) {
+    console.error("Error en API de stock de semielaborados:", error);
+    res.status(500).json({ error: "No se pudo obtener el stock." });
+  }
+});
+
+app.get("/api/public/stock-semielaborados/:codigo", async (req, res) => {
+  if (!guardStockApi(req, res)) return;
+  try {
+    const dep = stockApi.depositoConfigurado();
+    const item = await stockApi.stockDe(db, req.params.codigo);
+    if (!item) return res.status(404).json({ error: "Semielaborado no encontrado." });
+    res.setHeader("Cache-Control", "no-store");
+    res.json({ deposito: dep.etiqueta, actualizado: new Date().toISOString(), ...item });
+  } catch (error) {
+    console.error("Error en API de stock de semielaborados:", error);
+    res.status(500).json({ error: "No se pudo obtener el stock." });
   }
 });
 
