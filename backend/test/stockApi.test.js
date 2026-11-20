@@ -66,36 +66,42 @@ test("depositoConfigurado: default 33, y respeta STOCK_API_DEPOSITO válido; cae
   } finally { if (prev === undefined) delete process.env.STOCK_API_DEPOSITO; else process.env.STOCK_API_DEPOSITO = prev; }
 });
 
-test("listarStock: trae solo codigo, nombre y stock (depósito configurado), clamp y orden", async () => {
+test("listarStock: devuelve el DISPONIBLE (total − comprometido), solo codigo/nombre/stock, clamp y orden", async () => {
   const prev = process.env.STOCK_API_DEPOSITO;
   process.env.STOCK_API_DEPOSITO = "33";
   const db = {
     async query(sql) {
-      assert.match(sql, /SELECT codigo, nombre, stock_33 AS stock FROM semielaborados/);
+      assert.match(sql, /SELECT id, codigo, nombre, stock_33 AS stock FROM semielaborados/);
       assert.doesNotMatch(sql, /costo|receta|stock_26|stock_37|stock_ayolas/);
-      // La query hace "stock_33 AS stock", así que la fila llega con la clave "stock".
       return [[
-        { codigo: "B2071", nombre: "Base 2kg", stock: -3 },
-        { codigo: "C70", nombre: "Cono 70", stock: 15.27 },
+        { id: 1, codigo: "B2071", nombre: "Base 2kg", stock: -3 }, // negativo -> 0
+        { id: 2, codigo: "C70", nombre: "Cono 70", stock: 20 }, // 20 - 5 comprometido = 15
+        { id: 3, codigo: "X", nombre: "Equis", stock: 4 }, // 4 - 10 comprometido = 0 (no negativo)
       ]];
     },
   };
+  // Mapa de comprometido inyectado (evita recalcular desde pedidos en el test).
+  const comp = new Map([[2, 5], [3, 10]]);
   try {
-    const r = await stockApi.listarStock(db);
+    const r = await stockApi.listarStock(db, comp);
     assert.deepEqual(r, [
       { codigo: "B2071", nombre: "Base 2kg", stock: 0 },
-      { codigo: "C70", nombre: "Cono 70", stock: 15.3 },
+      { codigo: "C70", nombre: "Cono 70", stock: 15 },
+      { codigo: "X", nombre: "Equis", stock: 0 },
     ]);
-    // Cada item expone exactamente 3 claves: nada se filtra de más.
     for (const it of r) assert.deepEqual(Object.keys(it).sort(), ["codigo", "nombre", "stock"]);
   } finally { if (prev === undefined) delete process.env.STOCK_API_DEPOSITO; else process.env.STOCK_API_DEPOSITO = prev; }
 });
 
-test("stockDe: devuelve el item o null si no existe", async () => {
-  const dbOk = { async query() { return [[{ codigo: "C70", nombre: "Cono 70", stock: 4 }]]; } };
+test("stockDe: devuelve el disponible del item, o null si no existe", async () => {
+  const prev = process.env.STOCK_API_DEPOSITO;
+  process.env.STOCK_API_DEPOSITO = "33";
+  const dbOk = { async query() { return [[{ id: 7, codigo: "C70", nombre: "Cono 70", stock: 10 }]]; } };
   const dbVacio = { async query() { return [[]]; } };
-  assert.deepEqual(await stockApi.stockDe(dbOk, "C70"), { codigo: "C70", nombre: "Cono 70", stock: 4 });
-  assert.equal(await stockApi.stockDe(dbVacio, "NOPE"), null);
+  try {
+    assert.deepEqual(await stockApi.stockDe(dbOk, "C70", new Map([[7, 4]])), { codigo: "C70", nombre: "Cono 70", stock: 6 });
+    assert.equal(await stockApi.stockDe(dbVacio, "NOPE", new Map()), null);
+  } finally { if (prev === undefined) delete process.env.STOCK_API_DEPOSITO; else process.env.STOCK_API_DEPOSITO = prev; }
 });
 
 test("limiteSuperado: deja pasar los primeros y corta al excederse", () => {

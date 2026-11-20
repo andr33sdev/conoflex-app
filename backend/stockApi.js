@@ -3,6 +3,7 @@
 // Expone únicamente: codigo, nombre y stock. Nada de costos, recetas ni otros depósitos.
 // Se protege con una API key propia (STOCK_API_KEY), distinta del login de la app.
 const crypto = require("crypto");
+const { comprometidos } = require("./deposito");
 
 const COLUMNAS_DEPOSITO = {
   "33": { columna: "stock_33", etiqueta: "Depósito 33" },
@@ -40,23 +41,50 @@ function formatearStock(n) {
   return Math.max(0, Math.round(v * 10) / 10);
 }
 
-async function listarStock(db) {
-  const { columna } = depositoConfigurado();
-  const [filas] = await db.query(
-    `SELECT codigo, nombre, ${columna} AS stock FROM semielaborados ORDER BY codigo`,
-  );
-  return filas.map((f) => ({ codigo: f.codigo, nombre: f.nombre, stock: formatearStock(f.stock) }));
+// Lo comprometido (semielaborados reservados en pedidos armados y aún no despachados)
+// es específico del depósito 33. Se cachea 30s para no recalcularlo en cada request.
+let cacheComprometido = { at: 0, mapa: new Map() };
+const TTL_COMPROMETIDO_MS = 30 * 1000;
+async function comprometidoPorId(db) {
+  const ahora = Date.now();
+  if (ahora - cacheComprometido.at < TTL_COMPROMETIDO_MS) return cacheComprometido.mapa;
+  const mapa = new Map();
+  const res = await comprometidos(db); // Map semiId -> { cantidad, pedidos }
+  for (const [id, c] of res) mapa.set(Number(id), Number(c.cantidad) || 0);
+  cacheComprometido = { at: ahora, mapa };
+  return mapa;
 }
 
-async function stockDe(db, codigo) {
-  const { columna } = depositoConfigurado();
+// Mapa de lo comprometido a usar: el inyectado (tests), o el real cacheado solo si es depósito 33.
+async function resolverComprometido(db, clave, compMap) {
+  if (compMap) return compMap;
+  return clave === "33" ? await comprometidoPorId(db) : new Map();
+}
+
+// Devuelve el stock DISPONIBLE: en el 33, total menos lo comprometido (nunca negativo).
+async function listarStock(db, compMap = null) {
+  const { clave, columna } = depositoConfigurado();
   const [filas] = await db.query(
-    `SELECT codigo, nombre, ${columna} AS stock FROM semielaborados WHERE codigo = ? LIMIT 1`,
+    `SELECT id, codigo, nombre, ${columna} AS stock FROM semielaborados ORDER BY codigo`,
+  );
+  const comp = await resolverComprometido(db, clave, compMap);
+  return filas.map((f) => {
+    const disponible = Number(f.stock || 0) - (comp.get(Number(f.id)) || 0);
+    return { codigo: f.codigo, nombre: f.nombre, stock: formatearStock(disponible) };
+  });
+}
+
+async function stockDe(db, codigo, compMap = null) {
+  const { clave, columna } = depositoConfigurado();
+  const [filas] = await db.query(
+    `SELECT id, codigo, nombre, ${columna} AS stock FROM semielaborados WHERE codigo = ? LIMIT 1`,
     [String(codigo || "").trim()],
   );
   if (!filas.length) return null;
   const f = filas[0];
-  return { codigo: f.codigo, nombre: f.nombre, stock: formatearStock(f.stock) };
+  const comp = await resolverComprometido(db, clave, compMap);
+  const disponible = Number(f.stock || 0) - (comp.get(Number(f.id)) || 0);
+  return { codigo: f.codigo, nombre: f.nombre, stock: formatearStock(disponible) };
 }
 
 // Límite simple por IP: 120 pedidos por minuto, en memoria.
