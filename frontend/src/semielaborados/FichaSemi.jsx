@@ -51,6 +51,31 @@ export default function FichaSemi({ item, seguir, onCerrar, onClasificar, onCamb
           </section>
 
           <section>
+            <h3 className="text-[11px] font-bold uppercase tracking-[0.1em] text-zinc-500 mb-3">Tienda oficial (web)</h3>
+            <div className="rounded-2xl border border-white/[0.07] bg-white/[0.03] p-4">
+              <p className="text-sm text-zinc-200 font-semibold">Margen de resguardo para la web</p>
+              <p className="text-zinc-500 text-sm mt-0.5">La tienda muestra <span className="text-emerald-400 font-semibold">Entrega inmediata</span> solo si el disponible del Depósito 33 supera lo que pide el cliente en este porcentaje. Si no, muestra <span className="text-[#FFD60A] font-semibold">Consultar</span>. La web nunca ve la cantidad.</p>
+              <div className="mt-3 flex items-center gap-2">
+                <input
+                  key={item.id}
+                  type="number"
+                  min="0"
+                  max="1000"
+                  step="1"
+                  defaultValue={item.margen_web ?? 10}
+                  onBlur={(e) => {
+                    const v = Number(e.target.value);
+                    if (Number.isFinite(v) && v >= 0 && v <= 1000 && v !== Number(item.margen_web ?? 10)) onClasificar(item, { margen_web: v });
+                  }}
+                  className="w-28 rounded-xl border border-white/[0.09] bg-black/30 px-3 py-2 text-white text-lg font-bold tabular-nums focus:border-[#FF5A00] focus:outline-none"
+                />
+                <span className="text-zinc-400 font-bold text-lg">%</span>
+                <span className="text-zinc-600 text-xs ml-1">Se guarda al salir del campo.</span>
+              </div>
+            </div>
+          </section>
+
+          <section>
             <h3 className="text-[11px] font-bold uppercase tracking-[0.1em] text-zinc-500 mb-3">Stock por depósito</h3>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
               {[["Depósito 33", item.stock_33], ["Depósito 26", item.stock_26], ["Ayolas", item.stock_ayolas], ["Depósito 37", item.stock_37]].map(([t, v]) => (
