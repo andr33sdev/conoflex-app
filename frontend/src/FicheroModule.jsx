@@ -601,6 +601,25 @@ export default function FicheroModule() {
     });
   };
 
+  // Tilda las extras de una quincena: parte 1 = días 1 al 15, parte 2 = del 16 al último del mes.
+  // Cada botón deja la otra quincena como está: así se puede liquidar una quincena sin pisar la otra.
+  const tildarQuincena = (parte) => {
+    setDiasTildadosExtras((prev) => {
+      const nuevo = { ...prev };
+      celdasMes.forEach((celda) => {
+        if (!celda?.data) return;
+        const dia = Number(celda.fechaISO.slice(8, 10));
+        const enRango = parte === 1 ? dia <= 15 : dia >= 16;
+        if (!enRango) return;
+        const hsExt =
+          (celda.data.horasExtrasDiurnas || 0) +
+          (celda.data.horasExtrasNocturnas || 0);
+        if (hsExt > 0) nuevo[`${operarioSeleccionado}_${celda.fechaISO}`] = true;
+      });
+      return nuevo;
+    });
+  };
+
   // Fichadas del día abierto en el modal (más la madrugada siguiente, que es la salida del turno noche).
   const esAdminAsistencia = useMemo(() => esAdminLocal(), []);
   const puedeLegajo = useMemo(() => puedeVerLegajo(), []);
@@ -614,6 +633,31 @@ export default function FicheroModule() {
       .sort((a, b) => a.t.timestamp - b.t.timestamp)
       .map(({ f, t }) => ({ id: f.id, tipo: f.tipo, hora: t.horaVisual.slice(0, 5), fechaISO: t.fechaISO, manual: f.metodo === "Manual", otroDia: t.fechaISO !== dia }));
   }, [diaConfigurando, operarioSeleccionado, fichadas]);
+
+  // Resumen de cómo se liquida el día abierto: desglose de horas y por qué hay horas al 100%.
+  const resumenDiaConfig = useMemo(() => {
+    if (!diaConfigurando) return null;
+    const d = datosCalendarioOperario[diaConfigurando.fechaISO];
+    if (!d || !(d.ingreso || d.egreso)) return null;
+    const e50 = (d.horasExtras50Diurnas || 0) + (d.horasExtras50Nocturnas || 0);
+    const e100 = (d.horasExtras100Diurnas || 0) + (d.horasExtras100Nocturnas || 0);
+    const normales = d.horasNormales || 0;
+    const total = d.horasTotalesTurno || normales + e50 + e100;
+    // Motivos del 100%: feriado de hoy, feriado del día siguiente (turno que cruza), domingo, sábado desde 13:00.
+    const motivos = [];
+    if (e100 > 0) {
+      const [a, m, dd] = diaConfigurando.fechaISO.split("-").map(Number);
+      const hoy = new Date(a, m - 1, dd);
+      const sig = new Date(a, m - 1, dd + 1);
+      const isoSig = `${sig.getFullYear()}-${String(sig.getMonth() + 1).padStart(2, "0")}-${String(sig.getDate()).padStart(2, "0")}`;
+      if (feriadosGlobales[diaConfigurando.fechaISO]) motivos.push("feriado de hoy");
+      if (d.esSiguienteDia && feriadosGlobales[isoSig]) motivos.push(`feriado del ${sig.getDate()}`);
+      if (hoy.getDay() === 0) motivos.push("domingo");
+      if (hoy.getDay() === 6) motivos.push("sábado desde las 13:00");
+      if (d.esSiguienteDia && sig.getDay() === 0) motivos.push("domingo (madrugada)");
+    }
+    return { normales, e50, e100, total, motivos };
+  }, [diaConfigurando, datosCalendarioOperario, feriadosGlobales]);
 
   const abrirConfiguracionDia = (celda) => {
     if (!celda) return;
@@ -1142,6 +1186,22 @@ export default function FicheroModule() {
                     >
                       <Square size={11} />
                       <span>Destildar</span>
+                    </button>
+                    <button
+                      onClick={() => tildarQuincena(1)}
+                      className="text-[9px] font-bold uppercase tracking-wider text-cyan-300 bg-cyan-500/10 border border-cyan-500/30 hover:bg-cyan-500/20 px-2 py-0.5 rounded cursor-pointer transition-colors flex items-center gap-1"
+                      title="Tildar las horas extra del 1 al 15"
+                    >
+                      <CalendarIcon size={11} />
+                      <span>1.ª quincena</span>
+                    </button>
+                    <button
+                      onClick={() => tildarQuincena(2)}
+                      className="text-[9px] font-bold uppercase tracking-wider text-cyan-300 bg-cyan-500/10 border border-cyan-500/30 hover:bg-cyan-500/20 px-2 py-0.5 rounded cursor-pointer transition-colors flex items-center gap-1"
+                      title="Tildar las horas extra del 16 al último día del mes"
+                    >
+                      <CalendarIcon size={11} />
+                      <span>2.ª quincena</span>
                     </button>
                     {puedeLegajo && (
                       <button
@@ -1895,6 +1955,32 @@ export default function FicheroModule() {
                   fichadas={fichadasDelDiaConfig}
                   alCambiar={() => cargarFichadas(true)}
                 />
+              )}
+              {resumenDiaConfig && (
+                <div className="border border-zinc-800 p-3.5 rounded-lg bg-[#121212]">
+                  <div className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-2">
+                    Cómo se liquida este día ({(resumenDiaConfig.total % 1 === 0 ? resumenDiaConfig.total : resumenDiaConfig.total.toFixed(1))} hs en total)
+                  </div>
+                  <div className="grid grid-cols-3 gap-2 text-center">
+                    <div className="rounded bg-zinc-900/70 border border-zinc-800 py-1.5">
+                      <div className="text-sm font-black text-zinc-200">{resumenDiaConfig.normales % 1 === 0 ? resumenDiaConfig.normales : resumenDiaConfig.normales.toFixed(1)}</div>
+                      <div className="text-[9px] text-zinc-500 uppercase tracking-wider">Normales</div>
+                    </div>
+                    <div className="rounded bg-amber-500/10 border border-amber-500/30 py-1.5">
+                      <div className="text-sm font-black text-amber-300">{resumenDiaConfig.e50 % 1 === 0 ? resumenDiaConfig.e50 : resumenDiaConfig.e50.toFixed(1)}</div>
+                      <div className="text-[9px] text-amber-400/80 uppercase tracking-wider">Extra 50%</div>
+                    </div>
+                    <div className="rounded bg-purple-500/10 border border-purple-500/30 py-1.5">
+                      <div className="text-sm font-black text-purple-300">{resumenDiaConfig.e100 % 1 === 0 ? resumenDiaConfig.e100 : resumenDiaConfig.e100.toFixed(1)}</div>
+                      <div className="text-[9px] text-purple-400/80 uppercase tracking-wider">Extra 100%</div>
+                    </div>
+                  </div>
+                  {resumenDiaConfig.e100 > 0 && resumenDiaConfig.motivos.length > 0 && (
+                    <p className="text-[10px] text-zinc-400 mt-2 leading-snug">
+                      Las horas al 100% son por: <span className="text-purple-300 font-semibold">{resumenDiaConfig.motivos.join(", ")}</span>. Las horas que caen dentro de un feriado se pagan dobles aunque el turno haya entrado otro día.
+                    </p>
+                  )}
+                </div>
               )}
               <div className="bg-purple-950/20 border border-purple-800/40 p-3.5 rounded-lg">
                 <label className="flex items-start gap-3 cursor-pointer">
