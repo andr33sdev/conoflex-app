@@ -446,6 +446,20 @@ async function asegurarTablasWhatsapp(db) {
     creada_por INT NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   )`);
+  // Eventos para el tablero de Aldana: cotizaciones (con total e items) y derivaciones.
+  await db.query(`CREATE TABLE IF NOT EXISTS wa_eventos (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    conversacion_id INT NOT NULL,
+    tipo VARCHAR(16) NOT NULL,
+    total DECIMAL(14,2) NULL,
+    items INT NULL,
+    pdf TINYINT(1) NOT NULL DEFAULT 0,
+    detalle TEXT NULL,
+    motivo VARCHAR(300) NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    INDEX (tipo, created_at),
+    INDEX (conversacion_id)
+  )`);
 }
 
 async function leerRegla(db, clave) {
@@ -565,7 +579,9 @@ function crearBotWhatsapp({ db, ai, leerLista, notasTexto, crearNotificacion, im
     const audio = salida.audio && !calc && !salida.derivar && largo >= 60 && largo <= 600;
     // Presupuesto en PDF: solo si el modelo lo pidió y hay un cálculo real con items.
     const presupuesto = salida.presupuesto && calc ? { ...calc, nota: salida.notaTotal || "" } : null;
-    return { texto, respuesta: salida.respuesta, fotos, enviarLista: salida.enviarLista && ctx.tieneLista, derivar: salida.derivar, motivo: salida.motivo, memoria: salida.memoria, audio, presupuesto };
+    // Toda cotización (haya PDF o no) se registra para el tablero de métricas.
+    const cotizacion = calc ? { lineas: calc.lineas, total: calc.total, pdf: !!presupuesto } : null;
+    return { texto, respuesta: salida.respuesta, fotos, enviarLista: salida.enviarLista && ctx.tieneLista, derivar: salida.derivar, motivo: salida.motivo, memoria: salida.memoria, audio, presupuesto, cotizacion };
   }
 
   async function guardarMensaje(conversacionId, { waId = null, direccion, autor, tipo = "text", texto, usuarioId = null, error = null }) {
@@ -642,6 +658,7 @@ function crearBotWhatsapp({ db, ai, leerLista, notasTexto, crearNotificacion, im
 
   async function derivar(conv, motivo) {
     await db.query(`UPDATE wa_conversaciones SET derivada = 1, motivo_derivacion = ?, pausado_hasta = NOW() + INTERVAL ${PAUSA_HORAS} HOUR WHERE id = ?`, [corto(motivo || "Pidió hablar con una persona", 290), conv.id]);
+    await db.query("INSERT INTO wa_eventos (conversacion_id, tipo, motivo) VALUES (?, 'derivacion', ?)", [conv.id, corto(motivo || "Pidió hablar con una persona", 290)]).catch(() => {});
     crearNotificacion?.(db, { tipo: "WHATSAPP", titulo: `WhatsApp: ${conv.nombre || conv.telefono} necesita una persona`, texto: motivo || null, ruta: "whatsapp", roles: ROLES_AVISO, push: true });
   }
 
@@ -754,6 +771,16 @@ function crearBotWhatsapp({ db, ai, leerLista, notasTexto, crearNotificacion, im
           console.error("[whatsapp] presupuesto pdf:", e.message);
         }
       }
+      if (r.cotizacion) {
+        try {
+          await db.query(
+            "INSERT INTO wa_eventos (conversacion_id, tipo, total, items, pdf, detalle) VALUES (?, 'cotizacion', ?, ?, ?, ?)",
+            [conversacionId, r.cotizacion.total, r.cotizacion.lineas.length, r.cotizacion.pdf ? 1 : 0, JSON.stringify(r.cotizacion.lineas.map((l) => ({ codigo: l.codigo, nombre: l.nombre, cantidad: l.cantidad, subtotal: l.subtotal })))],
+          );
+        } catch (e) {
+          console.error("[whatsapp] evento cotizacion:", e.message);
+        }
+      }
       if (r.derivar) await derivar(conv, r.motivo);
     } finally {
       ocupadas.delete(conversacionId);
@@ -811,6 +838,68 @@ function registrarRutasWhatsapp(app, { db, requirePermiso, bot }) {
       const c = cfg();
       const faltan = [!c.token && "WHATSAPP_TOKEN", !c.phoneId && "WHATSAPP_PHONE_NUMBER_ID", !c.verifyToken && "WHATSAPP_VERIFY_TOKEN", !c.appSecret && "WHATSAPP_APP_SECRET"].filter(Boolean);
       res.json({ configurado: !faltan.length, faltan, botActivo: await bot.botGlobal(), webhook: `${c.base}/api/public/whatsapp/webhook` });
+    } catch (e) {
+      err(res, e);
+    }
+  });
+
+  app.get("/api/whatsapp/tablero", permiso, async (req, res) => {
+    try {
+      const dias = Math.min(Math.max(parseInt(req.query.dias, 10) || 30, 1), 365);
+      const desde = `NOW() - INTERVAL ${dias} DAY`;
+      const [[consultas]] = await db.query(
+        `SELECT COUNT(DISTINCT conversacion_id) AS conversaciones, COUNT(*) AS mensajes
+         FROM wa_mensajes WHERE direccion = 'IN' AND created_at >= ${desde}`,
+      );
+      const [[cot]] = await db.query(
+        `SELECT COUNT(*) AS cantidad, COALESCE(SUM(total), 0) AS monto, COALESCE(SUM(pdf), 0) AS con_pdf
+         FROM wa_eventos WHERE tipo = 'cotizacion' AND created_at >= ${desde}`,
+      );
+      const [[der]] = await db.query(
+        `SELECT COUNT(*) AS cantidad, COUNT(DISTINCT conversacion_id) AS conversaciones
+         FROM wa_eventos WHERE tipo = 'derivacion' AND created_at >= ${desde}`,
+      );
+      const totalConsultas = Number(consultas.conversaciones) || 0;
+      const convDerivadas = Number(der.conversaciones) || 0;
+      const resueltas = Math.max(totalConsultas - convDerivadas, 0);
+      const pctResueltas = totalConsultas ? Math.round((resueltas / totalConsultas) * 100) : 0;
+      // Productos top: se agregan las líneas de cada cotización (JSON) en memoria.
+      const [lineasCot] = await db.query(
+        `SELECT detalle FROM wa_eventos WHERE tipo = 'cotizacion' AND detalle IS NOT NULL AND created_at >= ${desde}`,
+      );
+      const porProducto = new Map();
+      for (const row of lineasCot) {
+        let lineas = [];
+        try {
+          lineas = JSON.parse(row.detalle) || [];
+        } catch {
+          lineas = [];
+        }
+        for (const l of lineas) {
+          const clave = l.codigo || l.nombre || "—";
+          const acc = porProducto.get(clave) || { codigo: l.codigo || "", nombre: l.nombre || clave, veces: 0, cantidad: 0, monto: 0 };
+          acc.veces += 1;
+          acc.cantidad += Number(l.cantidad) || 0;
+          acc.monto += Number(l.subtotal) || 0;
+          porProducto.set(clave, acc);
+        }
+      }
+      const productosTop = [...porProducto.values()].sort((a, b) => b.veces - a.veces || b.monto - a.monto).slice(0, 8);
+      // Serie diaria de consultas (mensajes de clientes) para el mini gráfico.
+      const [serie] = await db.query(
+        `SELECT DATE(created_at) AS dia, COUNT(*) AS mensajes, COUNT(DISTINCT conversacion_id) AS clientes
+         FROM wa_mensajes WHERE direccion = 'IN' AND created_at >= ${desde}
+         GROUP BY DATE(created_at) ORDER BY dia`,
+      );
+      res.json({
+        dias,
+        consultas: { conversaciones: totalConsultas, mensajes: Number(consultas.mensajes) || 0 },
+        cotizaciones: { cantidad: Number(cot.cantidad) || 0, monto: Number(cot.monto) || 0, conPdf: Number(cot.con_pdf) || 0 },
+        derivaciones: { cantidad: Number(der.cantidad) || 0, conversaciones: convDerivadas },
+        resolucion: { resueltas, derivadas: convDerivadas, pctResueltas },
+        productosTop,
+        serie: serie.map((s) => ({ dia: s.dia instanceof Date ? s.dia.toISOString().slice(0, 10) : String(s.dia).slice(0, 10), mensajes: Number(s.mensajes) || 0, clientes: Number(s.clientes) || 0 })),
+      });
     } catch (e) {
       err(res, e);
     }
