@@ -11,6 +11,7 @@ import {
   ChevronLeft,
   ChevronRight,
   ChevronDown,
+  FileText,
   ArrowUp,
   ArrowDown,
   Calendar as CalendarIcon,
@@ -633,6 +634,29 @@ export default function FicheroModule() {
       .sort((a, b) => a.t.timestamp - b.t.timestamp)
       .map(({ f, t }) => ({ id: f.id, tipo: f.tipo, hora: t.horaVisual.slice(0, 5), fechaISO: t.fechaISO, manual: f.metodo === "Manual", otroDia: t.fechaISO !== dia }));
   }, [diaConfigurando, operarioSeleccionado, fichadas]);
+
+  // Abre el PDF con el detalle de horas extra (día por día, hora por hora) del operario seleccionado.
+  // parte: undefined = mes completo, 1 = primera quincena, 2 = segunda quincena.
+  const descargarDetalleExtras = async (parte) => {
+    if (!operarioSeleccionado) return;
+    const mes = `${mesCalendario.anio}-${String(mesCalendario.mes + 1).padStart(2, "0")}`;
+    const q = parte ? `&quincena=${parte}` : "";
+    try {
+      const res = await fetch(getApiUrl(`/api/fichero/detalle-extras-pdf?operario=${encodeURIComponent(operarioSeleccionado)}&mes=${mes}${q}`));
+      if (!res.ok) {
+        let msg = "No se pudo generar el detalle de horas extra.";
+        try { const j = await res.json(); if (j?.error) msg = j.error; } catch (_) { /* no era JSON */ }
+        alert(msg);
+        return;
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      window.open(url, "_blank");
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+    } catch (_) {
+      alert("No se pudo generar el detalle de horas extra.");
+    }
+  };
 
   // Resumen de cómo se liquida el día abierto: desglose de horas y por qué hay horas al 100%.
   const resumenDiaConfig = useMemo(() => {
@@ -1259,6 +1283,30 @@ export default function FicheroModule() {
                         <span className="w-1.5 h-1.5 rounded-full bg-[#FF5A00]" />
                         Exportar este operario
                       </button>
+                      <button
+                        onClick={() => {
+                          setMenuExportarAbierto(false);
+                          descargarDetalleExtras();
+                        }}
+                        className="w-full text-left px-3.5 py-2.5 text-xs font-bold text-zinc-300 hover:text-white hover:bg-zinc-800/80 flex items-center gap-2.5 transition-colors cursor-pointer uppercase tracking-wider border-t border-zinc-900"
+                      >
+                        <FileText size={14} className="text-cyan-400" />
+                        Detalle de horas extra
+                      </button>
+                      <div className="flex gap-1 px-3.5 pb-2 pt-0.5">
+                        <button
+                          onClick={() => { setMenuExportarAbierto(false); descargarDetalleExtras(1); }}
+                          className="flex-1 text-[10px] font-bold text-cyan-300 bg-cyan-500/10 border border-cyan-500/30 hover:bg-cyan-500/20 py-1 rounded cursor-pointer uppercase tracking-wider"
+                        >
+                          1.ª quinc.
+                        </button>
+                        <button
+                          onClick={() => { setMenuExportarAbierto(false); descargarDetalleExtras(2); }}
+                          className="flex-1 text-[10px] font-bold text-cyan-300 bg-cyan-500/10 border border-cyan-500/30 hover:bg-cyan-500/20 py-1 rounded cursor-pointer uppercase tracking-wider"
+                        >
+                          2.ª quinc.
+                        </button>
+                      </div>
                       <button
                         onClick={() => {
                           setMenuExportarAbierto(false);
