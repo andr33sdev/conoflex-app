@@ -9,11 +9,13 @@ import { api, hoyISO, lunesDe, rangoSemana, semanaISO, sumarDias } from "./produ
 import ListaSemana from "./planificacion/ListaSemana";
 import VistaDia from "./planificacion/VistaDia";
 import CalendarioProducido from "./planificacion/CalendarioProducido";
+import Calidad from "./planificacion/Calidad";
 import PanelTurno from "./planificacion/PanelTurno";
 import AgregarLote from "./planificacion/AgregarLote";
 import Maquinas from "./planificacion/Maquinas";
 import Cargas from "./planificacion/Cargas";
 import ProximoPaso from "./planificacion/ProximoPaso";
+import Cumplimiento from "./planificacion/Cumplimiento";
 import { proximoPaso } from "./planificacion/reglas";
 
 export default function PlanificacionProduccion() {
@@ -79,7 +81,7 @@ export default function PlanificacionProduccion() {
       <div className="max-w-[1700px] mx-auto px-3 sm:px-5 lg:px-6 py-4 sm:py-5 pb-24 lg:pb-8">
         <header className="flex flex-wrap items-center gap-x-3 gap-y-3 mb-4">
           <div role="tablist" aria-label="Vista del módulo" className="flex items-center rounded-xl bg-white/[0.05] border border-white/[0.07] p-1 mr-auto">
-            {[["plan", "Planificar"], ["producido", "Producido"]].map(([id, t]) => (
+            {[["plan", "Planificar"], ["producido", "Producido"], ["calidad", "Calidad"]].map(([id, t]) => (
               <button key={id} role="tab" aria-selected={vista === id} onClick={() => setVista(id)} className={`min-h-[36px] px-4 rounded-lg text-sm font-bold transition-colors cursor-pointer ${vista === id ? "bg-[#FF5A00] text-black" : "text-zinc-400 hover:text-white"}`}>{t}</button>
             ))}
           </div>
@@ -108,6 +110,8 @@ export default function PlanificacionProduccion() {
 
         {vista === "producido" ? (
           <CalendarioProducido />
+        ) : vista === "calidad" ? (
+          <Calidad />
         ) : error && !plan ? (
           <div className="rounded-3xl border border-rose-500/30 bg-rose-500/10 p-8 text-center">
             <p className="text-rose-100 font-semibold">{error}</p>
@@ -123,6 +127,7 @@ export default function PlanificacionProduccion() {
               onAccion={(a) => (a.tipo === "agregar" ? setAgregando(true) : a.tipo === "cargas" ? setVerCargas(true) : setTurnoAbierto({ fecha: a.fecha, turno: a.turno }))}
             />
 
+            <Cumplimiento items={items} />
             <VistaDia plan={plan} maquinas={maquinas} onAbrirTurno={(fecha, turno) => setTurnoAbierto({ fecha, turno })} onCambio={recargar} toast={toast} />
             <ListaSemana items={items} onAgregar={() => setAgregando(true)} onCambio={recargar} toast={toast} />
           </motion.div>

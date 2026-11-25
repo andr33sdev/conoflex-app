@@ -4,7 +4,7 @@
 import { useState } from "react";
 import { AlertTriangle, Check, ChevronLeft, ChevronRight, Moon, Rocket, Sun } from "lucide-react";
 import { Boton, Chip } from "../produccion/ui";
-import { api, diaCorto, diaMes, nombreDia, num } from "../produccion/util";
+import { api, diaCorto, diaMes, nombreDia, num, sinSemi } from "../produccion/util";
 import { estadoTurno, problemasDeTurno } from "./reglas";
 
 const SIN_MAQUINA = "sin-maquina";
@@ -25,7 +25,7 @@ function Tarjeta({ a, lanzado, onAbrir, onAprobar }) {
   return (
     <div style={{ borderLeftColor: e.borde }} className="rounded-r-lg border border-white/[0.08] border-l-[3px] bg-[#131317] p-2.5">
       <button onClick={onAbrir} className="w-full text-left cursor-pointer">
-        <p className="text-[13px] font-semibold text-white leading-snug truncate">{a.semielaborado_nombre}</p>
+        <p className="text-[13px] font-semibold text-white leading-snug truncate">{sinSemi(a.semielaborado_nombre)}</p>
         <p className="text-[12px] text-zinc-500 tabular-nums">
           {num(cant)} u{a.operario ? ` · ${a.operario}` : " · sin operario"}
         </p>

@@ -1,8 +1,19 @@
 // Calendario de la producción realizada: mes a mes, cada día muestra lo producido (aprobado) y
 // lo que está por aprobar. Al tocar un día se ve el detalle en tabla.
 import { useEffect, useState } from "react";
-import { ChevronLeft, ChevronRight, Loader2, X } from "lucide-react";
-import { api, num, turnoLabel } from "../produccion/util";
+import { ChevronLeft, ChevronRight, FileDown, Loader2, X } from "lucide-react";
+import { api, num, sinSemi, turnoLabel } from "../produccion/util";
+import { getApiUrl } from "../apiConfig";
+
+async function abrirPartePdf(fecha) {
+  try {
+    const res = await fetch(getApiUrl(`/api/prod/parte-pdf?fecha=${fecha}`));
+    if (!res.ok) return;
+    const url = URL.createObjectURL(await res.blob());
+    window.open(url, "_blank");
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+  } catch (_) { /* ignorar */ }
+}
 
 const MESES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"];
 const DIAS_SEMANA = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"];
@@ -35,7 +46,10 @@ function DetalleDia({ fecha, onCerrar }) {
     <div className="mt-4 rounded-2xl border border-white/[0.09] bg-[#0f0f12] overflow-hidden">
       <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-white/[0.07]">
         <p className="text-sm font-bold text-white">Producido el {titulo}</p>
-        <button onClick={onCerrar} aria-label="Cerrar detalle" className="w-8 h-8 grid place-items-center rounded-lg text-zinc-500 hover:text-white hover:bg-white/[0.08] cursor-pointer"><X size={16} /></button>
+        <div className="flex items-center gap-1.5">
+          <button onClick={() => abrirPartePdf(fecha)} className="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg text-[13px] font-bold text-zinc-300 hover:text-white bg-white/[0.05] hover:bg-white/[0.1] border border-white/[0.08] cursor-pointer"><FileDown size={15} /> Parte PDF</button>
+          <button onClick={onCerrar} aria-label="Cerrar detalle" className="w-8 h-8 grid place-items-center rounded-lg text-zinc-500 hover:text-white hover:bg-white/[0.08] cursor-pointer"><X size={16} /></button>
+        </div>
       </div>
       {error ? (
         <p className="p-4 text-sm text-rose-200">{error}</p>
@@ -60,7 +74,7 @@ function DetalleDia({ fecha, onCerrar }) {
             <tbody>
               {dato.cargas.map((c) => (
                 <tr key={c.id} className="border-t border-white/[0.05]">
-                  <td className={td}><span className="font-semibold text-white">{c.modelo_nombre}</span><span className="block text-xs text-zinc-600">{c.lote || c.modelo_codigo}</span></td>
+                  <td className={td}><span className="font-semibold text-white">{sinSemi(c.modelo_nombre)}</span><span className="block text-xs text-zinc-600">{c.lote || c.modelo_codigo}</span></td>
                   <td className={`${td} text-zinc-400`}>{turnoLabel(c.turno)}</td>
                   <td className={`${td} text-zinc-300`}>{c.maquina || "—"}</td>
                   <td className={`${td} text-zinc-300`}>{c.operario}</td>

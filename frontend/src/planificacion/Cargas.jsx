@@ -3,7 +3,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ClipboardCheck, Loader2, Trash2, XCircle } from "lucide-react";
 import { Boton, Chip, Etiqueta, Modal, Vacio } from "../produccion/ui";
 import { campo } from "../produccion/estilos";
-import { api, diaMes, num, turnoLabel } from "../produccion/util";
+import { api, diaMes, num, sinSemi, turnoLabel } from "../produccion/util";
 
 const PAGINA = 12;
 
@@ -40,7 +40,7 @@ function Tarjeta({ c, estado, onResuelto, toast }) {
       await api(`/api/prod/cargas/${c.id}${sacarDeTablet ? "?sacar_de_tablet=1" : ""}`, { method: "DELETE" });
       toast(
         c.estado === "APROBADA"
-          ? sacarDeTablet ? "Producción eliminada y sacada de la tablet. Volvieron la materia prima y el stock del semielaborado." : "Producción eliminada. Volvieron la materia prima y el stock del semielaborado; la tablet puede volver a cargarla."
+          ? sacarDeTablet ? "Producción eliminada y sacada de la tablet. Volvieron la materia prima y el stock del producto." : "Producción eliminada. Volvieron la materia prima y el stock del producto; la tablet puede volver a cargarla."
           : sacarDeTablet ? "Carga eliminada y sacada de la tablet." : "Carga eliminada.",
       );
       onResuelto();
@@ -54,7 +54,7 @@ function Tarjeta({ c, estado, onResuelto, toast }) {
     setOcupado(true);
     try {
       await api(`/api/prod/cargas/${c.id}/${accion}`, { method: "PUT", body });
-      toast(accion === "aprobar" ? "Carga aprobada: figura en métricas, se descontó la materia prima y se sumó al stock del semielaborado" : "Carga rechazada: el operario la va a ver para corregirla");
+      toast(accion === "aprobar" ? "Carga aprobada: figura en métricas, se descontó la materia prima y se sumó al stock del producto" : "Carga rechazada: el operario la va a ver para corregirla");
       onResuelto();
     } catch (e) {
       toast(e.message, "error");
@@ -72,7 +72,7 @@ function Tarjeta({ c, estado, onResuelto, toast }) {
             {c.estado === "RECHAZADA" && <Chip tono="rojo" icono={XCircle}>Rechazada</Chip>}
             {c.estado === "PENDIENTE" && <Chip tono="amarillo">Por aprobar</Chip>}
           </div>
-          <p className="mt-1 text-[15px] font-bold text-white leading-snug">{c.modelo_nombre}</p>
+          <p className="mt-1 text-[15px] font-bold text-white leading-snug">{sinSemi(c.modelo_nombre)}</p>
           <p className="text-xs text-zinc-500">{diaMes(c.fecha)} · {turnoLabel(c.turno)} · {c.maquina || "sin máquina"} · {c.operario}</p>
         </div>
       </div>
@@ -135,7 +135,7 @@ function Tarjeta({ c, estado, onResuelto, toast }) {
             <div className="mt-3 rounded-xl border border-rose-500/30 bg-rose-500/[0.07] p-3.5">
               <p className="text-sm text-rose-100 leading-snug">
                 {c.estado === "APROBADA"
-                  ? "Se saca de métricas, vuelve al stock la materia prima usada y se restan del semielaborado las piezas que había sumado. ¿Qué hacemos con la tablet?"
+                  ? "Se saca de métricas, vuelve al stock la materia prima usada y se restan del producto las piezas que había sumado. ¿Qué hacemos con la tablet?"
                   : "Se elimina esta carga. ¿Qué hacemos con la tablet?"}
               </p>
               <div className="mt-3 flex flex-col sm:flex-row gap-2">
@@ -233,7 +233,7 @@ export default function Cargas({ abierto, onCerrar, onCambio, toast }) {
             <div className="mb-4">
               {confirmarTodas ? (
                 <div className="rounded-2xl border border-emerald-500/30 bg-emerald-500/[0.07] p-3.5 flex flex-wrap items-center gap-2">
-                  <p className="text-sm text-emerald-100 flex-1 min-w-[200px]">Vas a aprobar las <b>{total}</b> cargas por aprobar. Se descuenta la materia prima y se suma al stock de cada semielaborado.</p>
+                  <p className="text-sm text-emerald-100 flex-1 min-w-[200px]">Vas a aprobar las <b>{total}</b> cargas por aprobar. Se descuenta la materia prima y se suma al stock de cada producto.</p>
                   <Boton variante="primario" icono={CheckCircle2} onClick={aprobarTodas} disabled={aprobandoTodas}>{aprobandoTodas ? "Aprobando…" : "Sí, aprobar todas"}</Boton>
                   <Boton variante="fantasma" onClick={() => setConfirmarTodas(false)} disabled={aprobandoTodas}>No</Boton>
                 </div>

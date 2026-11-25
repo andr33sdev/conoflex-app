@@ -3,7 +3,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { AlertTriangle, CheckCircle2, Hand, Loader2, Search, Sparkles } from "lucide-react";
 import { Boton, Chip, Etiqueta, Modal, Vacio } from "../produccion/ui";
 import { campo } from "../produccion/estilos";
-import { api, num } from "../produccion/util";
+import { api, num, sinSemi } from "../produccion/util";
 
 const URGENCIA = {
   CRITICA: { tono: "rojo", texto: "Crítico", borde: "border-l-rose-500" },
@@ -53,7 +53,7 @@ function Sugerida({ s, semana, onAgregado, toast }) {
         <Chip tono={u.tono}>{u.texto}</Chip>
         <ChipMaterial m={s.material} />
       </div>
-      <p className="mt-2 text-[15px] font-bold text-white leading-snug">{s.nombre}</p>
+      <p className="mt-2 text-[15px] font-bold text-white leading-snug">{sinSemi(s.nombre)}</p>
       <p className="text-xs text-zinc-500">{s.codigo}</p>
       <p className="mt-2 text-[13px] text-zinc-400 leading-relaxed">
         Stock <b className="text-zinc-200 tabular-nums">{num(s.stock_total)}</b> · alcanza <b className={`tabular-nums ${s.urgencia === "CRITICA" ? "text-rose-300" : "text-zinc-200"}`}>{s.dias_de_stock != null ? num(s.dias_de_stock, 0) : "—"}</b> días
@@ -104,7 +104,7 @@ function Sugerencias({ semana, onCambio, toast }) {
       ) : cargando ? (
         <div className="flex items-center justify-center gap-3 py-14 text-zinc-500"><Loader2 className="animate-spin" size={20} /> Calculando según ventas y stock…</div>
       ) : dato.sugerencias.length === 0 ? (
-        <Vacio icono={CheckCircle2} titulo="No hay nada urgente por producir" texto={`Con el stock actual y las ventas recientes, los semielaborados quedan cubiertos por ${cobertura} días o ya están en la lista de esta semana.`} />
+        <Vacio icono={CheckCircle2} titulo="No hay nada urgente por producir" texto={`Con el stock actual y las ventas recientes, los productos quedan cubiertos por ${cobertura} días o ya están en la lista de esta semana.`} />
       ) : (
         <>
           <p className="text-xs text-zinc-500 mb-3">Ordenado por urgencia. Basado en {dato.periodo.split(",")[0]}.</p>
@@ -168,7 +168,7 @@ function ALaMano({ semana, onCambio, toast }) {
         <>
           <div className="relative mb-3">
             <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-500" />
-            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscá el semielaborado por nombre o código…" className={`${campo} pl-10`} autoFocus />
+            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscá el producto por nombre o código…" className={`${campo} pl-10`} autoFocus />
           </div>
           {lista.length === 0 ? (
             <Vacio icono={Search} titulo="No encontré ese producto" texto="Revisá el nombre o el código." />
@@ -178,7 +178,7 @@ function ALaMano({ semana, onCambio, toast }) {
                 <li key={c.id}>
                   <button onClick={() => { setSel(c); setCant(""); }} className="w-full text-left rounded-xl border border-white/[0.07] bg-[#131317] hover:border-[#FF5A00]/50 hover:bg-[#17171c] px-4 py-3 transition-colors cursor-pointer">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <span className="font-bold text-white">{c.nombre}</span>
+                      <span className="font-bold text-white">{sinSemi(c.nombre)}</span>
                       {c.origen === "PROVEEDOR" && <Chip tono="amarillo">Se compra a proveedor</Chip>}
                       {c.origen === "PARAGUAY" && <Chip tono="azul">Viene de Paraguay</Chip>}
                       {!c.tiene_receta && <Chip tono="gris">Sin receta activa</Chip>}
@@ -192,7 +192,7 @@ function ALaMano({ semana, onCambio, toast }) {
         </>
       ) : (
         <div className="rounded-2xl border border-white/[0.08] bg-[#131317] p-5">
-          <p className="text-[15px] font-bold text-white">{sel.nombre}</p>
+          <p className="text-[15px] font-bold text-white">{sinSemi(sel.nombre)}</p>
           <p className="text-xs text-zinc-500">{sel.codigo} · stock {num(sel.stock_total)}</p>
           <div className="mt-4 grid gap-4 sm:grid-cols-2">
             <div>

@@ -7,6 +7,7 @@ const F = require("./ingenieriaFormula");
 const { moverStock } = require("./stockMovimientos");
 const { asegurarSemiStockCarga, sumarPorCarga, devolverPorCarga } = require("./semiStockCarga");
 const { registrarAlertaDeCarga, fotoIngenieria, formulaDeFoto } = require("./ingenieriasRutas");
+const { partePdf } = require("./produccion/partePdf");
 
 const FECHA = (col) => `DATE_FORMAT(${col}, '%Y-%m-%d')`;
 const esISO = (v) => !!P.parseISO(v);
@@ -575,6 +576,89 @@ function registrarRutasProduccion(app, db, requirePermiso) {
       [fecha, turno],
     );
     res.json({ ok: true });
+  }));
+
+  // Aviso de materia prima: ¿alcanza el stock para producir lo planificado en este turno?
+  // Suma, por materia prima, lo que piden todas las asignaciones (con receta confirmada) y lo
+  // compara con el stock. Devuelve los faltantes y los productos sin receta confirmada.
+  app.get("/api/prod/turnos/materiales", PLAN, seguro(async (req, res) => {
+    const { fecha, turno } = req.query;
+    if (!esISO(fecha) || !turnoOk(turno)) return res.status(400).json({ error: "Fecha o turno inválido." });
+    const [asigs] = await db.query(
+      `SELECT a.cantidad, a.ingenieria_id, a.receta_confirmada, i.semielaborado_nombre AS nombre
+         FROM prod_asignaciones a JOIN prod_plan_items i ON i.id = a.item_id
+        WHERE a.fecha = ? AND a.turno = ?`,
+      [fecha, turno],
+    );
+    const necesita = new Map(); // mp_id -> { codigo, nombre, unidad, necesita, stock }
+    const sinReceta = [];
+    for (const a of asigs) {
+      if (!a.ingenieria_id || !a.receta_confirmada) { sinReceta.push(a.nombre); continue; }
+      const [det] = await db.query(
+        `SELECT d.materia_prima_id AS id, d.cantidad, d.unidad_medida AS unidad, mp.codigo, mp.nombre, mp.stock_actual AS stock
+           FROM ingenieria_detalles d JOIN materias_primas mp ON mp.id = d.materia_prima_id
+          WHERE d.ingenieria_id = ? AND d.materia_prima_id IS NOT NULL`,
+        [a.ingenieria_id],
+      );
+      for (const d of det) {
+        const pide = (Number(a.cantidad) || 0) * (Number(d.cantidad) || 0);
+        if (pide <= 0) continue;
+        const cur = necesita.get(d.id) || { codigo: d.codigo, nombre: d.nombre, unidad: d.unidad, necesita: 0, stock: Number(d.stock) || 0 };
+        cur.necesita += pide;
+        necesita.set(d.id, cur);
+      }
+    }
+    const r3 = (n) => Math.round((Number(n) || 0) * 1000) / 1000;
+    const faltantes = [...necesita.values()]
+      .filter((m) => m.necesita > m.stock + 1e-6)
+      .map((m) => ({ codigo: m.codigo, nombre: m.nombre, unidad: m.unidad, necesita: r3(m.necesita), stock: r3(m.stock), falta: r3(m.necesita - m.stock) }))
+      .sort((a, b) => b.falta - a.falta);
+    res.json({ ok: faltantes.length === 0, faltantes, sin_receta: [...new Set(sinReceta)] });
+  }));
+
+  // Parte de producción de un día en PDF (lo producido por máquina y operario).
+  app.get("/api/prod/parte-pdf", PLAN, seguro(async (req, res) => {
+    const fecha = String(req.query.fecha || "");
+    if (!esISO(fecha)) return res.status(400).json({ error: "Fecha inválida." });
+    const [cargas] = await db.query(
+      `SELECT turno, lote, modelo_nombre, maquina, operario, total_producido, fallas, estado
+         FROM prod_cargas WHERE fecha = ? AND estado <> 'RECHAZADA'
+        ORDER BY turno, maquina, id`,
+      [fecha],
+    );
+    const { nombre, datos } = partePdf({ fecha, cargas, usuario: req.user?.nombre || req.user?.usuario || "" });
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `inline; filename*=UTF-8''${encodeURIComponent(nombre)}`);
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.send(datos);
+  }));
+
+  // Calidad: % de fallas por máquina y por producto en un mes (solo cargas aprobadas).
+  app.get("/api/prod/calidad", PLAN, seguro(async (req, res) => {
+    const mes = String(req.query.mes || "").match(/^\d{4}-\d{2}$/) ? req.query.mes : new Date().toISOString().slice(0, 7);
+    const [anio, m] = mes.split("-").map(Number);
+    const desde = `${mes}-01`;
+    const hasta = `${mes}-${String(new Date(anio, m, 0).getDate()).padStart(2, "0")}`;
+    const where = "WHERE estado = 'APROBADA' AND fecha BETWEEN ? AND ?";
+    const pct = (f, t) => (t > 0 ? Math.round((f / t) * 1000) / 10 : 0);
+    const [[tot]] = await db.query(`SELECT COALESCE(SUM(total_producido),0) AS producido, COALESCE(SUM(fallas),0) AS fallas FROM prod_cargas ${where}`, [desde, hasta]);
+    const [maqs] = await db.query(
+      `SELECT COALESCE(NULLIF(maquina,''),'Sin máquina') AS maquina, SUM(total_producido) AS producido, SUM(fallas) AS fallas
+         FROM prod_cargas ${where} GROUP BY COALESCE(NULLIF(maquina,''),'Sin máquina') ORDER BY fallas DESC`,
+      [desde, hasta],
+    );
+    const [prods] = await db.query(
+      `SELECT modelo_nombre AS nombre, modelo_codigo AS codigo, SUM(total_producido) AS producido, SUM(fallas) AS fallas
+         FROM prod_cargas ${where} GROUP BY modelo_codigo, modelo_nombre ORDER BY fallas DESC LIMIT 40`,
+      [desde, hasta],
+    );
+    const arma = (r) => ({ ...r, producido: Number(r.producido) || 0, fallas: Number(r.fallas) || 0, pct: pct(Number(r.fallas) || 0, Number(r.producido) || 0) });
+    res.json({
+      mes,
+      total: { producido: Number(tot.producido) || 0, fallas: Number(tot.fallas) || 0, pct: pct(Number(tot.fallas) || 0, Number(tot.producido) || 0) },
+      maquinas: maqs.map(arma),
+      productos: prods.map(arma),
+    });
   }));
 
   app.post("/api/prod/turnos/retirar", PLAN, seguro(async (req, res) => {

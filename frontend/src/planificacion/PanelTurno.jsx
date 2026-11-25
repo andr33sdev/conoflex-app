@@ -1,9 +1,9 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { AlertTriangle, BadgeCheck, ChevronDown, FlaskConical, MessageSquareText, Moon, PackagePlus, Radio, Rocket, Sun, Trash2, Undo2 } from "lucide-react";
 import { Barra, Boton, Chip, Drawer, Etiqueta } from "../produccion/ui";
 import { campo } from "../produccion/estilos";
-import { api, nombreDia, diaMes, num, turnoLabel } from "../produccion/util";
+import { api, nombreDia, diaMes, num, sinSemi, turnoLabel } from "../produccion/util";
 import { estadoTurno, problemasDeTurno } from "./reglas";
 
 function Receta({ a, bloqueado, onCambio, toast }) {
@@ -149,7 +149,7 @@ function Asignacion({ a, maquinas, operarios, bloqueado, enTablet, onCambio, toa
     <motion.li layout initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.97 }} transition={{ duration: 0.25 }} className="rounded-2xl border border-white/[0.08] bg-[#131317] p-3.5">
       <div className="flex items-start gap-2">
         <button type="button" onClick={() => setAbierta((v) => !v)} aria-expanded={abierta} className="min-w-0 flex-1 text-left cursor-pointer">
-          <p className="text-[15px] font-bold text-white leading-snug"><span className="font-mono text-[11px] font-bold text-[#FFD60A] mr-2">{a.lote}</span>{a.semielaborado_nombre}</p>
+          <p className="text-[15px] font-bold text-white leading-snug"><span className="font-mono text-[11px] font-bold text-[#FFD60A] mr-2">{a.lote}</span>{sinSemi(a.semielaborado_nombre)}</p>
           <p className="text-xs text-zinc-500">
             {abierta ? a.semielaborado_codigo : (
               <>
@@ -281,7 +281,7 @@ function ParaActivar({ asigs }) {
       <ul className="flex flex-col gap-1.5">
         {pendientes.map((a) => (
           <li key={a.id} className="flex items-center gap-2 text-sm">
-            <span className="min-w-0 flex-1 truncate text-zinc-200">{a.semielaborado_nombre}</span>
+            <span className="min-w-0 flex-1 truncate text-zinc-200">{sinSemi(a.semielaborado_nombre)}</span>
             <span className="flex gap-1 shrink-0">
               {faltantesDe(a).map((f) => (
                 <span key={f} className="text-[11px] font-bold text-[#FFD60A] bg-[#FFD60A]/10 border border-[#FFD60A]/25 rounded-md px-1.5 py-0.5">{f}</span>
@@ -295,6 +295,25 @@ function ParaActivar({ asigs }) {
   );
 }
 
+// Aviso cuando la materia prima no alcanza para producir lo planificado en el turno.
+function AvisoMateriales({ faltantes }) {
+  return (
+    <div className="rounded-2xl border border-rose-500/30 bg-rose-500/[0.07] p-4">
+      <p className="text-xs font-extrabold uppercase tracking-[0.1em] text-rose-300 mb-2.5 flex items-center gap-2"><AlertTriangle size={14} /> No alcanza la materia prima</p>
+      <ul className="flex flex-col gap-1.5">
+        {faltantes.map((m) => (
+          <li key={m.codigo} className="flex items-center gap-2 text-sm">
+            <span className="min-w-0 flex-1 truncate text-zinc-200">{m.nombre}</span>
+            <span className="shrink-0 tabular-nums text-rose-200">faltan {num(m.falta, 2)} {m.unidad}</span>
+            <span className="shrink-0 tabular-nums text-zinc-500 text-xs">hay {num(m.stock, 2)}</span>
+          </li>
+        ))}
+      </ul>
+      <p className="mt-2 text-[11px] text-zinc-500">Igual podés activar, pero conviene reponer antes o bajar la cantidad para no frenar la máquina.</p>
+    </div>
+  );
+}
+
 // Un renglón de la lista de la semana para sumar al turno, con su cantidad.
 function ItemParaAgregar({ it, onAgregar, ocupado }) {
   const restante = Math.max(0, it.cantidad_semana - it.asignado);
@@ -304,7 +323,7 @@ function ItemParaAgregar({ it, onAgregar, ocupado }) {
     <li className={`flex items-center gap-2 rounded-xl border px-3 py-2 ${completo ? "border-white/[0.05] bg-white/[0.015]" : "border-white/[0.07] bg-[#131317]"}`}>
       <span className="font-mono text-[11px] font-bold text-[#FFD60A] shrink-0">{it.lote}</span>
       <span className="flex-1 min-w-0">
-        <span className={`block text-sm font-semibold truncate ${completo ? "text-zinc-400" : "text-white"}`}>{it.nombre}</span>
+        <span className={`block text-sm font-semibold truncate ${completo ? "text-zinc-400" : "text-white"}`}>{sinSemi(it.nombre)}</span>
         <span className={`block text-[11px] tabular-nums ${completo ? "text-zinc-600" : "text-zinc-500"}`}>{completo ? "ya repartido" : `faltan ${num(restante)} de ${num(it.cantidad_semana)}`}</span>
       </span>
       <input
@@ -314,7 +333,7 @@ function ItemParaAgregar({ it, onAgregar, ocupado }) {
         value={cant}
         onChange={(e) => setCant(e.target.value)}
         placeholder="cant."
-        aria-label={`Cantidad de ${it.nombre} para este turno`}
+        aria-label={`Cantidad de ${sinSemi(it.nombre)} para este turno`}
         className="w-20 min-h-[40px] rounded-lg bg-black/30 border border-white/[0.12] px-2.5 text-sm text-white text-center tabular-nums focus:outline-none focus:border-[#FF5A00]/70"
       />
       <Boton variante={completo ? "fantasma" : "primario"} onClick={() => onAgregar(it, Number(cant))} disabled={ocupado || !(Number(cant) > 0)} icono={PackagePlus} className="!min-h-[40px] !px-3">Sumar</Boton>
@@ -334,6 +353,16 @@ export default function PanelTurno({ turnoAbierto, plan, maquinas, operarios, on
   const sin = !!info?.sin_produccion;
   const problemas = problemasDeTurno(asigs);
   const est = estadoTurno(info, asigs);
+
+  // Chequeo de materia prima para el turno (se rehace si cambian cantidades o recetas).
+  const [materiales, setMateriales] = useState(null);
+  const firmaAsigs = asigs.map((a) => `${a.id}:${a.cantidad}:${a.receta_confirmada ? 1 : 0}:${a.ingenieria_id || 0}`).join("|");
+  useEffect(() => {
+    if (!abierto || lanzado || sin || asigs.length === 0) { setMateriales(null); return; }
+    let vivo = true;
+    api(`/api/prod/turnos/materiales?fecha=${fecha}&turno=${turno}`).then((d) => vivo && setMateriales(d)).catch(() => vivo && setMateriales(null));
+    return () => { vivo = false; };
+  }, [abierto, fecha, turno, lanzado, sin, firmaAsigs]);
 
   const llamar = async (fn, ok) => {
     setOcupado(true);
@@ -442,6 +471,7 @@ export default function PanelTurno({ turnoAbierto, plan, maquinas, operarios, on
               )}
 
               {!lanzado && asigs.length > 0 && <ParaActivar asigs={asigs} />}
+              {!lanzado && materiales && materiales.faltantes.length > 0 && <AvisoMateriales faltantes={materiales.faltantes} />}
 
               <div>
                 <h3 className="text-xs font-extrabold uppercase tracking-[0.1em] text-zinc-400 mb-2.5 flex items-center gap-2"><PackagePlus size={15} /> Agregar un producto al turno</h3>
