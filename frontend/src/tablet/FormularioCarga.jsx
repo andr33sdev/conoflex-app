@@ -2,7 +2,7 @@ import { useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { ArrowLeft, ArrowRight, Check, Loader2, Pencil, Send } from "lucide-react";
 import { Drawer } from "../produccion/ui";
-import { api, num } from "../produccion/util";
+import { api, num, sinSemi } from "../produccion/util";
 import CampoNumero from "./CampoNumero";
 import FormulaUsada from "./FormulaUsada";
 import { lineasIniciales, lineasParaEnviar } from "./formula";
@@ -305,7 +305,7 @@ function Cuerpo({ a, operarios, onCerrar, onGuardado, toast }) {
 
 export default function FormularioCarga({ asignacion, operarios, onCerrar, onGuardado, toast }) {
   return (
-    <Drawer abierto={!!asignacion} onCerrar={onCerrar} titulo={asignacion ? asignacion.maquina || "Sin máquina" : ""} subtitulo={asignacion ? `${asignacion.modelo_nombre} · ${asignacion.lote}${asignacion._otra ? " · otra parte" : ""}` : ""}>
+    <Drawer abierto={!!asignacion} onCerrar={onCerrar} titulo={asignacion ? asignacion.maquina || "Sin máquina" : ""} subtitulo={asignacion ? `${sinSemi(asignacion.modelo_nombre)} · ${asignacion.lote}${asignacion._otra ? " · otra parte" : ""}` : ""}>
       {asignacion && <Cuerpo key={`${asignacion.id}${asignacion._otra ? "-otra" : ""}`} a={asignacion} operarios={operarios} onCerrar={onCerrar} onGuardado={onGuardado} toast={toast} />}
     </Drawer>
   );

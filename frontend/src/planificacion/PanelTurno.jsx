@@ -3,7 +3,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { AlertTriangle, BadgeCheck, ChevronDown, FlaskConical, MessageSquareText, Moon, PackagePlus, Radio, Rocket, Sun, Trash2, Undo2 } from "lucide-react";
 import { Barra, Boton, Chip, Drawer, Etiqueta } from "../produccion/ui";
 import { campo } from "../produccion/estilos";
-import { api, nombreDia, diaMes, num, turnoLabel } from "../produccion/util";
+import { api, nombreDia, diaMes, num, sinSemi, turnoLabel } from "../produccion/util";
 import { estadoTurno, problemasDeTurno } from "./reglas";
 
 function Receta({ a, bloqueado, onCambio, toast }) {
@@ -149,7 +149,7 @@ function Asignacion({ a, maquinas, operarios, bloqueado, enTablet, onCambio, toa
     <motion.li layout initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.97 }} transition={{ duration: 0.25 }} className="rounded-2xl border border-white/[0.08] bg-[#131317] p-3.5">
       <div className="flex items-start gap-2">
         <button type="button" onClick={() => setAbierta((v) => !v)} aria-expanded={abierta} className="min-w-0 flex-1 text-left cursor-pointer">
-          <p className="text-[15px] font-bold text-white leading-snug"><span className="font-mono text-[11px] font-bold text-[#FFD60A] mr-2">{a.lote}</span>{a.semielaborado_nombre}</p>
+          <p className="text-[15px] font-bold text-white leading-snug"><span className="font-mono text-[11px] font-bold text-[#FFD60A] mr-2">{a.lote}</span>{sinSemi(a.semielaborado_nombre)}</p>
           <p className="text-xs text-zinc-500">
             {abierta ? a.semielaborado_codigo : (
               <>
@@ -281,7 +281,7 @@ function ParaActivar({ asigs }) {
       <ul className="flex flex-col gap-1.5">
         {pendientes.map((a) => (
           <li key={a.id} className="flex items-center gap-2 text-sm">
-            <span className="min-w-0 flex-1 truncate text-zinc-200">{a.semielaborado_nombre}</span>
+            <span className="min-w-0 flex-1 truncate text-zinc-200">{sinSemi(a.semielaborado_nombre)}</span>
             <span className="flex gap-1 shrink-0">
               {faltantesDe(a).map((f) => (
                 <span key={f} className="text-[11px] font-bold text-[#FFD60A] bg-[#FFD60A]/10 border border-[#FFD60A]/25 rounded-md px-1.5 py-0.5">{f}</span>
@@ -304,7 +304,7 @@ function ItemParaAgregar({ it, onAgregar, ocupado }) {
     <li className={`flex items-center gap-2 rounded-xl border px-3 py-2 ${completo ? "border-white/[0.05] bg-white/[0.015]" : "border-white/[0.07] bg-[#131317]"}`}>
       <span className="font-mono text-[11px] font-bold text-[#FFD60A] shrink-0">{it.lote}</span>
       <span className="flex-1 min-w-0">
-        <span className={`block text-sm font-semibold truncate ${completo ? "text-zinc-400" : "text-white"}`}>{it.nombre}</span>
+        <span className={`block text-sm font-semibold truncate ${completo ? "text-zinc-400" : "text-white"}`}>{sinSemi(it.nombre)}</span>
         <span className={`block text-[11px] tabular-nums ${completo ? "text-zinc-600" : "text-zinc-500"}`}>{completo ? "ya repartido" : `faltan ${num(restante)} de ${num(it.cantidad_semana)}`}</span>
       </span>
       <input
@@ -314,7 +314,7 @@ function ItemParaAgregar({ it, onAgregar, ocupado }) {
         value={cant}
         onChange={(e) => setCant(e.target.value)}
         placeholder="cant."
-        aria-label={`Cantidad de ${it.nombre} para este turno`}
+        aria-label={`Cantidad de ${sinSemi(it.nombre)} para este turno`}
         className="w-20 min-h-[40px] rounded-lg bg-black/30 border border-white/[0.12] px-2.5 text-sm text-white text-center tabular-nums focus:outline-none focus:border-[#FF5A00]/70"
       />
       <Boton variante={completo ? "fantasma" : "primario"} onClick={() => onAgregar(it, Number(cant))} disabled={ocupado || !(Number(cant) > 0)} icono={PackagePlus} className="!min-h-[40px] !px-3">Sumar</Boton>

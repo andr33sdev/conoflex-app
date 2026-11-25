@@ -28,6 +28,7 @@ import {
   hoyISO,
   nombreDia,
   num,
+  sinSemi,
   sumarDias,
   turnoDeAhora,
   turnoLabel,
@@ -118,7 +119,7 @@ function Tarjeta({ a, i, onCargar, onReceta }) {
       </div>
 
       <div className="mt-4">
-        <p className="text-2xl font-bold text-white leading-snug">{a.modelo_nombre}</p>
+        <p className="text-2xl font-bold text-white leading-snug">{sinSemi(a.modelo_nombre)}</p>
         <p className="mt-1 text-sm text-zinc-500">
           Lote <span className="font-mono text-zinc-300">{a.lote}</span>
         </p>

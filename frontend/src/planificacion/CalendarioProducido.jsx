@@ -2,7 +2,7 @@
 // lo que está por aprobar. Al tocar un día se ve el detalle en tabla.
 import { useEffect, useState } from "react";
 import { ChevronLeft, ChevronRight, Loader2, X } from "lucide-react";
-import { api, num, turnoLabel } from "../produccion/util";
+import { api, num, sinSemi, turnoLabel } from "../produccion/util";
 
 const MESES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"];
 const DIAS_SEMANA = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"];
@@ -60,7 +60,7 @@ function DetalleDia({ fecha, onCerrar }) {
             <tbody>
               {dato.cargas.map((c) => (
                 <tr key={c.id} className="border-t border-white/[0.05]">
-                  <td className={td}><span className="font-semibold text-white">{c.modelo_nombre}</span><span className="block text-xs text-zinc-600">{c.lote || c.modelo_codigo}</span></td>
+                  <td className={td}><span className="font-semibold text-white">{sinSemi(c.modelo_nombre)}</span><span className="block text-xs text-zinc-600">{c.lote || c.modelo_codigo}</span></td>
                   <td className={`${td} text-zinc-400`}>{turnoLabel(c.turno)}</td>
                   <td className={`${td} text-zinc-300`}>{c.maquina || "—"}</td>
                   <td className={`${td} text-zinc-300`}>{c.operario}</td>

@@ -85,6 +85,13 @@ export const num = (v, dec = 0) =>
     maximumFractionDigits: dec,
   });
 
+// Saca la palabra "semielaborado/s" del nombre de un producto (confunde en planta y tablet).
+export const sinSemi = (txt) =>
+  String(txt ?? "")
+    .replace(/semielaborados?/gi, "")
+    .replace(/\s{2,}/g, " ")
+    .trim() || String(txt ?? "").trim();
+
 export const TURNOS = [
   { id: "DIA", label: "Día" },
   { id: "NOCHE", label: "Noche" },
