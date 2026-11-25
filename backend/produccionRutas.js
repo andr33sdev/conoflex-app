@@ -285,13 +285,14 @@ function registrarRutasProduccion(app, db, requirePermiso) {
       for (const c of cs) {
         const buenas = Number(c.total_producido) - Number(c.fallas);
         const r = realPorAsig.get(c.asignacion_id);
-        if (!r) realPorAsig.set(c.asignacion_id, { estado: c.estado, operario: c.operario, total: Number(c.total_producido), fallas: Number(c.fallas), buenas, partes: 1 });
+        // cargas_pendientes: ids de las partes PENDIENTES, para poder aprobarlas desde el tablero.
+        if (!r) realPorAsig.set(c.asignacion_id, { estado: c.estado, operario: c.operario, total: Number(c.total_producido), fallas: Number(c.fallas), buenas, partes: 1, cargas_pendientes: c.estado === "PENDIENTE" ? [c.id] : [] });
         else {
           r.total += Number(c.total_producido);
           r.fallas += Number(c.fallas);
           r.buenas += buenas;
           r.partes += 1;
-          if (c.estado === "PENDIENTE") r.estado = "PENDIENTE";
+          if (c.estado === "PENDIENTE") { r.estado = "PENDIENTE"; r.cargas_pendientes.push(c.id); }
           if (c.operario && !r.operario.split(", ").includes(c.operario)) r.operario += `, ${c.operario}`;
         }
       }

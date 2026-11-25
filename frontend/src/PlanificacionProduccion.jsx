@@ -7,7 +7,7 @@ import { Boton } from "./produccion/ui";
 import { useToast } from "./produccion/useToast";
 import { api, hoyISO, lunesDe, rangoSemana, semanaISO, sumarDias } from "./produccion/util";
 import ListaSemana from "./planificacion/ListaSemana";
-import TableroSemana from "./planificacion/TableroSemana";
+import VistaDia from "./planificacion/VistaDia";
 import PanelTurno from "./planificacion/PanelTurno";
 import AgregarLote from "./planificacion/AgregarLote";
 import Maquinas from "./planificacion/Maquinas";
@@ -111,7 +111,7 @@ export default function PlanificacionProduccion() {
               onAccion={(a) => (a.tipo === "agregar" ? setAgregando(true) : a.tipo === "cargas" ? setVerCargas(true) : setTurnoAbierto({ fecha: a.fecha, turno: a.turno }))}
             />
 
-            <TableroSemana plan={plan} onAbrir={(fecha, turno) => setTurnoAbierto({ fecha, turno })} />
+            <VistaDia plan={plan} maquinas={maquinas} onAbrirTurno={(fecha, turno) => setTurnoAbierto({ fecha, turno })} onCambio={recargar} toast={toast} />
             <ListaSemana items={items} onAgregar={() => setAgregando(true)} onCambio={recargar} toast={toast} />
           </motion.div>
         )}
