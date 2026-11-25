@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { AlertTriangle, BadgeCheck, ChevronDown, FlaskConical, MessageSquareText, Moon, PackagePlus, Radio, Rocket, Sun, Trash2, Undo2 } from "lucide-react";
 import { Barra, Boton, Chip, Drawer, Etiqueta } from "../produccion/ui";
@@ -295,6 +295,25 @@ function ParaActivar({ asigs }) {
   );
 }
 
+// Aviso cuando la materia prima no alcanza para producir lo planificado en el turno.
+function AvisoMateriales({ faltantes }) {
+  return (
+    <div className="rounded-2xl border border-rose-500/30 bg-rose-500/[0.07] p-4">
+      <p className="text-xs font-extrabold uppercase tracking-[0.1em] text-rose-300 mb-2.5 flex items-center gap-2"><AlertTriangle size={14} /> No alcanza la materia prima</p>
+      <ul className="flex flex-col gap-1.5">
+        {faltantes.map((m) => (
+          <li key={m.codigo} className="flex items-center gap-2 text-sm">
+            <span className="min-w-0 flex-1 truncate text-zinc-200">{m.nombre}</span>
+            <span className="shrink-0 tabular-nums text-rose-200">faltan {num(m.falta, 2)} {m.unidad}</span>
+            <span className="shrink-0 tabular-nums text-zinc-500 text-xs">hay {num(m.stock, 2)}</span>
+          </li>
+        ))}
+      </ul>
+      <p className="mt-2 text-[11px] text-zinc-500">Igual podés activar, pero conviene reponer antes o bajar la cantidad para no frenar la máquina.</p>
+    </div>
+  );
+}
+
 // Un renglón de la lista de la semana para sumar al turno, con su cantidad.
 function ItemParaAgregar({ it, onAgregar, ocupado }) {
   const restante = Math.max(0, it.cantidad_semana - it.asignado);
@@ -334,6 +353,16 @@ export default function PanelTurno({ turnoAbierto, plan, maquinas, operarios, on
   const sin = !!info?.sin_produccion;
   const problemas = problemasDeTurno(asigs);
   const est = estadoTurno(info, asigs);
+
+  // Chequeo de materia prima para el turno (se rehace si cambian cantidades o recetas).
+  const [materiales, setMateriales] = useState(null);
+  const firmaAsigs = asigs.map((a) => `${a.id}:${a.cantidad}:${a.receta_confirmada ? 1 : 0}:${a.ingenieria_id || 0}`).join("|");
+  useEffect(() => {
+    if (!abierto || lanzado || sin || asigs.length === 0) { setMateriales(null); return; }
+    let vivo = true;
+    api(`/api/prod/turnos/materiales?fecha=${fecha}&turno=${turno}`).then((d) => vivo && setMateriales(d)).catch(() => vivo && setMateriales(null));
+    return () => { vivo = false; };
+  }, [abierto, fecha, turno, lanzado, sin, firmaAsigs]);
 
   const llamar = async (fn, ok) => {
     setOcupado(true);
@@ -442,6 +471,7 @@ export default function PanelTurno({ turnoAbierto, plan, maquinas, operarios, on
               )}
 
               {!lanzado && asigs.length > 0 && <ParaActivar asigs={asigs} />}
+              {!lanzado && materiales && materiales.faltantes.length > 0 && <AvisoMateriales faltantes={materiales.faltantes} />}
 
               <div>
                 <h3 className="text-xs font-extrabold uppercase tracking-[0.1em] text-zinc-400 mb-2.5 flex items-center gap-2"><PackagePlus size={15} /> Agregar un producto al turno</h3>
