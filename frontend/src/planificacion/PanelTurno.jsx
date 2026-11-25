@@ -256,6 +256,72 @@ function Asignacion({ a, maquinas, operarios, bloqueado, enTablet, onCambio, toa
   );
 }
 
+// Qué le falta a cada producto para poder activarse en la tablet (máquina, operario, receta).
+function faltantesDe(a) {
+  const f = [];
+  if (!a.maquina_id) f.push("máquina");
+  if (!a.operario) f.push("operario");
+  if (!a.receta_confirmada) f.push("receta");
+  return f;
+}
+
+function ParaActivar({ asigs }) {
+  const pendientes = asigs.filter((a) => faltantesDe(a).length > 0);
+  if (asigs.length === 0) return null;
+  if (pendientes.length === 0)
+    return (
+      <div className="rounded-2xl border border-emerald-500/25 bg-emerald-500/[0.06] px-4 py-3 flex items-center gap-2.5">
+        <BadgeCheck size={18} className="text-emerald-400 shrink-0" />
+        <p className="text-sm font-bold text-emerald-100">Todo listo para activar en la tablet.</p>
+      </div>
+    );
+  return (
+    <div className="rounded-2xl border border-[#FFD60A]/30 bg-[#FFD60A]/[0.06] p-4">
+      <p className="text-xs font-extrabold uppercase tracking-[0.1em] text-[#FFD60A] mb-2.5 flex items-center gap-2"><AlertTriangle size={14} /> Falta para activar en la tablet</p>
+      <ul className="flex flex-col gap-1.5">
+        {pendientes.map((a) => (
+          <li key={a.id} className="flex items-center gap-2 text-sm">
+            <span className="min-w-0 flex-1 truncate text-zinc-200">{a.semielaborado_nombre}</span>
+            <span className="flex gap-1 shrink-0">
+              {faltantesDe(a).map((f) => (
+                <span key={f} className="text-[11px] font-bold text-[#FFD60A] bg-[#FFD60A]/10 border border-[#FFD60A]/25 rounded-md px-1.5 py-0.5">{f}</span>
+              ))}
+            </span>
+          </li>
+        ))}
+      </ul>
+      <p className="mt-2 text-[11px] text-zinc-500">Abrí cada producto de arriba y completá lo que falta.</p>
+    </div>
+  );
+}
+
+// Un renglón de la lista de la semana para sumar al turno, con su cantidad.
+function ItemParaAgregar({ it, onAgregar, ocupado }) {
+  const restante = Math.max(0, it.cantidad_semana - it.asignado);
+  const [cant, setCant] = useState(restante > 0 ? String(restante) : "");
+  const completo = restante <= 0;
+  return (
+    <li className={`flex items-center gap-2 rounded-xl border px-3 py-2 ${completo ? "border-white/[0.05] bg-white/[0.015]" : "border-white/[0.07] bg-[#131317]"}`}>
+      <span className="font-mono text-[11px] font-bold text-[#FFD60A] shrink-0">{it.lote}</span>
+      <span className="flex-1 min-w-0">
+        <span className={`block text-sm font-semibold truncate ${completo ? "text-zinc-400" : "text-white"}`}>{it.nombre}</span>
+        <span className={`block text-[11px] tabular-nums ${completo ? "text-zinc-600" : "text-zinc-500"}`}>{completo ? "ya repartido" : `faltan ${num(restante)} de ${num(it.cantidad_semana)}`}</span>
+      </span>
+      <input
+        type="number"
+        inputMode="numeric"
+        min="1"
+        value={cant}
+        onChange={(e) => setCant(e.target.value)}
+        placeholder="cant."
+        aria-label={`Cantidad de ${it.nombre} para este turno`}
+        className="w-20 min-h-[40px] rounded-lg bg-black/30 border border-white/[0.12] px-2.5 text-sm text-white text-center tabular-nums focus:outline-none focus:border-[#FF5A00]/70"
+      />
+      <Boton variante={completo ? "fantasma" : "primario"} onClick={() => onAgregar(it, Number(cant))} disabled={ocupado || !(Number(cant) > 0)} icono={PackagePlus} className="!min-h-[40px] !px-3">Sumar</Boton>
+    </li>
+  );
+}
+
 export default function PanelTurno({ turnoAbierto, plan, maquinas, operarios, onCerrar, onCambio, toast }) {
   const [ocupado, setOcupado] = useState(false);
   const fecha = turnoAbierto?.fecha;
@@ -283,11 +349,12 @@ export default function PanelTurno({ turnoAbierto, plan, maquinas, operarios, on
   };
 
   const marcarSin = (valor) => llamar(() => api("/api/prod/turnos", { method: "PUT", body: { fecha, turno, sin_produccion: valor, motivo: "" } }));
-  const agregar = (item) => {
+  const agregar = (item, cantidad) => {
     const restante = Math.max(0, item.cantidad_semana - item.asignado);
-    return llamar(() => api("/api/prod/asignaciones", { method: "POST", body: { item_id: item.id, fecha, turno, cantidad: restante > 0 ? restante : item.cantidad_semana } }));
+    const cant = Number(cantidad) > 0 ? Number(cantidad) : restante > 0 ? restante : item.cantidad_semana;
+    return llamar(() => api("/api/prod/asignaciones", { method: "POST", body: { item_id: item.id, fecha, turno, cantidad: cant } }));
   };
-  const lanzar = () => llamar(() => api("/api/prod/turnos/lanzar", { method: "POST", body: { fecha, turno } }), "Turno lanzado: ya aparece en la tablet de planta");
+  const lanzar = () => llamar(() => api("/api/prod/turnos/lanzar", { method: "POST", body: { fecha, turno } }), "Activado: ya aparece en la tablet de planta");
   const retirar = () => llamar(() => api("/api/prod/turnos/retirar", { method: "POST", body: { fecha, turno } }), "Turno retirado de la tablet");
 
   const Icono = turno === "NOCHE" ? Moon : Sun;
@@ -311,20 +378,12 @@ export default function PanelTurno({ turnoAbierto, plan, maquinas, operarios, on
         ) : (
           <div>
             {asigs.length > 0 && problemas.length > 0 && (
-              problemas.length > 3 ? (
-                <p className="mb-3 text-xs text-[#FFD60A]/90">Faltan datos en {asigs.filter((x) => problemasDeTurno([x]).length).length} de {asigs.length} productos. Abrí cada uno para completarlo.</p>
-              ) : (
-                <ul className="mb-3 text-xs text-[#FFD60A]/90 space-y-0.5">
-                  {problemas.map((p) => (
-                    <li key={p}>• {p}</li>
-                  ))}
-                </ul>
-              )
+              <p className="mb-3 text-xs text-[#FFD60A]/90 text-center">Faltan datos en {asigs.filter((x) => problemasDeTurno([x]).length).length} de {asigs.length} productos (ver arriba).</p>
             )}
             <Boton variante="primario" grande className="w-full" icono={Rocket} onClick={lanzar} disabled={ocupado || asigs.length === 0 || problemas.length > 0}>
-              Lanzar a la tablet
+              Activar en tablet
             </Boton>
-            {asigs.length > 0 && problemas.length === 0 && <p className="mt-2 text-xs text-zinc-400 text-center leading-snug">Aparece en la tablet de planta y los operarios pueden cargar lo producido. Después lo podés seguir cambiando.</p>}
+            {asigs.length > 0 && problemas.length === 0 && <p className="mt-2 text-xs text-zinc-400 text-center leading-snug">Aparece en la tablet de planta y los operarios cargan lo producido. Después lo podés seguir cambiando.</p>}
           </div>
         )
       )}
@@ -382,29 +441,23 @@ export default function PanelTurno({ turnoAbierto, plan, maquinas, operarios, on
                 </ul>
               )}
 
-              {(
-                <div>
-                  <h3 className="text-xs font-extrabold uppercase tracking-[0.1em] text-zinc-400 mb-2.5 flex items-center gap-2"><PackagePlus size={15} /> Tomar de la lista de la semana</h3>
-                  {plan.items.length === 0 ? (
-                    <p className="text-sm text-zinc-500 rounded-xl border border-dashed border-white/[0.1] p-4">La lista de la semana está vacía. Cerrá este panel y agregá lo que se va a producir.</p>
-                  ) : (
+              {!lanzado && asigs.length > 0 && <ParaActivar asigs={asigs} />}
+
+              <div>
+                <h3 className="text-xs font-extrabold uppercase tracking-[0.1em] text-zinc-400 mb-2.5 flex items-center gap-2"><PackagePlus size={15} /> Agregar un producto al turno</h3>
+                {plan.items.length === 0 ? (
+                  <p className="text-sm text-zinc-500 rounded-xl border border-dashed border-white/[0.1] p-4">La lista de la semana está vacía. Cerrá este panel y agregá lo que se va a producir.</p>
+                ) : (
+                  <>
                     <ul className="flex flex-col gap-2">
-                      {plan.items.map((it) => {
-                        const restante = it.cantidad_semana - it.asignado;
-                        return (
-                          <li key={it.id}>
-                            <button onClick={() => agregar(it)} disabled={ocupado} className="w-full text-left flex items-center gap-3 rounded-xl border border-white/[0.07] bg-[#131317] hover:border-[#FF5A00]/50 px-4 py-3 transition-colors cursor-pointer disabled:opacity-50">
-                              <span className="font-mono text-[11px] font-bold text-[#FFD60A]">{it.lote}</span>
-                              <span className="flex-1 min-w-0 text-sm font-semibold text-white truncate">{it.nombre}</span>
-                              <span className={`text-xs tabular-nums whitespace-nowrap ${restante > 0 ? "text-zinc-400" : "text-zinc-600"}`}>{restante > 0 ? `faltan ${num(restante)}` : "completo"}</span>
-                            </button>
-                          </li>
-                        );
-                      })}
+                      {[...plan.items].sort((a, b) => (b.cantidad_semana - b.asignado) - (a.cantidad_semana - a.asignado)).map((it) => (
+                        <ItemParaAgregar key={it.id} it={it} ocupado={ocupado} onAgregar={agregar} />
+                      ))}
                     </ul>
-                  )}
-                </div>
-              )}
+                    <p className="mt-2 text-[11px] text-zinc-600 leading-snug">Elegí la cantidad que va en este turno y tocá “Sumar”. Un mismo producto puede ir en varios turnos o varias veces en la misma máquina.</p>
+                  </>
+                )}
+              </div>
             </>
           )}
         </div>
