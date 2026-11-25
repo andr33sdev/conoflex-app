@@ -744,6 +744,50 @@ function registrarRutasProduccion(app, db, requirePermiso) {
     res.json(rows);
   }));
 
+  // Calendario de producción realizada: por cada día del mes, lo producido (aprobado) y lo que
+  // está por aprobar, con cuántos productos y máquinas intervinieron. Solo cargas no rechazadas.
+  app.get("/api/prod/producido", PLAN, seguro(async (req, res) => {
+    const mes = String(req.query.mes || "").match(/^\d{4}-\d{2}$/) ? req.query.mes : new Date().toISOString().slice(0, 7);
+    const [anio, m] = mes.split("-").map(Number);
+    const desde = `${mes}-01`;
+    const hasta = `${mes}-${String(new Date(anio, m, 0).getDate()).padStart(2, "0")}`;
+    const [filas] = await db.query(
+      `SELECT ${FECHA("fecha")} AS fecha,
+              SUM(CASE WHEN estado = 'APROBADA' THEN total_producido - fallas ELSE 0 END) AS buenas,
+              SUM(CASE WHEN estado = 'PENDIENTE' THEN total_producido - fallas ELSE 0 END) AS por_aprobar,
+              COUNT(DISTINCT CASE WHEN estado = 'APROBADA' THEN modelo_codigo END) AS productos,
+              COUNT(DISTINCT CASE WHEN estado = 'APROBADA' THEN maquina END) AS maquinas
+         FROM prod_cargas
+        WHERE fecha BETWEEN ? AND ? AND estado <> 'RECHAZADA'
+        GROUP BY ${FECHA("fecha")} ORDER BY fecha`,
+      [desde, hasta],
+    );
+    const dias = filas.map((f) => ({ fecha: f.fecha, buenas: Number(f.buenas) || 0, por_aprobar: Number(f.por_aprobar) || 0, productos: Number(f.productos) || 0, maquinas: Number(f.maquinas) || 0 }));
+    res.json({
+      mes,
+      desde,
+      hasta,
+      total_buenas: dias.reduce((t, d) => t + d.buenas, 0),
+      total_por_aprobar: dias.reduce((t, d) => t + d.por_aprobar, 0),
+      dias,
+    });
+  }));
+
+  // Detalle de un día: cada carga (producto, máquina, operario, buenas, fallas, estado).
+  app.get("/api/prod/producido/dia", PLAN, seguro(async (req, res) => {
+    const fecha = String(req.query.fecha || "");
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha)) return res.status(400).json({ error: "Fecha inválida." });
+    const [rows] = await db.query(
+      `SELECT id, turno, lote, modelo_nombre, modelo_codigo, maquina, operario,
+              total_producido, fallas, (total_producido - fallas) AS buenas, estado
+         FROM prod_cargas
+        WHERE fecha = ? AND estado <> 'RECHAZADA'
+        ORDER BY turno, maquina, id`,
+      [fecha],
+    );
+    res.json({ fecha, cargas: rows.map((r) => ({ ...r, total_producido: Number(r.total_producido), fallas: Number(r.fallas), buenas: Number(r.buenas) })) });
+  }));
+
   app.put("/api/prod/cargas/:id/aprobar", PLAN, seguro(async (req, res) => {
     const nombre = await quien(req);
     const conn = await db.getConnection();
