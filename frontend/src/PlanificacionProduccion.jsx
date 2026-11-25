@@ -10,6 +10,7 @@ import ListaSemana from "./planificacion/ListaSemana";
 import VistaDia from "./planificacion/VistaDia";
 import CalendarioProducido from "./planificacion/CalendarioProducido";
 import Calidad from "./planificacion/Calidad";
+import Trazabilidad from "./planificacion/Trazabilidad";
 import PanelTurno from "./planificacion/PanelTurno";
 import AgregarLote from "./planificacion/AgregarLote";
 import Maquinas from "./planificacion/Maquinas";
@@ -81,7 +82,7 @@ export default function PlanificacionProduccion() {
       <div className="max-w-[1700px] mx-auto px-3 sm:px-5 lg:px-6 py-4 sm:py-5 pb-24 lg:pb-8">
         <header className="flex flex-wrap items-center gap-x-3 gap-y-3 mb-4">
           <div role="tablist" aria-label="Vista del módulo" className="flex items-center rounded-xl bg-white/[0.05] border border-white/[0.07] p-1 mr-auto">
-            {[["plan", "Planificar"], ["producido", "Producido"], ["calidad", "Calidad"]].map(([id, t]) => (
+            {[["plan", "Planificar"], ["producido", "Producido"], ["calidad", "Calidad"], ["lote", "Lote"]].map(([id, t]) => (
               <button key={id} role="tab" aria-selected={vista === id} onClick={() => setVista(id)} className={`min-h-[36px] px-4 rounded-lg text-sm font-bold transition-colors cursor-pointer ${vista === id ? "bg-[#FF5A00] text-black" : "text-zinc-400 hover:text-white"}`}>{t}</button>
             ))}
           </div>
@@ -112,6 +113,8 @@ export default function PlanificacionProduccion() {
           <CalendarioProducido />
         ) : vista === "calidad" ? (
           <Calidad />
+        ) : vista === "lote" ? (
+          <Trazabilidad />
         ) : error && !plan ? (
           <div className="rounded-3xl border border-rose-500/30 bg-rose-500/10 p-8 text-center">
             <p className="text-rose-100 font-semibold">{error}</p>
