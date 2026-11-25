@@ -8,6 +8,7 @@ import { useToast } from "./produccion/useToast";
 import { api, hoyISO, lunesDe, rangoSemana, semanaISO, sumarDias } from "./produccion/util";
 import ListaSemana from "./planificacion/ListaSemana";
 import VistaDia from "./planificacion/VistaDia";
+import CalendarioProducido from "./planificacion/CalendarioProducido";
 import PanelTurno from "./planificacion/PanelTurno";
 import AgregarLote from "./planificacion/AgregarLote";
 import Maquinas from "./planificacion/Maquinas";
@@ -24,6 +25,7 @@ export default function PlanificacionProduccion() {
   const [operarios, setOperarios] = useState([]);
   const [versionMaq, setVersionMaq] = useState(0);
 
+  const [vista, setVista] = useState("plan");
   const [turnoAbierto, setTurnoAbierto] = useState(null);
   const [agregando, setAgregando] = useState(false);
   const [verMaquinas, setVerMaquinas] = useState(false);
@@ -76,27 +78,37 @@ export default function PlanificacionProduccion() {
     <div className="h-full overflow-y-auto custom-scrollbar">
       <div className="max-w-[1700px] mx-auto px-3 sm:px-5 lg:px-6 py-4 sm:py-5 pb-24 lg:pb-8">
         <header className="flex flex-wrap items-center gap-x-3 gap-y-3 mb-4">
-          <div className="mr-auto hidden" />
-          <div className="flex items-center rounded-xl border border-white/[0.08] bg-[#111114] p-0.5">
-            <button onClick={() => setSemana(sumarDias(semana, -7))} aria-label="Semana anterior" className="w-10 h-10 grid place-items-center rounded-lg text-zinc-300 hover:bg-white/[0.07] cursor-pointer"><ChevronLeft size={18} /></button>
-            <div className="px-2 text-center min-w-[150px]">
-              <span className="block text-[13px] font-extrabold text-white leading-tight">Semana {semanaISO(semana)}</span>
-              <span className="block text-[11px] text-zinc-500 leading-tight">{rangoSemana(semana)}</span>
-            </div>
-            <button onClick={() => setSemana(sumarDias(semana, 7))} aria-label="Semana siguiente" className="w-10 h-10 grid place-items-center rounded-lg text-zinc-300 hover:bg-white/[0.07] cursor-pointer"><ChevronRight size={18} /></button>
+          <div role="tablist" aria-label="Vista del módulo" className="flex items-center rounded-xl bg-white/[0.05] border border-white/[0.07] p-1 mr-auto">
+            {[["plan", "Planificar"], ["producido", "Producido"]].map(([id, t]) => (
+              <button key={id} role="tab" aria-selected={vista === id} onClick={() => setVista(id)} className={`min-h-[36px] px-4 rounded-lg text-sm font-bold transition-colors cursor-pointer ${vista === id ? "bg-[#FF5A00] text-black" : "text-zinc-400 hover:text-white"}`}>{t}</button>
+            ))}
           </div>
-          {semana !== hoySemana && <Boton variante="suave" onClick={() => setSemana(hoySemana)}>Hoy</Boton>}
-          <div className="flex items-center gap-2">
-            <Boton variante="fantasma" icono={Settings2} onClick={() => setVerMaquinas(true)} title="Máquinas de la planta">Máquinas</Boton>
-            <Boton variante={plan?.cargas_pendientes ? "naranja" : "suave"} icono={ClipboardCheck} onClick={() => setVerCargas(true)}>
-              <span className="hidden sm:inline">Cargas</span>
-              {plan?.cargas_pendientes > 0 && <span className="min-w-[20px] h-[20px] px-1.5 rounded-full bg-black/80 text-[#FFD60A] text-xs font-extrabold grid place-items-center">{plan.cargas_pendientes}</span>}
-            </Boton>
-            <Boton variante="primario" icono={Plus} onClick={() => setAgregando(true)}><span className="hidden sm:inline">Agregar lote</span><span className="sm:hidden">Lote</span></Boton>
-          </div>
+          {vista === "plan" && (
+            <>
+              <div className="flex items-center rounded-xl border border-white/[0.08] bg-[#111114] p-0.5">
+                <button onClick={() => setSemana(sumarDias(semana, -7))} aria-label="Semana anterior" className="w-10 h-10 grid place-items-center rounded-lg text-zinc-300 hover:bg-white/[0.07] cursor-pointer"><ChevronLeft size={18} /></button>
+                <div className="px-2 text-center min-w-[150px]">
+                  <span className="block text-[13px] font-extrabold text-white leading-tight">Semana {semanaISO(semana)}</span>
+                  <span className="block text-[11px] text-zinc-500 leading-tight">{rangoSemana(semana)}</span>
+                </div>
+                <button onClick={() => setSemana(sumarDias(semana, 7))} aria-label="Semana siguiente" className="w-10 h-10 grid place-items-center rounded-lg text-zinc-300 hover:bg-white/[0.07] cursor-pointer"><ChevronRight size={18} /></button>
+              </div>
+              {semana !== hoySemana && <Boton variante="suave" onClick={() => setSemana(hoySemana)}>Hoy</Boton>}
+              <div className="flex items-center gap-2">
+                <Boton variante="fantasma" icono={Settings2} onClick={() => setVerMaquinas(true)} title="Máquinas de la planta">Máquinas</Boton>
+                <Boton variante={plan?.cargas_pendientes ? "naranja" : "suave"} icono={ClipboardCheck} onClick={() => setVerCargas(true)}>
+                  <span className="hidden sm:inline">Cargas</span>
+                  {plan?.cargas_pendientes > 0 && <span className="min-w-[20px] h-[20px] px-1.5 rounded-full bg-black/80 text-[#FFD60A] text-xs font-extrabold grid place-items-center">{plan.cargas_pendientes}</span>}
+                </Boton>
+                <Boton variante="primario" icono={Plus} onClick={() => setAgregando(true)}><span className="hidden sm:inline">Agregar lote</span><span className="sm:hidden">Lote</span></Boton>
+              </div>
+            </>
+          )}
         </header>
 
-        {error && !plan ? (
+        {vista === "producido" ? (
+          <CalendarioProducido />
+        ) : error && !plan ? (
           <div className="rounded-3xl border border-rose-500/30 bg-rose-500/10 p-8 text-center">
             <p className="text-rose-100 font-semibold">{error}</p>
             <Boton className="mt-4" icono={RefreshCw} onClick={recargar}>Reintentar</Boton>
