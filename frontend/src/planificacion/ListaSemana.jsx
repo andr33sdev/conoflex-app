@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Check, ChevronDown, ClipboardList, Pencil, Plus, Trash2, X } from "lucide-react";
+import { Check, ChevronDown, ClipboardList, Pencil, Plus, Tag, Trash2, X } from "lucide-react";
 import { Boton, Vacio } from "../produccion/ui";
 import { api, num } from "../produccion/util";
 
@@ -49,7 +49,15 @@ function Renglon({ item, onCambio, toast }) {
     <li className="border-b border-white/[0.05] last:border-b-0">
       <button onClick={() => setAbierto((v) => !v)} aria-expanded={abierto} className="w-full flex items-center gap-3 px-4 py-3 text-left cursor-pointer hover:bg-white/[0.03]">
         <span className="font-mono text-[11px] font-bold text-[#FFD60A] shrink-0">{item.lote}</span>
-        <span className="min-w-0 flex-1 text-[14px] font-semibold text-white truncate">{item.nombre}</span>
+        <span className="min-w-0 flex-1">
+          <span className="block text-[14px] font-semibold text-white truncate">{item.nombre}</span>
+          {item.notas && (
+            <span className="mt-0.5 inline-flex items-center gap-1 max-w-full text-[12px] text-zinc-400">
+              <Tag size={11} className="shrink-0 text-zinc-500" />
+              <span className="truncate">{item.notas}</span>
+            </span>
+          )}
+        </span>
         <span className="shrink-0 text-[12.5px] tabular-nums">
           {deMas ? <b className="text-rose-300">Asignado de más</b> : restante > 0 ? <span className="text-zinc-400">Falta repartir <b className="text-white">{num(restante)}</b></span> : <b className="text-emerald-300">Repartido</b>}
         </span>
