@@ -161,21 +161,6 @@ function validarLanzamiento(turno, asignaciones) {
   return problemas;
 }
 
-/** Asignaciones del mismo turno sobre la misma máquina (aviso, no bloquea). */
-function detectarChoques(asignaciones) {
-  const porClave = new Map();
-  for (const a of asignaciones || []) {
-    if (!a.maquina_id) continue;
-    const k = `${a.fecha}|${a.turno}|${a.maquina_id}`;
-    if (!porClave.has(k)) porClave.set(k, []);
-    porClave.get(k).push(a.id);
-  }
-  return [...porClave.entries()].filter(([, ids]) => ids.length > 1).map(([k, ids]) => {
-    const [fecha, turno, maquina_id] = k.split("|");
-    return { fecha, turno, maquina_id: Number(maquina_id), asignaciones: ids };
-  });
-}
-
 /** Valida y normaliza lo que carga el operario. Devuelve { error } o { valores }. */
 function validarCarga(body) {
   const num = (v) => (v === "" || v == null ? NaN : Number(v));
@@ -239,7 +224,6 @@ module.exports = {
   siguienteSecuencia,
   sugerirProduccion,
   validarLanzamiento,
-  detectarChoques,
   validarCarga,
   calcularEfectosCarga,
   entero,

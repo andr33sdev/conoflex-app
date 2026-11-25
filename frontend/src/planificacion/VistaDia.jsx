@@ -29,6 +29,7 @@ function Tarjeta({ a, lanzado, onAbrir, onAprobar }) {
         <p className="text-[12px] text-zinc-500 tabular-nums">
           {num(cant)} u{a.operario ? ` · ${a.operario}` : " · sin operario"}
         </p>
+        {a.motivo && <p className="text-[11px] text-zinc-500 truncate" title={a.motivo}>· {a.motivo}</p>}
       </button>
       <div className="mt-1.5 flex items-center justify-between gap-2">
         <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold" style={{ color: e.borde }}>

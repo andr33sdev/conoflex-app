@@ -264,7 +264,7 @@ function registrarRutasProduccion(app, db, requirePermiso) {
     const [asig] = await db.query(
       `SELECT a.id, a.item_id, ${FECHA("a.fecha")} AS fecha, a.turno, a.maquina_id, m.nombre AS maquina, a.cantidad, a.operario,
               a.ingenieria_id, ing.nombre_version AS receta_version, a.receta_confirmada,
-              i.lote, i.semielaborado_codigo, i.semielaborado_nombre
+              i.lote, i.semielaborado_codigo, i.semielaborado_nombre, i.notas AS motivo, i.origen
          FROM prod_asignaciones a
          JOIN prod_plan_items i ON i.id = a.item_id
          LEFT JOIN prod_maquinas m ON m.id = a.maquina_id
@@ -303,7 +303,6 @@ function registrarRutasProduccion(app, db, requirePermiso) {
       items: items.map((i) => ({ ...i, asignado: Number(i.asignado), producido: Number(i.producido), por_aprobar: Number(i.por_aprobar) })),
       turnos: turnos.map((t) => ({ ...t, sin_produccion: !!t.sin_produccion, lanzado: !!t.lanzado })),
       asignaciones: asig.map((a) => ({ ...a, receta_confirmada: !!a.receta_confirmada, real: realPorAsig.get(a.id) || null })),
-      choques: P.detectarChoques(asig),
       cargas_pendientes: Number(pend),
     };
   }

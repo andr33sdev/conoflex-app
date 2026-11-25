@@ -92,7 +92,7 @@ function Receta({ a, bloqueado, onCambio, toast }) {
   );
 }
 
-function Asignacion({ a, maquinas, operarios, bloqueado, enTablet, choque, onCambio, toast, compacta }) {
+function Asignacion({ a, maquinas, operarios, bloqueado, enTablet, onCambio, toast, compacta }) {
   const [cant, setCant] = useState(String(a.cantidad));
   const [quitar, setQuitar] = useState(false);
   // Con varios productos en el turno cada uno aparece como una línea; se abre para editar o ver el detalle.
@@ -190,12 +190,6 @@ function Asignacion({ a, maquinas, operarios, bloqueado, enTablet, choque, onCam
           <AlertTriangle size={14} className="mt-0.5 shrink-0" /> Todavía no aparece en la tablet: completá máquina, operario y receta.
         </p>
       )}
-      {choque && (
-        <p className="mt-3 flex items-start gap-2 text-xs text-[#FFD60A] bg-[#FFD60A]/[0.08] border border-[#FFD60A]/25 rounded-xl px-3 py-2">
-          <AlertTriangle size={14} className="mt-0.5 shrink-0" /> Hay otra producción en esta misma máquina y turno.
-        </p>
-      )}
-
       <div className="mt-3 grid gap-2.5 sm:grid-cols-3">
         <div>
           <Etiqueta>Cantidad del turno</Etiqueta>
@@ -274,7 +268,6 @@ export default function PanelTurno({ turnoAbierto, plan, maquinas, operarios, on
   const sin = !!info?.sin_produccion;
   const problemas = problemasDeTurno(asigs);
   const est = estadoTurno(info, asigs);
-  const idsChoque = new Set(abierto ? plan.choques.filter((c) => c.fecha === fecha && c.turno === turno).flatMap((c) => c.asignaciones) : []);
 
   const llamar = async (fn, ok) => {
     setOcupado(true);
@@ -383,7 +376,7 @@ export default function PanelTurno({ turnoAbierto, plan, maquinas, operarios, on
                 <ul className="flex flex-col gap-3">
                   <AnimatePresence initial={false}>
                     {asigs.map((a) => (
-                      <Asignacion key={a.id} a={a} maquinas={maquinas} operarios={operarios} bloqueado={false} enTablet={lanzado} choque={idsChoque.has(a.id)} onCambio={onCambio} toast={toast} compacta={asigs.length > 2} />
+                      <Asignacion key={a.id} a={a} maquinas={maquinas} operarios={operarios} bloqueado={false} enTablet={lanzado} onCambio={onCambio} toast={toast} compacta={asigs.length > 2} />
                     ))}
                   </AnimatePresence>
                 </ul>

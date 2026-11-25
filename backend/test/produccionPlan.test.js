@@ -90,18 +90,6 @@ test("validarLanzamiento: pide máquina, cantidad, operario y receta", () => {
   assert.equal(mal.length, 4);
 });
 
-test("detectarChoques: misma máquina, mismo turno", () => {
-  const as = [
-    { id: 1, fecha: "2026-10-26", turno: "DIA", maquina_id: 1 },
-    { id: 2, fecha: "2026-10-26", turno: "DIA", maquina_id: 1 },
-    { id: 3, fecha: "2026-10-26", turno: "NOCHE", maquina_id: 1 },
-    { id: 4, fecha: "2026-10-26", turno: "DIA", maquina_id: null },
-  ];
-  const c = P.detectarChoques(as);
-  assert.equal(c.length, 1);
-  assert.deepEqual(c[0].asignaciones, [1, 2]);
-});
-
 test("validarCarga: números enteros, fallas dentro del total", () => {
   assert.match(P.validarCarga({}).error, /total/);
   assert.match(P.validarCarga({ total_producido: 0 }).error, /total/);

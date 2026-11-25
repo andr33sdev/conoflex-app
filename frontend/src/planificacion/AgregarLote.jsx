@@ -11,6 +11,16 @@ const URGENCIA = {
   NORMAL: { tono: "gris", texto: "Normal", borde: "border-l-zinc-600" },
 };
 
+const MOTIVOS_RAPIDOS = ["Stock bajo", "Pedido de cliente", "Pedido urgente", "Reposición"];
+
+// Motivo automático de una sugerencia, para que quede visible por qué se agregó.
+const motivoSugerido = (s) => {
+  const dias = s.dias_de_stock != null ? `${num(s.dias_de_stock, 0)} días` : "stock bajo";
+  if (s.urgencia === "CRITICA") return `Stock crítico · ${dias}`;
+  if (s.urgencia === "ALTA") return `Stock bajo · ${dias}`;
+  return "Reposición por stock";
+};
+
 function ChipMaterial({ m }) {
   if (m.estado === "ALCANZA") return <Chip tono="verde" icono={CheckCircle2}>Material alcanza</Chip>;
   if (m.estado === "INSUFICIENTE")
@@ -29,7 +39,7 @@ function Sugerida({ s, semana, onAgregado, toast }) {
   const agregar = async () => {
     setOcupado(true);
     try {
-      const r = await api("/api/prod/plan/items", { method: "POST", body: { semana, semielaborado_id: s.semielaborado_id, cantidad: Number(cant), origen: "SUGERIDO" } });
+      const r = await api("/api/prod/plan/items", { method: "POST", body: { semana, semielaborado_id: s.semielaborado_id, cantidad: Number(cant), origen: "SUGERIDO", notas: motivoSugerido(s) } });
       toast(`${r.lote} agregado a la lista`);
       onAgregado();
     } catch (e) {
@@ -190,8 +200,15 @@ function ALaMano({ semana, onCambio, toast }) {
               <input type="number" inputMode="numeric" min="1" value={cant} onChange={(e) => setCant(e.target.value)} className={campo} autoFocus />
             </div>
             <div className="sm:col-span-2">
-              <Etiqueta>Nota (opcional)</Etiqueta>
-              <input value={notas} onChange={(e) => setNotas(e.target.value)} maxLength={500} placeholder="Ej: pedido urgente de un cliente" className={campo} />
+              <Etiqueta>Motivo — por qué se agrega</Etiqueta>
+              <div className="flex flex-wrap gap-1.5 mb-2">
+                {MOTIVOS_RAPIDOS.map((mt) => (
+                  <button key={mt} type="button" onClick={() => setNotas(mt)} className={`min-h-[30px] px-3 rounded-full text-xs font-bold border transition-colors cursor-pointer ${notas === mt ? "bg-[#FF5A00] text-black border-[#FF5A00]" : "bg-white/[0.04] text-zinc-300 border-white/[0.08] hover:bg-white/[0.09]"}`}>
+                    {mt}
+                  </button>
+                ))}
+              </div>
+              <input value={notas} onChange={(e) => setNotas(e.target.value)} maxLength={500} placeholder="Elegí uno o escribí el motivo (ej: pedido urgente de un cliente)" className={campo} />
             </div>
           </div>
           <div className="mt-5 flex gap-2">
