@@ -634,6 +634,51 @@ function registrarRutasProduccion(app, db, requirePermiso) {
   }));
 
   // Calidad: % de fallas por máquina y por producto en un mes (solo cargas aprobadas).
+  // Trazabilidad por lote: toda la historia de un lote en una ficha.
+  // ?q=texto -> busca lotes; ?lote=XXX -> ficha completa (producción + materia prima usada).
+  app.get("/api/prod/trazabilidad", PLAN, seguro(async (req, res) => {
+    const lote = String(req.query.lote || "").trim();
+    if (!lote) {
+      const q = `%${String(req.query.q || "").trim()}%`;
+      const [filas] = await db.query(
+        `SELECT lote, semielaborado_nombre AS nombre, semielaborado_codigo AS codigo, ${FECHA("semana_inicio")} AS semana
+           FROM prod_plan_items
+          WHERE lote LIKE ? OR semielaborado_nombre LIKE ? OR semielaborado_codigo LIKE ?
+          ORDER BY semana_inicio DESC, id DESC LIMIT 25`,
+        [q, q, q],
+      );
+      return res.json({ resultados: filas });
+    }
+    const [its] = await db.query(
+      `SELECT lote, semielaborado_nombre AS nombre, semielaborado_codigo AS codigo, cantidad_semana, notas AS motivo, origen, ${FECHA("semana_inicio")} AS semana
+         FROM prod_plan_items WHERE lote = ? LIMIT 1`,
+      [lote],
+    );
+    if (!its.length) return res.status(404).json({ error: "No existe ese lote." });
+    const [cargas] = await db.query(
+      `SELECT ${FECHA("fecha")} AS fecha, turno, maquina, operario, total_producido, fallas, (total_producido - fallas) AS buenas,
+              estado, color, codigo_material, aprobado_por, registro_id
+         FROM prod_cargas WHERE lote = ? AND estado <> 'RECHAZADA' ORDER BY fecha, id`,
+      [lote],
+    );
+    const regIds = cargas.map((c) => c.registro_id).filter(Boolean);
+    let materiales = [];
+    if (regIds.length) {
+      const [mats] = await db.query(
+        `SELECT materia_prima_codigo AS codigo, materia_prima_nombre AS nombre, SUM(cantidad_usada) AS cantidad, unidad_medida AS unidad
+           FROM registro_produccion_materiales WHERE registro_id IN (?)
+          GROUP BY materia_prima_codigo, materia_prima_nombre, unidad_medida ORDER BY materia_prima_nombre`,
+        [regIds],
+      );
+      materiales = mats.map((m) => ({ ...m, cantidad: Number(m.cantidad) || 0 }));
+    }
+    res.json({
+      item: { ...its[0], cantidad_semana: Number(its[0].cantidad_semana) || 0 },
+      cargas: cargas.map((c) => ({ fecha: c.fecha, turno: c.turno, maquina: c.maquina, operario: c.operario, buenas: Number(c.buenas) || 0, fallas: Number(c.fallas) || 0, total_producido: Number(c.total_producido) || 0, estado: c.estado, color: c.color, codigo_material: c.codigo_material, aprobado_por: c.aprobado_por })),
+      materiales,
+    });
+  }));
+
   app.get("/api/prod/calidad", PLAN, seguro(async (req, res) => {
     const mes = String(req.query.mes || "").match(/^\d{4}-\d{2}$/) ? req.query.mes : new Date().toISOString().slice(0, 7);
     const [anio, m] = mes.split("-").map(Number);
