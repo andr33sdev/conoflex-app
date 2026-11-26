@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { CheckCircle2, Layers, Loader2, Plus } from "lucide-react";
 import { Modal } from "../produccion/ui";
+import { sinSemi } from "../produccion/util";
 
 const n = (v) => Number(v || 0).toLocaleString("es-AR", { maximumFractionDigits: 2 });
 
@@ -17,7 +18,7 @@ function Bloque({ titulo, icono: Icono, color, filas, sel, set, clave, linea, al
           <label key={clave(f)} className="flex items-center gap-3 px-4 py-2.5 cursor-pointer hover:bg-white/[0.03]">
             <input type="checkbox" checked={sel.includes(clave(f))} onChange={() => alternar(sel, set, clave(f))} className="w-4 h-4 cursor-pointer" style={{ accentColor: color }} />
             <span className="min-w-0 flex-1">
-              <span className="block text-sm font-bold text-white truncate"><span className="font-mono text-xs mr-2" style={{ color }}>{f.codigo}</span>{f.nombre}</span>
+              <span className="block text-sm font-bold text-white truncate"><span className="font-mono text-xs mr-2" style={{ color }}>{f.codigo}</span>{sinSemi(f.nombre)}</span>
               <span className="block text-xs text-zinc-400 tabular-nums">{linea(f)}</span>
             </span>
           </label>

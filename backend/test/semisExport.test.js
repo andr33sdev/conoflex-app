@@ -5,8 +5,8 @@ const XLSX = require("xlsx");
 const { prepararFilas, semisPdf, semisExcel } = require("../semisExport");
 
 const BASE = [
-  { id: 1, codigo: "SE_A", nombre: "SEMI A", demanda_mensual: 100, stock_total: 50, dias_stock: 15, seguir_demanda: 1, origen: "PARAGUAY" },
-  { id: 2, codigo: "SE_B", nombre: "SEMI B", demanda_mensual: 300, stock_total: 900, dias_stock: 90, seguir_demanda: 1, origen: "PROVEEDOR" },
+  { id: 1, codigo: "SE_A", nombre: "SEMIELABORADO SUBURBANO ROJO 10KG", demanda_mensual: 100, stock_total: 50, dias_stock: 15, seguir_demanda: 1, origen: "PARAGUAY" },
+  { id: 2, codigo: "SE_B", nombre: "SEMIELABORADO BASE CONO 3KG", demanda_mensual: 300, stock_total: 900, dias_stock: 90, seguir_demanda: 1, origen: "PROVEEDOR" },
   { id: 3, codigo: "SE_C", nombre: "SEMI C", demanda_mensual: 200, stock_total: 0, dias_stock: null, seguir_demanda: 0, origen: "PROPIA" },
 ];
 
@@ -37,21 +37,25 @@ test("semisPdf: genera un PDF válido con el logo embebido", () => {
 test("semisExcel: ordena por demanda y arma el encabezado esperado", () => {
   const buf = semisExcel(prepararFilas(BASE, { filtro: "todos" }), { meses: 3, filtro: "todos" });
   const wb = XLSX.read(buf);
-  const rows = XLSX.utils.sheet_to_json(wb.Sheets["Semielaborados"], { header: 1 });
-  assert.deepEqual(rows[3], ["Código", "Semielaborado", "Demanda mensual (u.)", "Stock total (u.)", "Días de stock", "Sigue demanda", "Origen"]);
+  const rows = XLSX.utils.sheet_to_json(wb.Sheets["Artículos"], { header: 1 });
+  assert.deepEqual(rows[3], ["Código", "Artículo", "Demanda mensual (u.)", "Stock total (u.)", "Días de stock", "Sigue demanda", "Origen"]);
   // primera fila de datos = la de mayor demanda
   assert.equal(rows[4][0], "SE_B");
   assert.equal(rows[4][2], 300);
   assert.equal(rows[4][5], "Sí");
+  // el nombre sale sin la palabra "Semielaborado"
+  assert.equal(rows[4][1], "BASE CONO 3KG");
+  assert.ok(!/semielaborado/i.test(rows.flat().join(" ")), "no debe aparecer la palabra en ningún lado");
 });
 
 test("semisExcel simple: solo código, semielaborado y demanda", () => {
   const buf = semisExcel(prepararFilas(BASE, { filtro: "todos" }), { meses: 3, filtro: "todos", detalle: "simple" });
   const wb = XLSX.read(buf);
-  const rows = XLSX.utils.sheet_to_json(wb.Sheets["Semielaborados"], { header: 1 });
-  assert.deepEqual(rows[3], ["Código", "Semielaborado", "Demanda mensual (u.)"]);
+  const rows = XLSX.utils.sheet_to_json(wb.Sheets["Artículos"], { header: 1 });
+  assert.deepEqual(rows[3], ["Código", "Artículo", "Demanda mensual (u.)"]);
   assert.equal(rows[4].length, 3);
   assert.equal(rows[4][0], "SE_B");
+  assert.equal(rows[4][1], "BASE CONO 3KG");
   assert.equal(rows[4][2], 300);
 });
 

@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from "react";
 import { X, Truck } from "lucide-react";
-import { api } from "../produccion/util";
+import { api, sinSemi } from "../produccion/util";
 
 const fmt = (n) => Number(n || 0).toLocaleString("es-AR", { maximumFractionDigits: 0 });
 
@@ -68,7 +68,7 @@ export default function CamionParaguay({ onClose }) {
               {data.items.map((i) => (
                 <li key={i.id} className="py-3 flex items-center gap-4">
                   <div className="min-w-0 flex-1">
-                    <p className="text-white text-sm font-semibold truncate">{i.nombre}</p>
+                    <p className="text-white text-sm font-semibold truncate">{sinSemi(i.nombre)}</p>
                     <p className="text-zinc-500 text-xs mt-0.5">
                       Hay {fmt(i.stock_total)} · se vende {fmt(i.demanda_mensual)}/mes
                       {i.dias != null && ` · alcanza ${i.dias} días`}
