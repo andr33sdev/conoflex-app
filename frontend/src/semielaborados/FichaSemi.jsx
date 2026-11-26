@@ -1,6 +1,7 @@
 import { lazy, Suspense } from "react";
 import { Sparkle, Trash2 } from "lucide-react";
 import { Drawer } from "../produccion/ui";
+import { sinSemi } from "../produccion/util";
 import Movimientos from "./Movimientos";
 import { modeloDe } from "../visor3d/modelos";
 
@@ -17,7 +18,7 @@ export default function FichaSemi({ item, seguir, onCerrar, onClasificar, onCamb
       abierto={!!item}
       onCerrar={onCerrar}
       titulo={item ? <span className="flex items-center gap-3"><span className="font-mono text-[#FFD60A]">{item.codigo}</span></span> : ""}
-      subtitulo={item?.nombre}
+      subtitulo={sinSemi(item?.nombre)}
     >
       {item && (
         <div className="flex flex-col gap-7">
