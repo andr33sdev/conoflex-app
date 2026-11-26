@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AnimatePresence, LayoutGroup, MotionConfig, motion } from "framer-motion";
 import { Check, ChevronLeft, ChevronRight, FileDown, FileSpreadsheet, Loader2, PackageSearch, RefreshCw, Search, Truck, Undo2, X } from "lucide-react";
-import { api } from "./produccion/util";
+import { api, sinSemi } from "./produccion/util";
 import { getApiUrl } from "./apiConfig";
 import { useToast } from "./produccion/useToast";
 import { Vacio } from "./produccion/ui";
@@ -161,7 +161,7 @@ export default function Semielaborados() {
         } else {
           const a = document.createElement("a");
           a.href = url;
-          a.download = `Semielaborados ${stamp}.xlsx`;
+          a.download = `Control de demanda ${stamp}.xlsx`;
           document.body.appendChild(a);
           a.click();
           a.remove();
@@ -431,7 +431,7 @@ export default function Semielaborados() {
 
           <div className="mt-6">
             {errorCarga && !items.length ? (
-              <Vacio icono={PackageSearch} titulo="No se pudieron cargar los semielaborados" texto={errorCarga}>
+              <Vacio icono={PackageSearch} titulo="No se pudieron cargar los artículos" texto={errorCarga}>
                 <button onClick={() => cargar()} className="min-h-[46px] px-5 rounded-xl bg-white/[0.08] hover:bg-white/[0.14] font-bold text-white cursor-pointer">Reintentar</button>
               </Vacio>
             ) : cargando ? (
@@ -439,7 +439,7 @@ export default function Semielaborados() {
                 {Array.from({ length: 8 }).map((_, i) => <div key={i} className="h-[60px] rounded-2xl bg-white/[0.04] animate-pulse" style={{ animationDelay: `${i * 70}ms` }} />)}
               </div>
             ) : lista.length === 0 ? (
-              <Vacio icono={PackageSearch} titulo="No hay semielaborados para mostrar" texto="Probá con otra búsqueda o con otro filtro.">
+              <Vacio icono={PackageSearch} titulo="No hay artículos para mostrar" texto="Probá con otra búsqueda o con otro filtro.">
                 {(busqueda || filtro !== "todos") && <button onClick={() => { setBusqueda(""); setFiltro("todos"); }} className="min-h-[46px] px-5 rounded-xl bg-white/[0.08] hover:bg-white/[0.14] font-bold text-white cursor-pointer">Ver todos</button>}
               </Vacio>
             ) : (
@@ -450,7 +450,7 @@ export default function Semielaborados() {
                     <thead>
                       <tr className="bg-white/[0.02] border-b border-white/[0.05]">
                         <th className={`${th} w-[160px]`}>Código</th>
-                        <th className={th}>Semielaborado</th>
+                        <th className={th}>Artículo</th>
                         <th className={`${th} text-right`}>Demanda</th>
                         <th className={`${th} text-center`}>Días de stock</th>
                         <th className={`${th} text-right`}>Stock {dep === "GENERAL" ? "" : nombreDep}</th>
@@ -472,7 +472,7 @@ export default function Semielaborados() {
                             <td className="px-4 py-3.5"><span className="font-mono text-[13px] font-semibold tracking-tight text-[#FFD60A]/90">{x.codigo}</span></td>
                             <td className="px-4 py-3.5">
                               <span className="flex items-center gap-2 min-w-0">
-                                <span className={`text-[15px] font-semibold truncate ${marcado ? "text-zinc-100" : "text-zinc-500"}`}>{x.nombre}</span>
+                                <span className={`text-[15px] font-semibold truncate ${marcado ? "text-zinc-100" : "text-zinc-500"}`}>{sinSemi(x.nombre)}</span>
                                 <Origen o={x.origen} />
                               </span>
                             </td>
@@ -501,7 +501,7 @@ export default function Semielaborados() {
                         <div className="flex items-start gap-3">
                           <div className="min-w-0 flex-1">
                             <div className="flex items-center gap-2 flex-wrap"><span className="font-mono text-xs font-bold text-[#FFD60A]">{x.codigo}</span><Origen o={x.origen} /></div>
-                            <p className={`mt-1 text-[15px] font-bold leading-snug ${marcado ? "text-white" : "text-zinc-400"}`}>{x.nombre}</p>
+                            <p className={`mt-1 text-[15px] font-bold leading-snug ${marcado ? "text-white" : "text-zinc-400"}`}>{sinSemi(x.nombre)}</p>
                           </div>
                           <div className="text-right shrink-0">
                             <span className={`block text-2xl font-extrabold tabular-nums leading-none ${st <= 0 ? "text-rose-300" : "text-white"}`}>{nf(st)}</span>
@@ -558,7 +558,7 @@ export default function Semielaborados() {
         <ConfirmarBorrado
           abierto={!!borrar}
           titulo={borrar ? `¿Eliminar ${borrar.item.codigo}?` : ""}
-          mensaje={borrar ? `Se elimina “${borrar.item.nombre}”. Esta acción no se puede deshacer.` : ""}
+          mensaje={borrar ? `Se elimina “${sinSemi(borrar.item.nombre)}”. Esta acción no se puede deshacer.` : ""}
           lineas={borrar?.impacto ? [
             ...(borrar.impacto.recetas_usan > 0 ? [`Se quita de ${borrar.impacto.recetas_usan} ${borrar.impacto.recetas_usan === 1 ? "receta que lo usa" : "recetas que lo usan"} como ingrediente.`] : []),
             ...(borrar.impacto.recetas_propias > 0 ? [`Se borran sus ${borrar.impacto.recetas_propias} ${borrar.impacto.recetas_propias === 1 ? "receta propia" : "recetas propias"}.`] : []),

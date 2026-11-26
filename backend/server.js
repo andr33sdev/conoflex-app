@@ -2945,13 +2945,13 @@ app.get("/api/semielaborados/export.:formato", requirePermiso("semielaborados"),
     if (formato === "pdf") {
       const buf = semisPdf(filas, { meses, filtro, detalle, usuario });
       res.setHeader("Content-Type", "application/pdf");
-      res.setHeader("Content-Disposition", `inline; filename*=UTF-8''${encodeURIComponent(`Semielaborados ${stamp}.pdf`)}`);
+      res.setHeader("Content-Disposition", `inline; filename*=UTF-8''${encodeURIComponent(`Control de demanda ${stamp}.pdf`)}`);
       res.setHeader("X-Content-Type-Options", "nosniff");
       return res.send(buf);
     }
     const buf = semisExcel(filas, { meses, filtro, detalle });
     res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-    res.setHeader("Content-Disposition", `attachment; filename*=UTF-8''${encodeURIComponent(`Semielaborados ${stamp}.xlsx`)}`);
+    res.setHeader("Content-Disposition", `attachment; filename*=UTF-8''${encodeURIComponent(`Control de demanda ${stamp}.xlsx`)}`);
     res.setHeader("X-Content-Type-Options", "nosniff");
     return res.send(buf);
   } catch (error) {
