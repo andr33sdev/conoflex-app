@@ -3,7 +3,7 @@
 // Muestra, para cada bloque: horario (desde-hasta), si es diurna o nocturna, si es al 50% o
 // al 100%, cuántas horas, el motivo (por qué se paga así) y el importe. Solo horas extra.
 // Reusa el generador sin dependencias (agentes/pdf.js) y el desglose que arma liquidacion.js.
-const { Pdf, ancho } = require("../agentes/pdf");
+const { Pdf, ancho, logoConoflex } = require("../agentes/pdf");
 
 const A4 = { w: 595.28, h: 841.89 };
 const M = 36;
@@ -45,8 +45,7 @@ function detalleExtrasPdf(liq, { generado = new Date(), usuario = "" } = {}) {
   const cabecera = () => {
     pdf.rect(0, 0, A4.w, 74, "#14141a");
     pdf.rect(0, 74, A4.w, 4, NARANJA);
-    pdf.rect(M, 22, 30, 30, NARANJA);
-    pdf.texto(M + 15, 43, "C", { size: 20, negrita: true, color: "#ffffff", alinear: "centro" });
+    logoConoflex(pdf);
     pdf.texto(M + 42, 38, "CONOFLEX", { size: 18, negrita: true, color: "#ffffff" });
     pdf.texto(M + 42, 52, "Detalle de horas extra", { size: 9, color: AMARILLO });
     pdf.texto(A4.w - M, 38, "HORAS EXTRA", { size: 13, negrita: true, color: "#ffffff", alinear: "der" });

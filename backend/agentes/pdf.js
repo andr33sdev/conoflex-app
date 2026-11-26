@@ -1,8 +1,41 @@
 "use strict";
-// Generador mínimo de PDF (sin dependencias): páginas A4, texto Helvetica, rectángulos y líneas.
+// Generador mínimo de PDF (sin dependencias): páginas A4, texto Helvetica, rectángulos, líneas e imágenes JPEG.
 // Alcanza para informes prolijos de una o varias páginas (liquidaciones). Texto en WinAnsi (latin1 ampliado).
 
+const fs = require("fs");
+const path = require("path");
+
 const A4 = { w: 595.28, h: 841.89 };
+
+// Lee el ancho y alto en píxeles de un JPEG (marcador SOF).
+function jpegDim(buf) {
+  if (!Buffer.isBuffer(buf) || buf.length < 4) return null;
+  let i = 2;
+  while (i < buf.length - 9) {
+    if (buf[i] !== 0xff) {
+      i++;
+      continue;
+    }
+    const marker = buf[i + 1];
+    if (marker >= 0xc0 && marker <= 0xcf && marker !== 0xc4 && marker !== 0xc8 && marker !== 0xcc) {
+      return { h: buf.readUInt16BE(i + 5), w: buf.readUInt16BE(i + 7) };
+    }
+    if (marker === 0xd8 || marker === 0xd9 || (marker >= 0xd0 && marker <= 0xd7)) {
+      i += 2;
+      continue;
+    }
+    i += 2 + buf.readUInt16BE(i + 2);
+  }
+  return null;
+}
+
+// Logo oficial de Conoflex (JPEG aplanado sobre el fondo oscuro de la cabecera).
+let LOGO = null;
+try {
+  LOGO = fs.readFileSync(path.join(__dirname, "..", "assets", "logo-conoflex.jpg"));
+} catch {
+  LOGO = null;
+}
 // Anchos de Helvetica (por 1000 unidades) para ASCII 32..126; las letras acentuadas usan el ancho de la base.
 const W = [278, 278, 355, 556, 556, 889, 667, 191, 333, 333, 389, 584, 278, 333, 278, 278, 556, 556, 556, 556, 556, 556, 556, 556, 556, 556, 278, 278, 584, 584, 584, 556, 1015, 667, 667, 722, 722, 667, 611, 778, 722, 278, 500, 667, 556, 833, 722, 778, 667, 778, 722, 667, 611, 722, 667, 944, 667, 667, 611, 278, 278, 278, 469, 556, 333, 556, 556, 500, 556, 556, 278, 556, 556, 222, 222, 500, 222, 833, 556, 556, 556, 556, 333, 500, 278, 556, 500, 722, 500, 500, 500, 334, 260, 334, 584];
 const BASE = { á: "a", é: "e", í: "i", ó: "o", ú: "u", ñ: "n", Á: "A", É: "E", Í: "I", Ó: "O", Ú: "U", Ñ: "N", ü: "u", Ü: "U" };
@@ -39,6 +72,7 @@ const rgb = (hex) => {
 class Pdf {
   constructor() {
     this.paginas = [];
+    this.imagenes = []; // { buf, w, h } únicas, compartidas por todas las páginas
     this.nueva();
   }
   nueva() {
@@ -60,6 +94,16 @@ class Pdf {
   linea(x1, y1, x2, y2, color = "#cccccc", grosor = 0.6) {
     this.ops.push(Buffer.from(`${rgb(color)} RG ${num(grosor)} w ${num(x1)} ${num(A4.h - y1)} m ${num(x2)} ${num(A4.h - y2)} l S\n`));
   }
+  /** Dibuja un JPEG. (x, y) = esquina superior izquierda desde ARRIBA; w, h en puntos. img = Buffer JPEG. */
+  imagen(x, y, w, h, img) {
+    if (!Buffer.isBuffer(img)) return;
+    let idx = this.imagenes.findIndex((im) => im.buf === img);
+    if (idx < 0) {
+      const dim = jpegDim(img) || { w: 1, h: 1 };
+      idx = this.imagenes.push({ buf: img, w: dim.w, h: dim.h }) - 1;
+    }
+    this.ops.push(Buffer.from(`q ${num(w)} 0 0 ${num(h)} ${num(x)} ${num(A4.h - y - h)} cm /Im${idx + 1} Do Q\n`));
+  }
   build() {
     const objs = [];
     const add = (b) => objs.push(Buffer.isBuffer(b) ? b : Buffer.from(b, "latin1")) && objs.length;
@@ -67,11 +111,18 @@ class Pdf {
     add("PAGES");
     add("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>");
     add("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>");
+    // Imágenes JPEG como XObjects (una vez, referenciadas por todas las páginas).
+    const imgRefs = this.imagenes.map((im, i) => {
+      const cab = Buffer.from(`<< /Type /XObject /Subtype /Image /Width ${im.w} /Height ${im.h} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${im.buf.length} >>\nstream\n`, "latin1");
+      const id = add(Buffer.concat([cab, im.buf, Buffer.from("\nendstream", "latin1")]));
+      return `/Im${i + 1} ${id} 0 R`;
+    });
+    const xobj = imgRefs.length ? ` /XObject << ${imgRefs.join(" ")} >>` : "";
     const kids = [];
     for (const ops of this.paginas) {
       const cont = Buffer.concat(ops);
       const idCont = add(Buffer.concat([Buffer.from(`<< /Length ${cont.length} >>\nstream\n`), cont, Buffer.from("\nendstream")]));
-      const idPag = add(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${A4.w} ${A4.h}] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents ${idCont} 0 R >>`);
+      const idPag = add(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${A4.w} ${A4.h}] /Resources << /Font << /F1 3 0 R /F2 4 0 R >>${xobj} >> /Contents ${idCont} 0 R >>`);
       kids.push(`${idPag} 0 R`);
     }
     objs[1] = Buffer.from(`<< /Type /Pages /Kids [${kids.join(" ")}] /Count ${kids.length} >>`, "latin1");
@@ -96,11 +147,19 @@ const HS = (n) => Number(n || 0).toLocaleString("es-AR", { minimumFractionDigits
 const NARANJA = "#E85C0D";
 const AMARILLO = "#FFD60A";
 
+/** Logo oficial de Conoflex en la cabecera; si falta el archivo, dibuja el cuadrado naranja como respaldo. */
+function logoConoflex(pdf, x = 30, y = 13, s = 48) {
+  if (LOGO) pdf.imagen(x, y, s, s, LOGO);
+  else {
+    pdf.rect(x + 6, y + 9, 30, 30, NARANJA);
+    pdf.texto(x + 21, y + 30, "C", { size: 20, negrita: true, color: "#ffffff", alinear: "centro" });
+  }
+}
+
 function cabecera(pdf, { titulo, subtitulo }) {
   pdf.rect(0, 0, A4.w, 74, "#14141a");
   pdf.rect(0, 74, A4.w, 4, NARANJA);
-  pdf.rect(36, 22, 30, 30, NARANJA);
-  pdf.texto(51, 43, "C", { size: 20, negrita: true, color: "#ffffff", alinear: "centro" });
+  logoConoflex(pdf);
   pdf.texto(78, 38, "CONOFLEX", { size: 18, negrita: true, color: "#ffffff" });
   pdf.texto(78, 52, "RRHH y liquidaciones", { size: 9, color: AMARILLO });
   pdf.texto(A4.w - 36, 38, titulo, { size: 13, negrita: true, color: "#ffffff", alinear: "der" });
@@ -309,8 +368,7 @@ function pdfReporte({ agente, titulo, texto, usuario = "", generado = new Date()
   const cab = () => {
     pdf.rect(0, 0, A4.w, 74, "#14141a");
     pdf.rect(0, 74, A4.w, 4, NARANJA);
-    pdf.rect(36, 22, 30, 30, NARANJA);
-    pdf.texto(51, 43, "C", { size: 20, negrita: true, color: "#ffffff", alinear: "centro" });
+    logoConoflex(pdf);
     pdf.texto(78, 38, "CONOFLEX", { size: 18, negrita: true, color: "#ffffff" });
     pdf.texto(78, 52, area, { size: 9, color: AMARILLO });
     pdf.texto(A4.w - 36, 38, "Reporte", { size: 13, negrita: true, color: "#ffffff", alinear: "der" });
@@ -400,4 +458,4 @@ function pdfReporte({ agente, titulo, texto, usuario = "", generado = new Date()
   return pdf.build();
 }
 
-module.exports = { Pdf, pdfLiquidacion, pdfReporte, ancho };
+module.exports = { Pdf, pdfLiquidacion, pdfReporte, ancho, logoConoflex, LOGO };

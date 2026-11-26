@@ -1,7 +1,7 @@
 "use strict";
 // Presupuesto en PDF con la marca Conoflex, para mandar por WhatsApp cuando el cliente pide cotización.
 // Reusa el generador de PDF sin dependencias (agentes/pdf.js).
-const { Pdf, ancho } = require("../agentes/pdf");
+const { Pdf, ancho, logoConoflex } = require("../agentes/pdf");
 
 const A4 = { w: 595.28, h: 841.89 };
 const M = 40; // margen
@@ -30,8 +30,7 @@ function presupuestoPdf({ cliente, lineas = [], total = 0, nota = "", fecha = ne
   // Encabezado con marca
   pdf.rect(0, 0, A4.w, 86, "#14141a");
   pdf.rect(0, 86, A4.w, 4, NARANJA);
-  pdf.rect(M, 26, 34, 34, NARANJA);
-  pdf.texto(M + 17, 50, "C", { size: 22, negrita: true, color: "#ffffff", alinear: "centro" });
+  logoConoflex(pdf, 38, 20, 46);
   pdf.texto(M + 46, 44, "CONOFLEX", { size: 20, negrita: true, color: "#ffffff" });
   pdf.texto(M + 46, 60, "Productos de seguridad vial", { size: 9, color: AMARILLO });
   pdf.texto(A4.w - M, 40, "PRESUPUESTO", { size: 15, negrita: true, color: "#ffffff", alinear: "der" });

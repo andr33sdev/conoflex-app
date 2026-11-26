@@ -1,7 +1,7 @@
 "use strict";
 // Parte de producción de un día: qué se produjo, por máquina y operario, con buenas y fallas.
 // Sin dependencias: reusa el generador agentes/pdf.js.
-const { Pdf, ancho } = require("../agentes/pdf");
+const { Pdf, ancho, logoConoflex } = require("../agentes/pdf");
 
 const A4 = { w: 595.28, h: 841.89 };
 const M = 36;
@@ -32,8 +32,7 @@ function partePdf({ fecha, cargas = [], usuario = "", generado = new Date() }) {
   const cabecera = () => {
     pdf.rect(0, 0, A4.w, 74, "#14141a");
     pdf.rect(0, 74, A4.w, 4, NARANJA);
-    pdf.rect(M, 22, 30, 30, NARANJA);
-    pdf.texto(M + 15, 43, "C", { size: 20, negrita: true, color: "#ffffff", alinear: "centro" });
+    logoConoflex(pdf);
     pdf.texto(M + 42, 38, "CONOFLEX", { size: 18, negrita: true, color: "#ffffff" });
     pdf.texto(M + 42, 52, "Parte de producción", { size: 9, color: AMARILLO });
     pdf.texto(A4.w - M, 44, tituloFecha, { size: 12, negrita: true, color: "#ffffff", alinear: "der" });

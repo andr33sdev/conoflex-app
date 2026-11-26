@@ -1,7 +1,7 @@
 "use strict";
 // Exportar los reportes de Clientes nuevos: PDF (para leer o imprimir) y Excel (para filtrar y trabajar).
 const XLSX = require("xlsx");
-const { Pdf, ancho } = require("./agentes/pdf");
+const { Pdf, ancho, logoConoflex } = require("./agentes/pdf");
 
 const A4 = { w: 595.28, h: 841.89 };
 const NARANJA = "#E85C0D";
@@ -46,8 +46,7 @@ function documento({ titulo, subtitulo, generado }) {
   const cab = () => {
     pdf.rect(0, 0, A4.w, 74, "#14141a");
     pdf.rect(0, 74, A4.w, 4, NARANJA);
-    pdf.rect(36, 22, 30, 30, NARANJA);
-    pdf.texto(51, 43, "C", { size: 20, negrita: true, color: "#ffffff", alinear: "centro" });
+    logoConoflex(pdf);
     pdf.texto(78, 38, "CONOFLEX", { size: 18, negrita: true, color: "#ffffff" });
     pdf.texto(78, 52, subtitulo, { size: 9, color: AMARILLO });
     pdf.texto(A4.w - 36, 38, titulo, { size: 13, negrita: true, color: "#ffffff", alinear: "der" });
