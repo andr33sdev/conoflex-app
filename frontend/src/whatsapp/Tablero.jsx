@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Loader2, MessageSquare, FileText, DollarSign, CheckCircle2 } from "lucide-react";
+import { Loader2, MessageSquare, FileText, DollarSign, CheckCircle2, Truck } from "lucide-react";
 import { api } from "../produccion/util";
 
 const PERIODOS = [
@@ -65,10 +65,11 @@ export default function Tablero({ aviso }) {
           <div className="p-10 grid place-items-center text-zinc-500"><Loader2 className="animate-spin" /></div>
         ) : data ? (
           <>
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+            <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4">
               <Kpi icono={MessageSquare} etiqueta="Consultas" valor={miles(data.consultas.conversaciones)} detalle={`${miles(data.consultas.mensajes)} mensajes de clientes`} />
               <Kpi icono={FileText} etiqueta="Cotizaciones" valor={miles(data.cotizaciones.cantidad)} detalle={data.cotizaciones.conPdf ? `${miles(data.cotizaciones.conPdf)} con PDF` : "—"} />
               <Kpi icono={DollarSign} etiqueta="Monto cotizado" valor={pesos(data.cotizaciones.monto)} detalle="Precios de lista" />
+              <Kpi icono={Truck} etiqueta="Envíos a coordinar" valor={miles(data.envios?.cantidad || 0)} detalle={`${miles(data.envios?.conversaciones || 0)} clientes`} />
               <Kpi icono={CheckCircle2} etiqueta="Resueltas por Aldana" valor={`${data.resolucion.pctResueltas}%`} detalle={`${miles(data.resolucion.derivadas)} derivadas a una persona`} />
             </div>
 

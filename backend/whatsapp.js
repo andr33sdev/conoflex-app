@@ -160,11 +160,28 @@ function calcularItems(items, productos) {
   return { lineas, total: redondear2(lineas.reduce((s, l) => s + l.subtotal, 0)) };
 }
 
+/**
+ * Aplica la bonificación del cliente (0–100 %) sobre el total de lista.
+ * Devuelve bruto (lista), descuento y total neto; con 0 % el total neto es el bruto.
+ */
+function aplicarBonificacion(calc, pct) {
+  if (!calc) return null;
+  const bonificacion = Math.min(Math.max(Number(pct) || 0, 0), 100);
+  const bruto = calc.total;
+  const descuento = redondear2((bruto * bonificacion) / 100);
+  return { lineas: calc.lineas, bruto, bonificacion, descuento, total: redondear2(bruto - descuento) };
+}
+
 function textoCalculo(calc, nota) {
   if (!calc) return "";
   const filas = calc.lineas.map((l) => `• ${l.cantidad.toLocaleString("es-AR")} × ${l.nombre} (${pesos(l.unitario)} c/u) = ${pesos(l.subtotal)}`);
   const titulo = filas.length > 1 ? "*Presupuesto (precios de lista)*" : "*Cálculo con precios de lista*";
-  return [titulo, ...filas, `*Total: ${pesos(calc.total)}*${nota ? ` ${corto(nota, 120)}` : ""}`].join("\n");
+  const colaNota = nota ? ` ${corto(nota, 120)}` : "";
+  if (calc.bonificacion > 0) {
+    const bruto = calc.bruto != null ? calc.bruto : calc.total;
+    return [titulo, ...filas, `Subtotal: ${pesos(bruto)}`, `Bonificación ${calc.bonificacion}%: -${pesos(calc.descuento)}`, `*Total con tu bonificación: ${pesos(calc.total)}*${colaNota}`].join("\n");
+  }
+  return [titulo, ...filas, `*Total: ${pesos(calc.total)}*${colaNota}`].join("\n");
 }
 
 /**
@@ -239,7 +256,7 @@ async function llamarClaude(sistema, contents) {
   return (data?.content || []).filter((b) => b.type === "text").map((b) => b.text).join("");
 }
 
-function instrucciones({ reglasComerciales, reglasWhatsapp, notas, correcciones, catalogo, tieneLista, memoria, yaSaludoHoy }) {
+function instrucciones({ reglasComerciales, reglasWhatsapp, notas, correcciones, catalogo, tieneLista, memoria, yaSaludoHoy, bonificacion = 0 }) {
   return `Sos Aldana, la vendedora que atiende el WhatsApp de ventas de Conoflex Argentina, fábrica de productos de seguridad vial (conos, reductores de velocidad, topes de estacionamiento, separadores de carril, delineadores y más). Atendés como una buena vendedora: resolvés rápido, asesorás y ayudás a cerrar la compra, sin ser insistente ni robótica.
 
 CÓMO ESCRIBIR
@@ -267,6 +284,7 @@ PRODUCTOS Y PRECIOS
 - NUNCA hagas cuentas vos. Si el cliente da cantidades, completá "items" con código y cantidad: el sistema agrega el presupuesto exacto (subtotales y total) debajo de tu mensaje. En tu texto no escribas totales ni subtotales.
 - COTIZAR: cuando pida presupuesto o dé cantidades de varios productos, cargá TODOS en "items" (código y cantidad de cada uno) para que salga el presupuesto completo. En tu texto, presentalo cortito ("Te armo el presupuesto 👇") y aclará las condiciones que correspondan según las reglas (IVA, envío, validez, forma de pago) en "nota_total" o en una línea.
 - PRESUPUESTO EN PDF: cuando el cliente pide un presupuesto/cotización formal, o cuando cotizás varios items, poné "presupuesto": true. El sistema le manda automáticamente un PDF prolijo con la marca Conoflex, los items y el total. Avisale en el texto que le mandás el presupuesto en PDF. No hace falta para una sola consulta de precio suelta.
+${bonificacion > 0 ? `- BONIFICACIÓN DE ESTE CLIENTE: tiene un ${bonificacion}% de descuento acordado. El sistema lo aplica SOLO al cálculo y al presupuesto (muestra subtotal, la bonificación y el total con descuento). Vos NO hagas la cuenta ni muestres el total: solo cargá los "items" como siempre y, si querés, mencionale en una línea que ya le aplicaste su ${bonificacion}% de bonificación. Nunca ofrezcas un descuento distinto a este.` : "- Este cliente no tiene una bonificación cargada: pasá los precios de lista. No inventes ni ofrezcas descuentos (eso lo deriva una persona)."}
 - Fotos: si la foto trae "Producto reconocido", ESE es el producto: nombralo y pasá su precio directo.
 - Si la foto dice "No es seguro. Opciones más parecidas", NO afirmes cuál es ni ofrezcas otros modelos: poné en "fotos" los códigos de esas opciones (máximo 3, en ese orden) y preguntale al cliente cuál de esas es, nombrándolas.
 - ALTURAS Y MEDIDAS: decí solo las del CATÁLOGO ("altura:" y "medidas:" de ese producto). Nunca uses una altura estimada de una foto ni de mensajes anteriores. Si el catálogo no dice la altura, no la digas.
@@ -285,6 +303,11 @@ CUÁNDO MANDAR UNA NOTA DE VOZ ("audio": true)
 NO INVENTES NUNCA
 - Precios, medidas, alturas, stock, plazos, descuentos, formas de pago: solo lo que está en el CATÁLOGO y las REGLAS. Si no está, no lo afirmes.
 - Si no sabés algo o el cliente pide algo que no figura, decilo con naturalidad y derivá, en vez de improvisar. Es mejor "lo confirmo con el equipo" que un dato inventado.
+
+COORDINAR ENVÍO ("envio")
+- Si el cliente quiere que le mandes la mercadería, pregunta por envío, o da una dirección/localidad, juntá el destino y cargalo en "envio": {"localidad": "...", "provincia": "...", "detalle": "calle, referencia o lo que aclare"}. Con la localidad alcanza para empezar; pedí lo que falte en una línea.
+- NO inventes costos ni plazos de envío: no están en el catálogo. Decile que el equipo le confirma el costo del flete a esa zona. Igual seguí ayudando con precios y el presupuesto; no hace falta derivar solo por el envío.
+- Si el cliente retira él mismo (retira en fábrica / pasa a buscar), no cargues "envio".
 
 CUÁNDO DERIVAR A UNA PERSONA ("derivar": true)
 - Piden hablar con alguien, un reclamo, una devolución, factura, un pago, estado de un pedido ya hecho, un descuento especial o algo que no está en el catálogo ni en las reglas.
@@ -307,7 +330,7 @@ RECORDÁ: "respuesta" es texto plano de WhatsApp. NUNCA HTML (<div>, <table>, <b
 MEMORIA: en "memoria" devolvé una ficha breve y actualizada del cliente (máx 400 caracteres) para la próxima charla. Guardá POR SEPARADO el nombre de la persona y la razón social (si la sabés), por ejemplo "Nombre: Andrés | Razón social: Conoflex SA (no nombrarla)". Sumá zona/ciudad, rubro, qué productos le interesan, cantidades o pedidos que mencionó, y cualquier dato útil. Reescribí la ficha completa cada vez (no un historial largo): sumá lo nuevo y descartá lo que ya no sirve. Si no hay nada nuevo, repetí la ficha que ya tenías.
 
 FORMATO DE SALIDA: solo un JSON así:
-{"respuesta": "texto para el cliente", "audio": false, "items": [{"codigo": "...", "cantidad": 0}], "nota_total": "ej: más IVA", "fotos": ["codigo"], "enviar_lista": false, "derivar": false, "motivo": "por qué derivás (solo si derivar)", "memoria": "ficha breve del cliente para recordar"}`;
+{"respuesta": "texto para el cliente", "audio": false, "items": [{"codigo": "...", "cantidad": 0}], "nota_total": "ej: más IVA", "fotos": ["codigo"], "enviar_lista": false, "envio": {"localidad": "", "provincia": "", "detalle": ""}, "derivar": false, "motivo": "por qué derivás (solo si derivar)", "memoria": "ficha breve del cliente para recordar"}`;
 }
 
 /** Arma el historial para la IA: los mensajes en orden, cada uno con quién lo escribió. */
@@ -373,7 +396,23 @@ function normalizarSalida(crudo) {
     memoria: typeof crudo.memoria === "string" ? crudo.memoria.trim().slice(0, 600) : "",
     audio: crudo.audio === true,
     presupuesto: crudo.presupuesto === true,
+    envio: normalizarEnvio(crudo.envio),
   };
+}
+
+/** Datos de envío que juntó Aldana (destino para cotizar el flete). Null si no hay localidad. */
+function normalizarEnvio(e) {
+  if (!e || typeof e !== "object") return null;
+  const limpio = (v) => (typeof v === "string" ? v.trim().slice(0, 120) : "");
+  const localidad = limpio(e.localidad);
+  if (!localidad) return null;
+  return { localidad, provincia: limpio(e.provincia), detalle: limpio(e.detalle) };
+}
+
+/** Resumen de una línea del destino de envío, para el aviso y el registro. */
+function textoEnvio(envio) {
+  if (!envio) return "";
+  return [envio.localidad, envio.provincia, envio.detalle].map((x) => String(x || "").trim()).filter(Boolean).join(" · ").slice(0, 200);
 }
 
 /** ¿El aviso de Meta trae eventos de llamadas (campo "calls")? */
@@ -433,8 +472,9 @@ async function asegurarTablasWhatsapp(db) {
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     INDEX (codigo)
   )`);
-  // Último mensaje del cliente ya respondido, ficha de memoria, y fecha del último saludo (para no saludar dos veces por día).
-  for (const [col, def] of [["ultimo_in_respondido", "INT NULL"], ["memoria", "TEXT NULL"], ["ultimo_saludo_en", "DATE NULL"]]) {
+  // Último mensaje del cliente ya respondido, ficha de memoria, fecha del último saludo (para no saludar dos veces por día),
+  // bonificación acordada del cliente (% que Aldana aplica sola), CUIT y última zona de envío juntada.
+  for (const [col, def] of [["ultimo_in_respondido", "INT NULL"], ["memoria", "TEXT NULL"], ["ultimo_saludo_en", "DATE NULL"], ["bonificacion", "DECIMAL(5,2) NOT NULL DEFAULT 0"], ["cuit", "VARCHAR(20) NULL"], ["envio_zona", "VARCHAR(200) NULL"]]) {
     const [c] = await db.query("SELECT 1 FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'wa_conversaciones' AND column_name = ?", [col]);
     if (!c.length) await db.query(`ALTER TABLE wa_conversaciones ADD COLUMN ${col} ${def}`);
   }
@@ -547,9 +587,9 @@ function crearBotWhatsapp({ db, ai, leerLista, notasTexto, crearNotificacion, im
   }
 
   /** Lo que respondería el bot a esta conversación. No envía nada (lo usa también la pestaña Probar). */
-  async function pensar(mensajes, memoria = "", yaSaludoHoy = false) {
+  async function pensar(mensajes, memoria = "", yaSaludoHoy = false, bonificacion = 0) {
     const ctx = await contexto();
-    const sistema = instrucciones({ ...ctx, catalogo: catalogoTexto(ctx.productos), memoria, yaSaludoHoy });
+    const sistema = instrucciones({ ...ctx, catalogo: catalogoTexto(ctx.productos), memoria, yaSaludoHoy, bonificacion });
     const contents = historialContents(mensajes.slice(-MAX_HISTORIAL));
     if (!contents.length) throw new Error("No hay mensajes del cliente para responder.");
     // Claude procesa la respuesta; si no hay clave, falla o devuelve algo ilegible, se usa Gemini como respaldo.
@@ -567,7 +607,8 @@ function crearBotWhatsapp({ db, ai, leerLista, notasTexto, crearNotificacion, im
     }
     if (!salida) throw new Error("La IA no devolvió una respuesta legible.");
     const calc = calcularItems(salida.items, ctx.productos);
-    const texto = [salida.respuesta, textoCalculo(calc, salida.notaTotal)].filter(Boolean).join("\n\n");
+    const presu = aplicarBonificacion(calc, bonificacion); // aplica el descuento del cliente (0 % = total de lista)
+    const texto = [salida.respuesta, textoCalculo(presu, salida.notaTotal)].filter(Boolean).join("\n\n");
     const porCodigo = new Map(ctx.productos.map((p) => [normCodigo(p.codigo), p]));
     const fotos = salida.fotos
       .map((c) => porCodigo.get(normCodigo(c)))
@@ -576,12 +617,12 @@ function crearBotWhatsapp({ db, ai, leerLista, notasTexto, crearNotificacion, im
       .filter((f) => f.url);
     // La nota de voz solo vale para explicaciones reales: sin cálculo, sin derivar, ni muy corta ni muy larga.
     const largo = (salida.respuesta || "").trim().length;
-    const audio = salida.audio && !calc && !salida.derivar && largo >= 60 && largo <= 600;
+    const audio = salida.audio && !presu && !salida.derivar && largo >= 60 && largo <= 600;
     // Presupuesto en PDF: solo si el modelo lo pidió y hay un cálculo real con items.
-    const presupuesto = salida.presupuesto && calc ? { ...calc, nota: salida.notaTotal || "" } : null;
-    // Toda cotización (haya PDF o no) se registra para el tablero de métricas.
-    const cotizacion = calc ? { lineas: calc.lineas, total: calc.total, pdf: !!presupuesto } : null;
-    return { texto, respuesta: salida.respuesta, fotos, enviarLista: salida.enviarLista && ctx.tieneLista, derivar: salida.derivar, motivo: salida.motivo, memoria: salida.memoria, audio, presupuesto, cotizacion };
+    const presupuesto = salida.presupuesto && presu ? { ...presu, nota: salida.notaTotal || "" } : null;
+    // Toda cotización (haya PDF o no) se registra para el tablero de métricas (total neto, con bonificación aplicada).
+    const cotizacion = presu ? { lineas: presu.lineas, total: presu.total, bruto: presu.bruto, bonificacion: presu.bonificacion, pdf: !!presupuesto } : null;
+    return { texto, respuesta: salida.respuesta, fotos, enviarLista: salida.enviarLista && ctx.tieneLista, envio: salida.envio, derivar: salida.derivar, motivo: salida.motivo, memoria: salida.memoria, audio, presupuesto, cotizacion };
   }
 
   async function guardarMensaje(conversacionId, { waId = null, direccion, autor, tipo = "text", texto, usuarioId = null, error = null }) {
@@ -712,7 +753,7 @@ function crearBotWhatsapp({ db, ai, leerLista, notasTexto, crearNotificacion, im
       const yaSaludoHoy = saludoGuardado === hoy;
       let r;
       try {
-        r = await pensar(mensajes, conv.memoria || "", yaSaludoHoy);
+        r = await pensar(mensajes, conv.memoria || "", yaSaludoHoy, Number(conv.bonificacion) || 0);
       } catch (e) {
         console.error("[whatsapp] IA:", e.message);
         r = { texto: "Gracias por escribirnos. En un momento te responde alguien del equipo.", fotos: [], enviarLista: false, derivar: true, motivo: "El bot no pudo responder (error de la IA)." };
@@ -764,7 +805,7 @@ function crearBotWhatsapp({ db, ai, leerLista, notasTexto, crearNotificacion, im
       }
       if (r.presupuesto) {
         try {
-          const pdf = presupuestoPdf({ cliente: conv.nombre || "", lineas: r.presupuesto.lineas, total: r.presupuesto.total, nota: r.presupuesto.nota });
+          const pdf = presupuestoPdf({ cliente: conv.nombre || "", lineas: r.presupuesto.lineas, total: r.presupuesto.total, nota: r.presupuesto.nota, bonificacion: r.presupuesto.bonificacion, subtotal: r.presupuesto.bruto, descuento: r.presupuesto.descuento });
           const env = await enviarDocumento(conv.telefono, { nombre: pdf.nombre, datos: pdf.datos });
           await guardarMensaje(conversacionId, { waId: env?.messages?.[0]?.id, direccion: "OUT", autor: "BOT", tipo: "document", texto: "📄 Presupuesto (PDF)" });
         } catch (e) {
@@ -779,6 +820,15 @@ function crearBotWhatsapp({ db, ai, leerLista, notasTexto, crearNotificacion, im
           );
         } catch (e) {
           console.error("[whatsapp] evento cotizacion:", e.message);
+        }
+      }
+      // Envío: cuando Aldana junta un destino nuevo, se registra y se avisa al equipo para que cotice el flete.
+      if (r.envio) {
+        const zona = textoEnvio(r.envio);
+        if (zona && zona !== (conv.envio_zona || "")) {
+          await db.query("UPDATE wa_conversaciones SET envio_zona = ? WHERE id = ?", [zona, conversacionId]).catch(() => {});
+          await db.query("INSERT INTO wa_eventos (conversacion_id, tipo, motivo) VALUES (?, 'envio', ?)", [conversacionId, zona]).catch(() => {});
+          crearNotificacion?.(db, { tipo: "WHATSAPP", titulo: `WhatsApp: envío a coordinar — ${r.envio.localidad}`, texto: `${conv.nombre || conv.telefono}: ${zona}`, ruta: "whatsapp", roles: ROLES_AVISO, push: true });
         }
       }
       if (r.derivar) await derivar(conv, r.motivo);
@@ -859,6 +909,10 @@ function registrarRutasWhatsapp(app, { db, requirePermiso, bot }) {
         `SELECT COUNT(*) AS cantidad, COUNT(DISTINCT conversacion_id) AS conversaciones
          FROM wa_eventos WHERE tipo = 'derivacion' AND created_at >= ${desde}`,
       );
+      const [[env]] = await db.query(
+        `SELECT COUNT(*) AS cantidad, COUNT(DISTINCT conversacion_id) AS conversaciones
+         FROM wa_eventos WHERE tipo = 'envio' AND created_at >= ${desde}`,
+      );
       const totalConsultas = Number(consultas.conversaciones) || 0;
       const convDerivadas = Number(der.conversaciones) || 0;
       const resueltas = Math.max(totalConsultas - convDerivadas, 0);
@@ -896,6 +950,7 @@ function registrarRutasWhatsapp(app, { db, requirePermiso, bot }) {
         consultas: { conversaciones: totalConsultas, mensajes: Number(consultas.mensajes) || 0 },
         cotizaciones: { cantidad: Number(cot.cantidad) || 0, monto: Number(cot.monto) || 0, conPdf: Number(cot.con_pdf) || 0 },
         derivaciones: { cantidad: Number(der.cantidad) || 0, conversaciones: convDerivadas },
+        envios: { cantidad: Number(env.cantidad) || 0, conversaciones: Number(env.conversaciones) || 0 },
         resolucion: { resueltas, derivadas: convDerivadas, pctResueltas },
         productosTop,
         serie: serie.map((s) => ({ dia: s.dia instanceof Date ? s.dia.toISOString().slice(0, 10) : String(s.dia).slice(0, 10), mensajes: Number(s.mensajes) || 0, clientes: Number(s.clientes) || 0 })),
@@ -916,7 +971,7 @@ function registrarRutasWhatsapp(app, { db, requirePermiso, bot }) {
 
   app.get("/api/whatsapp/conversaciones", permiso, async (req, res) => {
     try {
-      const [rows] = await db.query("SELECT id, telefono, nombre, pausado_hasta, pausado_hasta > NOW() AS pausado, derivada, motivo_derivacion, no_leidos, ultimo_texto, ultimo_mensaje_en, ultimo_cliente_en, ultimo_cliente_en > (NOW() - INTERVAL 24 HOUR) AS ventana FROM wa_conversaciones ORDER BY derivada DESC, ultimo_mensaje_en DESC LIMIT 200");
+      const [rows] = await db.query("SELECT id, telefono, nombre, bonificacion, cuit, envio_zona, pausado_hasta, pausado_hasta > NOW() AS pausado, derivada, motivo_derivacion, no_leidos, ultimo_texto, ultimo_mensaje_en, ultimo_cliente_en, ultimo_cliente_en > (NOW() - INTERVAL 24 HOUR) AS ventana FROM wa_conversaciones ORDER BY derivada DESC, ultimo_mensaje_en DESC LIMIT 200");
       res.json(rows);
     } catch (e) {
       err(res, e);
@@ -939,6 +994,20 @@ function registrarRutasWhatsapp(app, { db, requirePermiso, bot }) {
       if (!texto) return res.status(400).json({ error: "Escribí un mensaje." });
       await bot.enviarPersona(Number(req.params.id), texto.slice(0, 4000), req.user?.id || null);
       res.json({ ok: true });
+    } catch (e) {
+      err(res, e);
+    }
+  });
+
+  // Datos comerciales del cliente: bonificación (% que Aldana aplica sola) y CUIT.
+  app.post("/api/whatsapp/conversaciones/:id/cliente", permiso, async (req, res) => {
+    try {
+      const b = Number(req.body?.bonificacion);
+      const bonificacion = Number.isFinite(b) ? Math.min(Math.max(b, 0), 100) : 0;
+      const cuit = String(req.body?.cuit || "").replace(/[^0-9-]/g, "").slice(0, 20) || null;
+      const [r] = await db.query("UPDATE wa_conversaciones SET bonificacion = ?, cuit = ? WHERE id = ?", [bonificacion, cuit, req.params.id]);
+      if (!r.affectedRows) return res.status(404).json({ error: "No existe la conversación." });
+      res.json({ ok: true, bonificacion, cuit });
     } catch (e) {
       err(res, e);
     }
@@ -1069,7 +1138,10 @@ module.exports = {
   parsearJson,
   catalogoTexto,
   calcularItems,
+  aplicarBonificacion,
   textoCalculo,
+  normalizarEnvio,
+  textoEnvio,
   botPuedeResponder,
   ultimoSinResponder,
   ventanaAbierta,

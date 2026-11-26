@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ArrowLeft, Bot, Loader2, MessageCircle, Send, UserRound } from "lucide-react";
+import { ArrowLeft, Bot, Loader2, MessageCircle, Percent, Send, Truck, UserRound } from "lucide-react";
 import { api } from "../produccion/util";
 import { Aviso, Boton, Chip, Modal } from "../comercial/ui";
 import { campo } from "../comercial/util";
@@ -92,6 +92,7 @@ function Chat({ conv, aviso, onVolver, onCambio }) {
   const [texto, setTexto] = useState("");
   const [enviando, setEnviando] = useState(false);
   const [corrigiendo, setCorrigiendo] = useState(null);
+  const [ficha, setFicha] = useState(false);
   const fin = useRef(null);
   const cantidad = useRef(0);
 
@@ -148,8 +149,9 @@ function Chat({ conv, aviso, onVolver, onCambio }) {
         <button onClick={onVolver} className="md:hidden w-9 h-9 grid place-items-center rounded-lg text-zinc-400 hover:bg-zinc-900 cursor-pointer" aria-label="Volver"><ArrowLeft size={18} /></button>
         <div className="min-w-0 flex-1">
           <p className="text-sm font-semibold text-white truncate">{nombreDe(conv)}</p>
-          <p className="text-xs text-zinc-500">+{conv.telefono}</p>
+          <p className="text-xs text-zinc-500">+{conv.telefono}{Number(conv.bonificacion) > 0 ? ` · ${Number(conv.bonificacion)}% bonif.` : ""}</p>
         </div>
+        <button onClick={() => setFicha(true)} title="Bonificación y datos del cliente" className="inline-flex items-center gap-1 rounded-lg border border-zinc-800 px-2.5 py-1.5 text-xs font-medium text-zinc-300 hover:bg-zinc-900 cursor-pointer"><Percent size={14} /> Cliente</button>
         {conBot ? (
           <Boton variante="suave" onClick={() => bot(false)}><UserRound size={15} /> Atender yo</Boton>
         ) : (
@@ -191,7 +193,47 @@ function Chat({ conv, aviso, onVolver, onCambio }) {
       )}
 
       {corrigiendo && <Corregir inicial={corrigiendo} aviso={aviso} onCerrar={() => setCorrigiendo(null)} />}
+      {ficha && <FichaCliente conv={conv} aviso={aviso} onCerrar={(cambio) => { setFicha(false); if (cambio) onCambio?.(); }} />}
     </>
+  );
+}
+
+/** Bonificación acordada (% que Aldana aplica sola en los presupuestos) y datos del cliente. */
+export function FichaCliente({ conv, aviso, onCerrar }) {
+  const [bonificacion, setBonificacion] = useState(String(Number(conv.bonificacion) || 0));
+  const [cuit, setCuit] = useState(conv.cuit || "");
+  const [guardando, setGuardando] = useState(false);
+  const guardar = async () => {
+    const b = Number(bonificacion);
+    if (!Number.isFinite(b) || b < 0 || b > 100) return aviso("La bonificación tiene que ser un número entre 0 y 100.", "error");
+    setGuardando(true);
+    try {
+      await api(`/api/whatsapp/conversaciones/${conv.id}/cliente`, { method: "POST", body: { bonificacion: b, cuit } });
+      aviso(b > 0 ? `Listo: Aldana le aplica ${b}% de bonificación a este cliente.` : "Listo: este cliente queda sin bonificación.");
+      onCerrar(true);
+    } catch (e) {
+      aviso(e.message, "error");
+    } finally {
+      setGuardando(false);
+    }
+  };
+  return (
+    <Modal titulo="Datos del cliente" onCerrar={() => onCerrar(false)} pie={<><Boton variante="fantasma" onClick={() => onCerrar(false)}>Cancelar</Boton><Boton onClick={guardar} cargando={guardando}>Guardar</Boton></>}>
+      <div className="space-y-4">
+        <div>
+          <label htmlFor="wa-bonif" className="text-sm font-medium text-zinc-300">Bonificación (%)</label>
+          <input id="wa-bonif" type="number" min="0" max="100" step="0.5" value={bonificacion} onChange={(e) => setBonificacion(e.target.value)} className={`${campo} mt-1`} />
+          <p className="mt-1 text-xs text-zinc-500">Aldana la aplica sola en los cálculos y el presupuesto de este cliente. Dejalo en 0 para precios de lista.</p>
+        </div>
+        <div>
+          <label htmlFor="wa-cuit" className="text-sm font-medium text-zinc-300">CUIT (opcional)</label>
+          <input id="wa-cuit" value={cuit} onChange={(e) => setCuit(e.target.value)} placeholder="30-12345678-9" className={`${campo} mt-1`} />
+        </div>
+        {conv.envio_zona ? (
+          <p className="flex items-center gap-1.5 text-xs text-zinc-400"><Truck size={14} /> Último envío a coordinar: {conv.envio_zona}</p>
+        ) : null}
+      </div>
+    </Modal>
   );
 }
 

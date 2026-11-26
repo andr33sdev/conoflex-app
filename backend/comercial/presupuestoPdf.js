@@ -20,10 +20,10 @@ const cortar = (txt, size, negrita, max) => {
 
 /**
  * Arma el PDF del presupuesto.
- * @param {{cliente?:string, lineas:Array<{nombre,codigo,cantidad,unitario,subtotal}>, total:number, nota?:string, fecha?:Date, validezDias?:number}}
+ * @param {{cliente?:string, lineas:Array<{nombre,codigo,cantidad,unitario,subtotal}>, total:number, nota?:string, fecha?:Date, validezDias?:number, bonificacion?:number, subtotal?:number, descuento?:number}}
  * @returns {{nombre:string, datos:Buffer}}
  */
-function presupuestoPdf({ cliente, lineas = [], total = 0, nota = "", fecha = new Date(), validezDias = 7 } = {}) {
+function presupuestoPdf({ cliente, lineas = [], total = 0, nota = "", fecha = new Date(), validezDias = 7, bonificacion = 0, subtotal = 0, descuento = 0 } = {}) {
   const pdf = new Pdf();
   const f = (d) => new Date(d).toLocaleDateString("es-AR", { day: "2-digit", month: "2-digit", year: "numeric" });
 
@@ -68,10 +68,20 @@ function presupuestoPdf({ cliente, lineas = [], total = 0, nota = "", fecha = ne
     pdf.linea(M, y, A4.w - M, y, "#e5e7eb", 0.5);
   }
 
-  // Total
+  // Subtotal y bonificación (solo si el cliente tiene descuento acordado).
   y += 14;
+  const bonif = Number(bonificacion) || 0;
+  if (bonif > 0) {
+    const bruto = Number(subtotal) || total;
+    pdf.texto(colUnit, y + 10, "Subtotal", { size: 10, color: GRIS });
+    pdf.texto(colSub, y + 10, pesos(bruto), { size: 10, color: TINTA, alinear: "der" });
+    pdf.texto(colUnit, y + 26, `Bonificación ${bonif}%`, { size: 10, color: GRIS });
+    pdf.texto(colSub, y + 26, `- ${pesos(descuento)}`, { size: 10, color: "#a32121", alinear: "der" });
+    y += 34;
+  }
+  // Total
   pdf.rect(colUnit - 12, y, A4.w - M - (colUnit - 12), 34, "#14141a");
-  pdf.texto(colUnit, y + 22, "TOTAL", { size: 11, negrita: true, color: "#ffffff" });
+  pdf.texto(colUnit, y + 22, bonif > 0 ? "TOTAL C/BONIF." : "TOTAL", { size: bonif > 0 ? 9.5 : 11, negrita: true, color: "#ffffff" });
   pdf.texto(colSub - 6, y + 22, pesos(total), { size: 13, negrita: true, color: AMARILLO, alinear: "der" });
   y += 34;
   if (nota) { pdf.texto(colSub, y + 14, cortar(nota, 9, false, 260), { size: 9, color: GRIS, alinear: "der" }); y += 16; }
