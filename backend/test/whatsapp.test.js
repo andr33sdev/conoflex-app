@@ -161,6 +161,42 @@ test("presupuesto: con varios ítems el título cambia a Presupuesto", () => {
   assert.match(w.textoCalculo(calc, ""), /\*Presupuesto \(precios de lista\)\*/);
 });
 
+test("bonificación: aplica el % del cliente sobre el total de lista", () => {
+  const calc = { lineas: [{ codigo: "A", nombre: "Cono", cantidad: 2, unitario: 100, subtotal: 200 }], total: 200 };
+  const p = w.aplicarBonificacion(calc, 10);
+  assert.equal(p.bruto, 200);
+  assert.equal(p.bonificacion, 10);
+  assert.equal(p.descuento, 20);
+  assert.equal(p.total, 180);
+  // 0 % → el total neto es el de lista, sin línea de bonificación
+  const p0 = w.aplicarBonificacion(calc, 0);
+  assert.equal(p0.total, 200);
+  assert.equal(p0.bonificacion, 0);
+  assert.equal(w.aplicarBonificacion(null, 10), null);
+  // el % se acota a 0–100
+  assert.equal(w.aplicarBonificacion(calc, 999).bonificacion, 100);
+  assert.equal(w.aplicarBonificacion(calc, -5).bonificacion, 0);
+});
+
+test("textoCalculo: muestra subtotal, bonificación y total con descuento", () => {
+  const calc = { lineas: [{ codigo: "A", nombre: "Cono", cantidad: 2, unitario: 100, subtotal: 200 }], total: 200 };
+  const t = w.textoCalculo(w.aplicarBonificacion(calc, 10), "más IVA");
+  assert.match(t, /Subtotal: \$200,00/);
+  assert.match(t, /Bonificación 10%: -\$20,00/);
+  assert.match(t, /\*Total con tu bonificación: \$180,00\* más IVA/);
+});
+
+test("envío: solo vale con localidad y arma el resumen", () => {
+  assert.equal(w.normalizarEnvio({ provincia: "Buenos Aires" }), null); // sin localidad
+  assert.equal(w.normalizarEnvio(null), null);
+  const e = w.normalizarEnvio({ localidad: " Morón ", provincia: "Buenos Aires", detalle: "  Av. Rivadavia 100  " });
+  assert.deepEqual(e, { localidad: "Morón", provincia: "Buenos Aires", detalle: "Av. Rivadavia 100" });
+  assert.equal(w.textoEnvio(e), "Morón · Buenos Aires · Av. Rivadavia 100");
+  // normalizarSalida expone el envío
+  assert.deepEqual(w.normalizarSalida({ respuesta: "Dale", envio: { localidad: "Luján" } }).envio, { localidad: "Luján", provincia: "", detalle: "" });
+  assert.equal(w.normalizarSalida({ respuesta: "Dale" }).envio, null);
+});
+
 test("si la IA devuelve HTML de mail, queda texto plano de WhatsApp", () => {
   const html = '<div style="font-family: Arial; color: #1A1A1A;">\n  ¡Hola! Soy de <b>Conoflex Argentina</b>.&nbsp;Contame el uso.\n</div>\n<div>Adjunto precios:</div>\n<table><tr><td><img src="x.jpg"></td><td><strong>Cono 75</strong></td><td>$10.000</td></tr></table>';
   const t = w.textoWhatsapp(html);
