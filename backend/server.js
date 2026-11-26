@@ -40,6 +40,7 @@ const { asegurarTablasFichasPdf, registrarRutasFichasPdf } = require("./comercia
 const importarFichas = require("./comercial/importarFichas");
 const { asegurarColumnasGestion, registrarRutasGestion } = require("./comprasGestion");
 const { asegurarSemis, registrarRutasSemis } = require("./semisGestion");
+const { calcularSemis, prepararFilas, semisPdf, semisExcel } = require("./semisExport");
 const { asegurarMovimientos, registrarRutasMovimientos, sincronizarHojas, iniciarEspejo33, estadoEspejo33 } = require("./semiMovimientos");
 const { registrarRutasFotos } = require("./comercial/fotos");
 const { generarCotizacion } = require("./comercial/cotizador");
@@ -2920,132 +2921,41 @@ app.put("/api/materias-primas/:id/stock", async (req, res) => {
 app.get("/api/semielaborados", async (req, res) => {
   try {
     const meses = parseInt(req.query.meses) || 3;
-
-    // 1. Ejecutamos todas las consultas principales en PARALELO para máxima velocidad
-    const [
-      [semielaborados],
-      [pts],
-      [ventasAgrupadas],
-      [activeRecipesPT],
-      [recipeDetailsPT],
-    ] = await Promise.all([
-      db.query(`
-        SELECT s.*, 
-               c.nombre as pegado_nombre,
-               c.reflectiva,
-               c.protector_orajet,
-               c.aplicacion_protector,
-               (
-                 SELECT MAX(rp.fecha) 
-                 FROM registro_produccion rp 
-                 WHERE UPPER(rp.codigo) = UPPER(s.codigo) OR UPPER(rp.articulo) = UPPER(s.nombre)
-               ) as ultima_produccion_fecha,
-               COUNT(i.id) as recetas_count 
-        FROM semielaborados s 
-        LEFT JOIN configuraciones_pegado c ON s.configuracion_pegado_id = c.id
-        LEFT JOIN ingenierias i ON s.id = i.semielaborado_id 
-        GROUP BY s.id 
-        ORDER BY s.orden ASC, s.id ASC
-      `),
-      db.query(
-        "SELECT id, codigo, nombre, promedio_ventas_mensual FROM productos_terminados",
-      ),
-      // 🚀 Consulta única ultra rápida: agrupa todas las ventas del período en 1 solo paso
-      db.query(
-        `
-        SELECT UPPER(TRIM(modelo)) as modelo, SUM(cantidad) as total_vendido
-        FROM estado_pedidos
-        WHERE fecha >= DATE_SUB(CURDATE(), INTERVAL ? MONTH)
-        GROUP BY UPPER(TRIM(modelo))
-      `,
-        [meses],
-      ),
-      db.query(
-        "SELECT id, producto_terminado_id FROM ingenierias WHERE es_activa = 1 AND producto_terminado_id IS NOT NULL",
-      ),
-      db.query(
-        "SELECT ingenieria_id, semielaborado_id, cantidad FROM ingenieria_detalles WHERE semielaborado_id IS NOT NULL",
-      ),
-    ]);
-
-    // 2. Mapeamos las ventas en un Map de JS (Búsqueda en 0.001 ms)
-    const ventasMap = new Map();
-    ventasAgrupadas.forEach((v) => {
-      if (v.modelo) {
-        ventasMap.set(v.modelo, parseFloat(v.total_vendido) || 0);
-      }
-    });
-
-    // 3. Calculamos el promedio mensual por Producto Terminado
-    const ptDemandMap = new Map();
-    pts.forEach((pt) => {
-      const keyCodigo = pt.codigo ? pt.codigo.trim().toUpperCase() : "";
-      const keyNombre = pt.nombre ? pt.nombre.trim().toUpperCase() : "";
-
-      let totalVendido = ventasMap.get(keyCodigo);
-      if (totalVendido === undefined && keyNombre) {
-        totalVendido = ventasMap.get(keyNombre);
-      }
-
-      let promedioMensual = 0;
-      if (totalVendido !== undefined) {
-        promedioMensual = totalVendido / meses;
-      } else {
-        promedioMensual = parseFloat(pt.promedio_ventas_mensual) || 0;
-      }
-
-      ptDemandMap.set(pt.id, promedioMensual);
-    });
-
-    // 4. Trasladamos la demanda a Semielaborados vía Recetas (BOM)
-    const seDemandMap = {};
-    pts.forEach((pt) => {
-      const ventaMensual = ptDemandMap.get(pt.id) || 0;
-      if (ventaMensual === 0) return;
-
-      const activeRecipe = activeRecipesPT.find(
-        (r) => r.producto_terminado_id === pt.id,
-      );
-      if (!activeRecipe) return;
-
-      const details = recipeDetailsPT.filter(
-        (d) => d.ingenieria_id === activeRecipe.id,
-      );
-
-      details.forEach((det) => {
-        if (!seDemandMap[det.semielaborado_id]) {
-          seDemandMap[det.semielaborado_id] = 0;
-        }
-        seDemandMap[det.semielaborado_id] +=
-          ventaMensual * parseFloat(det.cantidad || 0);
-      });
-    });
-
-    // 5. Resultado final con Stock Total, Demanda y Días de Stock
-    const result = semielaborados.map((se) => {
-      const rawStock =
-        (se.stock_33 || 0) +
-        (se.stock_26 || 0) +
-        (se.stock_ayolas || 0) +
-        (se.stock_37 || 0);
-      const totalStock = Math.max(0, rawStock);
-      const demand = seDemandMap[se.id] || 0;
-
-      let dias_stock =
-        demand > 0 ? Math.round((totalStock / demand) * 30) : null;
-
-      return {
-        ...se,
-        stock_total: totalStock,
-        demanda_mensual: Math.round(demand),
-        dias_stock: dias_stock,
-      };
-    });
-
+    const result = await calcularSemis(db, meses);
     res.json(result);
   } catch (error) {
     console.error("Error en /api/semielaborados:", error);
     res.status(500).json({ error: error.message });
+  }
+});
+
+// Exportar la lista de semielaborados (ordenada por demanda mensual, mayor a menor) a PDF o Excel.
+// Lleva el logo oficial de Conoflex en la cabecera. Respeta el filtro de la pantalla (?filtro=).
+app.get("/api/semielaborados/export.:formato", requirePermiso("semielaborados"), async (req, res) => {
+  try {
+    const formato = String(req.params.formato || "").toLowerCase();
+    if (formato !== "pdf" && formato !== "xlsx") return res.status(400).json({ error: "Formato inválido (usá pdf o xlsx)." });
+    const meses = parseInt(req.query.meses) || 3;
+    const filtro = String(req.query.filtro || "todos");
+    const usuario = req.user?.nombre || req.user?.usuario || "";
+    const filas = prepararFilas(await calcularSemis(db, meses), { filtro });
+    const stamp = new Date().toLocaleDateString("es-AR").replace(/\//g, "-");
+
+    if (formato === "pdf") {
+      const buf = semisPdf(filas, { meses, filtro, usuario });
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader("Content-Disposition", `inline; filename*=UTF-8''${encodeURIComponent(`Semielaborados ${stamp}.pdf`)}`);
+      res.setHeader("X-Content-Type-Options", "nosniff");
+      return res.send(buf);
+    }
+    const buf = semisExcel(filas, { meses, filtro });
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    res.setHeader("Content-Disposition", `attachment; filename*=UTF-8''${encodeURIComponent(`Semielaborados ${stamp}.xlsx`)}`);
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    return res.send(buf);
+  } catch (error) {
+    console.error("Error exportando semielaborados:", error);
+    res.status(500).json({ error: "No se pudo generar la exportación." });
   }
 });
 

@@ -2,8 +2,9 @@
 // se edita en la propia tabla (tildes + "Confirmar cambios"), sin abrir cada semielaborado.
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AnimatePresence, LayoutGroup, MotionConfig, motion } from "framer-motion";
-import { Check, ChevronLeft, ChevronRight, Loader2, PackageSearch, RefreshCw, Search, Truck, Undo2, X } from "lucide-react";
+import { Check, ChevronLeft, ChevronRight, FileDown, FileSpreadsheet, Loader2, PackageSearch, RefreshCw, Search, Truck, Undo2, X } from "lucide-react";
 import { api } from "./produccion/util";
+import { getApiUrl } from "./apiConfig";
 import { useToast } from "./produccion/useToast";
 import { Vacio } from "./produccion/ui";
 import { nf, norm } from "./materias/util";
@@ -123,6 +124,7 @@ export default function Semielaborados() {
   const [guardando, setGuardando] = useState(false);
   // Borrado de un semielaborado: { item, impacto, borrando } mientras se confirma.
   const [borrar, setBorrar] = useState(null);
+  const [exportando, setExportando] = useState("");
 
   const cargar = useCallback(async (silencioso = false) => {
     if (!silencioso) setCargando(true);
@@ -139,6 +141,38 @@ export default function Semielaborados() {
       setCargando(false);
     }
   }, [meses]);
+
+  // Exporta la lista (ordenada por demanda, mayor a menor) a PDF o Excel, respetando el filtro activo.
+  // El PDF lleva el logo oficial de Conoflex. El interceptor global agrega el token a la petición.
+  const exportar = useCallback(
+    async (formato) => {
+      if (exportando) return;
+      setExportando(formato);
+      try {
+        const res = await fetch(getApiUrl(`/api/semielaborados/export.${formato}?meses=${meses}&filtro=${filtro}`));
+        if (!res.ok) throw new Error("No se pudo generar la exportación.");
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const stamp = new Date().toLocaleDateString("es-AR").replace(/\//g, "-");
+        if (formato === "pdf") {
+          window.open(url, "_blank");
+        } else {
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = `Semielaborados ${stamp}.xlsx`;
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+        }
+        setTimeout(() => URL.revokeObjectURL(url), 60000);
+      } catch (e) {
+        toast(e.message || "No se pudo exportar.", "error");
+      } finally {
+        setExportando("");
+      }
+    },
+    [exportando, meses, filtro, toast]
+  );
 
   useEffect(() => {
     try {
@@ -347,6 +381,24 @@ export default function Semielaborados() {
                   <select value={orden} onChange={(e) => setOrden(e.target.value)} aria-label="Ordenar" className="min-h-[46px] flex-1 sm:flex-none rounded-xl bg-white/[0.05] border border-white/[0.08] px-3 text-sm font-bold text-zinc-200 outline-none focus:border-[#FF5A00]/60 cursor-pointer">
                     {ORDENES.map((o) => <option key={o.v} value={o.v} className="bg-[#111]">{o.t}</option>)}
                   </select>
+                  <div className="flex items-center gap-2" role="group" aria-label="Exportar la lista">
+                    <button
+                      onClick={() => exportar("pdf")}
+                      disabled={!!exportando || cargando || !lista.length}
+                      title="Exportar a PDF (ordenado por demanda, con el logo de Conoflex)"
+                      className="min-h-[46px] inline-flex items-center gap-2 rounded-xl bg-white/[0.05] border border-white/[0.08] px-3.5 text-sm font-bold text-zinc-200 hover:bg-white/[0.09] disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                    >
+                      {exportando === "pdf" ? <Loader2 size={16} className="animate-spin" /> : <FileDown size={16} />}PDF
+                    </button>
+                    <button
+                      onClick={() => exportar("xlsx")}
+                      disabled={!!exportando || cargando || !lista.length}
+                      title="Exportar a Excel (ordenado por demanda)"
+                      className="min-h-[46px] inline-flex items-center gap-2 rounded-xl bg-white/[0.05] border border-white/[0.08] px-3.5 text-sm font-bold text-zinc-200 hover:bg-white/[0.09] disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                    >
+                      {exportando === "xlsx" ? <Loader2 size={16} className="animate-spin" /> : <FileSpreadsheet size={16} />}Excel
+                    </button>
+                  </div>
                 </div>
               </div>
               <LayoutGroup id="semi-pildoras">
