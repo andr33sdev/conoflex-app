@@ -44,3 +44,20 @@ test("semisExcel: ordena por demanda y arma el encabezado esperado", () => {
   assert.equal(rows[4][2], 300);
   assert.equal(rows[4][5], "Sí");
 });
+
+test("semisExcel simple: solo código, semielaborado y demanda", () => {
+  const buf = semisExcel(prepararFilas(BASE, { filtro: "todos" }), { meses: 3, filtro: "todos", detalle: "simple" });
+  const wb = XLSX.read(buf);
+  const rows = XLSX.utils.sheet_to_json(wb.Sheets["Semielaborados"], { header: 1 });
+  assert.deepEqual(rows[3], ["Código", "Semielaborado", "Demanda mensual (u.)"]);
+  assert.equal(rows[4].length, 3);
+  assert.equal(rows[4][0], "SE_B");
+  assert.equal(rows[4][2], 300);
+});
+
+test("semisPdf simple: genera PDF válido con el logo", () => {
+  const buf = semisPdf(prepararFilas(BASE, { filtro: "todos" }), { meses: 3, filtro: "todos", detalle: "simple", usuario: "Andrés" });
+  assert.ok(Buffer.isBuffer(buf));
+  assert.equal(buf.slice(0, 5).toString("latin1"), "%PDF-");
+  assert.ok(buf.includes(Buffer.from("/Subtype /Image")), "debe incluir el logo");
+});

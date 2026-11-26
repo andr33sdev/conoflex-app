@@ -113,23 +113,38 @@ const FILTRO_LABEL = {
   bajo: "Stock bajo (≤ 15 días)",
 };
 
-/** PDF de la lista de semielaborados ordenada por demanda mensual (mayor a menor). */
-function semisPdf(filas, { meses = 3, filtro = "todos", usuario = "", generado = new Date() } = {}) {
+const esSimple = (detalle) => String(detalle || "completo").toLowerCase() === "simple";
+
+/**
+ * PDF de la lista de semielaborados ordenada por demanda mensual (mayor a menor).
+ * detalle: "completo" (todas las columnas) o "simple" (solo código, semielaborado y demanda).
+ */
+function semisPdf(filas, { meses = 3, filtro = "todos", detalle = "completo", usuario = "", generado = new Date() } = {}) {
+  const simple = esSimple(detalle);
   const pdf = new Pdf();
   const emitido = generado.toLocaleString("es-AR", { timeZone: "America/Argentina/Buenos_Aires", dateStyle: "short", timeStyle: "short" });
   const subtitulo = `${FILTRO_LABEL[filtro] || FILTRO_LABEL.todos} · demanda de ${meses === 1 ? "1 mes" : meses + " meses"}`;
 
-  // columnas: Código | Nombre | Demanda | Stock | Días | Sigue | Origen
-  const X = { cod: M + 4, nom: 136, dem: 372, stk: 420, dia: 456, sig: 488, ori: A4.w - M - 2 };
-  const COLS = [
-    { t: "Código", x: X.cod, al: "izq" },
-    { t: "Semielaborado", x: X.nom, al: "izq" },
-    { t: "Demanda/mes", x: X.dem, al: "der" },
-    { t: "Stock", x: X.stk, al: "der" },
-    { t: "Días", x: X.dia, al: "der" },
-    { t: "Sigue", x: X.sig, al: "centro" },
-    { t: "Origen", x: X.ori, al: "der" },
-  ];
+  // Posiciones y ancho de recorte del nombre según el modo.
+  const X = simple
+    ? { cod: M + 4, nom: 190, dem: A4.w - M - 2 }
+    : { cod: M + 4, nom: 136, dem: 372, stk: 420, dia: 456, sig: 488, ori: A4.w - M - 2 };
+  const anchoNom = simple ? 250 : 206;
+  const COLS = simple
+    ? [
+        { t: "Código", x: X.cod, al: "izq" },
+        { t: "Semielaborado", x: X.nom, al: "izq" },
+        { t: "Demanda/mes", x: X.dem, al: "der" },
+      ]
+    : [
+        { t: "Código", x: X.cod, al: "izq" },
+        { t: "Semielaborado", x: X.nom, al: "izq" },
+        { t: "Demanda/mes", x: X.dem, al: "der" },
+        { t: "Stock", x: X.stk, al: "der" },
+        { t: "Días", x: X.dia, al: "der" },
+        { t: "Sigue", x: X.sig, al: "centro" },
+        { t: "Origen", x: X.ori, al: "der" },
+      ];
 
   let y = 0;
   let pagina = 0;
@@ -169,15 +184,17 @@ function semisPdf(filas, { meses = 3, filtro = "todos", usuario = "", generado =
   filas.forEach((s, i) => {
     if (y + 18 > 796) nuevaPagina();
     if (i % 2) pdf.rect(M, y, A4.w - 2 * M, 18, "#f6f6f9");
-    const marca = sigueDemanda(s);
-    const bajo = marca && s.dias_stock !== null && s.dias_stock <= 15;
-    pdf.texto(X.cod, y + 13, cortar(s.codigo || "—", 8, false, 94), { size: 8, color: TINTA });
-    pdf.texto(X.nom, y + 13, cortar(s.nombre || "—", 8.5, false, 206), { size: 8.5, color: TINTA });
+    pdf.texto(X.cod, y + 13, cortar(s.codigo || "—", 8, false, simple ? 130 : 94), { size: 8, color: TINTA });
+    pdf.texto(X.nom, y + 13, cortar(s.nombre || "—", 8.5, false, anchoNom), { size: 8.5, color: TINTA });
     pdf.texto(X.dem, y + 13, n0(s.demanda_mensual), { size: 8.5, negrita: true, color: TINTA, alinear: "der" });
-    pdf.texto(X.stk, y + 13, n0(s.stock_total), { size: 8.5, alinear: "der", color: TINTA });
-    pdf.texto(X.dia, y + 13, s.dias_stock === null ? "—" : n0(s.dias_stock), { size: 8.5, alinear: "der", color: bajo ? "#a32121" : TINTA, negrita: bajo });
-    pdf.texto(X.sig, y + 13, marca ? "Sí" : "·", { size: 8.5, alinear: "centro", color: marca ? "#1c6b3a" : GRIS });
-    pdf.texto(X.ori, y + 13, origenLabel(s.origen), { size: 8, alinear: "der", color: GRIS });
+    if (!simple) {
+      const marca = sigueDemanda(s);
+      const bajo = marca && s.dias_stock !== null && s.dias_stock <= 15;
+      pdf.texto(X.stk, y + 13, n0(s.stock_total), { size: 8.5, alinear: "der", color: TINTA });
+      pdf.texto(X.dia, y + 13, s.dias_stock === null ? "—" : n0(s.dias_stock), { size: 8.5, alinear: "der", color: bajo ? "#a32121" : TINTA, negrita: bajo });
+      pdf.texto(X.sig, y + 13, marca ? "Sí" : "·", { size: 8.5, alinear: "centro", color: marca ? "#1c6b3a" : GRIS });
+      pdf.texto(X.ori, y + 13, origenLabel(s.origen), { size: 8, alinear: "der", color: GRIS });
+    }
     pdf.linea(M, y + 18, A4.w - M, y + 18, "#e7e7ec", 0.4);
     y += 18;
   });
@@ -186,26 +203,37 @@ function semisPdf(filas, { meses = 3, filtro = "todos", usuario = "", generado =
   return pdf.build();
 }
 
-/** Excel de la lista de semielaborados ordenada por demanda mensual. */
-function semisExcel(filas, { meses = 3, filtro = "todos" } = {}) {
-  const encabezado = ["Código", "Semielaborado", "Demanda mensual (u.)", "Stock total (u.)", "Días de stock", "Sigue demanda", "Origen"];
-  const datos = filas.map((s) => [
-    s.codigo || "",
-    s.nombre || "",
-    Number(s.demanda_mensual) || 0,
-    Number(s.stock_total) || 0,
-    s.dias_stock === null || s.dias_stock === undefined ? "" : Number(s.dias_stock),
-    sigueDemanda(s) ? "Sí" : "No",
-    origenLabel(s.origen),
-  ]);
+/**
+ * Excel de la lista de semielaborados ordenada por demanda mensual.
+ * detalle: "completo" o "simple" (solo código, semielaborado y demanda).
+ */
+function semisExcel(filas, { meses = 3, filtro = "todos", detalle = "completo" } = {}) {
+  const simple = esSimple(detalle);
+  const encabezado = simple
+    ? ["Código", "Semielaborado", "Demanda mensual (u.)"]
+    : ["Código", "Semielaborado", "Demanda mensual (u.)", "Stock total (u.)", "Días de stock", "Sigue demanda", "Origen"];
+  const datos = filas.map((s) => {
+    const base = [s.codigo || "", s.nombre || "", Number(s.demanda_mensual) || 0];
+    if (simple) return base;
+    return [
+      ...base,
+      Number(s.stock_total) || 0,
+      s.dias_stock === null || s.dias_stock === undefined ? "" : Number(s.dias_stock),
+      sigueDemanda(s) ? "Sí" : "No",
+      origenLabel(s.origen),
+    ];
+  });
+  const ultCol = encabezado.length - 1;
   const titulo = [`Conoflex · Semielaborados — control de demanda`];
   const sub = [`${FILTRO_LABEL[filtro] || FILTRO_LABEL.todos} · demanda de ${meses === 1 ? "1 mes" : meses + " meses"} · ${filas.length} ítems · ${new Date().toLocaleDateString("es-AR")}`];
   const aoa = [titulo, sub, [], encabezado, ...datos];
   const ws = XLSX.utils.aoa_to_sheet(aoa);
-  ws["!cols"] = [{ wch: 22 }, { wch: 46 }, { wch: 18 }, { wch: 15 }, { wch: 13 }, { wch: 14 }, { wch: 12 }];
+  ws["!cols"] = simple
+    ? [{ wch: 22 }, { wch: 46 }, { wch: 18 }]
+    : [{ wch: 22 }, { wch: 46 }, { wch: 18 }, { wch: 15 }, { wch: 13 }, { wch: 14 }, { wch: 12 }];
   ws["!merges"] = [
-    { s: { r: 0, c: 0 }, e: { r: 0, c: 6 } },
-    { s: { r: 1, c: 0 }, e: { r: 1, c: 6 } },
+    { s: { r: 0, c: 0 }, e: { r: 0, c: ultCol } },
+    { s: { r: 1, c: 0 }, e: { r: 1, c: ultCol } },
   ];
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "Semielaborados");

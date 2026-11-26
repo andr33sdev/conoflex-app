@@ -2937,18 +2937,19 @@ app.get("/api/semielaborados/export.:formato", requirePermiso("semielaborados"),
     if (formato !== "pdf" && formato !== "xlsx") return res.status(400).json({ error: "Formato inválido (usá pdf o xlsx)." });
     const meses = parseInt(req.query.meses) || 3;
     const filtro = String(req.query.filtro || "todos");
+    const detalle = String(req.query.detalle || "completo").toLowerCase() === "simple" ? "simple" : "completo";
     const usuario = req.user?.nombre || req.user?.usuario || "";
     const filas = prepararFilas(await calcularSemis(db, meses), { filtro });
     const stamp = new Date().toLocaleDateString("es-AR").replace(/\//g, "-");
 
     if (formato === "pdf") {
-      const buf = semisPdf(filas, { meses, filtro, usuario });
+      const buf = semisPdf(filas, { meses, filtro, detalle, usuario });
       res.setHeader("Content-Type", "application/pdf");
       res.setHeader("Content-Disposition", `inline; filename*=UTF-8''${encodeURIComponent(`Semielaborados ${stamp}.pdf`)}`);
       res.setHeader("X-Content-Type-Options", "nosniff");
       return res.send(buf);
     }
-    const buf = semisExcel(filas, { meses, filtro });
+    const buf = semisExcel(filas, { meses, filtro, detalle });
     res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
     res.setHeader("Content-Disposition", `attachment; filename*=UTF-8''${encodeURIComponent(`Semielaborados ${stamp}.xlsx`)}`);
     res.setHeader("X-Content-Type-Options", "nosniff");
