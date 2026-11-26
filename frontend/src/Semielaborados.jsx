@@ -125,6 +125,8 @@ export default function Semielaborados() {
   // Borrado de un semielaborado: { item, impacto, borrando } mientras se confirma.
   const [borrar, setBorrar] = useState(null);
   const [exportando, setExportando] = useState("");
+  // "completo" = todas las columnas; "simple" = solo código, semielaborado y demanda.
+  const [modoExport, setModoExport] = useState("completo");
 
   const cargar = useCallback(async (silencioso = false) => {
     if (!silencioso) setCargando(true);
@@ -149,7 +151,7 @@ export default function Semielaborados() {
       if (exportando) return;
       setExportando(formato);
       try {
-        const res = await fetch(getApiUrl(`/api/semielaborados/export.${formato}?meses=${meses}&filtro=${filtro}`));
+        const res = await fetch(getApiUrl(`/api/semielaborados/export.${formato}?meses=${meses}&filtro=${filtro}&detalle=${modoExport}`));
         if (!res.ok) throw new Error("No se pudo generar la exportación.");
         const blob = await res.blob();
         const url = URL.createObjectURL(blob);
@@ -171,7 +173,7 @@ export default function Semielaborados() {
         setExportando("");
       }
     },
-    [exportando, meses, filtro, toast]
+    [exportando, meses, filtro, modoExport, toast]
   );
 
   useEffect(() => {
@@ -382,10 +384,20 @@ export default function Semielaborados() {
                     {ORDENES.map((o) => <option key={o.v} value={o.v} className="bg-[#111]">{o.t}</option>)}
                   </select>
                   <div className="flex items-center gap-2" role="group" aria-label="Exportar la lista">
+                    <select
+                      value={modoExport}
+                      onChange={(e) => setModoExport(e.target.value)}
+                      aria-label="Tipo de reporte al exportar"
+                      title="Qué incluir en la exportación"
+                      className="min-h-[46px] rounded-xl bg-white/[0.05] border border-white/[0.08] px-3 text-sm font-bold text-zinc-200 outline-none focus:border-[#FF5A00]/60 cursor-pointer"
+                    >
+                      <option value="completo" className="bg-[#111]">Reporte completo</option>
+                      <option value="simple" className="bg-[#111]">Solo demanda</option>
+                    </select>
                     <button
                       onClick={() => exportar("pdf")}
                       disabled={!!exportando || cargando || !lista.length}
-                      title="Exportar a PDF (ordenado por demanda, con el logo de Conoflex)"
+                      title={modoExport === "simple" ? "Exportar a PDF (solo código, semielaborado y demanda)" : "Exportar a PDF (completo, con el logo de Conoflex)"}
                       className="min-h-[46px] inline-flex items-center gap-2 rounded-xl bg-white/[0.05] border border-white/[0.08] px-3.5 text-sm font-bold text-zinc-200 hover:bg-white/[0.09] disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
                     >
                       {exportando === "pdf" ? <Loader2 size={16} className="animate-spin" /> : <FileDown size={16} />}PDF
@@ -393,7 +405,7 @@ export default function Semielaborados() {
                     <button
                       onClick={() => exportar("xlsx")}
                       disabled={!!exportando || cargando || !lista.length}
-                      title="Exportar a Excel (ordenado por demanda)"
+                      title={modoExport === "simple" ? "Exportar a Excel (solo código, semielaborado y demanda)" : "Exportar a Excel (completo)"}
                       className="min-h-[46px] inline-flex items-center gap-2 rounded-xl bg-white/[0.05] border border-white/[0.08] px-3.5 text-sm font-bold text-zinc-200 hover:bg-white/[0.09] disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
                     >
                       {exportando === "xlsx" ? <Loader2 size={16} className="animate-spin" /> : <FileSpreadsheet size={16} />}Excel
