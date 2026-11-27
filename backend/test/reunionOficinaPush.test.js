@@ -115,7 +115,8 @@ test("los avisos al celular llegan solo a los roles pedidos y se limpian los cel
 });
 
 test("crearNotificacion solo dispara el push cuando se lo piden", async () => {
-  const db = { query: async () => [{ insertId: 7 }] };
+  // Con las alertas de IA activas, una notificación de agente (AGENTE_*) se crea normalmente.
+  const db = { query: async (sql) => (/FROM app_config/.test(sql) ? [[{ clave: "alertas_ia", valor: "1" }]] : [{ insertId: 7 }]) };
   const llamadas = [];
   alCrearNotificacion((n) => llamadas.push(n));
   await crearNotificacion(db, { tipo: "AGENTE_STOCK", titulo: "t", roles: ["admin"] });

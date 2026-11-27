@@ -5,6 +5,37 @@ import { sinSemi } from "../produccion/util";
 import Movimientos from "./Movimientos";
 import { modeloDe } from "../visor3d/modelos";
 
+/** Stock mínimo para el DEPÓSITO 33: avisa cuando el 33 llega o baja de este valor. 0 = sin aviso. */
+function StockMinimo({ item, onClasificar }) {
+  const minimo = Number(item.stock_minimo) || 0;
+  const bajo = minimo > 0 && (Number(item.stock_33) || 0) <= minimo;
+  return (
+    <div className={`mt-3 rounded-2xl border p-4 ${bajo ? "border-rose-500/35 bg-rose-500/[0.07]" : "border-white/[0.07] bg-white/[0.03]"}`}>
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-sm text-zinc-200 font-semibold">Stock mínimo (Depósito 33)</p>
+        {bajo && <span className="text-xs font-bold text-rose-300 rounded-full border border-rose-400/30 bg-rose-400/[0.1] px-2.5 py-0.5">Bajo mínimo</span>}
+      </div>
+      <p className="text-zinc-500 text-sm mt-0.5">Cuando el Depósito 33 llega o baja de este valor, salta una alerta. Solo aplica al 33. Poné 0 para no controlarlo.</p>
+      <div className="mt-3 flex items-center gap-2">
+        <input
+          key={item.id}
+          type="number"
+          min="0"
+          step="1"
+          defaultValue={minimo}
+          onBlur={(e) => {
+            const v = Number(e.target.value);
+            if (Number.isFinite(v) && v >= 0 && v !== minimo) onClasificar(item, { stock_minimo: v });
+          }}
+          className="w-32 rounded-xl border border-white/[0.09] bg-black/30 px-3 py-2 text-white text-lg font-bold tabular-nums focus:border-[#FF5A00] focus:outline-none"
+        />
+        <span className="text-zinc-400 font-bold">unidades</span>
+        <span className="text-zinc-600 text-xs ml-1">Se guarda al salir del campo.</span>
+      </div>
+    </div>
+  );
+}
+
 /** Marcar el semielaborado como "producto caliente" (reservado / requiere autorización para retirar). Solo admin. */
 function ProductoCaliente({ item, onCaliente }) {
   const activo = Number(item.caliente) === 1;
@@ -124,6 +155,7 @@ export default function FichaSemi({ item, seguir, onCerrar, onClasificar, onCamb
                 </div>
               ))}
             </div>
+            <StockMinimo item={item} onClasificar={onClasificar} />
           </section>
 
           <Movimientos item={item} alCambiar={onCambio} />

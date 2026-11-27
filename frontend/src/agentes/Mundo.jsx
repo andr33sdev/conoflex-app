@@ -6,6 +6,8 @@ import { CAFE, H, ORDEN, REUNION, W, escena, geometria, segundosDeReunion } from
 import Reunion from "./Reunion";
 import { useReunion } from "./useReunion";
 import PreguntaOficina from "./PreguntaOficina";
+import InterruptorAlerta from "../componentes/InterruptorAlerta";
+import { BellRing } from "lucide-react";
 import AvisosCelular from "./AvisosCelular";
 import { PROXIMOS } from "./proximos";
 
@@ -408,6 +410,11 @@ export default function Mundo({ agentes, onElegir, modo, abiertosVivo, vivoId, e
           </div>
           <AvisosCelular />
         </div>
+        {esAdmin && (
+          <div className="mb-4">
+            <InterruptorAlerta campo="alertasIa" icono={BellRing} esAdmin={esAdmin} etiqueta="Alertas de los agentes" descripcion="Los avisos de Lía, Nati, Vera y los demás. Apagalo y no mandan ninguna alerta ni aviso hasta que lo vuelvas a prender." />
+          </div>
+        )}
         <div className="mb-4"><PreguntaOficina agentes={agentes} onElegir={onElegir} /></div>
         <Mapa agentes={agentes} onElegir={onElegir} modo={modo} vivoId={vivoId} abiertosVivo={abiertosVivo} reunion={reunion} />
         <div className="mt-4"><Reunion reunion={reunion} temario={temario} esAdmin={esAdmin} onRehacer={recargar} onElegir={onElegir} /></div>

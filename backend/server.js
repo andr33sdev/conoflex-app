@@ -43,6 +43,8 @@ const { asegurarSemis, registrarRutasSemis } = require("./semisGestion");
 const { calcularSemis, prepararFilas, semisPdf, semisExcel } = require("./semisExport");
 const { asegurarMovimientos, registrarRutasMovimientos, sincronizarHojas, iniciarEspejo33, estadoEspejo33, descontarDeposito } = require("./semiMovimientos");
 const solInternas = require("./solicitudesInternas");
+const { asegurarConfigApp, leerBool: leerConfigBool, guardarConfig, DEFAULTS: CONFIG_DEFAULTS } = require("./configApp");
+const { iniciarAlertaStockMinimo, revisarStockMinimoSemis } = require("./alertasStock");
 const { registrarRutasFotos } = require("./comercial/fotos");
 const { generarCotizacion } = require("./comercial/cotizador");
 const { crearCorreoCrudo } = require("./comercial/correo");
@@ -887,7 +889,7 @@ async function initDB() {
     }
 
     // Cada módulo crea sus tablas por separado: si uno falla, los demás igual quedan listos (antes un error cortaba todo lo que venía después).
-    const pasos = { asegurarTablasProduccion, asegurarTablaReflectivas, asegurarTablasIngenieria, asegurarTablaHojaRuta, asegurarTablasMapa, asegurarTablasNotificaciones, asegurarTablaMovimientos, asegurarColumnasCatalogo, asegurarTablasPrecios, asegurarTablasFichasPdf, asegurarColumnaTema, asegurarComprasStock, asegurarSemis, asegurarMovimientos, asegurarColumnasGestion, asegurarTablasSugerencias, asegurarTablaClientesNuevos, asegurarTablasWhatsapp, asegurarTablasVozWeb, asegurarTablasCostos, asegurarTablasFacturas, asegurarTablasDesarrollo, asegurarTablasProyectos, asegurarTablasDeposito };
+    const pasos = { asegurarConfigApp, asegurarTablasProduccion, asegurarTablaReflectivas, asegurarTablasIngenieria, asegurarTablaHojaRuta, asegurarTablasMapa, asegurarTablasNotificaciones, asegurarTablaMovimientos, asegurarColumnasCatalogo, asegurarTablasPrecios, asegurarTablasFichasPdf, asegurarColumnaTema, asegurarComprasStock, asegurarSemis, asegurarMovimientos, asegurarColumnasGestion, asegurarTablasSugerencias, asegurarTablaClientesNuevos, asegurarTablasWhatsapp, asegurarTablasVozWeb, asegurarTablasCostos, asegurarTablasFacturas, asegurarTablasDesarrollo, asegurarTablasProyectos, asegurarTablasDeposito };
     const fallaron = [];
     for (const [nombre, paso] of Object.entries(pasos)) {
       try {
@@ -4342,6 +4344,35 @@ app.get("/api/solicitudes-internas/:id/autorizacion", async (req, res) => {
   }
 });
 
+// Interruptores de alertas (campanita). Lectura para cualquier usuario logueado; cambio solo admin.
+app.get("/api/config/alertas", async (req, res) => {
+  try {
+    res.json({
+      alertasIa: await leerConfigBool(db, "alertas_ia"),
+      alertasStockMinSemi: await leerConfigBool(db, "alertas_stock_min_semi"),
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.put("/api/config/alertas", requireAdmin, async (req, res) => {
+  try {
+    if (req.body.alertasIa !== undefined) await guardarConfig(db, "alertas_ia", !!req.body.alertasIa);
+    if (req.body.alertasStockMinSemi !== undefined) {
+      await guardarConfig(db, "alertas_stock_min_semi", !!req.body.alertasStockMinSemi);
+      // Si se acaban de activar, revisamos ya para avisar lo que esté bajo mínimo ahora mismo.
+      if (req.body.alertasStockMinSemi) revisarStockMinimoSemis(db).catch(() => {});
+    }
+    res.json({
+      alertasIa: await leerConfigBool(db, "alertas_ia"),
+      alertasStockMinSemi: await leerConfigBool(db, "alertas_stock_min_semi"),
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Autorización pública de un producto caliente (sin login, por token). Una sola firma libera el retiro.
 app.get("/api/public/solicitudes-internas/autorizacion/:token", async (req, res) => {
   try {
@@ -6129,6 +6160,7 @@ app.listen(PORT, () => {
   migrarPermisoConnie(db);
   migrarPermisoSugerencias(db);
   iniciarEspejo33(db, { activo: () => espejoActivo(db) }); // el stock del 33 se copia de la planilla (STOCK 33) cada 10 minutos, si está activado
+  iniciarAlertaStockMinimo(db); // avisa cuando el stock del depósito 33 llega al mínimo de cada semielaborado (si el interruptor está activo)
   iniciarBusquedaSemanal(db, { ai, modelo: modeloClientesNuevos, crearNotificacion }); // clientes nuevos: búsqueda automática los lunes y avisos de cierres
   connie.calentarEsquema();
   asegurarPush(db)

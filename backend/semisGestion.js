@@ -20,6 +20,10 @@ async function asegurarSemis(db) {
   // Producto caliente: está reservado o necesita autorización superior para retirarlo. El motivo se muestra al solicitarlo.
   if (!tiene.has("caliente")) await db.query("ALTER TABLE semielaborados ADD COLUMN caliente TINYINT NOT NULL DEFAULT 0");
   if (!tiene.has("caliente_motivo")) await db.query("ALTER TABLE semielaborados ADD COLUMN caliente_motivo VARCHAR(255) NULL");
+  // Stock mínimo: alerta cuando el stock del DEPÓSITO 33 llega o baja de este valor. 0 = sin alerta. Solo aplica al 33.
+  if (!tiene.has("stock_minimo")) await db.query("ALTER TABLE semielaborados ADD COLUMN stock_minimo DECIMAL(12,2) NOT NULL DEFAULT 0");
+  // Marca interna para no repetir el aviso: se pone en 1 al avisar y vuelve a 0 cuando el stock se recupera.
+  if (!tiene.has("stock_min_avisado")) await db.query("ALTER TABLE semielaborados ADD COLUMN stock_min_avisado TINYINT NOT NULL DEFAULT 0");
   await db.query(`
     CREATE TABLE IF NOT EXISTS paraguay_proximo_items (
       semielaborado_id INT NOT NULL PRIMARY KEY,
@@ -79,6 +83,14 @@ function registrarRutasSemis(app, { db, nombreDeUsuario = () => null }) {
       if (!Number.isFinite(m) || m < 0 || m > 1000) return res.status(400).json({ error: "El margen web tiene que ser un porcentaje entre 0 y 1000." });
       sets.push("margen_web = ?");
       vals.push(Math.round(m * 100) / 100);
+    }
+    if (req.body.stock_minimo !== undefined) {
+      const sm = Number(req.body.stock_minimo);
+      if (!Number.isFinite(sm) || sm < 0) return res.status(400).json({ error: "El stock mínimo tiene que ser un número de 0 o más." });
+      sets.push("stock_minimo = ?");
+      vals.push(Math.round(sm * 100) / 100);
+      // Al cambiar el mínimo, se reevalúa el aviso desde cero.
+      sets.push("stock_min_avisado = 0");
     }
     if (!sets.length) return res.status(400).json({ error: "No hay nada para cambiar." });
     const [r] = await db.query(`UPDATE semielaborados SET ${sets.join(", ")} WHERE id = ?`, [...vals, req.params.id]);
