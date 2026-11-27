@@ -68,7 +68,17 @@ export const nombreDeposito = (s) =>
 export const codigoMayus = (s) => (s || "").toUpperCase();
 
 export const PASOS = ["SOLICITADO", "ATENDIDO", "DISPONIBLE", "ENTREGADO"];
+// Depósito desde el que se retira. Solo el 37 entra en el circuito firmado.
+export const DEPOSITOS = [
+  { id: "37", texto: "Depósito 37", firmado: true },
+  { id: "33", texto: "Depósito 33" },
+  { id: "26", texto: "Depósito 26" },
+  { id: "ayolas", texto: "Ayolas" },
+];
+export const nombreDepositoId = (id) => DEPOSITOS.find((d) => d.id === String(id))?.texto || "";
+export const esDeposito37 = (s) => String(s?.deposito) === "37";
 export const ESTADO = {
+  PENDIENTE_AUTORIZACION: { texto: "Pendiente de autorización", clase: "text-violet-300 bg-violet-500/12 border-violet-500/30", punto: "bg-violet-400" },
   SOLICITADO: { texto: "Solicitado", clase: "text-zinc-200 bg-white/[0.07] border-white/[0.12]", punto: "bg-zinc-300" },
   ATENDIDO: { texto: "Atendido", clase: "text-[#ff8a4d] bg-[#FF5A00]/12 border-[#FF5A00]/30", punto: "bg-[#FF5A00]" },
   DISPONIBLE: { texto: "Disponible", clase: "text-[#FFD60A] bg-[#FFD60A]/12 border-[#FFD60A]/30", punto: "bg-[#FFD60A]" },

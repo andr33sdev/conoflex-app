@@ -8,7 +8,7 @@ import { archivada, getApiUrl, getNowLocal, horasDesde, motivoDe, solId } from "
 import { inputCls } from "./solicitudes/Piezas";
 import TarjetaSolicitud from "./solicitudes/TarjetaSolicitud";
 import TablaSolicitudes from "./solicitudes/TablaSolicitudes";
-import { AuditoriaSolicitud, EditarSolicitud, NuevaSolicitud, OpcionesSolicitud, RetirarSolicitud } from "./solicitudes/Hojas";
+import { AuditoriaSolicitud, DisponibleFirma, EditarSolicitud, EnviarAutorizacion, NuevaSolicitud, OpcionesSolicitud, RetirarSolicitud } from "./solicitudes/Hojas";
 
 const LIMITE_ACTIVAS = 10;
 const POR_PAGINA = 24;
@@ -55,6 +55,8 @@ export default function SolicitudesInternas({ usuarioActual }) {
   const [editar, setEditar] = useState(null);
   const [retirar, setRetirar] = useState(null);
   const [auditoria, setAuditoria] = useState(null);
+  const [disponibleFirma, setDisponibleFirma] = useState(null);
+  const [autorizar, setAutorizar] = useState(null);
 
   const cambiarVista = (v) => {
     setVista(v);
@@ -154,7 +156,7 @@ export default function SolicitudesInternas({ usuarioActual }) {
     }
   };
 
-  const crear = async ({ semi, cantidad, urgencia, motivo }) => {
+  const crear = async ({ semi, cantidad, urgencia, motivo, deposito, firma, aclaracion }) => {
     if (!isDeposito || bloqueado || limiteAlcanzado) return false;
     const ahoraTxt = getNowLocal();
     const ok = await llamar("/api/solicitudes-internas", {
@@ -165,11 +167,20 @@ export default function SolicitudesInternas({ usuarioActual }) {
         semielaboradoNombre: semi.nombre, semielaborado_nombre: semi.nombre,
         cantidadSolicitada: cantidad, cantidad_solicitada: cantidad,
         urgencia, motivoUso: motivo, motivo_uso: motivo,
-        estado: "SOLICITADO", solicitadoAt: ahoraTxt, solicitado_at: ahoraTxt,
+        solicitadoAt: ahoraTxt, solicitado_at: ahoraTxt,
+        deposito, firmaSolicitud: firma || undefined, aclaracionSolicitud: aclaracion || undefined,
       }),
-    }, "Solicitud enviada a producción");
+    }, "Solicitud enviada");
     if (ok) setNuevaAbierta(false);
     return ok;
+  };
+
+  // Encargado del 37: marca disponible con su firma (circuito firmado).
+  const marcarDisponibleFirmado = async (s, firma, aclaracion) => {
+    const ok = await llamar(`/api/solicitudes-internas/${encodeURIComponent(s.id)}/disponible`, {
+      method: "PUT", headers: JSON_HEADERS, body: JSON.stringify({ firma, aclaracion }),
+    }, `${solId(s)} disponible: avisale a quien lo pidió`);
+    if (ok) setDisponibleFirma(null);
   };
 
   const guardarEdicion = async ({ cantidad, urgencia, motivo }) => {
@@ -214,7 +225,9 @@ export default function SolicitudesInternas({ usuarioActual }) {
   const accion = (id, s) => {
     if (id === "ATENDER") cambiarEstado(s, "ATENDIDO");
     else if (id === "DISPONIBLE") cambiarEstado(s, "DISPONIBLE");
+    else if (id === "DISPONIBLE_FIRMA") setDisponibleFirma(s);
     else if (id === "RETIRAR") setRetirar(s);
+    else if (id === "AUTORIZAR_ENVIAR") setAutorizar(s);
   };
 
   /* ------------------------------------------------------------- pantalla */
@@ -341,6 +354,8 @@ export default function SolicitudesInternas({ usuarioActual }) {
       <OpcionesSolicitud solicitud={menu} puedeEditar={!!puedeEditarMenu} puedeCancelar={!!puedeCancelarMenu} onCerrar={() => setMenu(null)} onAuditoria={setAuditoria} onEditar={setEditar} onCancelar={(s) => cambiarEstado(s, "CANCELADO")} />
       <EditarSolicitud solicitud={editar} onCerrar={() => setEditar(null)} onGuardar={guardarEdicion} ocupado={ocupado} />
       <RetirarSolicitud solicitud={retirar} onCerrar={() => setRetirar(null)} onRetirar={registrarRetiro} ocupado={ocupado} />
+      <DisponibleFirma solicitud={disponibleFirma} onCerrar={() => setDisponibleFirma(null)} onConfirmar={marcarDisponibleFirmado} ocupado={ocupado} />
+      <EnviarAutorizacion solicitud={autorizar} onCerrar={() => setAutorizar(null)} toast={toast} />
       <AuditoriaSolicitud solicitud={auditoria} onCerrar={() => setAuditoria(null)} />
       {toastNodo}
     </div>

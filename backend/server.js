@@ -41,7 +41,8 @@ const importarFichas = require("./comercial/importarFichas");
 const { asegurarColumnasGestion, registrarRutasGestion } = require("./comprasGestion");
 const { asegurarSemis, registrarRutasSemis } = require("./semisGestion");
 const { calcularSemis, prepararFilas, semisPdf, semisExcel } = require("./semisExport");
-const { asegurarMovimientos, registrarRutasMovimientos, sincronizarHojas, iniciarEspejo33, estadoEspejo33 } = require("./semiMovimientos");
+const { asegurarMovimientos, registrarRutasMovimientos, sincronizarHojas, iniciarEspejo33, estadoEspejo33, descontarDeposito } = require("./semiMovimientos");
+const solInternas = require("./solicitudesInternas");
 const { registrarRutasFotos } = require("./comercial/fotos");
 const { generarCotizacion } = require("./comercial/cotizador");
 const { crearCorreoCrudo } = require("./comercial/correo");
@@ -828,6 +829,32 @@ async function initDB() {
     retiros_historial JSON DEFAULT NULL
   );
 `);
+
+    // Columnas del circuito firmado del depósito 37 y de la autorización de productos calientes (idempotente).
+    {
+      const [siCols] = await db.query("SELECT column_name AS c FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'solicitudes_internas'");
+      const siTiene = new Set(siCols.map((x) => x.c));
+      const siAlter = [
+        ["motivo_uso", "VARCHAR(255) NULL"],
+        ["deposito", "VARCHAR(20) NULL"],
+        ["solicitado_por", "VARCHAR(120) NULL"],
+        ["firma_solicitud", "MEDIUMTEXT NULL"],
+        ["aclaracion_solicitud", "VARCHAR(255) NULL"],
+        ["disponible_por", "VARCHAR(120) NULL"],
+        ["firma_disponible", "MEDIUMTEXT NULL"],
+        ["aclaracion_disponible", "VARCHAR(255) NULL"],
+        ["retirado_por", "VARCHAR(120) NULL"],
+        ["requiere_autorizacion", "TINYINT NOT NULL DEFAULT 0"],
+        ["autorizacion_motivo", "VARCHAR(255) NULL"],
+        ["autorizado", "TINYINT NOT NULL DEFAULT 0"],
+        ["autorizado_por", "VARCHAR(120) NULL"],
+        ["autorizado_at", "DATETIME NULL"],
+        ["firma_autorizacion", "MEDIUMTEXT NULL"],
+        ["aclaracion_autorizacion", "VARCHAR(255) NULL"],
+        ["token_autorizacion", "VARCHAR(40) NULL"],
+      ];
+      for (const [col, def] of siAlter) if (!siTiene.has(col)) await db.query(`ALTER TABLE solicitudes_internas ADD COLUMN ${col} ${def}`);
+    }
 
     // USUARIO ADMIN POR DEFECTO
     const [adminRows] = await db.query(
@@ -3982,7 +4009,23 @@ app.get("/api/solicitudes-internas", async (req, res) => {
         atendido_at AS atendidoAt,
         disponible_at AS disponibleAt,
         entregado_at AS entregadoAt,
-        retiros_historial AS retirosHistorial
+        retiros_historial AS retirosHistorial,
+        deposito,
+        solicitado_por AS solicitadoPor,
+        firma_solicitud AS firmaSolicitud,
+        aclaracion_solicitud AS aclaracionSolicitud,
+        disponible_por AS disponiblePor,
+        firma_disponible AS firmaDisponible,
+        aclaracion_disponible AS aclaracionDisponible,
+        retirado_por AS retiradoPor,
+        requiere_autorizacion AS requiereAutorizacion,
+        autorizacion_motivo AS autorizacionMotivo,
+        autorizado,
+        autorizado_por AS autorizadoPor,
+        autorizado_at AS autorizadoAt,
+        firma_autorizacion AS firmaAutorizacion,
+        aclaracion_autorizacion AS aclaracionAutorizacion,
+        token_autorizacion AS tokenAutorizacion
       FROM solicitudes_internas
       ORDER BY id DESC
     `);
@@ -4031,42 +4074,63 @@ app.post("/api/solicitudes-internas", async (req, res) => {
         .json({ error: "Faltan datos requeridos (código o cantidad)." });
     }
 
-    // 3. Consulta SQL ajustada a la estructura real de tu tabla MySQL
-    const query = `
-      INSERT INTO solicitudes_internas 
-      (id, semielaborado_codigo, semielaborado_nombre, cantidad_solicitada, urgencia, motivo_uso, estado, solicitado_at) 
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `;
+    // Depósito de donde se retira (solo el 37 entra en el circuito firmado).
+    const deposito = solInternas.DEPOSITOS_VALIDOS.includes(String(req.body.deposito)) ? String(req.body.deposito) : null;
+    const firmaSolicitud = typeof req.body.firmaSolicitud === "string" && req.body.firmaSolicitud.startsWith("data:image") ? req.body.firmaSolicitud : null;
+    const aclaracionSolicitud = String(req.body.aclaracionSolicitud || "").slice(0, 255) || null;
 
-    await db.query(query, [
-      solId,
-      codigo,
-      nombre,
-      cantidad,
-      urg,
-      motivoFinal,
-      est,
-      fecha,
-    ]);
+    // El circuito del 37 exige firma y motivo al solicitar.
+    if (solInternas.esDeposito37(deposito)) {
+      if (!firmaSolicitud) return res.status(400).json({ error: "Para retirar del depósito 37 hace falta la firma de quien solicita." });
+      if (!motivoFinal) return res.status(400).json({ error: "Indicá el motivo de la solicitud." });
+    }
 
-    // Aviso en la campanita de producción y admin (no del depósito, que es quien las genera).
-    const urgTexto = { BAJA: "baja", MEDIA: "media", ALTA: "alta", URGENTE: "urgente" }[String(urg).toUpperCase()] || String(urg).toLowerCase();
+    // ¿El producto está marcado como caliente? Si sí, queda pendiente de autorización.
+    const [[semi]] = await db.query("SELECT id, caliente, caliente_motivo FROM semielaborados WHERE codigo = ? LIMIT 1", [codigo]);
+    const esCaliente = !!(semi && Number(semi.caliente) === 1);
+    const estadoFinal = estado || solInternas.estadoInicial({ caliente: esCaliente });
+    const token = esCaliente ? solInternas.nuevoToken() : null;
+
     let quien = "Depósito";
     try {
-      quien = await nombreDeUsuario(req);
+      quien = (await nombreDeUsuario(req)) || "Depósito";
     } catch {
-      /* sin nombre: se avisa igual */
+      /* sin nombre: se registra igual */
     }
-    await crearNotificacion(db, {
-      tipo: "SOLICITUD_INTERNA",
-      titulo: `Nueva solicitud interna: ${nombre || codigo}`,
-      texto: `${cantidad} ${Number(cantidad) === 1 ? "unidad" : "unidades"} · urgencia ${urgTexto}${motivoFinal ? ` · ${motivoFinal}` : ""} · pedida por ${quien}`,
-      ruta: "/solicitudes-internas",
-      roles: ["ADMIN", "PRODUCCION"],
-      creada_por_id: req.user?.id || null,
-    });
 
-    return res.json({ success: true, id: solId });
+    await db.query(
+      `INSERT INTO solicitudes_internas
+       (id, semielaborado_codigo, semielaborado_nombre, cantidad_solicitada, urgencia, motivo_uso, estado, solicitado_at,
+        deposito, solicitado_por, firma_solicitud, aclaracion_solicitud, requiere_autorizacion, autorizacion_motivo, token_autorizacion)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [solId, codigo, nombre, cantidad, urg, motivoFinal, estadoFinal, fecha, deposito, quien, firmaSolicitud, aclaracionSolicitud, esCaliente ? 1 : 0, esCaliente ? semi.caliente_motivo || null : null, token],
+    );
+
+    const urgTexto = { BAJA: "baja", MEDIA: "media", ALTA: "alta", URGENTE: "urgente" }[String(urg).toUpperCase()] || String(urg).toLowerCase();
+
+    if (esCaliente) {
+      // Producto caliente: aviso interno para que un admin mande el link de autorización. El que solicita no se entera a quién.
+      await crearNotificacion(db, {
+        tipo: "AUTORIZACION_INTERNA",
+        titulo: `Autorización pendiente: ${nombre || codigo}`,
+        texto: `${cantidad} ${Number(cantidad) === 1 ? "unidad" : "unidades"}${semi.caliente_motivo ? ` · ${semi.caliente_motivo}` : ""} · pedido por ${quien}`,
+        ruta: "/solicitudes-internas",
+        roles: ["ADMIN"],
+        creada_por_id: req.user?.id || null,
+        push: true,
+      });
+    } else {
+      await crearNotificacion(db, {
+        tipo: "SOLICITUD_INTERNA",
+        titulo: `Nueva solicitud interna: ${nombre || codigo}`,
+        texto: `${cantidad} ${Number(cantidad) === 1 ? "unidad" : "unidades"} · urgencia ${urgTexto}${motivoFinal ? ` · ${motivoFinal}` : ""} · pedida por ${quien}`,
+        ruta: "/solicitudes-internas",
+        roles: ["ADMIN", "PRODUCCION"],
+        creada_por_id: req.user?.id || null,
+      });
+    }
+
+    return res.json({ success: true, id: solId, requiereAutorizacion: esCaliente });
   } catch (error) {
     // Imprime el error real de MySQL en la terminal de Node para diagnóstico inmediato
     console.error("=== ERROR MYSQL AL CREAR SOLICITUD ===");
@@ -4168,28 +4232,164 @@ app.put("/api/solicitudes-internas/:id/estado", async (req, res) => {
   }
 });
 
-// 4. REGISTRAR EXTRACCIÓN Y RETIRO PARCIAL
+// Encargado de planta 37: marca la solicitud como DISPONIBLE con su firma y aclaración.
+app.put("/api/solicitudes-internas/:id/disponible", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const firma = typeof req.body.firma === "string" && req.body.firma.startsWith("data:image") ? req.body.firma : null;
+    const aclaracion = String(req.body.aclaracion || "").slice(0, 255) || null;
+    if (!firma) return res.status(400).json({ error: "Hace falta la firma del encargado del depósito 37." });
+
+    const [[sol]] = await db.query("SELECT estado, requiere_autorizacion, autorizado FROM solicitudes_internas WHERE id = ?", [id]);
+    if (!sol) return res.status(404).json({ error: "No se encontró la solicitud." });
+    if (Number(sol.requiere_autorizacion) === 1 && Number(sol.autorizado) !== 1) {
+      return res.status(409).json({ error: "Esta solicitud todavía está pendiente de autorización." });
+    }
+
+    const quien = (await nombreDeUsuario(req).catch(() => null)) || "Encargado 37";
+    await db.query(
+      `UPDATE solicitudes_internas
+       SET estado = 'DISPONIBLE', disponible_at = NOW(), disponible_por = ?, firma_disponible = ?, aclaracion_disponible = ?
+       WHERE id = ?`,
+      [quien, firma, aclaracion, id],
+    );
+    res.json({ success: true });
+  } catch (error) {
+    console.error("Error al marcar disponible:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// 4. REGISTRAR EXTRACCIÓN Y RETIRO (en depósito 33, sin firma; si el circuito es del 37, descuenta ese stock).
 app.put("/api/solicitudes-internas/:id/retiro", async (req, res) => {
   const { id } = req.params;
   const { cantidadRetirada, estado, entregadoAt, retirosHistorial } = req.body;
 
   try {
+    const [[sol]] = await db.query(
+      "SELECT semielaborado_codigo, semielaborado_nombre, deposito, cantidad_retirada FROM solicitudes_internas WHERE id = ?",
+      [id],
+    );
+    if (!sol) return res.status(404).json({ error: "No se encontró la solicitud." });
+
+    const nuevaRetirada = Number(cantidadRetirada) || 0;
+    const delta = nuevaRetirada - (Number(sol.cantidad_retirada) || 0);
+    const quien = (await nombreDeUsuario(req).catch(() => null)) || "Depósito";
+
+    // Circuito del 37: lo que se retira descuenta del stock del depósito 37.
+    if (solInternas.esDeposito37(sol.deposito) && delta > 0) {
+      const [[semi]] = await db.query("SELECT id FROM semielaborados WHERE codigo = ? LIMIT 1", [sol.semielaborado_codigo]);
+      if (semi) {
+        await descontarDeposito(db, {
+          semielaborado_id: semi.id,
+          deposito: "37",
+          cantidad: delta,
+          nota: `Retiro solicitud interna ${id}`,
+          usuario: quien,
+        });
+      }
+    }
+
     await db.query(
-      `UPDATE solicitudes_internas 
-       SET cantidad_retirada = ?, estado = ?, entregado_at = ?, retiros_historial = ?
+      `UPDATE solicitudes_internas
+       SET cantidad_retirada = ?, estado = ?, entregado_at = ?, retiros_historial = ?, retirado_por = ?
        WHERE id = ?`,
-      [
-        cantidadRetirada,
-        estado,
-        entregadoAt || null,
-        JSON.stringify(retirosHistorial || []),
-        id,
-      ],
+      [nuevaRetirada, estado, entregadoAt || null, JSON.stringify(retirosHistorial || []), quien, id],
     );
 
     res.json({ success: true });
   } catch (error) {
     console.error("Error al registrar retiro:", error);
+    res.status(error.status || 500).json({ error: error.message });
+  }
+});
+
+// Marcar / desmarcar un semielaborado como "producto caliente" (solo admin). Motivo opcional.
+app.put("/api/semielaborados/:id/caliente", requireAdmin, async (req, res) => {
+  try {
+    const caliente = req.body.caliente ? 1 : 0;
+    const motivo = caliente ? String(req.body.motivo || "").slice(0, 255) || null : null;
+    const [r] = await db.query("UPDATE semielaborados SET caliente = ?, caliente_motivo = ? WHERE id = ?", [caliente, motivo, req.params.id]);
+    if (!r.affectedRows) return res.status(404).json({ error: "Ese semielaborado no existe." });
+    res.json({ ok: true, caliente, motivo });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Link de autorización + accesos directos de WhatsApp a los autorizadores (para que un admin lo mande).
+app.get("/api/solicitudes-internas/:id/autorizacion", async (req, res) => {
+  try {
+    const [[sol]] = await db.query(
+      `SELECT semielaborado_nombre AS producto, cantidad_solicitada AS cantidad, autorizacion_motivo AS motivo,
+              solicitado_por AS solicitante, token_autorizacion AS token, autorizado
+       FROM solicitudes_internas WHERE id = ? LIMIT 1`,
+      [req.params.id],
+    );
+    if (!sol || !sol.token) return res.status(404).json({ error: "Esta solicitud no tiene autorización pendiente." });
+    const baseUrl = process.env.FRONTEND_URL || req.headers.origin || process.env.BASE_URL || `http://localhost:${PORT}`;
+    const accesos = solInternas.accesosAutorizacion({
+      baseUrl,
+      token: sol.token,
+      cantidad: sol.cantidad,
+      producto: sol.producto,
+      motivoCaliente: sol.motivo,
+      solicitante: sol.solicitante,
+    });
+    res.json({ ...accesos, autorizado: Number(sol.autorizado) === 1 });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Autorización pública de un producto caliente (sin login, por token). Una sola firma libera el retiro.
+app.get("/api/public/solicitudes-internas/autorizacion/:token", async (req, res) => {
+  try {
+    const [[sol]] = await db.query(
+      `SELECT semielaborado_nombre AS producto, cantidad_solicitada AS cantidad, autorizacion_motivo AS motivo,
+              solicitado_por AS solicitante, estado, autorizado, autorizado_por AS autorizadoPor, autorizado_at AS autorizadoAt
+       FROM solicitudes_internas WHERE token_autorizacion = ? LIMIT 1`,
+      [req.params.token],
+    );
+    if (!sol) return res.status(404).json({ error: "No encontramos esta autorización." });
+    res.json(sol);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post("/api/public/solicitudes-internas/autorizacion/:token/firmar", async (req, res) => {
+  try {
+    const firma = typeof req.body.firma === "string" && req.body.firma.startsWith("data:image") ? req.body.firma : null;
+    const aclaracion = String(req.body.aclaracion || "").slice(0, 255) || null;
+    if (!firma) return res.status(400).json({ error: "Dibujá tu firma para autorizar." });
+
+    const [[sol]] = await db.query(
+      "SELECT id, semielaborado_nombre, estado, autorizado FROM solicitudes_internas WHERE token_autorizacion = ? LIMIT 1",
+      [req.params.token],
+    );
+    if (!sol) return res.status(404).json({ error: "No encontramos esta autorización." });
+    if (Number(sol.autorizado) === 1) return res.status(409).json({ error: "Esta solicitud ya fue autorizada." });
+
+    // Una sola firma alcanza: pasa a SOLICITADO para que el encargado 37 pueda marcarla disponible.
+    await db.query(
+      `UPDATE solicitudes_internas
+       SET autorizado = 1, autorizado_por = ?, autorizado_at = NOW(), firma_autorizacion = ?, aclaracion_autorizacion = ?,
+           estado = CASE WHEN estado = 'PENDIENTE_AUTORIZACION' THEN 'SOLICITADO' ELSE estado END
+       WHERE id = ?`,
+      [aclaracion || "Autorizado", firma, aclaracion, sol.id],
+    );
+
+    await crearNotificacion(db, {
+      tipo: "AUTORIZACION_INTERNA",
+      titulo: `Autorizado: ${sol.semielaborado_nombre}`,
+      texto: `La solicitud ${sol.id} quedó autorizada${aclaracion ? ` · ${aclaracion}` : ""}`,
+      ruta: "/solicitudes-internas",
+      roles: ["ADMIN", "PRODUCCION"],
+    });
+
+    res.json({ success: true });
+  } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });

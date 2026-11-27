@@ -1,9 +1,10 @@
-import { useMemo, useState } from "react";
-import { Ban, Check, ChevronRight, History, Minus, Pencil, Plus, Search, X } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { Ban, Check, ChevronRight, Copy, History, Minus, Pencil, Plus, Search, Send, ShieldCheck, Warehouse, X } from "lucide-react";
 import { Modal } from "../produccion/ui";
 import { Campo, inputCls } from "./Piezas";
 import { ChipEstado } from "./Piezas";
-import { codigoMayus, formatFechaArg, formatHoraArg, motivoDe, nombreDeposito, solId, URGENCIA } from "./util";
+import FirmaCanvas from "./FirmaCanvas";
+import { codigoMayus, DEPOSITOS, formatFechaArg, formatHoraArg, getApiUrl, motivoDe, nombreDeposito, nombreDepositoId, solId, URGENCIA } from "./util";
 
 const BOTON_PRIMARIO = "w-full min-h-[56px] rounded-2xl bg-[#FFD60A] text-black text-base font-extrabold inline-flex items-center justify-center gap-2 hover:bg-white active:scale-[0.99] transition-all disabled:opacity-35 disabled:cursor-not-allowed cursor-pointer";
 
@@ -54,6 +55,19 @@ function Destino({ valor, onCambio }) {
   );
 }
 
+/** Selector de depósito del que se retira. El 37 avisa que va a pedir firma. */
+function DepositoSelector({ valor, onCambio }) {
+  return (
+    <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="Depósito">
+      {DEPOSITOS.map((d) => (
+        <button key={d.id} type="button" role="radio" aria-checked={valor === d.id} onClick={() => onCambio(d.id)} className={`min-h-[52px] rounded-2xl border-2 text-[15px] font-extrabold inline-flex items-center justify-center gap-2 cursor-pointer transition-colors ${valor === d.id ? "border-[#FF5A00] bg-[#FF5A00]/12 text-white" : "border-white/[0.08] bg-[#17171c] text-zinc-400"}`}>
+          <Warehouse size={16} /> {d.texto}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 /* ----------------------------------------------------------------- Nueva */
 export function NuevaSolicitud({ abierto, onCerrar, semielaborados, activas, onCrear, ocupado }) {
   const [texto, setTexto] = useState("");
@@ -61,6 +75,9 @@ export function NuevaSolicitud({ abierto, onCerrar, semielaborados, activas, onC
   const [cantidad, setCantidad] = useState("");
   const [urgencia, setUrgencia] = useState("MEDIA");
   const [motivo, setMotivo] = useState("");
+  const [deposito, setDeposito] = useState("37");
+  const [firma, setFirma] = useState(null);
+  const [aclaracion, setAclaracion] = useState("");
 
   const resultados = useMemo(() => {
     const t = texto.trim().toLowerCase();
@@ -68,15 +85,19 @@ export function NuevaSolicitud({ abierto, onCerrar, semielaborados, activas, onC
     return semielaborados.filter((s) => `${s.codigo || ""} ${s.nombre || ""}`.toLowerCase().includes(t)).slice(0, 8);
   }, [texto, semielaborados]);
 
+  const firmado = String(deposito) === "37";
   const duplicada = elegido && activas.some((s) => s.semielaboradoCodigo === (elegido.codigo || "S/C"));
-  const listo = elegido && Number(cantidad) > 0 && motivo.trim() && !duplicada;
+  const listo = elegido && Number(cantidad) > 0 && motivo.trim() && !duplicada && (!firmado || !!firma);
 
   const enviar = async (e) => {
     e.preventDefault();
     if (!listo) return;
-    const ok = await onCrear({ semi: elegido, cantidad: Number(cantidad), urgencia, motivo: motivo.trim().slice(0, 20).toUpperCase() });
+    const ok = await onCrear({
+      semi: elegido, cantidad: Number(cantidad), urgencia, motivo: motivo.trim().slice(0, 20).toUpperCase(),
+      deposito, firma: firmado ? firma : null, aclaracion: firmado ? aclaracion.trim().slice(0, 120) : "",
+    });
     if (ok) {
-      setTexto(""); setElegido(null); setCantidad(""); setUrgencia("MEDIA"); setMotivo("");
+      setTexto(""); setElegido(null); setCantidad(""); setUrgencia("MEDIA"); setMotivo(""); setDeposito("37"); setFirma(null); setAclaracion("");
     }
   };
 
@@ -129,10 +150,91 @@ export function NuevaSolicitud({ abierto, onCerrar, semielaborados, activas, onC
         </Campo>
 
         <Campo etiqueta="2 · ¿Cuántas unidades?"><Cantidad valor={cantidad} onCambio={setCantidad} /></Campo>
-        <Campo etiqueta="3 · Prioridad"><Prioridad valor={urgencia} onCambio={setUrgencia} /></Campo>
+        <Campo etiqueta="3 · ¿De qué depósito?"><DepositoSelector valor={deposito} onCambio={setDeposito} /></Campo>
+        <Campo etiqueta="4 · Prioridad"><Prioridad valor={urgencia} onCambio={setUrgencia} /></Campo>
         <Destino valor={motivo} onCambio={setMotivo} />
+        {firmado && (
+          <Campo etiqueta="5 · Firma de quien solicita" ayuda="Para retirar del depósito 37 hace falta tu firma y el motivo.">
+            <FirmaCanvas onChange={setFirma} />
+            <input type="text" maxLength={120} value={aclaracion} onChange={(e) => setAclaracion(e.target.value)} placeholder="Aclaración (nombre)" className={`${inputCls} mt-3`} />
+          </Campo>
+        )}
       </form>
     </Modal>
+  );
+}
+
+/* --------------------------------------------- Disponible con firma (37) */
+export function DisponibleFirma({ solicitud, onCerrar, onConfirmar, ocupado }) {
+  return (
+    <Modal abierto={!!solicitud} onCerrar={onCerrar} titulo="Marcar disponible" subtitulo={solicitud ? `${solId(solicitud)} · ${nombreDeposito(solicitud.semielaboradoNombre)}` : ""} ancho="max-w-lg">
+      {solicitud && <FormDisponible key={solicitud.id} s={solicitud} onConfirmar={onConfirmar} ocupado={ocupado} />}
+    </Modal>
+  );
+}
+function FormDisponible({ s, onConfirmar, ocupado }) {
+  const [firma, setFirma] = useState(null);
+  const [aclaracion, setAclaracion] = useState("");
+  return (
+    <div className="flex flex-col gap-5">
+      <p className="text-sm text-zinc-400">Confirmás que el pedido está físicamente disponible en el depósito 37. Queda tu firma como encargado.</p>
+      <Campo etiqueta="Firma del encargado del 37">
+        <FirmaCanvas onChange={setFirma} />
+        <input type="text" maxLength={120} value={aclaracion} onChange={(e) => setAclaracion(e.target.value)} placeholder="Aclaración (nombre)" className={`${inputCls} mt-3`} />
+      </Campo>
+      <button type="button" disabled={!firma || ocupado} onClick={() => onConfirmar(s, firma, aclaracion.trim().slice(0, 120))} className={BOTON_PRIMARIO}>
+        <Check size={20} strokeWidth={3} /> Confirmar disponible
+      </button>
+    </div>
+  );
+}
+
+/* ------------------------------------------- Enviar autorización (caliente) */
+export function EnviarAutorizacion({ solicitud, onCerrar, toast }) {
+  return (
+    <Modal abierto={!!solicitud} onCerrar={onCerrar} titulo="Autorización pendiente" subtitulo={solicitud ? `${solId(solicitud)} · ${nombreDeposito(solicitud.semielaboradoNombre)}` : ""} ancho="max-w-lg">
+      {solicitud && <CuerpoAutorizacion key={solicitud.id} s={solicitud} toast={toast} />}
+    </Modal>
+  );
+}
+function CuerpoAutorizacion({ s, toast }) {
+  const [datos, setDatos] = useState(null);
+  const [error, setError] = useState("");
+  useEffect(() => {
+    let vivo = true;
+    fetch(getApiUrl(`/api/solicitudes-internas/${s.id}/autorizacion`))
+      .then((r) => (r.ok ? r.json() : r.json().then((d) => Promise.reject(new Error(d.error || "No se pudo preparar el link.")))))
+      .then((d) => vivo && setDatos(d))
+      .catch((e) => vivo && setError(e.message));
+    return () => { vivo = false; };
+  }, [s.id]);
+  const copiar = async () => {
+    try { await navigator.clipboard.writeText(datos.link); toast?.("Link copiado"); } catch { toast?.("No se pudo copiar", "error"); }
+  };
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="rounded-2xl border border-violet-500/30 bg-violet-500/[0.07] px-4 py-3.5 flex items-start gap-3">
+        <ShieldCheck size={20} className="text-violet-300 shrink-0 mt-0.5" />
+        <p className="text-sm font-semibold text-violet-100 leading-snug">{s.autorizacionMotivo ? `Motivo: ${s.autorizacionMotivo}.` : "Producto marcado como caliente."} Mandá el link a quien autoriza. Con una firma alcanza.</p>
+      </div>
+      {datos?.autorizado ? (
+        <p className="rounded-2xl border border-emerald-500/30 bg-emerald-500/[0.08] px-4 py-3 text-sm font-semibold text-emerald-200">Ya está autorizada.</p>
+      ) : error ? (
+        <p className="rounded-2xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm font-semibold text-rose-200">{error}</p>
+      ) : !datos ? (
+        <p className="text-sm text-zinc-500">Preparando el link…</p>
+      ) : (
+        <>
+          {datos.whatsapp.map((w, i) => (
+            <a key={w.numero} href={w.url} target="_blank" rel="noreferrer" className="min-h-[54px] rounded-2xl bg-[#25D366] text-black font-extrabold inline-flex items-center justify-center gap-2 hover:brightness-110 cursor-pointer">
+              <Send size={18} /> Enviar a autorizador {i + 1}
+            </a>
+          ))}
+          <button type="button" onClick={copiar} className="min-h-[50px] rounded-2xl border border-white/[0.1] bg-white/[0.05] text-zinc-200 font-bold inline-flex items-center justify-center gap-2 hover:bg-white/[0.1] cursor-pointer"><Copy size={16} /> Copiar link</button>
+          <p className="text-xs text-zinc-500 break-all">{datos.link}</p>
+        </>
+      )}
+    </div>
   );
 }
 
@@ -211,16 +313,33 @@ function Paso({ color, titulo, fecha, extra }) {
     </li>
   );
 }
+/** Firma (imagen) + aclaración + quién, para la auditoría. */
+function FirmaAuditoria({ firma, aclaracion, por }) {
+  if (!firma && !por) return null;
+  return (
+    <div className="mt-2">
+      {firma && <img src={firma} alt="Firma" className="h-14 rounded-lg bg-white border border-white/15 px-1" />}
+      {(aclaracion || por) && <p className="mt-1 text-xs text-zinc-500">{[aclaracion, por].filter(Boolean).join(" · ")}</p>}
+    </div>
+  );
+}
 export function AuditoriaSolicitud({ solicitud: s, onCerrar }) {
   return (
     <Modal abierto={!!s} onCerrar={onCerrar} titulo={s ? `Auditoría ${solId(s)}` : ""} subtitulo={s?.semielaboradoNombre} ancho="max-w-md">
       {s && (
         <div className="flex flex-col gap-6">
+          {(s.deposito || Number(s.requiereAutorizacion) === 1) && (
+            <div className="flex flex-wrap gap-2">
+              {s.deposito && <span className="inline-flex items-center gap-1.5 rounded-full border border-white/[0.1] bg-white/[0.04] px-3 py-1 text-xs font-bold text-zinc-300"><Warehouse size={13} /> {nombreDepositoId(s.deposito)}</span>}
+              {Number(s.requiereAutorizacion) === 1 && <span className="inline-flex items-center gap-1.5 rounded-full border border-violet-500/30 bg-violet-500/10 px-3 py-1 text-xs font-bold text-violet-300"><ShieldCheck size={13} /> {Number(s.autorizado) === 1 ? "Autorizado" : "Requiere autorización"}</span>}
+            </div>
+          )}
           <ol>
-            <Paso color="bg-zinc-300" titulo="Solicitado" fecha={s.solicitadoAt || s.solicitado_at} extra={motivoDe(s) && <p className="mt-1 text-sm font-semibold uppercase text-[#FFD60A]">Destino: {motivoDe(s)}</p>} />
+            <Paso color="bg-zinc-300" titulo="Solicitado" fecha={s.solicitadoAt || s.solicitado_at} extra={<>{motivoDe(s) && <p className="mt-1 text-sm font-semibold uppercase text-[#FFD60A]">Motivo: {motivoDe(s)}</p>}<FirmaAuditoria firma={s.firmaSolicitud} aclaracion={s.aclaracionSolicitud} por={s.solicitadoPor} /></>} />
+            {Number(s.requiereAutorizacion) === 1 && <Paso color="bg-violet-400" titulo="Autorizado" fecha={s.autorizadoAt} extra={<FirmaAuditoria firma={s.firmaAutorizacion} aclaracion={s.aclaracionAutorizacion} por={s.autorizadoPor} />} />}
             <Paso color="bg-[#FF5A00]" titulo="Atendido por producción" fecha={s.atendidoAt || s.atendido_at} />
-            <Paso color="bg-[#FFD60A]" titulo="Disponible en depósito" fecha={s.disponibleAt || s.disponible_at} />
-            <Paso color={s.estado === "CANCELADO" ? "bg-rose-400" : "bg-emerald-400"} titulo={s.estado === "CANCELADO" ? "Cancelada" : "Entregado completo"} fecha={s.entregadoAt || s.entregado_at} />
+            <Paso color="bg-[#FFD60A]" titulo="Disponible en depósito" fecha={s.disponibleAt || s.disponible_at} extra={<FirmaAuditoria firma={s.firmaDisponible} aclaracion={s.aclaracionDisponible} por={s.disponiblePor} />} />
+            <Paso color={s.estado === "CANCELADO" ? "bg-rose-400" : "bg-emerald-400"} titulo={s.estado === "CANCELADO" ? "Cancelada" : "Entregado completo"} fecha={s.entregadoAt || s.entregado_at} extra={s.retiradoPor && <p className="mt-1 text-xs text-zinc-500">{s.retiradoPor}</p>} />
           </ol>
           <div>
             <p className="text-[11px] font-bold uppercase tracking-[0.09em] text-zinc-500 mb-3">Retiros registrados</p>

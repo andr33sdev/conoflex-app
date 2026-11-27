@@ -90,7 +90,8 @@ function Tilde({ marcado, cambiado, onChange, etiqueta }) {
   );
 }
 
-export default function Semielaborados() {
+export default function Semielaborados({ usuarioActual } = {}) {
+  const esAdmin = String(usuarioActual?.rol || "").toUpperCase() === "ADMIN";
   const { mostrar: toast, nodo: toastNodo } = useToast();
   const [items, setItems] = useState([]);
   const [cargando, setCargando] = useState(true);
@@ -271,6 +272,17 @@ export default function Semielaborados() {
       await api(`/api/semielaborados/${item.id}/clasificacion`, { method: "PUT", body: cambios });
       setItems((prev) => prev.map((x) => (x.id === item.id ? { ...x, ...cambios } : x)));
       if (cambios.seguir_demanda !== undefined) setPend((p) => { const n = { ...p }; delete n[item.id]; return n; });
+    } catch (e) {
+      toast(e.message, "error");
+    }
+  };
+
+  // Marcar / desmarcar producto caliente (reservado o con autorización previa para retirar). Solo admin.
+  const marcarCaliente = async (item, { caliente, motivo }) => {
+    try {
+      const r = await api(`/api/semielaborados/${item.id}/caliente`, { method: "PUT", body: { caliente: caliente ? 1 : 0, motivo } });
+      setItems((prev) => prev.map((x) => (x.id === item.id ? { ...x, caliente: r.caliente, caliente_motivo: r.motivo } : x)));
+      toast(caliente ? "Marcado como producto caliente" : "Ya no es producto caliente");
     } catch (e) {
       toast(e.message, "error");
     }
@@ -554,7 +566,7 @@ export default function Semielaborados() {
 
         {toastNodo}
         <Comprometido key={verComprometido?.id || "nada"} semi={verComprometido} onCerrar={() => setVerComprometido(null)} />
-        <FichaSemi item={ficha} comprometido={ficha ? comprometido[ficha.id] || 0 : 0} onVerComprometido={() => setVerComprometido(ficha)} seguir={ficha ? efectivo(ficha) : false} onCerrar={() => setFichaId(null)} onClasificar={clasificar} onCambio={() => cargar(true)} onEliminar={pedirBorrar} />
+        <FichaSemi item={ficha} comprometido={ficha ? comprometido[ficha.id] || 0 : 0} onVerComprometido={() => setVerComprometido(ficha)} seguir={ficha ? efectivo(ficha) : false} onCerrar={() => setFichaId(null)} onClasificar={clasificar} onCambio={() => cargar(true)} onEliminar={pedirBorrar} esAdmin={esAdmin} onCaliente={marcarCaliente} />
         <ConfirmarBorrado
           abierto={!!borrar}
           titulo={borrar ? `¿Eliminar ${borrar.item.codigo}?` : ""}

@@ -17,6 +17,9 @@ async function asegurarSemis(db) {
   // Margen de resguardo para la API de la tienda: % extra sobre lo que pide el cliente para
   // mostrar "entrega inmediata". Configurable por producto. Default 10%.
   if (!tiene.has("margen_web")) await db.query("ALTER TABLE semielaborados ADD COLUMN margen_web DECIMAL(6,2) NOT NULL DEFAULT 10");
+  // Producto caliente: está reservado o necesita autorización superior para retirarlo. El motivo se muestra al solicitarlo.
+  if (!tiene.has("caliente")) await db.query("ALTER TABLE semielaborados ADD COLUMN caliente TINYINT NOT NULL DEFAULT 0");
+  if (!tiene.has("caliente_motivo")) await db.query("ALTER TABLE semielaborados ADD COLUMN caliente_motivo VARCHAR(255) NULL");
   await db.query(`
     CREATE TABLE IF NOT EXISTS paraguay_proximo_items (
       semielaborado_id INT NOT NULL PRIMARY KEY,

@@ -31,6 +31,7 @@ const VisorAR = lazy(() => import("./VisorAR"));
 const SolicitudesCompraModule = lazy(() => import("./SolicitudesCompraModule"));
 const SugerenciasCompra = lazy(() => import("./SugerenciasCompra"));
 const FirmaSolicitudPublica = lazy(() => import("./FirmaSolicitudPublica"));
+const AutorizarInternaPublica = lazy(() => import("./AutorizarInternaPublica"));
 const LlamadaPublica = lazy(() => import("./voz/LlamadaPublica"));
 const Agentes = lazy(() => import("./Agentes"));
 import { itemPorId, tieneAlgunAgente } from "./menu";
@@ -114,6 +115,7 @@ function AppInterna() {
   const firmarScId = params.get("firmar_sc");
   const firmarRol = params.get("rol") || "gerente";
   const llamarToken = params.get("llamar");
+  const autorizarInterna = params.get("autorizar_interna");
 
   // Botones atrás/adelante del navegador.
   useEffect(() => {
@@ -167,6 +169,14 @@ function AppInterna() {
     window.history.replaceState({}, document.title, "/");
     setActiveModule("inicio");
   };
+
+  if (autorizarInterna) {
+    return (
+      <Suspense fallback={<CargandoModulo />}>
+        <AutorizarInternaPublica token={autorizarInterna} />
+      </Suspense>
+    );
+  }
 
   if (firmarScId) {
     return (
@@ -244,6 +254,7 @@ function AppInterna() {
       {hasAccess("semielaborados") && activeModule === "semielaborados" && (
         <Semielaborados
           key={`se-${reloadKey}`}
+          usuarioActual={usuarioActual}
           isUploadModalOpen={isUploadModalOpen}
           onCloseUploadModal={() => setIsUploadModalOpen(false)}
         />

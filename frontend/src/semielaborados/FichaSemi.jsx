@@ -1,9 +1,40 @@
-import { lazy, Suspense } from "react";
-import { Sparkle, Trash2 } from "lucide-react";
+import { lazy, Suspense, useState } from "react";
+import { Flame, Sparkle, Trash2 } from "lucide-react";
 import { Drawer } from "../produccion/ui";
 import { sinSemi } from "../produccion/util";
 import Movimientos from "./Movimientos";
 import { modeloDe } from "../visor3d/modelos";
+
+/** Marcar el semielaborado como "producto caliente" (reservado / requiere autorización para retirar). Solo admin. */
+function ProductoCaliente({ item, onCaliente }) {
+  const activo = Number(item.caliente) === 1;
+  const [editando, setEditando] = useState(false);
+  const [motivo, setMotivo] = useState(item.caliente_motivo || "");
+  return (
+    <section className={`rounded-2xl border p-4 ${activo ? "border-amber-500/30 bg-amber-500/[0.06]" : "border-white/[0.07] bg-white/[0.03]"}`}>
+      <div className="flex items-center justify-between gap-3">
+        <h3 className="text-[11px] font-bold uppercase tracking-[0.1em] text-zinc-500 inline-flex items-center gap-1.5"><Flame size={14} className={activo ? "text-amber-400" : "text-zinc-500"} /> Producto caliente</h3>
+        {activo && <span className="text-xs font-bold text-amber-300 rounded-full border border-amber-400/25 bg-amber-400/[0.08] px-2.5 py-0.5">Activo</span>}
+      </div>
+      <p className="mt-2 text-sm text-zinc-500">Reservado o con autorización previa para retirar. Al solicitarlo, queda pendiente de autorización.</p>
+      {activo && !editando && item.caliente_motivo && <p className="mt-2 text-sm text-amber-200"><span className="font-bold">Motivo:</span> {item.caliente_motivo}</p>}
+      {editando ? (
+        <div className="mt-3 flex flex-col gap-2">
+          <input type="text" maxLength={255} value={motivo} onChange={(e) => setMotivo(e.target.value)} placeholder="Motivo (ej: reservado para licitación)" className="w-full min-h-[46px] rounded-xl border border-white/[0.09] bg-black/30 px-3 text-white focus:border-[#FF5A00] focus:outline-none" />
+          <div className="flex gap-2">
+            <button onClick={() => { onCaliente(item, { caliente: true, motivo: motivo.trim() }); setEditando(false); }} className="flex-1 min-h-[46px] rounded-xl bg-amber-500 text-black font-extrabold cursor-pointer">Guardar</button>
+            <button onClick={() => { setEditando(false); setMotivo(item.caliente_motivo || ""); }} className="min-h-[46px] px-4 rounded-xl text-zinc-300 font-bold hover:bg-white/[0.07] cursor-pointer">Cancelar</button>
+          </div>
+        </div>
+      ) : (
+        <div className="mt-3 flex gap-2">
+          <button onClick={() => setEditando(true)} className="min-h-[46px] px-4 rounded-xl border border-amber-500/30 bg-amber-500/10 text-sm font-bold text-amber-200 cursor-pointer">{activo ? "Cambiar motivo" : "Marcar como caliente"}</button>
+          {activo && <button onClick={() => onCaliente(item, { caliente: false, motivo: "" })} className="min-h-[46px] px-4 rounded-xl text-sm font-bold text-zinc-300 hover:bg-white/[0.07] cursor-pointer">Quitar</button>}
+        </div>
+      )}
+    </section>
+  );
+}
 
 const Visor3D = lazy(() => import("../visor3d/Visor3D")); // three.js solo se descarga si el semielaborado tiene modelo
 
@@ -11,7 +42,7 @@ const ORIGENES = [["FABRICA", "Se fabrica"], ["PROVEEDOR", "Se compra"], ["PARAG
 const n0 = (v) => Number(v || 0).toLocaleString("es-AR", { maximumFractionDigits: 2 });
 
 /** Ficha lateral de un semielaborado: cómo se consigue, stock por depósito, movimientos y pegado. */
-export default function FichaSemi({ item, seguir, onCerrar, onClasificar, onCambio, comprometido = 0, onVerComprometido, onEliminar }) {
+export default function FichaSemi({ item, seguir, onCerrar, onClasificar, onCambio, comprometido = 0, onVerComprometido, onEliminar, esAdmin = false, onCaliente }) {
   const en3d = item ? modeloDe(item) : null;
   return (
     <Drawer
@@ -50,6 +81,8 @@ export default function FichaSemi({ item, seguir, onCerrar, onClasificar, onCamb
               </span>
             </label>
           </section>
+
+          {esAdmin && onCaliente && <ProductoCaliente item={item} onCaliente={onCaliente} />}
 
           <section>
             <h3 className="text-[11px] font-bold uppercase tracking-[0.1em] text-zinc-500 mb-3">Tienda oficial (web)</h3>
