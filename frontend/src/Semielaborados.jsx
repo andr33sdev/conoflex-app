@@ -2,7 +2,7 @@
 // se edita en la propia tabla (tildes + "Confirmar cambios"), sin abrir cada semielaborado.
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AnimatePresence, LayoutGroup, MotionConfig, motion } from "framer-motion";
-import { Check, ChevronLeft, ChevronRight, FileDown, FileSpreadsheet, Loader2, PackageSearch, RefreshCw, Search, Truck, Undo2, X } from "lucide-react";
+import { BellRing, Check, ChevronLeft, ChevronRight, FileDown, FileSpreadsheet, Loader2, PackageSearch, RefreshCw, Search, Truck, Undo2, X } from "lucide-react";
 import { api, sinSemi } from "./produccion/util";
 import { getApiUrl } from "./apiConfig";
 import { useToast } from "./produccion/useToast";
@@ -10,6 +10,7 @@ import { Vacio } from "./produccion/ui";
 import { nf, norm } from "./materias/util";
 import CamionParaguay from "./semielaborados/CamionParaguay";
 import FichaSemi from "./semielaborados/FichaSemi";
+import InterruptorAlerta from "./componentes/InterruptorAlerta";
 import SincronizarSemis from "./semielaborados/SincronizarSemis";
 import Comprometido from "./deposito/Comprometido";
 import ConfirmarBorrado from "./produccion/ConfirmarBorrado";
@@ -376,6 +377,12 @@ export default function Semielaborados({ usuarioActual } = {}) {
               </button>
             </div>
           </motion.header>
+
+          {esAdmin && (
+            <div className="mt-5">
+              <InterruptorAlerta campo="alertasStockMinSemi" icono={BellRing} esAdmin={esAdmin} etiqueta="Alertas de stock mínimo" descripcion="Avisan cuando el Depósito 33 llega al mínimo de un semielaborado. Apagalas o prendelas todas desde acá." />
+            </div>
+          )}
 
           <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, ease: EASE, delay: 0.08 }} className="mt-6 sm:sticky sm:top-0 z-20 -mx-4 sm:-mx-6 lg:-mx-8 px-4 sm:px-6 lg:px-8 py-3 sm:bg-black/75 sm:backdrop-blur-xl sm:border-b border-white/[0.05]">
             <div className="flex flex-col gap-3">

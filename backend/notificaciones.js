@@ -1,5 +1,6 @@
 "use strict";
 // Notificaciones de la campanita. Cada una se dirige a uno o más roles; cada usuario las marca como leídas por su cuenta.
+const { leerBool, esAlertaIA } = require("./configApp");
 
 async function asegurarTablasNotificaciones(db) {
   await db.query(`
@@ -36,6 +37,8 @@ async function crearNotificacion(db, { tipo, titulo, texto = null, ruta = null, 
   try {
     const lista = limpiarRoles(roles);
     if (!lista.length) return null;
+    // Si las alertas de IA están apagadas, los agentes (Lía, Nati, Vera…) no generan ninguna notificación ni push.
+    if (esAlertaIA(tipo) && !(await leerBool(db, "alertas_ia"))) return null;
     const [r] = await db.query(
       "INSERT INTO notificaciones (tipo, titulo, texto, ruta, roles, creada_por_id) VALUES (?,?,?,?,?,?)",
       [tipo, String(titulo).slice(0, 255), texto ? String(texto).slice(0, 500) : null, ruta, lista.join(","), creada_por_id],
