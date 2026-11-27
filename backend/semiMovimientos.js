@@ -235,6 +235,34 @@ async function ajustarStock(db, { semielaborado_id, deposito, cantidad, nota, us
   }
 }
 
+/** Descuenta `cantidad` del depósito indicado (nunca baja de 0). Deja rastro en semi_ajustes. Devuelve antes/después. */
+async function descontarDeposito(db, { semielaborado_id, deposito, cantidad, nota, usuario }) {
+  const baja = Number(cantidad);
+  if (!DEPOSITOS[deposito]) throw Object.assign(new Error("Depósito inválido."), { status: 400 });
+  if (!(baja > 0) || !Number.isFinite(baja)) throw Object.assign(new Error("La cantidad a descontar tiene que ser mayor a 0."), { status: 400 });
+  const col = DEPOSITOS[deposito];
+  const conn = await db.getConnection();
+  try {
+    await conn.beginTransaction();
+    const [[s]] = await conn.query(`SELECT id, nombre, ${col} AS actual FROM semielaborados WHERE id = ? FOR UPDATE`, [semielaborado_id]);
+    if (!s) throw Object.assign(new Error("Ese semielaborado no existe."), { status: 404 });
+    const antes = Number(s.actual) || 0;
+    const nuevo = Math.max(0, antes - baja);
+    const delta = nuevo - antes;
+    if (delta !== 0) {
+      await conn.query(`UPDATE semielaborados SET ${col} = ? WHERE id = ?`, [nuevo, s.id]);
+      await conn.query("INSERT INTO semi_ajustes (semielaborado_id, deposito, antes, despues, delta, nota, usuario) VALUES (?,?,?,?,?,?,?)", [s.id, deposito, antes, nuevo, delta, (nota || "").slice(0, 255) || null, usuario || null]);
+    }
+    await conn.commit();
+    return { semielaborado: s.nombre, deposito, antes, despues: nuevo, cambio: delta };
+  } catch (e) {
+    await conn.rollback();
+    throw e;
+  } finally {
+    conn.release();
+  }
+}
+
 // ---------- Planilla vs app (depósito 33) ----------
 const URL_STOCK_33 = process.env.URL_STOCK_33 || `${BASE}?gid=1240979540&single=true&output=csv`;
 const MIN_DESALINEADO = 20;
@@ -492,6 +520,6 @@ function registrarRutasMovimientos(app, db, { nombreDeUsuario = async (req) => r
 
 module.exports = { estadoEspejo33,
   asegurarMovimientos, parsearHoja, filasCSV, fechaISO, depositoDe, guardarHoja, sincronizarHojas, entradasPendientes,
-  marcarAvisadas, entradasParaRecordar, marcarRecordadas, ajustarStock, compararStock33, parsearStockPlanilla, numeroPlanilla, copiarStock33, correrEspejo33, iniciarEspejo33, MIN_RECORDATORIO,
+  marcarAvisadas, entradasParaRecordar, marcarRecordadas, ajustarStock, descontarDeposito, compararStock33, parsearStockPlanilla, numeroPlanilla, copiarStock33, correrEspejo33, iniciarEspejo33, MIN_RECORDATORIO,
   transferir, anularTransferencia, ajustesDeLaApp, conAjustesDeLaApp, historial, registrarRutasMovimientos, DEPOSITOS, NOMBRE_DEPOSITO,
 };
